@@ -1,0 +1,22 @@
+{
+	"name": "electron-app",
+	"version": "1.0.0",
+	"description": "An Electron app",
+	"main": "index.js",
+	"scripts": {
+		"start": "electron ./src/index.js",
+		"postinstall": "electron-rebuild"
+	},
+	"dependencies": {
+		"active-win": "^8.1.1",
+		"electron": "^28.1.0",
+		"iohook2": "^1.0.6",
+		"modern-normalize": "^2.0.0",
+		"rdev": "^0.0.2",
+		"robotjs": "^0.6.0",
+		"x11": "^2.3.0"
+	},
+	"devDependencies": {
+		"electron-rebuild": "^3.2.9"
+	}
+}
