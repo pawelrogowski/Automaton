@@ -1,0 +1,20 @@
+{
+  "parser": "@babel/eslint-parser",
+  "extends": ["airbnb", "plugin:prettier/recommended"],
+  "env": {
+    "browser": true,
+    "node": true
+  },
+  "rules": {
+    "react/function-component-definition": [2, { "namedComponents": "arrow-function" }],
+    "react/jsx-filename-extension": [1, { "extensions": [".js", ".jsx", ".mjs"] }],
+    "import/extensions": [
+      "error",
+      "ignorePackages",
+      {
+        "js": "always",
+        "mjs": "never"
+      }
+    ]
+  }
+}

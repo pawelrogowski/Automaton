@@ -1,6 +1,16 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge } = require('electron');
+const robotjs = require('robotjs');
+const iohook = require('iohook2');
 
-contextBridge.exposeInMainWorld("electron", {
-	on: (channel, func) =>
-		ipcRenderer.on(channel, (event, ...args) => func(...args)),
+contextBridge.exposeInMainWorld('colorPicker', {
+  start: (onColorPick) => {
+    iohook.on('mousedown', (event) => {
+      const color = robotjs.getPixelColor(event.x, event.y);
+      onColorPick(color);
+    });
+    iohook.start();
+  },
+  stop: () => {
+    iohook.stop();
+  },
 });
