@@ -1,10 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
-const url = require('url');
 const robotjs = require('robotjs');
 const iohook = require('iohook2');
+const path = require('path');
+const url = require('url');
 
 let mainWindow;
+let isHookRunning = false;
 
 app.allowRendererProcessReuse = false;
 
@@ -13,8 +14,9 @@ const createWindow = () => {
     width: 800,
     height: 600,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
@@ -50,15 +52,20 @@ app.on('activate', () => {
   }
 });
 
-ipcMain.on('start-color-picking', (event) => {
-  iohook.on('mousedown', (mouseEvent) => {
-    const color = robotjs.getPixelColor(mouseEvent.x, mouseEvent.y);
-    event.sender.send('color-picked', color);
+ipcMain.on('pick-pixel', (event) => {
+  const mouseDownListener = (mouseEvent) => {
+    console.log(mouseEvent);
+    const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
+    console.log(color);
+    event.sender.send('pixel-picked', color);
+    iohook.removeListener('mousedown', mouseDownListener); // remove the listener
     iohook.stop();
-  });
+  };
+
+  iohook.on('mousedown', mouseDownListener);
   iohook.start();
 });
 
-ipcMain.on('stop-color-picking', () => {
+ipcMain.on('pick-pixel-stop', () => {
   iohook.stop();
 });

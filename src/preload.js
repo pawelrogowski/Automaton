@@ -1,16 +1,23 @@
-const { contextBridge } = require('electron');
-const robotjs = require('robotjs');
-const iohook = require('iohook2');
+const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('colorPicker', {
-  start: (onColorPick) => {
-    iohook.on('mousedown', (event) => {
-      const color = robotjs.getPixelColor(event.x, event.y);
-      onColorPick(color);
-    });
-    iohook.start();
+contextBridge.exposeInMainWorld('api', {
+  send: (channel, data) => {
+    const validChannels = ['pick-pixel', 'pick-pixel-stop'];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.send(channel, data);
+    }
   },
-  stop: () => {
-    iohook.stop();
+  receive: (channel, func) => {
+    const validChannels = ['pixel-picked'];
+    if (validChannels.includes(channel)) {
+      const listener = (event, ...args) => func(...args);
+      ipcRenderer.on(channel, listener);
+    }
+  },
+  remove: (channel, func) => {
+    const validChannels = ['pixel-picked'];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.removeListener(channel, func);
+    }
   },
 });
