@@ -5,7 +5,6 @@ const path = require('path');
 const url = require('url');
 
 let mainWindow;
-let isHookRunning = false;
 
 app.allowRendererProcessReuse = false;
 
@@ -51,21 +50,61 @@ app.on('activate', () => {
     createWindow();
   }
 });
+robotjs.setMouseDelay(1);
 
-ipcMain.on('pick-pixel', (event) => {
-  const mouseDownListener = (mouseEvent) => {
-    console.log(mouseEvent);
-    const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
-    console.log(color);
-    event.sender.send('pixel-picked', color);
-    iohook.removeListener('mousedown', mouseDownListener); // remove the listener
-    iohook.stop();
-  };
+ipcMain.handle('moveMouse', (event, x, y) => {
+  robotjs.moveMouse(x, y);
+});
 
-  iohook.on('mousedown', mouseDownListener);
+ipcMain.handle('moveMouseSmooth', (event, x, y) => {
+  robotjs.moveMouseSmooth(x, y);
+});
+ipcMain.handle('getMousePos', () => {
+  return robotjs.getMousePos();
+});
+
+ipcMain.handle('mouseClick', (_, button, double) => {
+  robotjs.mouseClick(button, double);
+});
+
+ipcMain.handle('mouseToggle', (_, down, button) => {
+  robotjs.mouseToggle(down, button);
+});
+
+ipcMain.handle('dragMouse', (_, x, y) => {
+  robotjs.dragMouse(x, y);
+});
+
+ipcMain.handle('scrollMouse', (_, x, y) => {
+  robotjs.scrollMouse(x, y);
+});
+
+ipcMain.handle('getScreenSize', () => {
+  return robotjs.getScreenSize();
+});
+
+ipcMain.handle('screenCapture', (_, x, y, width, height) => {
+  return robotjs.screen.capture(x, y, width, height);
+});
+
+ipcMain.handle('start-iohook', () => {
   iohook.start();
 });
 
-ipcMain.on('pick-pixel-stop', () => {
+ipcMain.handle('stop-iohook', () => {
   iohook.stop();
+});
+
+const listeners = {};
+
+ipcMain.handle('registerListener', (event, eventName, id) => {
+  listeners[id] = (e) => {
+    event.sender.send(`${eventName}-${id}`, e);
+  };
+  iohook.on(eventName, listeners[id]);
+});
+
+ipcMain.handle('unregisterListener', (event, eventName, id) => {
+  iohook.off(eventName, listeners[id]);
+  delete listeners[id];
 });

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 
-const { api } = window;
+const { api, electron } = window;
 
 const HealingRule = ({ rule, onRuleChange }) => {
   const [name, setName] = useState(rule.name);
@@ -12,16 +12,16 @@ const HealingRule = ({ rule, onRuleChange }) => {
   const [color, setColor] = useState(null);
 
   const handleColorPick = () => {
-    api.send('pick-pixel');
-    console.log('api-pick-pixel send fired');
-    let listener;
-    listener = (_, pixelColor) => {
-      setColor(pixelColor);
-      console.log(pixelColor);
-      onRuleChange({ ...rule, color: pixelColor });
-      api.remove('pixel-picked', listener); // remove the listener
-    };
-    api.receive('pixel-picked', listener);
+    const id = Math.random().toString(36).substring(7);
+    api.registerListener('mousedown', id);
+    console.log('registered');
+    electron.ipcRenderer.on(`mousedown-${id}`, (event, eventData) => {
+      console.log('???');
+      const pickedPixelColor = api.getPixelColor(eventData.x, eventData.y);
+      setColor(pickedPixelColor);
+      onRuleChange({ ...rule, pickedPixelColor });
+      api.unregisterListener('mousedown', id);
+    });
   };
 
   return (
