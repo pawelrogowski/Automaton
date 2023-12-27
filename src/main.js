@@ -3,12 +3,24 @@ const robotjs = require('robotjs');
 const iohook = require('iohook2');
 const path = require('path');
 const url = require('url');
+const {
+  default: installExtension,
+  REDUX_DEVTOOLS,
+  REACT_DEVELOPER_TOOLS,
+} = require('electron-devtools-installer');
 
 let mainWindow;
 
 app.allowRendererProcessReuse = false;
 
 const createWindow = () => {
+  installExtension(REDUX_DEVTOOLS)
+    .then((name) => console.log(`Added Extension:  ${name}`))
+    .catch((err) => console.log('An error occurred: ', err));
+  installExtension(REACT_DEVELOPER_TOOLS)
+    .then((name) => console.log(`Added Extension:  ${name}`))
+    .catch((err) => console.log('An error occurred: ', err));
+
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
@@ -59,6 +71,7 @@ ipcMain.handle('moveMouse', (event, x, y) => {
 ipcMain.handle('moveMouseSmooth', (event, x, y) => {
   robotjs.moveMouseSmooth(x, y);
 });
+
 ipcMain.handle('getMousePos', () => {
   return robotjs.getMousePos();
 });
@@ -98,8 +111,8 @@ ipcMain.handle('stop-iohook', () => {
 ipcMain.handle('pick-color', () => {
   return new Promise((resolve) => {
     const colorPickerWindow = new BrowserWindow({
-      width: 24,
-      height: 24,
+      width: 50,
+      height: 50,
       alwaysOnTop: true,
       frame: false,
       resizable: false,
@@ -118,13 +131,29 @@ ipcMain.handle('pick-color', () => {
 
     const screenSize = robotjs.getScreenSize();
 
-    const mouseMoveListener = (mouseEvent) => {
-      const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
-      const code = `
-        document.body.style.backgroundColor = '${color}';
-      `;
-      colorPickerWindow.webContents.executeJavaScript(code);
+    let intervalId;
 
+    const mouseMoveListener = (mouseEvent) => {
+      const updateColor = () => {
+        const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
+        const code = `
+          document.getElementById('color').style.backgroundColor = '${color}';
+        `;
+        colorPickerWindow.webContents.executeJavaScript(code);
+      };
+
+      // Update the color immediately when the mouse moves
+      updateColor();
+
+      // Clear any existing timer
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+
+      // Then update the color every 100 ms
+      intervalId = setInterval(updateColor, 16.67);
+
+      // Adjust the position of the color picker window based on the mouse position
       let windowX = mouseEvent.x + 20;
       let windowY = mouseEvent.y - 20;
       if (windowX + 120 > screenSize.width) {
@@ -142,6 +171,7 @@ ipcMain.handle('pick-color', () => {
     const mouseDownListener = (mouseEvent) => {
       const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
       iohook.stop();
+      clearInterval(intervalId); // Clear the timer when the mouse button is pressed
       colorPickerWindow.webContents.removeAllListeners();
       colorPickerWindow.close();
       resolve(color);
