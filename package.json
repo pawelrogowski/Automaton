@@ -5,7 +5,7 @@
   "description": "automaton is a simple app for automating task on x11 systems",
   "main": "src/main.js",
   "scripts": {
-    "start": "webpack --mode development && electron .",
+    "start": "webpack --mode development && electron . --trace-warnings",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
@@ -30,6 +30,7 @@
     "webpack-node-externals": "^3.0.0"
   },
   "devDependencies": {
+    "electron": "^28.1.0",
     "@babel/core": "^7.23.6",
     "@babel/eslint-parser": "^7.23.3",
     "@babel/preset-env": "^7.23.6",

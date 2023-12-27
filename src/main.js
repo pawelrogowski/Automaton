@@ -95,16 +95,46 @@ ipcMain.handle('stop-iohook', () => {
   iohook.stop();
 });
 
-const listeners = {};
+ipcMain.handle('pick-color', () => {
+  return new Promise((resolve) => {
+    const colorPickerWindow = new BrowserWindow({
+      width: 24,
+      height: 24,
+      alwaysOnTop: true,
+      frame: false,
+      resizable: false,
+      transparent: true,
+      skipTaskbar: true,
+      focusable: false,
+      hasShadow: false,
+      webPreferences: {
+        nodeIntegration: false,
+        enableRemoteModule: false,
+        contextIsolation: true,
+      },
+    });
 
-ipcMain.handle('registerListener', (event, eventName, id) => {
-  listeners[id] = (e) => {
-    event.sender.send(`${eventName}-${id}`, e);
-  };
-  iohook.on(eventName, listeners[id]);
-});
+    colorPickerWindow.loadFile(path.join(__dirname, 'windows', 'colorPicker', 'colorPicker.html'));
 
-ipcMain.handle('unregisterListener', (event, eventName, id) => {
-  iohook.off(eventName, listeners[id]);
-  delete listeners[id];
+    const mouseMoveListener = (mouseEvent) => {
+      const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
+      colorPickerWindow.setPosition(mouseEvent.x + 20, mouseEvent.y - 20);
+      colorPickerWindow.webContents.executeJavaScript(
+        `document.getElementById('color-bg').style.backgroundColor = "${color}";`,
+      );
+      colorPickerWindow.setTitle(color);
+    };
+
+    const mouseDownListener = (mouseEvent) => {
+      const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
+      iohook.stop();
+      colorPickerWindow.webContents.removeAllListeners();
+      colorPickerWindow.close();
+      resolve(color);
+    };
+
+    iohook.on('mousemove', mouseMoveListener);
+    iohook.on('mousedown', mouseDownListener);
+    iohook.start();
+  });
 });

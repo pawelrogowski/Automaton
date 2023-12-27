@@ -51,12 +51,5 @@ contextBridge.exposeInMainWorld('api', {
 
   registerListener: (eventName, id) => ipcRenderer.invoke('registerListener', eventName, id),
   unregisterListener: (eventName, id) => ipcRenderer.invoke('unregisterListener', eventName, id),
-});
-
-contextBridge.exposeInMainWorld('electron', {
-  ipcRenderer: {
-    send: (channel, data) => ipcRenderer.send(channel, data),
-    invoke: (channel, data) => ipcRenderer.invoke(channel, data),
-    on: (channel, func) => ipcRenderer.on(channel, (event, ...args) => func(...args)),
-  },
+  pickColor: () => ipcRenderer.invoke('pick-color'),
 });
