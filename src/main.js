@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const robotjs = require('robotjs');
 const iohook = require('iohook2');
 const path = require('path');
@@ -116,13 +116,27 @@ ipcMain.handle('pick-color', () => {
 
     colorPickerWindow.loadFile(path.join(__dirname, 'windows', 'colorPicker', 'colorPicker.html'));
 
+    const screenSize = robotjs.getScreenSize();
+
     const mouseMoveListener = (mouseEvent) => {
       const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
-      colorPickerWindow.setPosition(mouseEvent.x + 20, mouseEvent.y - 20);
-      colorPickerWindow.webContents.executeJavaScript(
-        `document.getElementById('color-bg').style.backgroundColor = "${color}";`,
-      );
-      colorPickerWindow.setTitle(color);
+      const code = `
+        document.body.style.backgroundColor = '${color}';
+      `;
+      colorPickerWindow.webContents.executeJavaScript(code);
+
+      let windowX = mouseEvent.x + 20;
+      let windowY = mouseEvent.y - 20;
+      if (windowX + 120 > screenSize.width) {
+        windowX = mouseEvent.x - 140;
+      }
+      if (windowY < 0) {
+        windowY = mouseEvent.y + 20;
+      }
+      if (windowY + 120 > screenSize.height) {
+        windowY = mouseEvent.y - 140;
+      }
+      colorPickerWindow.setPosition(windowX, windowY);
     };
 
     const mouseDownListener = (mouseEvent) => {
