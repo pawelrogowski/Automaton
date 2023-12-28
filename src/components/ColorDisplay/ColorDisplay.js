@@ -1,9 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import StyledDiv from './ColorDisplay.styled.js';
 
-const ColorDisplay = ({ color }) => (
-  <div style={{ backgroundColor: color, width: '100px', height: '100px' }} />
-);
+const ColorDisplay = ({ color }) => <StyledDiv style={{ backgroundColor: color }} />;
 
 ColorDisplay.propTypes = {
   color: PropTypes.string,

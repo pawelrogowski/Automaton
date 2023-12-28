@@ -1,9 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import StyledNav from './MainNavigation.styled.js';
 
 const MainNavigation = () => {
   return (
-    <nav>
+    <StyledNav>
       <ul>
         <li>
           <Link to="/healing">Healing</Link>
@@ -15,7 +16,7 @@ const MainNavigation = () => {
           <Link to="/console">Console</Link>
         </li>
       </ul>
-    </nav>
+    </StyledNav>
   );
 };
 

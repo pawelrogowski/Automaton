@@ -1,32 +1,36 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import HealingRule from '../components/HealingRule/HealingRule.js';
+import { addRule } from '../redux/slices/healingSlice.js';
+import { PlusSquare } from 'react-feather';
+import StyledMain from './Healing.styled.js';
 
 export const Healing = () => {
-  const [rules, setRules] = useState([
-    {
-      name: 'name1',
+  const dispatch = useDispatch();
+  const rules = useSelector((state) => state.healing);
+  const handleAddRule = () => {
+    const newRule = {
+      id: Date.now().toString(),
+      name: '',
       enabled: false,
-      color: '#000000',
-      coords: { x: 800, y: 600 },
-      key: 'F1',
-      interval: '100',
-    },
-  ]);
-
-  const handleRuleChange = (index, updatedRule) => {
-    setRules(rules.map((rule, i) => (i === index ? updatedRule : rule)));
+      key: '',
+      interval: '',
+      colors: [],
+    };
+    dispatch(addRule(newRule));
   };
 
   return (
-    <div>
-      {rules.map((rule) => (
-        <HealingRule
-          key={rule.name}
-          rule={rule}
-          onRuleChange={(updatedRule) => handleRuleChange(rule.name, updatedRule)}
-        />
-      ))}
-    </div>
+    <StyledMain>
+      <section>
+        <button className="add-button" type="button" onClick={handleAddRule}>
+          <PlusSquare size={42} />
+        </button>
+        {rules.map((rule) => (
+          <HealingRule key={rule.id} rule={rule} />
+        ))}
+      </section>
+    </StyledMain>
   );
 };
 

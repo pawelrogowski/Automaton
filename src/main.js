@@ -3,24 +3,12 @@ const robotjs = require('robotjs');
 const iohook = require('iohook2');
 const path = require('path');
 const url = require('url');
-const {
-  default: installExtension,
-  REDUX_DEVTOOLS,
-  REACT_DEVELOPER_TOOLS,
-} = require('electron-devtools-installer');
 
 let mainWindow;
 
 app.allowRendererProcessReuse = false;
 
 const createWindow = () => {
-  installExtension(REDUX_DEVTOOLS)
-    .then((name) => console.log(`Added Extension:  ${name}`))
-    .catch((err) => console.log('An error occurred: ', err));
-  installExtension(REACT_DEVELOPER_TOOLS)
-    .then((name) => console.log(`Added Extension:  ${name}`))
-    .catch((err) => console.log('An error occurred: ', err));
-
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,

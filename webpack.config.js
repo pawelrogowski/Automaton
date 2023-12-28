@@ -32,6 +32,10 @@ module.exports = {
         test: /\.node$/,
         loader: 'node-loader',
       },
+      {
+        test: /\.css$/, // Add this rule
+        use: ['style-loader', 'css-loader'],
+      },
     ],
   },
   plugins: [

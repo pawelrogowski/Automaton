@@ -1,11 +1,12 @@
 import React from 'react';
 import MainNavigation from '../MainNavigation/MainNavigation.jsx';
+import StyledHeader from './Header.styled.js';
 
 const Header = () => {
   return (
-    <header>
+    <StyledHeader>
       <MainNavigation />
-    </header>
+    </StyledHeader>
   );
 };
 

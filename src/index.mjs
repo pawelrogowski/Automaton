@@ -1,5 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import 'modern-normalize/modern-normalize.css';
+import './index.css';
 import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 import { Healing } from './pages/Healing.js';
 import { Actions } from './pages/Actions.js';
