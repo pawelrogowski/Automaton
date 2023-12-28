@@ -33,8 +33,12 @@ module.exports = {
         loader: 'node-loader',
       },
       {
-        test: /\.css$/, // Add this rule
+        test: /\.css$/,
         use: ['style-loader', 'css-loader'],
+      },
+      {
+        test: /\.svg$/,
+        use: ['file-loader'],
       },
     ],
   },

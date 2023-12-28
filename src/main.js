@@ -10,8 +10,8 @@ app.allowRendererProcessReuse = false;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 560,
+    height: 320,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

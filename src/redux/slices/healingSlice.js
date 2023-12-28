@@ -37,7 +37,7 @@ const healingSlice = createSlice({
       const index = state.findIndex((rule) => rule.id === action.payload.id);
       if (index !== -1) {
         const colorIndex = state[index].colors.findIndex(
-          (color) => color.color === action.payload.color,
+          (color) => color.id === action.payload.colorId, // Find the color by its ID
         );
         if (colorIndex !== -1) {
           state[index].colors[colorIndex].enabled = !state[index].colors[colorIndex].enabled;

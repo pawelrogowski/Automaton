@@ -10,13 +10,13 @@ import {
   removeRule,
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
-import { Trash2, ChevronDown, ChevronUp } from 'react-feather';
+import { Trash2, ChevronDown, ChevronUp, PlusSquare, PlusCircle } from 'react-feather';
 
 const { api } = window;
 
 const HealingRule = ({ rule }) => {
   const dispatch = useDispatch();
-  const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id));
+  const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
 
   const [isOpen, setIsOpen] = useState(false);
 
@@ -79,16 +79,16 @@ const HealingRule = ({ rule }) => {
           </div>
           <div className="input-wrapper input-wrapper-checkbox">
             <input
-              className="input input-checkbox"
+              className="input"
               id="enabled"
               type="checkbox"
-              checked={healing.healing}
+              checked={!!healing.healing}
               onChange={() => dispatch(updateRule({ ...healing, healing: !healing.healing }))}
               disabled={!allFieldsFilled}
             />
           </div>
           <button type="button" onClick={handleRemoveRule}>
-            <Trash2 size={28} />
+            <Trash2 className="remove-rule-icon" size={28} />
           </button>
           {isOpen ? (
             <ChevronUp className="details-arrow" />
@@ -96,34 +96,41 @@ const HealingRule = ({ rule }) => {
             <ChevronDown className="details-arrow" />
           )}
         </summary>
-        <button
-          className="button"
-          type="button"
-          onClick={handleColorPick}
-          disabled={healing.healing}
-        >
-          Pick Pixel
-        </button>
-        {healing.colors.map((color) => (
-          <div key={color.id}>
-            <ColorDisplay color={color.color} />
-            <select
-              className="input"
-              value={color.enabled}
-              onChange={() => dispatch(toggleColor({ id: healing.id, color: color.color }))}
-            >
-              <option value="true">True</option>
-              <option value="false">False</option>
-            </select>
+        <div className="details-wrapper">
+          <div className="conditions-header-wrapper">
+            <h2 className="conditions-header">Color Conditions</h2>
             <button
-              className="button"
+              className="button pick-pixel-button"
               type="button"
-              onClick={() => dispatch(removeColor({ id: healing.id, colorId: color.id }))}
+              onClick={handleColorPick}
+              disabled={healing.healing}
             >
-              Remove Color
+              <PlusCircle size={24} />
             </button>
           </div>
-        ))}
+          {healing.colors.map((color) => (
+            <div className="picked-color-wrapper" key={color.id}>
+              <ColorDisplay color={color.color} />
+              <select
+                className="input"
+                value={color.enabled}
+                onChange={() => dispatch(toggleColor({ id: healing.id, colorId: color.id }))}
+                disabled={healing.healing}
+              >
+                <option value="true">Present</option>
+                <option value="false">Absent</option>
+              </select>
+              <button
+                className="button remove-color"
+                type="button"
+                onClick={() => dispatch(removeColor({ id: healing.id, colorId: color.id }))}
+                disabled={healing.healing}
+              >
+                <Trash2 className="remove-color-icon" />
+              </button>
+            </div>
+          ))}
+        </div>
       </details>
     </StyledDiv>
   );

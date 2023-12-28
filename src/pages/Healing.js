@@ -24,7 +24,7 @@ export const Healing = () => {
     <StyledMain>
       <section>
         <button className="add-button" type="button" onClick={handleAddRule}>
-          <PlusSquare size={42} />
+          <PlusSquare className="add-healing-rule" size={32} />
         </button>
         {rules.map((rule) => (
           <HealingRule key={rule.id} rule={rule} />
