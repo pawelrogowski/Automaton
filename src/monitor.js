@@ -1,24 +1,19 @@
-const { keyboard, Key, Point, screen } = require('@nut-tree/nut-js');
-const { rgbaToHex } = require('./utils/rgbaToHex.js');
+const robotjs = require('robotjs');
+const exec = require('child_process').exec;
 
 process.on('message', (rule) => {
-  const points = rule.colors.map((color) => new Point(color.x, color.y));
-  console.log(points);
-  setInterval(async () => {
-    await Promise.all(
-      rule.colors.map(async (color, index) => {
-        try {
-          if (color.enabled) {
-            const pixelColor = await screen.colorAt(points[index]);
-            const screenColor = rgbaToHex(pixelColor);
-            if (screenColor === color.color) {
-              keyboard.type(Key[rule.key.toUpperCase()]);
-            }
+  setInterval(() => {
+    rule.colors.forEach((color) => {
+      try {
+        if (color.enabled) {
+          const pixelColor = `#${robotjs.getPixelColor(color.x, color.y)}`;
+          if (pixelColor === color.color) {
+            exec(`xdotool key ${rule.key}`);
           }
-        } catch (error) {
-          process.send({ error });
         }
-      }),
-    );
+      } catch (error) {
+        process.send({ error });
+      }
+    });
   }, rule.interval);
 });
