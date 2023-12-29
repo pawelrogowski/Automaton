@@ -16,12 +16,23 @@ const healingSlice = createSlice({
       const index = state.findIndex((rule) => rule.id === action.payload.id);
       if (index !== -1) {
         state[index] = action.payload;
+        if (state[index].enabled) {
+          window.api.startMonitoring(state[index]);
+        } else {
+          window.api.stopMonitoring(state[index].id);
+        }
       }
     },
     addColor: (state, action) => {
       const index = state.findIndex((rule) => rule.id === action.payload.id);
       if (index !== -1) {
-        const color = { id: Date.now().toString(), color: action.payload.color, enabled: false };
+        const color = {
+          id: Date.now().toString(),
+          color: action.payload.color,
+          enabled: true,
+          x: action.payload.x,
+          y: action.payload.y,
+        };
         state[index].colors.push(color);
       }
     },

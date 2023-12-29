@@ -21,8 +21,11 @@ const HealingRule = ({ rule }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const handleColorPick = async () => {
-    const pickedColor = await api.pickColor();
-    dispatch(addColor({ id: healing.id, color: pickedColor }));
+    const colorData = await api.pickColor();
+    if (colorData) {
+      const { color, x, y } = colorData;
+      dispatch(addColor({ id: healing.id, color, x, y }));
+    }
   };
 
   const allFieldsFilled =
@@ -82,8 +85,8 @@ const HealingRule = ({ rule }) => {
               className="input"
               id="enabled"
               type="checkbox"
-              checked={!!healing.healing}
-              onChange={() => dispatch(updateRule({ ...healing, healing: !healing.healing }))}
+              checked={!!healing.enabled}
+              onChange={() => dispatch(updateRule({ ...healing, enabled: !healing.enabled }))}
               disabled={!allFieldsFilled}
             />
           </div>
@@ -111,6 +114,12 @@ const HealingRule = ({ rule }) => {
           {healing.colors.map((color) => (
             <div className="picked-color-wrapper" key={color.id}>
               <ColorDisplay color={color.color} />
+
+              <ul className="coordinate-list">
+                <li>X: {color.x || 0}</li>
+                <li>Y: {color.y || 0}</li>
+              </ul>
+
               <select
                 className="input"
                 value={color.enabled}

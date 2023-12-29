@@ -58,7 +58,7 @@ const StyledDiv = styled.div`
   }
   .details-arrow {
     transition: stroke 200ms;
-    stroke: #c5c5c5;
+    stroke: #fafafa;
     &:hover {
       stroke: #0066ff;
     }
@@ -70,7 +70,7 @@ const StyledDiv = styled.div`
     padding: 0;
 
     svg {
-      stroke: #c5c5c5;
+      stroke: #fafafa;
       transition: stroke 200ms;
     }
     svg:hover {
@@ -78,7 +78,7 @@ const StyledDiv = styled.div`
     }
   }
   .conditions-header {
-    color: #c5c5c5;
+    color: #fafafa;
     font-size: 14px;
     padding: 4px;
   }
@@ -88,17 +88,16 @@ const StyledDiv = styled.div`
     align-items: center;
     &:not(:last-of-type) {
       padding-bottom: 5px;
-      border-bottom: 1px solid #141418;
+      border-bottom: 1px solid #44444b;
     }
     &:not(:first-of-type) {
       padding-top: 5px;
-      border-top: 1px solid #44444b;
     }
   }
   .remove-color-icon,
   .remove-rule-icon {
     transition: stroke 200ms;
-    stroke: #c5c5c5;
+    stroke: #fafafa;
     &:hover {
       cursor: pointer;
       stroke: #bf2828;
@@ -113,6 +112,18 @@ const StyledDiv = styled.div`
     gap: 10px;
     svg {
       margin-bottom: 4px;
+    }
+  }
+  .coordinate-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    list-style: none;
+    padding: 0;
+    min-width: 45px;
+    > li {
+      font-size: 9px;
+      color: #fafafa;
     }
   }
 `;

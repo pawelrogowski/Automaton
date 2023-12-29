@@ -52,4 +52,6 @@ contextBridge.exposeInMainWorld('api', {
   registerListener: (eventName, id) => ipcRenderer.invoke('registerListener', eventName, id),
   unregisterListener: (eventName, id) => ipcRenderer.invoke('unregisterListener', eventName, id),
   pickColor: () => ipcRenderer.invoke('pick-color'),
+  startMonitoring: (rule) => ipcRenderer.invoke('startMonitoring', rule),
+  stopMonitoring: (ruleId) => ipcRenderer.invoke('stopMonitoring', ruleId),
 });

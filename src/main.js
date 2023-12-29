@@ -1,17 +1,19 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const robotjs = require('robotjs');
 const iohook = require('iohook2');
 const path = require('path');
 const url = require('url');
+const { keyboard, Key, Point, mouse, screen, left, right, up, down } = require('@nut-tree/nut-js');
+const { rgbaToHex } = require('./utils/rgbaToHex');
+const { fork } = require('child_process');
 
 let mainWindow;
-
 app.allowRendererProcessReuse = false;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 560,
-    height: 320,
+    width: 1000,
+    height: 720,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -50,54 +52,11 @@ app.on('activate', () => {
     createWindow();
   }
 });
-robotjs.setMouseDelay(1);
-
-ipcMain.handle('moveMouse', (event, x, y) => {
-  robotjs.moveMouse(x, y);
-});
-
-ipcMain.handle('moveMouseSmooth', (event, x, y) => {
-  robotjs.moveMouseSmooth(x, y);
-});
-
-ipcMain.handle('getMousePos', () => {
-  return robotjs.getMousePos();
-});
-
-ipcMain.handle('mouseClick', (_, button, double) => {
-  robotjs.mouseClick(button, double);
-});
-
-ipcMain.handle('mouseToggle', (_, down, button) => {
-  robotjs.mouseToggle(down, button);
-});
-
-ipcMain.handle('dragMouse', (_, x, y) => {
-  robotjs.dragMouse(x, y);
-});
-
-ipcMain.handle('scrollMouse', (_, x, y) => {
-  robotjs.scrollMouse(x, y);
-});
-
-ipcMain.handle('getScreenSize', () => {
-  return robotjs.getScreenSize();
-});
-
-ipcMain.handle('screenCapture', (_, x, y, width, height) => {
-  return robotjs.screen.capture(x, y, width, height);
-});
-
-ipcMain.handle('start-iohook', () => {
-  iohook.start();
-});
-
-ipcMain.handle('stop-iohook', () => {
-  iohook.stop();
-});
 
 ipcMain.handle('pick-color', () => {
   return new Promise((resolve) => {
+    const screenSize = robotjs.getScreenSize();
+
     const colorPickerWindow = new BrowserWindow({
       width: 50,
       height: 50,
@@ -116,8 +75,6 @@ ipcMain.handle('pick-color', () => {
     });
 
     colorPickerWindow.loadFile(path.join(__dirname, 'windows', 'colorPicker', 'colorPicker.html'));
-
-    const screenSize = robotjs.getScreenSize();
 
     let intervalId;
 
@@ -158,15 +115,47 @@ ipcMain.handle('pick-color', () => {
 
     const mouseDownListener = (mouseEvent) => {
       const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
+      // const screenshot = robotjs.screen.capture(0, 0, screenSize.width, screenSize.height);
       iohook.stop();
-      clearInterval(intervalId); // Clear the timer when the mouse button is pressed
+      clearInterval(intervalId);
       colorPickerWindow.webContents.removeAllListeners();
       colorPickerWindow.close();
-      resolve(color);
+      resolve({ color, x: mouseEvent.x, y: mouseEvent.y });
     };
 
     iohook.on('mousemove', mouseMoveListener);
     iohook.on('mousedown', mouseDownListener);
     iohook.start();
   });
+});
+
+const monitoringIntervals = {};
+
+ipcMain.handle('startMonitoring', async (event, rule) => {
+  const points = rule.colors.map((color) => new Point(color.x, color.y));
+
+  monitoringIntervals[rule.id] = setInterval(async () => {
+    await Promise.all(
+      rule.colors.map(async (color, index) => {
+        try {
+          if (color.enabled) {
+            const pixelColor = await screen.colorAt(points[index]);
+
+            console.log(pixelColor);
+            const screenColor = rgbaToHex(pixelColor);
+            if (screenColor === color.color) {
+              keyboard.type(Key[rule.key.toUpperCase()]);
+            }
+          }
+        } catch (error) {
+          console.log(error);
+        }
+      }),
+    );
+  }, rule.interval);
+});
+
+ipcMain.handle('stopMonitoring', (event, ruleId) => {
+  clearInterval(monitoringIntervals[ruleId]);
+  delete monitoringIntervals[ruleId];
 });

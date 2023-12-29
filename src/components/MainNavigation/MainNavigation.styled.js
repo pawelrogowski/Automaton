@@ -15,7 +15,7 @@ const StyledNav = styled.nav`
     }
     a {
       text-decoration: none;
-      color: #c5c5c5;
+      color: #fafafa;
       transition: color 200ms;
       &:hover {
         color: #0066ff;

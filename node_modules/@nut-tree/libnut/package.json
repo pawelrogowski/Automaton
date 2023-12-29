@@ -1,0 +1,44 @@
+{
+  "name": "@nut-tree/libnut",
+  "version": "2.5.2",
+  "description": "libnut is an N-API module for desktop automation with node",
+  "main": "index.js",
+  "typings": "index.d.ts",
+  "homepage": "https://nutjs.dev",
+  "author": {
+    "name": "Simon Hofmann",
+    "email": "kontakt@s1h.org",
+    "url": "https://s1h.org"
+  },
+  "bugs": {
+    "url": "https://github.com/nut-tree/nut.js/issues"
+  },
+  "keywords": [
+    "GUI",
+    "Automation",
+    "mouse",
+    "keyboard",
+    "screenshot",
+    "image",
+    "desktop",
+    "screen",
+    "recognition",
+    "autohotkey"
+  ],
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "jest",
+    "publish:next": "npm publish --tag next"
+  },
+  "engines": {
+    "node": ">=10.15.3"
+  },
+  "dependencies": {
+    "@nut-tree/libnut-darwin": "2.5.2",
+    "@nut-tree/libnut-linux": "2.5.2",
+    "@nut-tree/libnut-win32": "2.5.2"
+  },
+  "devDependencies": {
+    "jest": "27.4.5"
+  }
+}

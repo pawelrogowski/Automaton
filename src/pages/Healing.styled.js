@@ -25,7 +25,7 @@ const StyledMain = styled.main`
       }
     }
     > svg {
-      stroke: #c5c5c5;
+      stroke: #fafafa;
       transition: stroke 200ms;
     }
   }
