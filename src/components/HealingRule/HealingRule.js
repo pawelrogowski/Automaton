@@ -36,7 +36,7 @@ const HealingRule = ({ rule }) => {
   };
 
   return (
-    <StyledDiv>
+    <StyledDiv $running={healing.enabled}>
       <details open={isOpen} onToggle={() => setIsOpen(!isOpen)}>
         <summary>
           <div className="input-wrapper">
@@ -46,7 +46,7 @@ const HealingRule = ({ rule }) => {
               value={healing.name}
               onChange={(event) => dispatch(updateRule({ ...healing, name: event.target.value }))}
               placeholder="Rule Name"
-              disabled={healing.healing}
+              disabled={healing.enabled} // Disable when rule is enabled
             />
             <label className="label" htmlFor="name">
               Name
@@ -59,7 +59,7 @@ const HealingRule = ({ rule }) => {
               value={healing.key}
               onChange={(event) => dispatch(updateRule({ ...healing, key: event.target.value }))}
               placeholder="F1"
-              disabled={healing.healing}
+              disabled={healing.enabled} // Disable when rule is enabled
             />
             <label className="label" htmlFor="key">
               Key
@@ -74,7 +74,7 @@ const HealingRule = ({ rule }) => {
                 dispatch(updateRule({ ...healing, interval: event.target.value }))
               }
               placeholder="100"
-              disabled={healing.healing}
+              disabled={healing.enabled} // Disable when rule is enabled
             />
             <label className="label" htmlFor="interval">
               Interval (ms)
@@ -90,7 +90,9 @@ const HealingRule = ({ rule }) => {
               disabled={!allFieldsFilled}
             />
           </div>
-          <button type="button" onClick={handleRemoveRule}>
+          <button type="button" onClick={handleRemoveRule} disabled={healing.enabled}>
+            {' '}
+            {/* Disable when rule is enabled */}
             <Trash2 className="remove-rule-icon" size={28} />
           </button>
           {isOpen ? (
@@ -106,7 +108,7 @@ const HealingRule = ({ rule }) => {
               className="button pick-pixel-button"
               type="button"
               onClick={handleColorPick}
-              disabled={healing.healing}
+              disabled={healing.enabled} // Disable when rule is enabled
             >
               <PlusCircle size={24} />
             </button>
@@ -124,7 +126,7 @@ const HealingRule = ({ rule }) => {
                 className="input"
                 value={color.enabled}
                 onChange={() => dispatch(toggleColor({ id: healing.id, colorId: color.id }))}
-                disabled={healing.healing}
+                disabled={healing.enabled} // Disable when rule is enabled
               >
                 <option value="true">Present</option>
                 <option value="false">Absent</option>
@@ -133,7 +135,7 @@ const HealingRule = ({ rule }) => {
                 className="button remove-color"
                 type="button"
                 onClick={() => dispatch(removeColor({ id: healing.id, colorId: color.id }))}
-                disabled={healing.healing}
+                disabled={healing.enabled} // Disable when rule is enabled
               >
                 <Trash2 className="remove-color-icon" />
               </button>

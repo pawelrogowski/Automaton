@@ -8,7 +8,7 @@ process.on('message', (rule) => {
         if (color.enabled) {
           const pixelColor = `#${robotjs.getPixelColor(color.x, color.y)}`;
           if (pixelColor === color.color) {
-            exec(`xdotool key ${rule.key}`);
+            exec(`xdotool key --window ${rule.windowId} ${rule.key}`);
           }
         }
       } catch (error) {

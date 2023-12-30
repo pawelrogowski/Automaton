@@ -5,10 +5,29 @@ const StyledDiv = styled.div`
   padding: 8px;
   margin-bottom: 12px;
   background: #1a1d21;
+
+  position: relative;
   box-shadow:
     rgba(6, 24, 44, 0.4) 0px 0px 0px 2px,
     rgb(1 1 4 / 44%) 0px 4px 6px -1px,
     rgba(255, 255, 255, 0.08) 0px 1px 0px inset;
+
+  &::before {
+    content: '';
+    transform: translateY(-50%);
+    position: absolute;
+    top: 50%;
+    left: -28px;
+    width: 10px;
+    height: 29px;
+    background: ${(props) => (props.$running ? `#65b323` : `#1a1d21`)};
+    border-radius: 16px;
+    box-shadow: ${(props) =>
+      props.$running
+        ? 'rgba(6, 24, 44, 0.4) 0px 0px 0px 2px, rgb(143 255 0 / 80%) 0px 0px 6px -1px, rgba(255, 255, 255, 0.08) 0px 1px 0px inset'
+        : 'rgba(6, 24, 44, 0.4) 0px 0px 0px 2px, rgb(1 1 4 / 44%) 0px 0px 6px -1px, rgba(255, 255, 255, 0.08) 0px 1px 0px inset'};
+  }
+
   summary {
     cursor: pointer;
     display: flex;

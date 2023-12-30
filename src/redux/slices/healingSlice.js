@@ -55,10 +55,15 @@ const healingSlice = createSlice({
         }
       }
     },
+    reorderRules: (state, action) => {
+      const { startIndex, endIndex } = action.payload;
+      const [removed] = state.splice(startIndex, 1);
+      state.splice(endIndex, 0, removed);
+    },
   },
 });
 
-export const { addRule, removeRule, updateRule, addColor, removeColor, toggleColor } =
+export const { addRule, removeRule, updateRule, addColor, removeColor, toggleColor, reorderRules } =
   healingSlice.actions;
 
 export default healingSlice;
