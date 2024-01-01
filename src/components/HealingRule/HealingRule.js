@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
+import Switch from 'react-switch';
+import { Trash2, ChevronDown, ChevronUp, PlusCircle } from 'react-feather';
+import InputMask from 'react-input-mask';
+import Select from 'react-select';
+
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import {
   updateRule,
@@ -10,9 +15,109 @@ import {
   removeRule,
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
-import { Trash2, ChevronDown, ChevronUp, PlusSquare, PlusCircle } from 'react-feather';
 
 const { api } = window;
+const keys = [
+  'Return',
+  'Enter',
+  'Escape',
+  'BackSpace',
+  'Tab',
+  'Space',
+  'Delete',
+  'Home',
+  'End',
+  'Left',
+  'Up',
+  'Right',
+  'Down',
+  'Page_Up',
+  'Page_Down',
+  'Shift_L',
+  'Shift_R',
+  'Control_L',
+  'Control_R',
+  'Alt_L',
+  'Alt_R',
+  'Meta_L',
+  'Meta_R',
+  'Super_L',
+  'Super_R',
+  'F1',
+  'F2',
+  'F3',
+  'F4',
+  'F5',
+  'F6',
+  'F7',
+  'F8',
+  'F9',
+  'F10',
+  'F11',
+  'F12',
+  '0',
+  '1',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  'a',
+  'b',
+  'c',
+  'd',
+  'e',
+  'f',
+  'g',
+  'h',
+  'i',
+  'j',
+  'k',
+  'l',
+  'm',
+  'n',
+  'o',
+  'p',
+  'q',
+  'r',
+  's',
+  't',
+  'u',
+  'v',
+  'w',
+  'x',
+  'y',
+  'z',
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'G',
+  'H',
+  'I',
+  'J',
+  'K',
+  'L',
+  'M',
+  'N',
+  'O',
+  'P',
+  'Q',
+  'R',
+  'S',
+  'T',
+  'U',
+  'V',
+  'W',
+  'X',
+  'Y',
+  'Z',
+].map((key) => ({ value: key, label: key }));
 
 const HealingRule = ({ rule }) => {
   const dispatch = useDispatch();
@@ -53,20 +158,26 @@ const HealingRule = ({ rule }) => {
             </label>
           </div>
           <div className="input-wrapper">
-            <input
-              className="input"
+            <select
+              className="input input-key"
               id="key"
               value={healing.key}
               onChange={(event) => dispatch(updateRule({ ...healing, key: event.target.value }))}
-              placeholder="F1"
-              disabled={healing.enabled} // Disable when rule is enabled
-            />
+              disabled={healing.enabled}
+            >
+              {keys.map((key) => (
+                <option key={key.value} value={key.value}>
+                  {key.label}
+                </option>
+              ))}
+            </select>
+
             <label className="label" htmlFor="key">
               Key
             </label>
           </div>
           <div className="input-wrapper">
-            <input
+            <InputMask
               className="input"
               id="interval"
               value={healing.interval}
@@ -75,19 +186,27 @@ const HealingRule = ({ rule }) => {
               }
               placeholder="100"
               disabled={healing.enabled} // Disable when rule is enabled
+              mask="999999"
             />
             <label className="label" htmlFor="interval">
               Interval (ms)
             </label>
           </div>
           <div className="input-wrapper input-wrapper-checkbox">
-            <input
-              className="input"
-              id="enabled"
-              type="checkbox"
-              checked={!!healing.enabled}
+            <Switch
+              checked={healing.enabled}
               onChange={() => dispatch(updateRule({ ...healing, enabled: !healing.enabled }))}
               disabled={!allFieldsFilled}
+              offColor="#808080" // or any color of your choice
+              onColor="#00ff00" // or any color of your choice
+              handleDiameter={30}
+              uncheckedIcon={false}
+              checkedIcon={false}
+              boxShadow="0px 1px 5px rgba(0, 0, 0, 0.6)"
+              activeBoxShadow="0px 0px 1px 10px rgba(0, 0, 0, 0.2)"
+              height={20}
+              width={48}
+              className="react-switch"
             />
           </div>
           <button type="button" onClick={handleRemoveRule} disabled={healing.enabled}>

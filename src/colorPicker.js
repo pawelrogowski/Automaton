@@ -2,9 +2,23 @@ const { BrowserWindow, ipcMain } = require('electron');
 const robotjs = require('robotjs');
 const iohook = require('iohook2');
 const path = require('path');
+const { screen } = require('electron');
 
-ipcMain.handle('pick-color', () => {
+ipcMain.handle('pick-color', (event) => {
   return new Promise((resolve) => {
+    const mainWindow = BrowserWindow.fromWebContents(event.sender);
+    mainWindow.hide();
+
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
+    const transparentWindow = new BrowserWindow({
+      width,
+      height,
+      frame: false,
+      transparent: true,
+      focusable: true,
+    });
+
     const colorPickerWindow = new BrowserWindow({
       width: 50,
       height: 50,
@@ -47,12 +61,28 @@ ipcMain.handle('pick-color', () => {
       colorPickerWindow.setPosition(windowX, windowY);
     };
 
+    const keydownListener = (event) => {
+      if (event.key === 'esc') {
+        iohook.stop();
+        clearInterval(intervalId);
+        colorPickerWindow.webContents.removeAllListeners();
+        colorPickerWindow.close();
+        transparentWindow.close();
+        mainWindow.show();
+        reject(new Error('Color picking cancelled'));
+      }
+    };
+
+    iohook.on('keydown', keydownListener);
+
     const mouseDownListener = (mouseEvent) => {
       const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
       iohook.stop();
       clearInterval(intervalId);
       colorPickerWindow.webContents.removeAllListeners();
       colorPickerWindow.close();
+      transparentWindow.close();
+      mainWindow.show();
       resolve({ color, x: mouseEvent.x, y: mouseEvent.y });
     };
 
