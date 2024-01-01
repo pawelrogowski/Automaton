@@ -30,7 +30,7 @@ ipcMain.handle('startMonitoring', (event, rule) => {
 ipcMain.handle('stopMonitoring', (event, ruleId) => {
   const monitorProcess = monitoringIntervals[ruleId];
   if (monitorProcess) {
-    monitorProcess.kill();
+    monitorProcess.kill(); // Kill the child process
     delete monitoringIntervals[ruleId];
   }
 });

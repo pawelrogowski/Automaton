@@ -25,7 +25,6 @@ const StyledDiv = styled.div`
     position: relative;
     height: 32px;
     margin-top: 4px;
-    margin-left: auto;
   }
   .input {
     width: 100px;
@@ -101,10 +100,14 @@ const StyledDiv = styled.div`
   .remove-rule-icon {
     transition: stroke 200ms;
     stroke: #fafafa;
+
     &:hover {
       cursor: pointer;
       stroke: #bf2828;
     }
+  }
+  .remove-rule-button {
+    margin-left: auto;
   }
   .remove-color {
     margin-left: auto;

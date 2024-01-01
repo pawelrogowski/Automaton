@@ -1,10 +1,11 @@
 const { BrowserWindow, Menu, dialog } = require('electron');
-const { exec } = require('child_process');
+const { exec, fork } = require('child_process');
 const url = require('url');
 const path = require('path');
 
 let mainWindow;
 let selectedWindowId;
+let workerProcess;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -16,9 +17,6 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
-
-  // mainWindow.setMenuBarVisibility(false);
-  mainWindow.webContents.openDevTools();
 
   const startUrl =
     process.env.ELECTRON_START_URL ||
@@ -32,6 +30,10 @@ const createWindow = () => {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.on('ready-to-show', () => {
+    mainWindow.show();
   });
 
   const menu = Menu.buildFromTemplate([
@@ -93,6 +95,19 @@ const createWindow = () => {
                 }
               }
               mainWindow.setTitle(`Automaton - ${windowTitle}`);
+
+              // If a worker process is already running, kill it
+              if (workerProcess) {
+                workerProcess.kill();
+              }
+
+              workerProcess = fork(path.join(__dirname, 'findHealthBar.js'));
+              workerProcess.send({ command: 'start', windowId: selectedWindowId });
+
+              // When the parent process is closed, kill the child process
+              process.on('exit', () => {
+                workerProcess.kill();
+              });
             });
         });
       },
