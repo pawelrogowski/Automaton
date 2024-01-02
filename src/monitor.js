@@ -1,5 +1,5 @@
-const robotjs = require('robotjs');
-const exec = require('child_process').exec;
+import robotjs from 'robotjs';
+import { exec } from 'child_process';
 
 process.on('message', (rule) => {
   setInterval(() => {

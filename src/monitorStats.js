@@ -1,5 +1,5 @@
-const { getPixelColor } = require('robotjs');
-const { execSync } = require('child_process');
+import robotjs from 'robotjs';
+import { execSync } from 'child_process';
 
 const hpBarColors = ['783d40', 'd34f4f', 'db4f4f', 'c24a4a', '642e31'];
 const manaBarColors = ['3d3d7d', '524fd3', '5350da', '4d4ac2', '2d2d69'];
@@ -51,7 +51,7 @@ const calculatePercentage = (barStartPos, barLength, colors) => {
 
   while (start < end) {
     mid = Math.floor((start + end) / 2);
-    const color = getPixelColor(mid, barStartPos.y);
+    const color = robotjs.getPixelColor(mid, barStartPos.y);
 
     if (colors.includes(color)) {
       start = mid + 1;
@@ -78,7 +78,7 @@ const findBars = (bounds) => {
   for (let x = bounds.endX; x >= bounds.startX; x -= 1) {
     for (let y = bounds.startY; y <= bounds.endY; y += 1) {
       // Get color of current pixel
-      const color = getPixelColor(x, y);
+      const color = robotjs.getPixelColor(x, y);
 
       // Check if color matches health bar color
       if (color === hpBarColors[0] || color === hpBarColors[1]) {
@@ -90,7 +90,7 @@ const findBars = (bounds) => {
 
     // Check if color matches mana bar color
     if (healthBarStartPos !== null) {
-      const color = getPixelColor(healthBarStartPos.x, healthBarStartPos.y + 13);
+      const color = robotjs.getPixelColor(healthBarStartPos.x, healthBarStartPos.y + 13);
       if (color === manaBarColors[0] || color === manaBarColors[1]) {
         manaBarStartPos = { x: healthBarStartPos.x, y: healthBarStartPos.y + 13 };
       }
@@ -129,9 +129,13 @@ process.on('message', (message) => {
     const newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
     console.timeEnd('Percentage Check Time');
 
+    // Dispatch the actions
+    process.send({ type: 'gameState/setHpPercentage', payload: newHealthPercentage });
+    process.send({ type: 'gameState/setManaPercentage', payload: newManaPercentage });
+
     console.log(`Health Bar Percentage: ${newHealthPercentage}%`);
     console.log(`Mana Bar Percentage: ${newManaPercentage}%`);
-  }, 10);
+  }, 50);
 });
 
 process.on('SIGINT', () => {

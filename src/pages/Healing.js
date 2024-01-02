@@ -9,6 +9,7 @@ import StyledMain from './Healing.styled.js';
 export const Healing = () => {
   const dispatch = useDispatch();
   const rules = useSelector((state) => state.healing);
+  const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
   const handleAddRule = () => {
     const newRule = {
@@ -35,6 +36,9 @@ export const Healing = () => {
   return (
     <StyledMain>
       <section>
+        <progress max="100" value={hpPercentage} />
+        <progress max="100" value={manaPercentage} />
+
         <button className="add-button" type="button" onClick={handleAddRule}>
           <PlusSquare className="add-healing-rule" size={32} />
         </button>

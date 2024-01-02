@@ -1,8 +1,7 @@
-const { BrowserWindow, ipcMain } = require('electron');
-const robotjs = require('robotjs');
-const iohook = require('iohook2');
-const path = require('path');
-const { screen } = require('electron');
+import { BrowserWindow, ipcMain, screen } from 'electron';
+import robotjs from 'robotjs';
+import iohook from 'iohook2';
+import path from 'path';
 
 ipcMain.handle('pick-color', (event) => {
   return new Promise((resolve) => {
@@ -36,7 +35,7 @@ ipcMain.handle('pick-color', (event) => {
       },
     });
 
-    colorPickerWindow.loadFile(path.join(__dirname, 'windows', 'colorPicker', 'colorPicker.html'));
+    colorPickerWindow.loadFile('./windows/colorPicker/colorPicker.html');
 
     let intervalId;
 

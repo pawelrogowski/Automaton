@@ -1,7 +1,7 @@
-const { app } = require('electron');
-const { createWindow } = require('./createWindow.js');
-require('./colorPicker.js');
-require('./monitoring.js');
+import { app } from 'electron';
+import { createWindow } from './createWindow.js';
+import './colorPicker.js';
+import './monitoring.js';
 
 app.on('ready', createWindow);
 

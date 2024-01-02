@@ -1,7 +1,7 @@
-const { ipcMain } = require('electron');
-const { fork } = require('child_process');
-const path = require('path');
-const { getSelectedWindowId } = require('./createWindow.js'); // Import getSelectedWindowId here
+import { ipcMain } from 'electron';
+import { fork } from 'child_process';
+import path from 'path';
+import { getSelectedWindowId } from './createWindow.js';
 
 const monitoringIntervals = {};
 

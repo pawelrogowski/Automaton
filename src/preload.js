@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('preload script loaded');
 
+contextBridge.exposeInMainWorld('electron', {
+  ipcRenderer: {
+    on: (channel, func) => ipcRenderer.on(channel, func),
+    removeListener: (channel, func) => ipcRenderer.removeListener(channel, func),
+  },
+});
+
 contextBridge.exposeInMainWorld('api', {
   // robotjs
   // Moves the mouse to the specified coordinates.

@@ -1,27 +1,32 @@
-const { BrowserWindow, Menu, dialog } = require('electron');
-const { exec, fork } = require('child_process');
-const url = require('url');
-const path = require('path');
+import { BrowserWindow, Menu, dialog } from 'electron';
+import { exec, fork } from 'child_process';
+import path from 'path';
+import url, { fileURLToPath } from 'url';
+
+const filename = fileURLToPath(import.meta.url);
+const dirname = path.dirname(filename);
 
 let mainWindow;
 let selectedWindowId;
 let workerProcess;
 
-const createWindow = () => {
+export const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 720,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(dirname, '/preload.js'),
     },
   });
+
+  mainWindow.webContents.openDevTools();
 
   const startUrl =
     process.env.ELECTRON_START_URL ||
     url.format({
-      pathname: path.join(__dirname, '/../dist/index.html'),
+      pathname: path.join(dirname, '../dist/index.html'),
       protocol: 'file:',
       slashes: true,
     });
@@ -101,9 +106,12 @@ const createWindow = () => {
                 workerProcess.kill();
               }
 
-              workerProcess = fork(path.join(__dirname, 'findHealthBar.js'));
+              workerProcess = fork(path.join(dirname, 'monitorStats.js'));
               workerProcess.send({ command: 'start', windowId: selectedWindowId });
-
+              workerProcess.on('message', (message) => {
+                // Send IPC message to renderer process
+                mainWindow.webContents.send('dispatch', message);
+              });
               // When the parent process is closed, kill the child process
               process.on('exit', () => {
                 workerProcess.kill();
@@ -116,6 +124,6 @@ const createWindow = () => {
   Menu.setApplicationMenu(menu);
 };
 
-const getSelectedWindowId = () => selectedWindowId;
+export const getSelectedWindowId = () => selectedWindowId;
 
-module.exports = { createWindow, mainWindow, getSelectedWindowId };
+export { mainWindow };

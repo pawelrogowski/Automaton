@@ -2,7 +2,7 @@ import styled from 'styled-components';
 
 const StyledMain = styled.main`
   section {
-    padding: 8px 12px;
+    padding: 40px 12px;
     margin: 0 12px;
   }
   .add-healing-rule {
