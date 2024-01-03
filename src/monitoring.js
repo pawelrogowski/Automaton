@@ -1,36 +1,31 @@
 import { ipcMain } from 'electron';
 import { fork } from 'child_process';
 import path from 'path';
-import { getSelectedWindowId } from './createWindow.js';
+import { fileURLToPath } from 'url';
+import { getSelectedWindowId } from './menu/windowSelection/windowSelection.js';
+
+const filename = fileURLToPath(import.meta.url);
+const dirname = path.dirname(filename);
 
 const monitoringIntervals = {};
 
-ipcMain.handle('startMonitoring', (event, rule) => {
+ipcMain.handle('startMonitoring', (_, rule) => {
+  console.log('rule enabled', rule);
   const selectedWindowId = getSelectedWindowId();
   if (!selectedWindowId) {
-    console.log('No window selected');
+    console.log('no window selected, canceling');
     return;
   }
-
-  const monitorProcess = fork(path.join(__dirname, 'monitor.js'));
-
-  monitorProcess.send({ ...rule, windowId: selectedWindowId });
-
-  monitorProcess.send(rule);
-
-  monitorProcess.on('message', (message) => {
-    if (message.error) {
-      console.log(message.error);
-    }
-  });
-
-  monitoringIntervals[rule.id] = monitorProcess;
+  const monitorRuleProcess = fork(path.join(dirname, 'monitor.js'));
+  monitorRuleProcess.send({ type: 'start', rule, windowId: getSelectedWindowId() });
+  console.log('process started');
+  monitoringIntervals[rule.id] = monitorRuleProcess;
 });
 
-ipcMain.handle('stopMonitoring', (event, ruleId) => {
-  const monitorProcess = monitoringIntervals[ruleId];
-  if (monitorProcess) {
-    monitorProcess.kill(); // Kill the child process
+ipcMain.handle('stopMonitoring', (_, ruleId) => {
+  const ruleMonitorStatsProcess = monitoringIntervals[ruleId];
+  if (ruleMonitorStatsProcess) {
+    ruleMonitorStatsProcess.kill(); // Kill the child process
     delete monitoringIntervals[ruleId];
   }
 });

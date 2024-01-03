@@ -15,6 +15,7 @@
         "js": "always",
         "mjs": "never"
       }
-    ]
+    ],
+    "no-console": "off"
   }
 }

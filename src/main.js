@@ -1,10 +1,13 @@
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { createWindow } from './createWindow.js';
 import './colorPicker.js';
 import './monitoring.js';
+import setupAppMenu from './menu/appMenu.js';
 
-app.on('ready', createWindow);
-
+app.whenReady().then(() => {
+  createWindow();
+  setupAppMenu();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -12,7 +15,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) {
+  if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
 });

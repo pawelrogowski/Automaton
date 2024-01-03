@@ -3,6 +3,7 @@ import styled from 'styled-components';
 const StyledDiv = styled.div`
   border-radius: 4px;
   padding: 8px;
+  padding-top: 13px;
   margin-bottom: 12px;
   background: #1a1d21;
 
@@ -131,6 +132,19 @@ const StyledDiv = styled.div`
       font-size: 9px;
       color: #fafafa;
     }
+  }
+
+  .input-percent {
+    width: 56px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding-right: 4px;
+  }
+  .input-percent-select {
+    width: 58px;
+
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
   }
 `;
 

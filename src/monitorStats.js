@@ -105,9 +105,27 @@ const findBars = (bounds) => {
   // Calculate percentages using new function
   if (healthBarStartPos !== null) {
     healthPercentage = calculatePercentage(healthBarStartPos, 92, hpBarColors);
+    if (healthPercentage === 0) {
+      const color = robotjs.getPixelColor(healthBarStartPos.x, healthBarStartPos.y);
+      if (color === '373c47') {
+        healthPercentage = 0;
+        console.log('Health dropped to 0%');
+      } else {
+        console.log('Could not find the health bar');
+      }
+    }
   }
   if (manaBarStartPos !== null) {
     manaPercentage = calculatePercentage(manaBarStartPos, 92, manaBarColors);
+    if (manaPercentage === 0) {
+      const color = robotjs.getPixelColor(manaBarStartPos.x, manaBarStartPos.y);
+      if (color === '373c47') {
+        manaPercentage = 0;
+        console.log('Mana dropped to 0%');
+      } else {
+        console.log('Could not find the mana bar');
+      }
+    }
   }
 
   // Return health bar and mana bar start positions and percentages
@@ -119,23 +137,44 @@ process.on('message', (message) => {
   const windowGeometry = getWindowGeometry(windowId);
   const bounds = calculateBounds(windowGeometry);
 
-  console.time('Execution Time');
   const bars = findBars(bounds);
-  console.timeEnd('Execution Time');
 
   setInterval(() => {
-    console.time('Percentage Check Time');
-    const newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
-    const newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
-    console.timeEnd('Percentage Check Time');
+    let newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
+    let newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
+
+    if (newHealthPercentage === 0) {
+      const color = robotjs.getPixelColor(bars.healthBarStartPos.x, bars.healthBarStartPos.y);
+      if (color === '373c47') {
+        newHealthPercentage = 0;
+        console.log('Health dropped to 0%');
+      } else {
+        console.log('Could not find the health bar');
+      }
+    }
+
+    if (newManaPercentage === 0) {
+      const color = robotjs.getPixelColor(bars.manaBarStartPos.x, bars.manaBarStartPos.y);
+      if (color === '373c47') {
+        newManaPercentage = 0;
+        console.log('Mana dropped to 0%');
+      } else {
+        console.log('Could not find the mana bar');
+      }
+    }
 
     // Dispatch the actions
-    process.send({ type: 'gameState/setHpPercentage', payload: newHealthPercentage });
-    process.send({ type: 'gameState/setManaPercentage', payload: newManaPercentage });
+    process.send({
+      type: 'gameState/setPercentages',
+      payload: { hpPercentage: newHealthPercentage, manaPercentage: newManaPercentage },
+    });
 
-    console.log(`Health Bar Percentage: ${newHealthPercentage}%`);
-    console.log(`Mana Bar Percentage: ${newManaPercentage}%`);
-  }, 50);
+    console.log(newHealthPercentage, newManaPercentage);
+  }, 1000);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception in monitorStats.js:', err);
 });
 
 process.on('SIGINT', () => {

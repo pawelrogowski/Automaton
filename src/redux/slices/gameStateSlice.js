@@ -9,15 +9,13 @@ const gameStateSlice = createSlice({
   name: 'gameState',
   initialState,
   reducers: {
-    setHpPercentage: (state, action) => {
-      state.hpPercentage = action.payload;
-    },
-    setManaPercentage: (state, action) => {
-      state.manaPercentage = action.payload;
+    setPercentages: (state, action) => {
+      state.hpPercentage = action.payload.hpPercentage;
+      state.manaPercentage = action.payload.manaPercentage;
     },
   },
 });
 
-export const { setHpPercentage, setManaPercentage } = gameStateSlice.actions;
+export const { setPercentages } = gameStateSlice.actions;
 
 export default gameStateSlice;

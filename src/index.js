@@ -4,11 +4,12 @@ import 'modern-normalize/modern-normalize.css';
 import './index.css';
 import { HashRouter as Router, Route, Routes } from 'react-router-dom';
 import { Provider } from 'react-redux';
+import { ThemeProvider } from 'styled-components';
 import { Healing } from './pages/Healing.js';
 import { Actions } from './pages/Actions.js';
 import { Console } from './pages/Console.js';
 import Layout from './layouts/Layout.js';
-import { ThemeProvider } from 'styled-components';
+
 import store from './redux/store.js';
 
 const { ipcRenderer } = window.electron;
@@ -19,7 +20,7 @@ const theme = {
   },
 };
 
-ipcRenderer.on('dispatch', (event, action) => {
+ipcRenderer.on('dispatch', (_, action) => {
   store.dispatch(action);
 });
 

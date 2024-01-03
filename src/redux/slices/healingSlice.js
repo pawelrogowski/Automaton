@@ -18,6 +18,7 @@ const healingSlice = createSlice({
         state[index] = action.payload;
         if (state[index].enabled) {
           window.api.startMonitoring(state[index]);
+          console.log('rule enabled');
         } else {
           window.api.stopMonitoring(state[index].id);
         }

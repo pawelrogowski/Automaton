@@ -2,21 +2,26 @@ import { BrowserWindow, ipcMain, screen } from 'electron';
 import robotjs from 'robotjs';
 import iohook from 'iohook2';
 import path from 'path';
+import url from 'url';
 
 ipcMain.handle('pick-color', (event) => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const mainWindow = BrowserWindow.fromWebContents(event.sender);
-    mainWindow.hide();
+    const displays = screen.getAllDisplays();
 
-    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-
-    const transparentWindow = new BrowserWindow({
-      width,
-      height,
-      frame: false,
-      transparent: true,
-      focusable: true,
+    const transparentWindows = displays.map((display) => {
+      return new BrowserWindow({
+        x: display.bounds.x,
+        y: display.bounds.y,
+        width: display.bounds.width,
+        height: display.bounds.height,
+        frame: false,
+        transparent: true,
+        focusable: true,
+      });
     });
+
+    // Create a transparent window for each display
 
     const colorPickerWindow = new BrowserWindow({
       width: 50,
@@ -35,9 +40,14 @@ ipcMain.handle('pick-color', (event) => {
       },
     });
 
-    colorPickerWindow.loadFile('./windows/colorPicker/colorPicker.html');
+    const currentURL = new URL(import.meta.url);
+    const currentDirname = path.dirname(url.fileURLToPath(currentURL));
+    const colorPickerHTMLPath = path.join(currentDirname, 'windows/colorPicker/colorPicker.html');
+    colorPickerWindow.loadFile(colorPickerHTMLPath);
 
     let intervalId;
+
+    mainWindow.hide();
 
     const mouseMoveListener = (mouseEvent) => {
       const updateColor = () => {
@@ -53,38 +63,35 @@ ipcMain.handle('pick-color', (event) => {
         clearInterval(intervalId);
       }
 
-      intervalId = setInterval(updateColor, 50);
+      intervalId = setInterval(updateColor, 10);
 
       const windowX = mouseEvent.x + 20;
       const windowY = mouseEvent.y - 20;
       colorPickerWindow.setPosition(windowX, windowY);
     };
 
-    const keydownListener = (event) => {
-      if (event.key === 'esc') {
-        iohook.stop();
-        clearInterval(intervalId);
-        colorPickerWindow.webContents.removeAllListeners();
-        colorPickerWindow.close();
-        transparentWindow.close();
-        mainWindow.show();
+    const cleanup = () => {
+      iohook.stop();
+      clearInterval(intervalId);
+      colorPickerWindow.close();
+      transparentWindows.forEach((window) => window.close());
+      mainWindow.show();
+    };
+
+    const keydownListener = (e) => {
+      if (e.key === 'esc') {
+        cleanup();
         reject(new Error('Color picking cancelled'));
       }
     };
 
-    iohook.on('keydown', keydownListener);
-
     const mouseDownListener = (mouseEvent) => {
       const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
-      iohook.stop();
-      clearInterval(intervalId);
-      colorPickerWindow.webContents.removeAllListeners();
-      colorPickerWindow.close();
-      transparentWindow.close();
-      mainWindow.show();
+      cleanup();
       resolve({ color, x: mouseEvent.x, y: mouseEvent.y });
     };
 
+    iohook.on('keydown', keydownListener);
     iohook.on('mousemove', mouseMoveListener);
     iohook.on('mousedown', mouseDownListener);
     iohook.start();

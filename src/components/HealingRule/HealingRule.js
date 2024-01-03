@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
 import Switch from 'react-switch';
 import { Trash2, ChevronDown, ChevronUp, PlusCircle } from 'react-feather';
-import InputMask from 'react-input-mask';
-import Select from 'react-select';
+import _ from 'lodash';
 
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import {
@@ -124,6 +123,16 @@ const HealingRule = ({ rule }) => {
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
 
   const [isOpen, setIsOpen] = useState(false);
+  const [localHealing, setLocalHealing] = useState(healing);
+
+  useEffect(() => {
+    const debouncedUpdate = _.debounce(() => {
+      dispatch(updateRule(localHealing));
+    }, 500);
+    debouncedUpdate();
+    // Cleanup function to cancel the debounce on unmount
+    return debouncedUpdate.cancel;
+  }, [localHealing, dispatch]);
 
   const handleColorPick = async () => {
     const colorData = await api.pickColor();
@@ -147,7 +156,13 @@ const HealingRule = ({ rule }) => {
           <div className="input-wrapper input-wrapper-checkbox">
             <Switch
               checked={healing.enabled}
-              onChange={() => dispatch(updateRule({ ...healing, enabled: !healing.enabled }))}
+              onChange={() =>
+                setLocalHealing({
+                  ...localHealing,
+                  enabled: !localHealing.enabled,
+                  colors: healing.colors,
+                })
+              }
               disabled={!allFieldsFilled}
               offColor="#ff1c1c"
               onColor="#00ff00"
@@ -165,21 +180,34 @@ const HealingRule = ({ rule }) => {
             <input
               className="input"
               id="name"
-              value={healing.name}
-              onChange={(event) => dispatch(updateRule({ ...healing, name: event.target.value }))}
+              value={localHealing.name}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  name: event.target.value,
+                  colors: healing.colors,
+                })
+              }
               placeholder="Rule Name"
               disabled={healing.enabled}
             />
             <label className="label" htmlFor="name">
-              Name
+              Rule Name
             </label>
           </div>
           <div className="input-wrapper">
             <select
               className="input input-key"
               id="key"
-              value={healing.key}
-              onChange={(event) => dispatch(updateRule({ ...healing, key: event.target.value }))}
+              value={localHealing.key}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  key: event.target.value,
+                  colors: healing.colors,
+                })
+              }
+              placeholder="F1"
               disabled={healing.enabled}
             >
               {keys.map((key) => (
@@ -190,23 +218,120 @@ const HealingRule = ({ rule }) => {
             </select>
 
             <label className="label" htmlFor="key">
-              Key
+              Hotkey
             </label>
           </div>
           <div className="input-wrapper">
-            <InputMask
+            <select
+              className="input input-percent-select"
+              id="hpTriggerCondition"
+              value={localHealing.hpTriggerCondition}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  hpTriggerCondition: event.target.value,
+                  colors: healing.colors,
+                })
+              }
+              disabled={healing.enabled}
+            >
+              <option value="<=">{'<='}</option>
+              <option value="<">{'<'}</option>
+              <option value="=">{'='}</option>
+              <option value=">">{'>'}</option>
+              <option value=">=">{'>='}</option>
+              <option value="!=">{'!='}</option>
+            </select>
+            <input
+              className="input input-percent"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              id="hpTriggerPercentage"
+              value={localHealing.hpTriggerPercentage}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  hpTriggerPercentage: event.target.value,
+                  colors: healing.colors,
+                })
+              }
+              placeholder="0"
+              disabled={healing.enabled}
+            />
+            <label className="label" htmlFor="hpTriggerPercentage">
+              Health %
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <select
+              className="input input-percent-select"
+              id="manaTriggerCondition"
+              value={localHealing.manaTriggerCondition}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  manaTriggerCondition: event.target.value,
+                  colors: healing.colors,
+                })
+              }
+              disabled={healing.enabled}
+            >
+              <option value="<=">{'<='}</option>
+              <option value="<">{'<'}</option>
+              <option value="=">{'='}</option>
+              <option value=">">{'>'}</option>
+              <option value=">=">{'>='}</option>
+              <option value="!=">{'!='}</option>
+            </select>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              className="input input-percent"
+              id="manaTriggerPercentage"
+              value={localHealing.manaTriggerPercentage}
+              onChange={(event) => {
+                if (event.target.value !== undefined) {
+                  setLocalHealing({
+                    ...localHealing,
+                    manaTriggerPercentage: event.target.value,
+                    colors: healing.colors,
+                  });
+                }
+              }}
+              placeholder="0"
+              disabled={healing.enabled}
+            />
+            <label className="label label-percent" htmlFor="manaTriggerPercentage">
+              Mana %
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <input
+              type="number"
               className="input"
               id="interval"
-              value={healing.interval}
-              onChange={(event) =>
-                dispatch(updateRule({ ...healing, interval: event.target.value }))
-              }
-              placeholder="100"
+              value={localHealing.interval}
+              onChange={(event) => {
+                if (event.target.value !== undefined) {
+                  setLocalHealing({
+                    ...localHealing,
+                    interval: event.target.value,
+                    colors: healing.colors,
+                  });
+                }
+              }}
+              placeholder="100 ms"
+              min={10}
+              max={9999999}
+              step={100}
               disabled={healing.enabled}
-              mask="999999"
             />
             <label className="label" htmlFor="interval">
-              Interval (ms)
+              Refresh
             </label>
           </div>
           <button
