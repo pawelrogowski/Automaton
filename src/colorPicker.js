@@ -18,12 +18,16 @@ ipcMain.handle('pick-color', (event) => {
         frame: false,
         transparent: true,
         focusable: true,
+        webPreferences: {
+          sandbox: false,
+        },
       });
     });
 
     // Create a transparent window for each display
 
     const colorPickerWindow = new BrowserWindow({
+      sandbox: false,
       width: 50,
       height: 50,
       alwaysOnTop: true,
@@ -34,6 +38,7 @@ ipcMain.handle('pick-color', (event) => {
       focusable: false,
       hasShadow: false,
       webPreferences: {
+        sandbox: false,
         nodeIntegration: false,
         enableRemoteModule: false,
         contextIsolation: true,

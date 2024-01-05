@@ -1,10 +1,13 @@
 import robotjs from 'robotjs';
 import { execSync } from 'child_process';
+import x11 from 'x11';
 
 const hpBarColors = ['783d40', 'd34f4f', 'db4f4f', 'c24a4a', '642e31'];
 const manaBarColors = ['3d3d7d', '524fd3', '5350da', '4d4ac2', '2d2d69'];
 
 let windowGeometryCache = null;
+let displayGeometryCache = null;
+let screenshotData = null;
 
 const getWindowGeometry = (windowId) => {
   // Check if window geometry is cached
@@ -33,6 +36,63 @@ const getWindowGeometry = (windowId) => {
   return windowGeometryCache;
 };
 
+const getDisplayGeometry = () => {
+  if (!displayGeometryCache) {
+    // Get display geometry using xdotool
+    const output = execSync(`xdotool getdisplaygeometry`).toString();
+
+    // Parse output to get display geometry
+    const match = output.match(/(\d+) (\d+)/);
+    if (match) {
+      const [, width, height] = match;
+
+      // Cache display geometry
+      displayGeometryCache = {
+        width: parseInt(width, 10),
+        height: parseInt(height, 10),
+      };
+    }
+  }
+
+  // Return cached window geometry
+  return displayGeometryCache;
+};
+getDisplayGeometry();
+console.log(displayGeometryCache);
+
+x11.createClient((err, display) => {
+  if (err) {
+    console.error(err);
+    return;
+  }
+
+  const X = display.client;
+  const { root } = display.screen[0];
+  // Define the region to capture (x, y, width, height)
+  const region = {
+    x: 0,
+    y: 0,
+    width: displayGeometryCache.width,
+    height: displayGeometryCache.height,
+  };
+
+  // Function to capture the screenshot
+
+  const getScreenData = () => {
+    X.GetImage(2, root, region.x, region.y, region.width, region.height, 0xffffffff, (er, img) => {
+      if (er) {
+        console.error(er);
+        return;
+      }
+      console.log(img.data);
+      screenshotData = img.data;
+    });
+  };
+  setInterval(() => {
+    getScreenData();
+  }, 10);
+});
+
 const calculateBounds = (windowGeometry) => {
   // Calculate bounds for searching
   const startX = windowGeometry.x + windowGeometry.width - 154;
@@ -45,18 +105,13 @@ const calculateBounds = (windowGeometry) => {
 };
 
 const calculatePercentage = (barStartPos, barLength, colors) => {
-  let start = 0;
-  let end = barLength;
+  let start = barStartPos.x;
+  let end = barStartPos.x + barLength;
   let mid;
-  const screenshot = robotjs.screen.capture(3, 3, 3, 3);
-  // Get the colors of all pixels in the bar
-  const pixelColors = Array.from({ length: barLength }, (_, i) =>
-    robotjs.getPixelColor(barStartPos.x + i, barStartPos.y),
-  );
 
   while (start < end) {
     mid = Math.floor((start + end) / 2);
-    const color = pixelColors[mid];
+    const color = robotjs.getPixelColor(mid, barStartPos.y);
 
     if (colors.includes(color)) {
       start = mid + 1;
@@ -70,7 +125,7 @@ const calculatePercentage = (barStartPos, barLength, colors) => {
     }
   }
 
-  return Math.floor((start / barLength) * 100);
+  return Math.floor(((start - barStartPos.x) / barLength) * 100);
 };
 
 const findBars = (bounds) => {
@@ -144,50 +199,56 @@ process.on('message', (message) => {
 
   const bars = findBars(bounds);
 
-  setInterval(() => {
-    console.time('Total Iteration');
+  const checkScreenshotDataInterval = setInterval(() => {
+    if (screenshotData !== null) {
+      clearInterval(checkScreenshotDataInterval);
 
-    console.time('HP Calculation');
-    let newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
-    console.timeEnd('HP Calculation');
+      setInterval(() => {
+        console.time('Total Iteration');
 
-    console.time('Mana Calculation');
-    let newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
-    console.timeEnd('Mana Calculation');
+        console.time('HP Calculation');
+        let newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
+        console.timeEnd('HP Calculation');
 
-    console.time('HP Check');
-    if (newHealthPercentage === 0) {
-      const color = robotjs.getPixelColor(bars.healthBarStartPos.x, bars.healthBarStartPos.y);
-      if (color === '373c47') {
-        newHealthPercentage = 0;
-        console.log('Health dropped to 0%');
-      } else {
-        console.log('Could not find the health bar');
-      }
+        console.time('Mana Calculation');
+        let newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
+        console.timeEnd('Mana Calculation');
+
+        console.time('HP Check');
+        if (newHealthPercentage === 0) {
+          const color = robotjs.getPixelColor(bars.healthBarStartPos.x, bars.healthBarStartPos.y);
+          if (color === '373c47') {
+            newHealthPercentage = 0;
+            console.log('Health dropped to 0%');
+          } else {
+            console.log('Could not find the health bar');
+          }
+        }
+        console.timeEnd('HP Check');
+
+        console.time('Mana Check');
+        if (newManaPercentage === 0) {
+          const color = robotjs.getPixelColor(bars.manaBarStartPos.x, bars.manaBarStartPos.y);
+          if (color === '373c47') {
+            newManaPercentage = 0;
+            console.log('Mana dropped to 0%');
+          } else {
+            console.log('Could not find the mana bar');
+          }
+        }
+        console.timeEnd('Mana Check');
+
+        console.time('Dispatch Actions');
+        // Dispatch the actions
+        process.send({
+          type: 'gameState/setPercentages',
+          payload: { hpPercentage: newHealthPercentage, manaPercentage: newManaPercentage },
+        });
+        console.timeEnd('Dispatch Actions');
+
+        console.timeEnd('Total Iteration');
+      }, 100);
     }
-    console.timeEnd('HP Check');
-
-    console.time('Mana Check');
-    if (newManaPercentage === 0) {
-      const color = robotjs.getPixelColor(bars.manaBarStartPos.x, bars.manaBarStartPos.y);
-      if (color === '373c47') {
-        newManaPercentage = 0;
-        console.log('Mana dropped to 0%');
-      } else {
-        console.log('Could not find the mana bar');
-      }
-    }
-    console.timeEnd('Mana Check');
-
-    console.time('Dispatch Actions');
-    // Dispatch the actions
-    process.send({
-      type: 'gameState/setPercentages',
-      payload: { hpPercentage: newHealthPercentage, manaPercentage: newManaPercentage },
-    });
-    console.timeEnd('Dispatch Actions');
-
-    console.timeEnd('Total Iteration');
   }, 100);
 });
 
