@@ -37,8 +37,14 @@ const startWorkerProcess = () => {
   workerProcess.on('message', (message) => {
     // Send IPC message to renderer process
     getMainWindow().webContents.send('dispatch', message);
-    console.log(message.payload.hpPercentage, message.payload.manaPercentage);
+    Object.keys(global.monitoringProcesses).forEach((id) => {
+      if (global.monitoringProcesses[id] !== workerProcess) {
+        console.log('forwarding message');
+        global.monitoringProcesses[id].send(message);
+      }
+    });
   });
+
   // When the parent process is closed, kill the child process
   process.on('exit', () => {
     workerProcess.kill();

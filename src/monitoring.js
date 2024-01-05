@@ -7,7 +7,8 @@ import { getSelectedWindowId } from './menu/windowSelection/windowSelection.js';
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-const monitoringIntervals = {};
+global.monitoringProcesses = {};
+const monitoringProcesses = {};
 
 ipcMain.handle('startMonitoring', (_, rule) => {
   console.log('rule enabled', rule);
@@ -18,14 +19,16 @@ ipcMain.handle('startMonitoring', (_, rule) => {
   }
   const monitorRuleProcess = fork(path.join(dirname, 'monitor.js'));
   monitorRuleProcess.send({ type: 'start', rule, windowId: getSelectedWindowId() });
+  global.monitoringProcesses[rule.id] = monitorRuleProcess;
   console.log('process started');
-  monitoringIntervals[rule.id] = monitorRuleProcess;
+  monitoringProcesses[rule.id] = monitorRuleProcess;
 });
 
 ipcMain.handle('stopMonitoring', (_, ruleId) => {
-  const ruleMonitorStatsProcess = monitoringIntervals[ruleId];
+  const ruleMonitorStatsProcess = monitoringProcesses[ruleId];
   if (ruleMonitorStatsProcess) {
     ruleMonitorStatsProcess.kill(); // Kill the child process
-    delete monitoringIntervals[ruleId];
+    delete monitoringProcesses[ruleId];
+    delete global.monitoringProcesses[ruleId];
   }
 });

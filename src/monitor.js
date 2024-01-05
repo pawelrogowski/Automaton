@@ -1,9 +1,8 @@
 import robotjs from 'robotjs';
 import { exec } from 'child_process';
 
-let hpPercentage = null;
-let manaPercentage = null;
-let intervalId;
+let currentHP = null;
+let currentMP = null;
 
 function evaluateCondition(condition, triggerPercentage, actualPercentage) {
   switch (condition) {
@@ -25,39 +24,40 @@ function evaluateCondition(condition, triggerPercentage, actualPercentage) {
 }
 
 console.log('a monitor process is working');
-
+let lastExecTime = 0;
 process.on('message', (message) => {
-  console.log('Received message:', message);
-  const { rule, windowId } = message;
-  setInterval(() => {
-    // console.log('second log', message);
-    const colorConditionsMet = rule.colors.every((color) => {
-      const pixelColor = `#${robotjs.getPixelColor(color.x, color.y)}`;
-      return color.enabled ? pixelColor === color.color : pixelColor !== color.color;
-    });
+  if (message.type === 'start') {
+    const { rule, windowId } = message;
+    setInterval(() => {
+      const colorConditionsMet = rule.colors.every((color) => {
+        const pixelColor = `#${robotjs.getPixelColor(color.x, color.y)}`;
+        return color.enabled ? pixelColor === color.color : pixelColor !== color.color;
+      });
+      console.log(currentHP, currentMP, '________________________');
 
-    console.log('Color conditions met:', colorConditionsMet);
+      const hpConditionMet = evaluateCondition(
+        rule.hpTriggerCondition,
+        rule.hpTriggerPercentage,
+        currentHP,
+      );
 
-    const hpConditionMet = evaluateCondition(
-      rule.hpTriggerCondition,
-      rule.hpTriggerPercentage,
-      hpPercentage,
-    );
+      const manaConditionMet = evaluateCondition(
+        rule.manaTriggerCondition,
+        rule.manaTriggerPercentage,
+        currentMP,
+      );
 
-    console.log('HP condition met:', hpConditionMet);
-
-    const manaConditionMet = evaluateCondition(
-      rule.manaTriggerCondition,
-      rule.manaTriggerPercentage,
-      manaPercentage,
-    );
-
-    console.log('Mana condition met:', manaConditionMet);
-
-    if (colorConditionsMet) {
-      exec(`xdotool key --window ${windowId} ${rule.key}`);
-    } else {
-      console.log('no rule triggered');
-    }
-  }, rule.interval);
+      if (colorConditionsMet && manaConditionMet && hpConditionMet) {
+        const currentTime = Date.now();
+        if (currentTime - lastExecTime >= 500) {
+          exec(`xdotool key --window ${windowId} ${rule.key}`);
+          console.log('clicked hotkey', currentTime - lastExecTime >= 500);
+          lastExecTime = Date.now();
+        }
+      }
+    }, rule.interval);
+  } else {
+    currentHP = message.payload.hpPercentage;
+    currentMP = message.payload.manaPercentage;
+  }
 });

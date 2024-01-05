@@ -45,13 +45,18 @@ const calculateBounds = (windowGeometry) => {
 };
 
 const calculatePercentage = (barStartPos, barLength, colors) => {
-  let start = barStartPos.x;
-  let end = barStartPos.x + barLength;
+  let start = 0;
+  let end = barLength;
   let mid;
+  const screenshot = robotjs.screen.capture(3, 3, 3, 3);
+  // Get the colors of all pixels in the bar
+  const pixelColors = Array.from({ length: barLength }, (_, i) =>
+    robotjs.getPixelColor(barStartPos.x + i, barStartPos.y),
+  );
 
   while (start < end) {
     mid = Math.floor((start + end) / 2);
-    const color = robotjs.getPixelColor(mid, barStartPos.y);
+    const color = pixelColors[mid];
 
     if (colors.includes(color)) {
       start = mid + 1;
@@ -65,7 +70,7 @@ const calculatePercentage = (barStartPos, barLength, colors) => {
     }
   }
 
-  return Math.floor(((start - barStartPos.x) / barLength) * 100);
+  return Math.floor((start / barLength) * 100);
 };
 
 const findBars = (bounds) => {
@@ -140,9 +145,17 @@ process.on('message', (message) => {
   const bars = findBars(bounds);
 
   setInterval(() => {
-    let newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
-    let newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
+    console.time('Total Iteration');
 
+    console.time('HP Calculation');
+    let newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
+    console.timeEnd('HP Calculation');
+
+    console.time('Mana Calculation');
+    let newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
+    console.timeEnd('Mana Calculation');
+
+    console.time('HP Check');
     if (newHealthPercentage === 0) {
       const color = robotjs.getPixelColor(bars.healthBarStartPos.x, bars.healthBarStartPos.y);
       if (color === '373c47') {
@@ -152,7 +165,9 @@ process.on('message', (message) => {
         console.log('Could not find the health bar');
       }
     }
+    console.timeEnd('HP Check');
 
+    console.time('Mana Check');
     if (newManaPercentage === 0) {
       const color = robotjs.getPixelColor(bars.manaBarStartPos.x, bars.manaBarStartPos.y);
       if (color === '373c47') {
@@ -162,15 +177,18 @@ process.on('message', (message) => {
         console.log('Could not find the mana bar');
       }
     }
+    console.timeEnd('Mana Check');
 
+    console.time('Dispatch Actions');
     // Dispatch the actions
     process.send({
       type: 'gameState/setPercentages',
       payload: { hpPercentage: newHealthPercentage, manaPercentage: newManaPercentage },
     });
+    console.timeEnd('Dispatch Actions');
 
-    console.log(newHealthPercentage, newManaPercentage);
-  }, 1000);
+    console.timeEnd('Total Iteration');
+  }, 100);
 });
 
 process.on('uncaughtException', (err) => {

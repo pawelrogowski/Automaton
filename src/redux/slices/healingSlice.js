@@ -7,7 +7,12 @@ const healingSlice = createSlice({
   initialState,
   reducers: {
     addRule: (state, action) => {
-      state.push(action.payload);
+      const newRule = {
+        ...action.payload,
+        hpTriggerCondition: action.payload.hpTriggerCondition || '<=',
+        manaTriggerCondition: action.payload.manaTriggerCondition || '>=',
+      };
+      state.push(newRule);
     },
     removeRule: (state, action) => {
       return state.filter((rule) => rule.id !== action.payload);

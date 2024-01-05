@@ -142,8 +142,14 @@ const HealingRule = ({ rule }) => {
     }
   };
 
-  const allFieldsFilled =
-    healing.name && healing.key && healing.interval && healing.colors.length > 0;
+  const requiredFieldsFilled =
+    healing.name &&
+    healing.key &&
+    healing.interval &&
+    healing.hpTriggerCondition &&
+    healing.hpTriggerPercentage &&
+    healing.manaTriggerCondition &&
+    healing.manaTriggerPercentage;
 
   const handleRemoveRule = () => {
     dispatch(removeRule(healing.id));
@@ -163,7 +169,7 @@ const HealingRule = ({ rule }) => {
                   colors: healing.colors,
                 })
               }
-              disabled={!allFieldsFilled}
+              disabled={!requiredFieldsFilled}
               offColor="#ff1c1c"
               onColor="#00ff00"
               handleDiameter={26}
