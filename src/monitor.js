@@ -57,7 +57,11 @@ process.on('message', (message) => {
       }
     }, rule.interval);
   } else {
-    currentHP = message.payload.hpPercentage;
-    currentMP = message.payload.manaPercentage;
+    console.log('MONITOR: ', message);
+    if (message.payload.hpPercentage) {
+      currentHP = message.payload.hpPercentage;
+    } else if (message.payload.manaPercentage) {
+      currentMP = message.payload.manaPercentage;
+    }
   }
 });

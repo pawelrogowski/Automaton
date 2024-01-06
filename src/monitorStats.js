@@ -1,13 +1,247 @@
-import robotjs from 'robotjs';
-import { execSync } from 'child_process';
-import x11 from 'x11';
+import { Performance } from 'perf_hooks';
 
-const hpBarColors = ['783d40', 'd34f4f', 'db4f4f', 'c24a4a', '642e31'];
-const manaBarColors = ['3d3d7d', '524fd3', '5350da', '4d4ac2', '2d2d69'];
+import robotjs from 'robotjs';
+import { exec, execSync } from 'child_process';
+import x11 from 'x11';
 
 let windowGeometryCache = null;
 let displayGeometryCache = null;
-let screenshotData = null;
+let lastHealthPercentage = null;
+let lastManaPercentage = null;
+
+async function createClient() {
+  return new Promise((resolve, reject) => {
+    x11.createClient((err, display) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(display);
+    });
+  });
+}
+
+async function takeScreenshot(X, root, region, logColors, measurePerformance) {
+  return new Promise((resolve, reject) => {
+    const start = performance.now();
+    X.GetImage(
+      2,
+      root,
+      region.x || 0,
+      region.y || 0,
+      region.width || 1920,
+      region.height || 1200,
+      0xffffff,
+      X.ZPixmapFormat,
+      (er, img) => {
+        if (er) {
+          reject(er);
+          return;
+        }
+        const end = performance.now();
+        if (measurePerformance) {
+          console.log(`Capture screenshot took ${end - start} ms`);
+        }
+
+        // Preprocess image data to RGB hex format
+        const pixels = [];
+        for (let i = 0; i < img.data.length; i += 4) {
+          const r = img.data[i + 2].toString(16).padStart(2, '0');
+          const g = img.data[i + 1].toString(16).padStart(2, '0');
+          const b = img.data[i].toString(16).padStart(2, '0');
+          const hex = `#${r}${g}${b}`;
+          pixels.push(hex);
+        }
+
+        if (logColors) {
+          for (let y = 0; y < region.height; y += 1) {
+            for (let x = 0; x < region.width; x += 1) {
+              const index = y * region.width + x;
+              console.log(
+                `At (${x + 1},${y + 1}) found color ${
+                  pixels[index]
+                }, coordinates of this pixel are (${region.x + x + 1},${region.y + y + 1})`,
+              );
+            }
+          }
+        }
+
+        resolve(pixels);
+      },
+    );
+  });
+}
+
+async function monitorRegion(region, processor, logColors, measurePerformance, interval) {
+  const display = await createClient();
+  const X = display.client;
+  const { root } = display.screen[0];
+  let iterationCount = 0;
+  let totalTime = 0;
+  let minTime = Infinity;
+  let maxTime = 0;
+
+  while (true) {
+    let startTime, endTime;
+    if (measurePerformance && iterationCount !== 0) {
+      console.time(`Iteration ${iterationCount}`);
+      startTime = Date.now();
+    }
+
+    const hexData = await takeScreenshot(X, root, region, logColors, measurePerformance);
+    region = await processor(hexData, region);
+
+    if (measurePerformance && iterationCount !== 0) {
+      endTime = Date.now();
+      console.timeEnd(`Iteration ${iterationCount}`);
+      const iterationTime = endTime - startTime;
+      totalTime += iterationTime;
+      minTime = Math.min(minTime, iterationTime);
+      maxTime = Math.max(maxTime, iterationTime);
+    }
+
+    iterationCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, interval));
+
+    if (measurePerformance && iterationCount > 1) {
+      const avgTime = totalTime / (iterationCount - 1);
+      console.log(`Average time per iteration: ${avgTime}ms`);
+      console.log(`Shortest iteration: ${minTime}ms`);
+      console.log(`Longest iteration: ${maxTime}ms`);
+    }
+  }
+}
+
+function findColorSequence(pixels, region, sequence) {
+  let currentSequence = [];
+  let found = false;
+
+  for (let y = 0; y < region.height; y += 1) {
+    for (let x = 0; x < region.width; x += 1) {
+      const index = y * region.width + x;
+      const hex = pixels[index];
+
+      if (hex === sequence[currentSequence.length]) {
+        currentSequence.push(hex);
+      } else {
+        currentSequence = [];
+      }
+
+      if (currentSequence.length === sequence.length) {
+        return {
+          found: true,
+          position: { x: region.x + x - sequence.length + 1, y: region.y + y },
+        };
+      }
+    }
+  }
+
+  return { found: false };
+}
+
+function healthBarProcessor(pixels, region) {
+  const sequence = ['#783d40', '#d34f4f']; // Only the start sequence
+  const result = findColorSequence(pixels, region, sequence);
+
+  if (result.found) {
+    const healthBarWidth = 92;
+    const healthBarEndPosition = result.position.x + healthBarWidth;
+    const newRegion = {
+      x: result.position.x,
+      y: result.position.y,
+      width: healthBarWidth,
+      height: 1, // Assuming the health bar is only 1 pixel high
+    };
+
+    region = JSON.parse(JSON.stringify({ ...region, ...newRegion }));
+
+    let start = region.x;
+    let end = healthBarEndPosition;
+    let mid;
+
+    while (start < end) {
+      mid = Math.floor((start + end) / 2);
+      const index = mid - region.x;
+      const hex = pixels[index];
+
+      if (hex === '#db4f4f') {
+        start = mid + 1;
+      } else {
+        end = mid;
+      }
+
+      // Break the loop if the desired color is not found within the specified range
+      if (start > end) {
+        break;
+      }
+    }
+
+    const currentPercentage = ((start - region.x) / healthBarWidth) * 100;
+
+    if (lastHealthPercentage !== currentPercentage) {
+      console.log(`HEALTH: ${Math.floor(currentPercentage)}%`);
+      process.send({
+        type: 'gameState/setHealthPercent',
+        payload: { hpPercentage: currentPercentage },
+      });
+      lastHealthPercentage = currentPercentage;
+    }
+
+    return region;
+  }
+}
+
+function manaBarProcessor(pixels, region) {
+  const sequence = ['#3d3d7d', '#524fd3']; // Only the start sequence
+  const result = findColorSequence(pixels, region, sequence);
+
+  if (result.found) {
+    const manaBarWidth = 92;
+    const manaBarEndPosition = result.position.x + manaBarWidth;
+    const newRegion = {
+      x: result.position.x,
+      y: result.position.y,
+      width: manaBarWidth,
+      height: 1, // Assuming the health bar is only 1 pixel high
+    };
+
+    region = JSON.parse(JSON.stringify({ ...region, ...newRegion }));
+
+    let start = region.x;
+    let end = manaBarEndPosition;
+    let mid;
+
+    while (start < end) {
+      mid = Math.floor((start + end) / 2);
+      const index = mid - region.x;
+      const hex = pixels[index];
+
+      if (hex === '#5350da' || hex === '#4d4ac2' || hex === '#2d2d69') {
+        start = mid + 1;
+      } else {
+        end = mid;
+      }
+
+      // Break the loop if the desired color is not found within the specified range
+      if (start > end) {
+        break;
+      }
+    }
+
+    const currentPercentage = ((start - region.x) / manaBarWidth) * 100;
+
+    if (lastManaPercentage !== currentPercentage) {
+      console.log(`MANA: ${Math.floor(currentPercentage)}%`);
+      process.send({
+        type: 'gameState/setManaPercent',
+        payload: { manaPercentage: currentPercentage },
+      });
+      lastManaPercentage = currentPercentage;
+    }
+
+    return region;
+  }
+}
 
 const getWindowGeometry = (windowId) => {
   // Check if window geometry is cached
@@ -57,199 +291,22 @@ const getDisplayGeometry = () => {
   // Return cached window geometry
   return displayGeometryCache;
 };
+
 getDisplayGeometry();
-console.log(displayGeometryCache);
-
-x11.createClient((err, display) => {
-  if (err) {
-    console.error(err);
-    return;
-  }
-
-  const X = display.client;
-  const { root } = display.screen[0];
-  // Define the region to capture (x, y, width, height)
-  const region = {
-    x: 0,
-    y: 0,
-    width: displayGeometryCache.width,
-    height: displayGeometryCache.height,
-  };
-
-  // Function to capture the screenshot
-
-  const getScreenData = () => {
-    X.GetImage(2, root, region.x, region.y, region.width, region.height, 0xffffffff, (er, img) => {
-      if (er) {
-        console.error(er);
-        return;
-      }
-      console.log(img.data);
-      screenshotData = img.data;
-    });
-  };
-  setInterval(() => {
-    getScreenData();
-  }, 10);
-});
-
-const calculateBounds = (windowGeometry) => {
-  // Calculate bounds for searching
-  const startX = windowGeometry.x + windowGeometry.width - 154;
-  const endX = windowGeometry.x + windowGeometry.width - 152;
-  const startY = windowGeometry.y + 124;
-  const endY = windowGeometry.y + 125;
-
-  // Return bounds
-  return { startX, endX, startY, endY };
-};
-
-const calculatePercentage = (barStartPos, barLength, colors) => {
-  let start = barStartPos.x;
-  let end = barStartPos.x + barLength;
-  let mid;
-
-  while (start < end) {
-    mid = Math.floor((start + end) / 2);
-    const color = robotjs.getPixelColor(mid, barStartPos.y);
-
-    if (colors.includes(color)) {
-      start = mid + 1;
-    } else {
-      end = mid;
-    }
-
-    // Break the loop if the desired color is not found within the specified range
-    if (start > end) {
-      break;
-    }
-  }
-
-  return Math.floor(((start - barStartPos.x) / barLength) * 100);
-};
-
-const findBars = (bounds) => {
-  let healthBarStartPos = null;
-  let manaBarStartPos = null;
-  let healthPercentage = 0;
-  let manaPercentage = 0;
-
-  // Iterate over pixels in bounds
-  for (let x = bounds.endX; x >= bounds.startX; x -= 1) {
-    for (let y = bounds.startY; y <= bounds.endY; y += 1) {
-      // Get color of current pixel
-      const color = robotjs.getPixelColor(x, y);
-
-      // Check if color matches health bar color
-      if (color === hpBarColors[0] || color === hpBarColors[1]) {
-        // Found health bar, save position and break loop
-        healthBarStartPos = { x: x - 1, y };
-        break;
-      }
-    }
-
-    // Check if color matches mana bar color
-    if (healthBarStartPos !== null) {
-      const color = robotjs.getPixelColor(healthBarStartPos.x, healthBarStartPos.y + 13);
-      if (color === manaBarColors[0] || color === manaBarColors[1]) {
-        manaBarStartPos = { x: healthBarStartPos.x, y: healthBarStartPos.y + 13 };
-      }
-    }
-
-    // Break outer loop if both bars were found
-    if (healthBarStartPos !== null && manaBarStartPos !== null) {
-      break;
-    }
-  }
-
-  // Calculate percentages using new function
-  if (healthBarStartPos !== null) {
-    healthPercentage = calculatePercentage(healthBarStartPos, 92, hpBarColors);
-    if (healthPercentage === 0) {
-      const color = robotjs.getPixelColor(healthBarStartPos.x, healthBarStartPos.y);
-      if (color === '373c47') {
-        healthPercentage = 0;
-        console.log('Health dropped to 0%');
-      } else {
-        console.log('Could not find the health bar');
-      }
-    }
-  }
-  if (manaBarStartPos !== null) {
-    manaPercentage = calculatePercentage(manaBarStartPos, 92, manaBarColors);
-    if (manaPercentage === 0) {
-      const color = robotjs.getPixelColor(manaBarStartPos.x, manaBarStartPos.y);
-      if (color === '373c47') {
-        manaPercentage = 0;
-        console.log('Mana dropped to 0%');
-      } else {
-        console.log('Could not find the mana bar');
-      }
-    }
-  }
-
-  // Return health bar and mana bar start positions and percentages
-  return { healthBarStartPos, manaBarStartPos, healthPercentage, manaPercentage };
-};
 
 process.on('message', (message) => {
   const { windowId } = message;
-  const windowGeometry = getWindowGeometry(windowId);
-  const bounds = calculateBounds(windowGeometry);
 
-  const bars = findBars(bounds);
-
-  const checkScreenshotDataInterval = setInterval(() => {
-    if (screenshotData !== null) {
-      clearInterval(checkScreenshotDataInterval);
-
-      setInterval(() => {
-        console.time('Total Iteration');
-
-        console.time('HP Calculation');
-        let newHealthPercentage = calculatePercentage(bars.healthBarStartPos, 92, hpBarColors);
-        console.timeEnd('HP Calculation');
-
-        console.time('Mana Calculation');
-        let newManaPercentage = calculatePercentage(bars.manaBarStartPos, 92, manaBarColors);
-        console.timeEnd('Mana Calculation');
-
-        console.time('HP Check');
-        if (newHealthPercentage === 0) {
-          const color = robotjs.getPixelColor(bars.healthBarStartPos.x, bars.healthBarStartPos.y);
-          if (color === '373c47') {
-            newHealthPercentage = 0;
-            console.log('Health dropped to 0%');
-          } else {
-            console.log('Could not find the health bar');
-          }
-        }
-        console.timeEnd('HP Check');
-
-        console.time('Mana Check');
-        if (newManaPercentage === 0) {
-          const color = robotjs.getPixelColor(bars.manaBarStartPos.x, bars.manaBarStartPos.y);
-          if (color === '373c47') {
-            newManaPercentage = 0;
-            console.log('Mana dropped to 0%');
-          } else {
-            console.log('Could not find the mana bar');
-          }
-        }
-        console.timeEnd('Mana Check');
-
-        console.time('Dispatch Actions');
-        // Dispatch the actions
-        process.send({
-          type: 'gameState/setPercentages',
-          payload: { hpPercentage: newHealthPercentage, manaPercentage: newManaPercentage },
-        });
-        console.timeEnd('Dispatch Actions');
-
-        console.timeEnd('Total Iteration');
-      }, 100);
-    }
-  }, 100);
+  const { x, y, width, height } = getWindowGeometry(windowId);
+  const windowRegion = {
+    x,
+    y,
+    width,
+    height,
+  };
+  console.log(windowRegion);
+  monitorRegion(windowRegion, healthBarProcessor, false, false, 100);
+  monitorRegion(windowRegion, manaBarProcessor, false, false, 100);
 });
 
 process.on('uncaughtException', (err) => {
