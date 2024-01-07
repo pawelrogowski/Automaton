@@ -1,15 +1,24 @@
-import { Performance } from 'perf_hooks';
-
-import robotjs from 'robotjs';
-import { exec, execSync } from 'child_process';
+import { execSync } from 'child_process';
 import x11 from 'x11';
 
 let windowGeometryCache = null;
+let pickedWindowId = null;
 let displayGeometryCache = null;
 let lastHealthPercentage = null;
 let lastManaPercentage;
 let lastManaPercentDispatchTime = Date.now();
 let lastHealthPercentDispatchTime = Date.now();
+
+const monitorRegions = {
+  health: {
+    startSequence: ['#783d40', '#d34f4f'],
+    regionSize: { x: 92, y: 1 },
+  },
+  mana: {
+    startSequence: ['#3d3d7d', '#524fd3'],
+    regionSize: { x: 92, y: 1 },
+  },
+};
 
 async function createClient() {
   return new Promise((resolve, reject) => {
@@ -57,7 +66,7 @@ async function takeScreenshot(X, root, region, logColors, measurePerformance) {
           const hex = `#${r}${g}${b}`;
           pixels.push(hex);
         }
-
+        console.log('pixels', pixels.length);
         if (logColors) {
           for (let y = 0; y < region.height; y += 1) {
             for (let x = 0; x < region.width; x += 1) {
@@ -70,8 +79,8 @@ async function takeScreenshot(X, root, region, logColors, measurePerformance) {
             }
           }
         }
-
         resolve(pixels);
+        img.data = null;
       },
     );
   });
@@ -144,132 +153,159 @@ function findColorSequence(pixels, region, sequence) {
   return { found: false };
 }
 
-function healthBarProcessor(pixels, region) {
-  const sequence = ['#783d40', '#d34f4f']; // Only the start sequence
+function healingCooldownProcessor(pixels, region) {
+  const sequence = ['#737373', '#28323b', '#142632', '#26353d', '#333b42'];
   const result = findColorSequence(pixels, region, sequence);
 
   if (!result.found) {
-    console.log('HEALTH BAR NOT FOUND');
+    console.log('Cooldown OFF');
     return new Promise((resolve) => setTimeout(() => resolve(region), 100));
   }
 
   if (result.found) {
-    const healthBarWidth = 92;
-    const healthBarEndPosition = result.position.x + healthBarWidth;
+    const barWidth = 5;
     const newRegion = {
       x: result.position.x,
       y: result.position.y,
-      width: healthBarWidth,
-      height: 1, // Assuming the health bar is only 1 pixel high
+      width: barWidth,
+      height: 1,
     };
 
     region = JSON.parse(JSON.stringify({ ...region, ...newRegion }));
 
-    let start = region.x;
-    let end = healthBarEndPosition;
-    let mid;
-
-    while (start < end) {
-      mid = Math.floor((start + end) / 2);
-      const index = mid - region.x;
-      const hex = pixels[index];
-
-      if (hex === '#db4f4f') {
-        start = mid + 1;
-      } else {
-        end = mid;
-      }
-
-      // Break the loop if the desired color is not found within the specified range
-      if (start > end) {
-        break;
-      }
-    }
-
-    const currentPercentage = Math.floor(((start - region.x) / healthBarWidth) * 100);
-
-    if (lastHealthPercentage !== currentPercentage) {
-      console.log(`HEALTH: ${lastHealthPercentage} -> ${currentPercentage}%`);
-      process.send({
-        type: 'gameState/setHealthPercent',
-        payload: { hpPercentage: currentPercentage },
-      });
-      lastHealthPercentage = currentPercentage;
-      lastHealthPercentDispatchTime = Date.now(); // Update the last dispatch time
-    } else if (Date.now() - lastHealthPercentDispatchTime >= 1000) {
-      process.send({
-        type: 'gameState/setHealthPercent',
-        payload: { hpPercentage: currentPercentage },
-      });
-      lastHealthPercentDispatchTime = Date.now(); // Update the last dispatch time
+    const colorSequence = findColorSequence(pixels, region, sequence);
+    if (!colorSequence.found) {
+      console.log('Cooldown ON');
     }
 
     return region;
   }
 }
 
-function manaBarProcessor(pixels, region) {
-  const sequence = ['#3d3d7d', '#524fd3']; // Only the start sequence
-  const result = findColorSequence(pixels, region, sequence);
+function combinedBarProcessor(pixels, region) {
+  const healthSequence = monitorRegions.health.startSequence;
+  const manaSequence = monitorRegions.mana.startSequence;
+  const healthResult = findColorSequence(pixels, region, healthSequence);
+  const manaResult = findColorSequence(pixels, region, manaSequence);
 
-  if (!result.found) {
-    console.log('MANA BAR NOT FOUND');
+  if (!healthResult.found || !manaResult.found) {
+    console.log('One or both bars NOT FOUND');
+    process.send({
+      type: 'gameState/setManaPercent',
+      payload: { manaPercentage: null },
+    });
+    process.send({
+      type: 'gameState/setHealthPercent',
+      payload: { hpPercentage: null },
+    });
+    const { x, y, width, height } = getWindowGeometry(pickedWindowId);
+    region = {
+      x,
+      y,
+      width,
+      height,
+    };
+    return region;
     return new Promise((resolve) => setTimeout(() => resolve(region), 100));
   }
 
-  if (result.found) {
-    const manaBarWidth = 92;
-    const manaBarEndPosition = result.position.x + manaBarWidth;
-    const newRegion = {
-      x: result.position.x,
-      y: result.position.y,
-      width: manaBarWidth,
-      height: 1, // Assuming the health bar is only 1 pixel high
-    };
+  const combinedRegion = {
+    x: Math.min(healthResult.position.x, manaResult.position.x),
+    y: Math.min(healthResult.position.y, manaResult.position.y),
+    width: Math.max(monitorRegions.health.regionSize.x, monitorRegions.mana.regionSize.x),
+    height: Math.abs(healthResult.position.y - manaResult.position.y) + 1,
+  };
 
-    region = JSON.parse(JSON.stringify({ ...region, ...newRegion }));
+  region = JSON.parse(JSON.stringify({ ...region, ...combinedRegion }));
 
-    let start = region.x;
-    let end = manaBarEndPosition;
-    let mid;
+  const healthBarWidth = monitorRegions.health.regionSize.x;
+  const manaBarWidth = monitorRegions.mana.regionSize.x;
+  let healthStart = healthResult.position.x;
+  let manaStart = manaResult.position.x;
+  let healthEnd = healthStart + healthBarWidth;
+  let manaEnd = manaStart + manaBarWidth;
+  let healthMid, manaMid;
 
-    while (start < end) {
-      mid = Math.floor((start + end) / 2);
-      const index = mid - region.x;
-      const hex = pixels[index];
+  while (healthStart < healthEnd) {
+    healthMid = Math.floor((healthStart + healthEnd) / 2);
+    const index =
+      (healthResult.position.y - combinedRegion.y) * combinedRegion.width +
+      (healthMid - combinedRegion.x);
+    const hex = pixels[index];
 
-      if (hex === '#5350da' || hex === '#4d4ac2' || hex === '#2d2d69') {
-        start = mid + 1;
-      } else {
-        end = mid;
-      }
-
-      // Break the loop if the desired color is not found within the specified range
-      if (start > end) {
-        break;
-      }
+    if (hex === '#db4f4f' || hex === '#c84a4d' || hex === '#673135') {
+      healthStart = healthMid + 1;
+    } else {
+      healthEnd = healthMid;
     }
 
-    const currentPercentage = Math.floor(((start - region.x) / manaBarWidth) * 100);
-
-    if (lastManaPercentage !== currentPercentage) {
-      console.log(`MANA: ${lastManaPercentage} -> ${currentPercentage}%`);
-      process.send({
-        type: 'gameState/setManaPercent',
-        payload: { manaPercentage: currentPercentage },
-      });
-      lastManaPercentage = currentPercentage;
-      lastManaPercentDispatchTime = Date.now();
-    } else if (Date.now() - lastManaPercentDispatchTime >= 1000) {
-      process.send({
-        type: 'gameState/setManaPercent',
-        payload: { manaPercentage: currentPercentage },
-      });
-      lastManaPercentDispatchTime = Date.now();
+    if (healthStart > healthEnd) {
+      break;
     }
-
-    return region;
   }
+
+  while (manaStart < manaEnd) {
+    manaMid = Math.floor((manaStart + manaEnd) / 2);
+    const index =
+      (manaResult.position.y - combinedRegion.y) * combinedRegion.width +
+      (manaMid - combinedRegion.x);
+    const hex = pixels[index];
+
+    if (hex === '#5350da' || hex === '#4d4ac2' || hex === '#2d2d69') {
+      manaStart = manaMid + 1;
+    } else {
+      manaEnd = manaMid;
+    }
+
+    if (manaStart > manaEnd) {
+      break;
+    }
+  }
+
+  const healthPercentage = Math.floor(
+    ((healthStart - healthResult.position.x) / healthBarWidth) * 100,
+  );
+  const manaPercentage = Math.floor(((manaStart - manaResult.position.x) / manaBarWidth) * 100);
+
+  if (lastHealthPercentage !== healthPercentage) {
+    console.log(`HEALTH: ${lastHealthPercentage} -> ${healthPercentage}%`);
+    process.send({
+      type: 'gameState/setHealthPercent',
+      payload: { hpPercentage: healthPercentage },
+    });
+    lastHealthPercentage = healthPercentage;
+    lastHealthPercentDispatchTime = Date.now();
+  }
+
+  if (lastManaPercentage !== manaPercentage) {
+    console.log(`MANA: ${lastManaPercentage} -> ${manaPercentage}%`);
+    process.send({
+      type: 'gameState/setManaPercent',
+      payload: { manaPercentage: manaPercentage },
+    });
+    lastManaPercentage = manaPercentage;
+    lastManaPercentDispatchTime = Date.now();
+  }
+
+  // Ensure that values are dispatched at least every 500ms
+  const now = Date.now();
+  if (now - lastHealthPercentDispatchTime >= 500) {
+    process.send({
+      type: 'gameState/setHealthPercent',
+      payload: { hpPercentage: healthPercentage },
+    });
+    lastHealthPercentDispatchTime = now;
+  }
+
+  if (now - lastManaPercentDispatchTime >= 500) {
+    process.send({
+      type: 'gameState/setManaPercent',
+      payload: { manaPercentage: manaPercentage },
+    });
+    lastManaPercentDispatchTime = now;
+  }
+
+  return combinedRegion;
 }
 
 const getWindowGeometry = (windowId) => {
@@ -325,7 +361,7 @@ getDisplayGeometry();
 
 process.on('message', (message) => {
   const { windowId } = message;
-
+  pickedWindowId = windowId;
   const { x, y, width, height } = getWindowGeometry(windowId);
   const windowRegion = {
     x,
@@ -334,8 +370,8 @@ process.on('message', (message) => {
     height,
   };
   console.log(windowRegion);
-  monitorRegion(windowRegion, healthBarProcessor, false, false, 25);
-  monitorRegion(windowRegion, manaBarProcessor, false, false, 25);
+  // monitorRegion(windowRegion, healingCooldownProcessor, false, false, 50);
+  monitorRegion(windowRegion, combinedBarProcessor, false, false, 50);
 });
 
 process.on('uncaughtException', (err) => {
