@@ -1,8 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  hpPercentage: 0,
-  manaPercentage: 0,
+  hpPercentage: null,
+  manaPercentage: null,
 };
 
 const gameStateSlice = createSlice({

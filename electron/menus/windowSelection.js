@@ -32,10 +32,22 @@ const getWindowName = (id) =>
 const startWorkerProcess = () => {
   const currentURL = new URL(import.meta.url);
   const currentDirname = path.dirname(fileURLToPath(currentURL));
-  workerProcess = fork(path.join(currentDirname, '..', 'screenMonitor', 'monitorStats.js'));
+  workerProcess = fork(
+    path.join(currentDirname, '..', 'screenMonitor', 'monitorStats.js'),
+    ['MonitorStats'],
+    {
+      stdio: 'inherit',
+      execArgv: ['--expose-gc'],
+    },
+  );
+
   workerProcess.send({ command: 'start', windowId: selectedWindowId });
+
   workerProcess.on('message', (message) => {
-    // Send IPC message to renderer process
+    // Handle the message here
+    // console.log(message);
+
+    // Then send it to the renderer process
     getMainWindow().webContents.send('dispatch', message);
     Object.keys(global.monitoringProcesses).forEach((id) => {
       if (global.monitoringProcesses[id] !== workerProcess) {

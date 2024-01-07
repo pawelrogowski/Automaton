@@ -17,7 +17,9 @@ ipcMain.handle('startMonitoring', (_, rule) => {
     console.log('no window selected, canceling');
     return;
   }
-  const monitorRuleProcess = fork(path.join(dirname, 'monitor.js'));
+  const monitorRuleProcess = fork(path.join(dirname, 'executeConditions.js'), [], {
+    execArgv: ['--expose-gc'],
+  });
   monitorRuleProcess.send({ type: 'start', rule, windowId: getSelectedWindowId() });
   global.monitoringProcesses[rule.id] = monitorRuleProcess;
   console.log('process started');

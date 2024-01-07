@@ -14,7 +14,8 @@ const store = configureStore({
     gameState: gameStateSlice.reducer,
     healing: healingSlice.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(logger),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware(),
+  // .concat(logger),
   devTools: true,
 });
 
