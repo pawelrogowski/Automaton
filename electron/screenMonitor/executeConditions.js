@@ -1,29 +1,37 @@
 import robotjs from 'robotjs';
-import { exec } from 'child_process';
+import { execSync } from 'child_process';
 
-let currentHP = 0;
-let currentMP = 0;
+let currentHP = null;
+let currentMP = null;
+let isBarVisible = true;
+let lastExecTime = Date.now();
+let isHealingCooldown = true;
+
+const clickCooldown = 250;
+const ruleCheckCooldown = 1;
 
 function evaluateCondition(condition, triggerPercentage, actualPercentage) {
-  switch (condition) {
-    case '<':
-      return actualPercentage < triggerPercentage;
-    case '<=':
-      return actualPercentage <= triggerPercentage;
-    case '=':
-      return actualPercentage === triggerPercentage;
-    case '>':
-      return actualPercentage > triggerPercentage;
-    case '>=':
-      return actualPercentage >= triggerPercentage;
-    case '!=':
-      return actualPercentage !== triggerPercentage;
-    default:
-      return false;
+  if (isBarVisible) {
+    switch (condition) {
+      case '<':
+        return actualPercentage < triggerPercentage;
+      case '<=':
+        return actualPercentage <= triggerPercentage;
+      case '=':
+        return actualPercentage === triggerPercentage;
+      case '>':
+        return actualPercentage > triggerPercentage;
+      case '>=':
+        return actualPercentage >= triggerPercentage;
+      case '!=':
+        return actualPercentage !== triggerPercentage;
+      default:
+        return false;
+    }
+  } else {
+    return false;
   }
 }
-
-console.log('a monitor process is working');
 
 process.on('message', (message) => {
   if (message.type === 'start') {
@@ -46,15 +54,30 @@ process.on('message', (message) => {
         return color.enabled ? pixelColor === color.color : pixelColor !== color.color;
       });
 
-      if (colorConditionsMet && hpCondition && manaCondition) {
-        exec(`xdotool key --window ${windowId} ${rule.key} --repeat 3 --delay 0`);
+      if (
+        colorConditionsMet &&
+        hpCondition &&
+        manaCondition &&
+        currentHP != null &&
+        currentMP != null
+      ) {
+        const now = Date.now();
+        if (now - lastExecTime >= clickCooldown && !isHealingCooldown) {
+          execSync(`xdotool key --window ${windowId} ${rule.key}`);
+          lastExecTime = now;
+          setTimeout(() => {}, clickCooldown);
+        }
       }
-    }, 25);
+    }, ruleCheckCooldown);
+  } else if (message.payload.hpPercentage) {
+    currentHP = message.payload.hpPercentage;
+  } else if (message.payload.manaPercentage) {
+    currentMP = message.payload.manaPercentage;
+  } else if (message.payload && message.payload.isBarVisible !== undefined) {
+    isBarVisible = message.payload.isBarVisible;
+  } else if (message.payload && message.payload.isHealingCooldown !== undefined) {
+    isHealingCooldown = message.payload.isHealingCooldown;
   } else {
-    if (message.payload.hpPercentage) {
-      currentHP = message.payload.hpPercentage;
-    } else if (message.payload.manaPercentage) {
-      currentMP = message.payload.manaPercentage;
-    }
+    console.log('unhandled dispatch', message);
   }
 });

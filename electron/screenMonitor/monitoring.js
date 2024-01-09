@@ -29,6 +29,7 @@ ipcMain.handle('startMonitoring', (_, rule) => {
 ipcMain.handle('stopMonitoring', (_, ruleId) => {
   const ruleMonitorStatsProcess = monitoringProcesses[ruleId];
   if (ruleMonitorStatsProcess) {
+    ruleMonitorStatsProcess.send({ type: 'stop', ruleId });
     ruleMonitorStatsProcess.kill(); // Kill the child process
     delete monitoringProcesses[ruleId];
     delete global.monitoringProcesses[ruleId];

@@ -1,12 +1,12 @@
 import { configureStore } from '@reduxjs/toolkit';
-import pkg from 'redux-logger';
+// import pkg from 'redux-logger';
 import globalSlice from './slices/globalSlice.js';
 import healingSlice from './slices/healingSlice.js';
 import gameStateSlice from './slices/gameStateSlice.js';
 
-const { createLogger } = pkg;
+// const { createLogger } = pkg;
 
-const logger = createLogger();
+// const logger = createLogger();
 
 const store = configureStore({
   reducer: {
@@ -15,8 +15,7 @@ const store = configureStore({
     healing: healingSlice.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware(),
-  // .concat(logger),
-  devTools: true,
+  // devTools: true,
 });
 
 export default store;

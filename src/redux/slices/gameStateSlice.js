@@ -3,6 +3,8 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   hpPercentage: null,
   manaPercentage: null,
+  isVisible: false,
+  isHealingCooldown: false,
 };
 
 const gameStateSlice = createSlice({
@@ -15,9 +17,15 @@ const gameStateSlice = createSlice({
     setManaPercent: (state, action) => {
       state.manaPercentage = action.payload.manaPercentage;
     },
+    setBarVisibility: (state, action) => {
+      state.isBarVisible = action.payload.isBarVisible;
+    },
+    setHealingCooldownVisibility: (state, action) => {
+      state.isHealingCooldown = action.payload.isHealingCooldown;
+    },
   },
 });
 
-export const { setHealthPercent, setManaPercent } = gameStateSlice.actions;
+export const { setHealthPercent, setManaPercent, setBarVisibility } = gameStateSlice.actions;
 
 export default gameStateSlice;

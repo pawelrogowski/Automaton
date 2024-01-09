@@ -5,6 +5,7 @@ import HealingRule from '../components/HealingRule/HealingRule.js';
 import { addRule, reorderRules } from '../redux/slices/healingSlice.js';
 import { PlusSquare } from 'react-feather';
 import StyledMain from './Healing.styled.js';
+import StatBar from '../components/StatBar/StatBar.jsx';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -36,11 +37,12 @@ export const Healing = () => {
   return (
     <StyledMain>
       <section>
-        <progress max="100" value={hpPercentage} />
-        <progress max="100" value={manaPercentage} />
-
+        <div className="bar-container">
+          <StatBar value={hpPercentage} fill={` #990000`} />
+          <StatBar value={manaPercentage} fill={` #350099`} />
+        </div>
         <button className="add-button" type="button" onClick={handleAddRule}>
-          <PlusSquare className="add-healing-rule" size={32} />
+          <PlusSquare size={32} />
         </button>
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="rules">

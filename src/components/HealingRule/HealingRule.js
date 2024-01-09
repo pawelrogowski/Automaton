@@ -3,7 +3,6 @@ import PropTypes from 'prop-types';
 import { useDispatch, useSelector } from 'react-redux';
 import Switch from 'react-switch';
 import { Trash2, ChevronDown, ChevronUp, PlusCircle } from 'react-feather';
-import _ from 'lodash';
 
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import {
@@ -28,12 +27,7 @@ const HealingRule = ({ rule }) => {
   const [localHealing, setLocalHealing] = useState(healing);
 
   useEffect(() => {
-    const debouncedUpdate = _.debounce(() => {
-      dispatch(updateRule(localHealing));
-    }, 500);
-    debouncedUpdate();
-    // Cleanup function to cancel the debounce on unmount
-    return debouncedUpdate.cancel;
+    dispatch(updateRule(localHealing));
   }, [localHealing, dispatch]);
 
   const handleColorPick = async () => {
@@ -47,7 +41,6 @@ const HealingRule = ({ rule }) => {
   const requiredFieldsFilled =
     healing.name &&
     healing.key &&
-    healing.interval &&
     healing.hpTriggerCondition &&
     healing.hpTriggerPercentage &&
     healing.manaTriggerCondition &&
@@ -217,31 +210,6 @@ const HealingRule = ({ rule }) => {
               Mana %
             </label>
           </div>
-          <div className="input-wrapper">
-            <input
-              type="number"
-              className="input"
-              id="interval"
-              value={localHealing.interval}
-              onChange={(event) => {
-                if (event.target.value !== undefined) {
-                  setLocalHealing({
-                    ...localHealing,
-                    interval: event.target.value,
-                    colors: healing.colors,
-                  });
-                }
-              }}
-              placeholder="100 ms"
-              min={10}
-              max={9999999}
-              step={100}
-              disabled={healing.enabled}
-            />
-            <label className="label" htmlFor="interval">
-              Refresh
-            </label>
-          </div>
           <button
             className="remove-rule-button"
             type="button"
@@ -309,7 +277,6 @@ HealingRule.propTypes = {
     name: PropTypes.string,
     enabled: PropTypes.bool,
     key: PropTypes.string,
-    interval: PropTypes.string,
     colors: PropTypes.arrayOf(
       PropTypes.shape({
         id: PropTypes.string.isRequired,
