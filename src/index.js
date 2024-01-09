@@ -14,15 +14,15 @@ import store from './redux/store.js';
 
 const { ipcRenderer } = window.electron;
 
+ipcRenderer.on('dispatch', (_, action) => {
+  store.dispatch(action);
+});
+
 const theme = {
   colors: {
     primary: '#000',
   },
 };
-
-ipcRenderer.on('dispatch', (_, action) => {
-  store.dispatch(action);
-});
 
 const App = () => (
   <ThemeProvider theme={theme}>
