@@ -22,9 +22,7 @@ const healingSlice = createSlice({
       if (index !== -1) {
         state[index] = action.payload;
         if (state[index].enabled) {
-          // window.api.startMonitoring(state[index]);
         } else {
-          // window.api.stopMonitoring(state[index].id);
         }
       }
     },

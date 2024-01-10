@@ -2,6 +2,8 @@ import createX11Client from './screenGrabUtils/createX11Client.js';
 import getWindowGeometry from './windowUtils/getWindowGeometry.js';
 import grabScreen from './screenGrabUtils/grabScreen.js';
 import findColorSequence from './searchUtils/findColorSequence.js';
+import mainStore from '../mainStore.js';
+import { setHealthPercent } from '../../src/redux/slices/gameStateSlice.js';
 
 let pickedWindowId = null;
 let lastHealthPercentage = null;
@@ -54,10 +56,10 @@ function combinedBarProcessor(pixels, region) {
   areBarsVisible = healthFound && manaFound;
 
   if (areBarsVisible !== lastBarDispatchedValue) {
-    process.send({
-      type: 'gameState/setBarVisibility',
-      payload: { isBarVisible: areBarsVisible },
-    });
+    // process.send({
+    //   type: 'gameState/setBarVisibility',
+    //   payload: { isBarVisible: areBarsVisible },
+    // });
     lastBarDispatchedValue = areBarsVisible;
   }
 
@@ -134,10 +136,7 @@ function combinedBarProcessor(pixels, region) {
     if (lastHealthPercentage !== null && healthPercentage !== 0) {
       console.log(`HEALTH: ${lastHealthPercentage} -> ${healthPercentage}%`);
 
-      process.send({
-        type: 'gameState/setHealthPercent',
-        payload: { hpPercentage: healthPercentage },
-      });
+      mainStore.dispatch(setHealthPercent({ hpPercentage: healthPercentage }));
 
       lastHealthPercentage = healthPercentage;
       lastHealthPercentDispatchTime = Date.now();
@@ -148,10 +147,10 @@ function combinedBarProcessor(pixels, region) {
   if (lastManaPercentage !== manaPercentage) {
     if (lastManaPercentage !== null && manaPercentage !== 0) {
       console.log(`MANA: ${lastManaPercentage} -> ${manaPercentage}%`);
-      process.send({
-        type: 'gameState/setManaPercent',
-        payload: { manaPercentage: manaPercentage },
-      });
+      // process.send({
+      //   type: 'gameState/setManaPercent',
+      //   payload: { manaPercentage: manaPercentage },
+      // });
       lastManaPercentage = manaPercentage;
       lastManaPercentDispatchTime = Date.now();
     }
@@ -161,18 +160,18 @@ function combinedBarProcessor(pixels, region) {
   // Ensure that values are dispatched at least every 500ms
   const now = Date.now();
   if (now - lastHealthPercentDispatchTime >= 500) {
-    process.send({
-      type: 'gameState/setHealthPercent',
-      payload: { hpPercentage: healthPercentage },
-    });
+    // process.send({
+    //   type: 'gameState/setHealthPercent',
+    //   payload: { hpPercentage: healthPercentage },
+    // });
     lastHealthPercentDispatchTime = now;
   }
 
   if (now - lastManaPercentDispatchTime >= 500) {
-    process.send({
-      type: 'gameState/setManaPercent',
-      payload: { manaPercentage: manaPercentage },
-    });
+    // process.send({
+    //   type: 'gameState/setManaPercent',
+    //   payload: { manaPercentage: manaPercentage },
+    // });
     lastManaPercentDispatchTime = now;
   }
 
@@ -215,10 +214,10 @@ const healingCooldownProcessor = (pixels, region) => {
         }
         lastHealCdChange = Date.now();
         console.log('dispatching CD');
-        process.send({
-          type: 'gameState/setHealingCooldownVisibility',
-          payload: { isHealingCooldown: onResult.found },
-        });
+        // process.send({
+        //   type: 'gameState/setHealingCooldownVisibility',
+        //   payload: { isHealingCooldown: onResult.found },
+        // });
         lastHealingCooldownStatus = onResult.found;
       }
 

@@ -5,7 +5,8 @@ const useDispatchAndSend = () => {
 
   const dispatchAndSend = (action) => {
     dispatch(action);
-    window.electron.ipcRenderer.send('dispatch', action);
+    window.electron.ipcRenderer.send('state-change', action);
+    console.log('Dispatching action:', action);
   };
 
   return dispatchAndSend;

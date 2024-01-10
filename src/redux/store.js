@@ -8,13 +8,21 @@ import gameStateSlice from './slices/gameStateSlice.js';
 
 // const logger = createLogger();
 
+const ipcMiddleware = () => (next) => (action) => {
+  console.log('Sending action to main process:', action);
+  const actionWithOrigin = { ...action, origin: 'renderer' };
+  const serializedAction = JSON.stringify(actionWithOrigin);
+  window.electron.ipcRenderer.send('state-change', serializedAction);
+  return next(action);
+};
+
 const store = configureStore({
   reducer: {
     global: globalSlice.reducer,
     gameState: gameStateSlice.reducer,
     healing: healingSlice.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware(),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
   // devTools: true,
 });
 

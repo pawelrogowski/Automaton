@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import Switch from 'react-switch';
 import { Trash2, ChevronDown, ChevronUp, PlusCircle } from 'react-feather';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
@@ -12,7 +12,6 @@ import {
   removeRule,
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
-import useDispatchAndSend from '../../hooks/useDispatchAndSend.js';
 
 const { api } = window;
 const keys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'].map(
@@ -20,26 +19,26 @@ const keys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11'
 );
 
 const HealingRule = ({ rule }) => {
-  const dispatchAndSend = useDispatchAndSend();
+  const dispatch = useDispatch();
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
 
   const [isOpen, setIsOpen] = useState(false);
   const [localHealing, setLocalHealing] = useState(healing);
 
   useEffect(() => {
-    dispatchAndSend(updateRule(localHealing));
+    dispatch(updateRule(localHealing));
   }, [localHealing]);
 
   const handleColorPick = async () => {
     const colorData = await api.pickColor();
     if (colorData) {
       const { color, x, y } = colorData;
-      dispatchAndSend(addColor({ id: healing.id, color, x, y }));
+      dispatch(addColor({ id: healing.id, color, x, y }));
     }
   };
 
   const handleRemoveRule = () => {
-    dispatchAndSend(removeRule(healing.id));
+    dispatch(removeRule(healing.id));
   };
 
   const requiredFieldsFilled =
@@ -258,7 +257,7 @@ const HealingRule = ({ rule }) => {
               <button
                 className="button remove-color"
                 type="button"
-                onClick={() => dispatchAndSend(removeColor({ id: healing.id, colorId: color.id }))}
+                onClick={() => dispatch(removeColor({ id: healing.id, colorId: color.id }))}
                 disabled={healing.enabled}
               >
                 <Trash2 className="remove-color-icon" size={20} />

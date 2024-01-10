@@ -16,5 +16,4 @@ contextBridge.exposeInMainWorld('api', {
   pickColor: () => ipcRenderer.invoke('pick-color'),
   startMonitoring: (rule) => ipcRenderer.invoke('startMonitoring', rule),
   stopMonitoring: (ruleId) => ipcRenderer.invoke('stopMonitoring', ruleId),
-  dispatchAction: (action) => ipcRenderer.send('dispatch', action),
 });

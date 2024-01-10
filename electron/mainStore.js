@@ -1,4 +1,4 @@
-import { configureStore } from '@reduxjs/toolkit';
+import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import globalSlice from '../src/redux/slices/globalSlice.js';
 import healingSlice from '../src/redux/slices/healingSlice.js';
 import gameStateSlice from '../src/redux/slices/gameStateSlice.js';
@@ -8,12 +8,13 @@ const logger = (storeAPI) => (next) => (action) => {
   return next(action);
 };
 
+const rootReducer = combineReducers({
+  global: globalSlice.reducer,
+  gameState: gameStateSlice.reducer,
+  healing: healingSlice.reducer,
+});
 const store = configureStore({
-  reducer: {
-    global: globalSlice.reducer,
-    gameState: gameStateSlice.reducer,
-    healing: healingSlice.reducer,
-  },
+  reducer: rootReducer,
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(logger),
 });
 

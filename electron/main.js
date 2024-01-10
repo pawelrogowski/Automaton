@@ -23,17 +23,24 @@ app.on('activate', () => {
   }
 });
 
-ipcMain.on('state-change', (event, state) => {
-  mainStore.dispatch({ type: 'UPDATE_STATE', payload: state });
-});
-
-ipcMain.on('dispatch', (event, action) => {
-  mainStore.dispatch(action);
+ipcMain.on('state-change', (event, serializedAction) => {
+  try {
+    const action = JSON.parse(serializedAction);
+    if (action.origin === 'renderer') {
+      mainStore.dispatch(action);
+    }
+  } catch (error) {
+    console.error('Error dispatching action in main process:', error);
+  }
 });
 
 mainStore.subscribe(() => {
   const state = mainStore.getState();
-  BrowserWindow.getAllWindows().forEach((win) => {
-    win.webContents.send('state-change', state);
-  });
+  const lastAction = state;
+
+  if (lastAction && lastAction.origin !== 'renderer') {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('state-update', JSON.stringify(state));
+    });
+  }
 });

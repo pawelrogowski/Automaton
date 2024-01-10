@@ -6,10 +6,9 @@ import { addRule, reorderRules } from '../redux/slices/healingSlice.js';
 import { PlusSquare } from 'react-feather';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
-import useDispatchAndSend from '../hooks/useDispatchAndSend.js';
 
 export const Healing = () => {
-  const dispatchAndSend = useDispatchAndSend();
+  const dispatch = useDispatch();
   const rules = useSelector((state) => state.healing);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
@@ -23,12 +22,12 @@ export const Healing = () => {
       interval: '',
       colors: [],
     };
-    dispatchAndSend(addRule(newRule));
+    dispatch(addRule(newRule));
   };
 
   const handleDragEnd = (result) => {
     if (!result.destination) return;
-    dispatchAndSend(
+    dispatch(
       reorderRules({
         startIndex: result.source.index,
         endIndex: result.destination.index,
