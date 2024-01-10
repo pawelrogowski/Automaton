@@ -1,12 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
-// import pkg from 'redux-logger';
+import { createLogger } from 'redux-logger';
 import globalSlice from './slices/globalSlice.js';
 import healingSlice from './slices/healingSlice.js';
 import gameStateSlice from './slices/gameStateSlice.js';
 
-// const { createLogger } = pkg;
-
-// const logger = createLogger();
+const logger = createLogger();
 
 const ipcMiddleware = () => (next) => (action) => {
   console.log('Sending action to main process:', action);
@@ -22,8 +20,7 @@ const store = configureStore({
     gameState: gameStateSlice.reducer,
     healing: healingSlice.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
-  // devTools: true,
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware, logger),
 });
 
 export default store;

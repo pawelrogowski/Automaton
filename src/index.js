@@ -14,7 +14,7 @@ import store from './redux/store.js';
 
 const { ipcRenderer } = window.electron;
 
-ipcRenderer.on('state-change', (_, action) => {
+ipcRenderer.on('state-update', (_, action) => {
   store.dispatch(action);
 });
 

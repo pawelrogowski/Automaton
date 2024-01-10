@@ -56,10 +56,10 @@ function combinedBarProcessor(pixels, region) {
   areBarsVisible = healthFound && manaFound;
 
   if (areBarsVisible !== lastBarDispatchedValue) {
-    // process.send({
-    //   type: 'gameState/setBarVisibility',
-    //   payload: { isBarVisible: areBarsVisible },
-    // });
+    process.send({
+      type: 'gameState/setBarVisibility',
+      payload: { isBarVisible: areBarsVisible },
+    });
     lastBarDispatchedValue = areBarsVisible;
   }
 
@@ -136,7 +136,10 @@ function combinedBarProcessor(pixels, region) {
     if (lastHealthPercentage !== null && healthPercentage !== 0) {
       console.log(`HEALTH: ${lastHealthPercentage} -> ${healthPercentage}%`);
 
-      mainStore.dispatch(setHealthPercent({ hpPercentage: healthPercentage }));
+      process.send({
+        type: 'gameState/setHealthPercent',
+        payload: { hpPercentage: healthPercentage },
+      });
 
       lastHealthPercentage = healthPercentage;
       lastHealthPercentDispatchTime = Date.now();
@@ -147,10 +150,10 @@ function combinedBarProcessor(pixels, region) {
   if (lastManaPercentage !== manaPercentage) {
     if (lastManaPercentage !== null && manaPercentage !== 0) {
       console.log(`MANA: ${lastManaPercentage} -> ${manaPercentage}%`);
-      // process.send({
-      //   type: 'gameState/setManaPercent',
-      //   payload: { manaPercentage: manaPercentage },
-      // });
+      process.send({
+        type: 'gameState/setManaPercent',
+        payload: { manaPercentage: manaPercentage },
+      });
       lastManaPercentage = manaPercentage;
       lastManaPercentDispatchTime = Date.now();
     }
@@ -160,18 +163,18 @@ function combinedBarProcessor(pixels, region) {
   // Ensure that values are dispatched at least every 500ms
   const now = Date.now();
   if (now - lastHealthPercentDispatchTime >= 500) {
-    // process.send({
-    //   type: 'gameState/setHealthPercent',
-    //   payload: { hpPercentage: healthPercentage },
-    // });
+    process.send({
+      type: 'gameState/setHealthPercent',
+      payload: { hpPercentage: healthPercentage },
+    });
     lastHealthPercentDispatchTime = now;
   }
 
   if (now - lastManaPercentDispatchTime >= 500) {
-    // process.send({
-    //   type: 'gameState/setManaPercent',
-    //   payload: { manaPercentage: manaPercentage },
-    // });
+    process.send({
+      type: 'gameState/setManaPercent',
+      payload: { manaPercentage: manaPercentage },
+    });
     lastManaPercentDispatchTime = now;
   }
 
@@ -214,10 +217,10 @@ const healingCooldownProcessor = (pixels, region) => {
         }
         lastHealCdChange = Date.now();
         console.log('dispatching CD');
-        // process.send({
-        //   type: 'gameState/setHealingCooldownVisibility',
-        //   payload: { isHealingCooldown: onResult.found },
-        // });
+        process.send({
+          type: 'gameState/setHealingCooldownVisibility',
+          payload: { isHealingCooldown: onResult.found },
+        });
         lastHealingCooldownStatus = onResult.found;
       }
 

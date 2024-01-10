@@ -36,11 +36,16 @@ ipcMain.on('state-change', (event, serializedAction) => {
 
 mainStore.subscribe(() => {
   const state = mainStore.getState();
-  const lastAction = state;
-
-  if (lastAction && lastAction.origin !== 'renderer') {
+  const { lastAction } = state;
+  console.log('??????????????????????????????', state, lastAction);
+  if (lastAction && lastAction.payload.origin === 'main') {
+    console.log('sending dispatch from main');
     BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('state-update', JSON.stringify(state));
+      win.webContents.send('state-update', JSON.stringify(lastAction));
     });
   }
 });
+
+// ipcMain.on('gameState/setManaPercent', (event, action) => {
+//   mainStore.dispatch(action);
+// });

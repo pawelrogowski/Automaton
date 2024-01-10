@@ -1,11 +1,12 @@
-import { dialog } from 'electron';
+import { dialog, BrowserWindow } from 'electron';
 import { exec, fork } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getMainWindow } from '../createWindow.js';
+import mainStore from '../mainStore.js';
 
 let selectedWindowId;
-let workerProcess;
+let monitorStats;
 
 const getGeometry = (id) =>
   new Promise((resolve, reject) => {
@@ -32,33 +33,26 @@ const getWindowName = (id) =>
 const startWorkerProcess = () => {
   const currentURL = new URL(import.meta.url);
   const currentDirname = path.dirname(fileURLToPath(currentURL));
-  workerProcess = fork(
+  monitorStats = fork(
     path.join(currentDirname, '..', 'screenMonitor', 'monitorStats.js'),
     ['MonitorStats'],
     {
       stdio: 'inherit',
-      execArgv: ['--expose-gc'],
     },
   );
 
-  workerProcess.send({ command: 'start', windowId: selectedWindowId });
+  monitorStats.send({ command: 'start', windowId: selectedWindowId });
 
-  workerProcess.on('message', (message) => {
-    // Handle the message here
-    // console.log(message);
+  monitorStats.on('message', (message) => {
+    console.log(message);
 
     // Then send it to the renderer process
-    getMainWindow().webContents.send('dispatch', message);
-    Object.keys(global.monitoringProcesses).forEach((id) => {
-      if (global.monitoringProcesses[id] !== workerProcess) {
-        global.monitoringProcesses[id].send(message);
-      }
-    });
+    getMainWindow().webContents.send('state-update', message);
   });
 
   // When the parent process is closed, kill the child process
   process.on('exit', () => {
-    workerProcess.kill();
+    monitorStats.kill();
   });
 };
 
@@ -103,8 +97,8 @@ export const selectWindow = async () => {
         getMainWindow().setTitle(`Automaton - ${windowTitle}`);
 
         // If a worker process is already running, kill it
-        if (workerProcess) {
-          workerProcess.kill();
+        if (monitorStats) {
+          monitorStats.kill();
         }
 
         exec(`xdotool windowactivate ${selectedWindowId}`);

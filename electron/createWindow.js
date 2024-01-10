@@ -40,3 +40,7 @@ export const createWindow = () => {
 };
 
 export const getMainWindow = () => mainWindow;
+
+process.on('message', (message) => {
+  console.log('Received message:', message);
+});

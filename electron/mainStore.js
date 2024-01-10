@@ -1,21 +1,34 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
+
 import globalSlice from '../src/redux/slices/globalSlice.js';
 import healingSlice from '../src/redux/slices/healingSlice.js';
 import gameStateSlice from '../src/redux/slices/gameStateSlice.js';
+import lastActionSlice, { setLastAction } from '../src/redux/slices/lastAction.js';
 
-const logger = (storeAPI) => (next) => (action) => {
+const logger = () => (next) => (action) => {
+  console.log(action.origin);
   console.table(action);
   return next(action);
 };
 
+const lastActionMiddleware = (store) => (next) => (action) => {
+  if (action.type !== setLastAction.type) {
+    next(action);
+    store.dispatch(setLastAction(action));
+    console.log(action);
+  } else {
+    next(action);
+  }
+};
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
   gameState: gameStateSlice.reducer,
   healing: healingSlice.reducer,
+  lastAction: lastActionSlice.reducer,
 });
 const store = configureStore({
   reducer: rootReducer,
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(logger),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(logger, lastActionMiddleware),
 });
 
 export default store;
