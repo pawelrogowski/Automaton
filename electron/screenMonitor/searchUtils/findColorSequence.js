@@ -1,6 +1,12 @@
 import getWindowGeometry from '../windowUtils/getWindowGeometry.js';
 
-const findColorSequence = (pixels, region, sequence, windowId, returnWindowGeometry = true) => {
+const findColorSequence = async (
+  pixels,
+  region,
+  sequence,
+  windowId,
+  returnWindowGeometry = true,
+) => {
   let currentSequence = [];
   let foundSequence = false;
 
@@ -25,13 +31,16 @@ const findColorSequence = (pixels, region, sequence, windowId, returnWindowGeome
     }
   }
 
-  if (returnWindowGeometry) {
-    console.log('WINDOW_FULL_SCAN');
-    const windowGeometry = getWindowGeometry(windowId);
-    return {
-      found: false,
-      position: windowGeometry,
-    };
+  if (returnWindowGeometry && !foundSequence) {
+    console.log('SEQUENCE_NOT_FOUND: updating window position');
+    try {
+      const windowGeometry = await getWindowGeometry(windowId);
+      region = windowGeometry;
+      return findColorSequence(pixels, region, sequence, windowId, false);
+    } catch (error) {
+      console.log(error);
+      throw error;
+    }
   }
 
   return {

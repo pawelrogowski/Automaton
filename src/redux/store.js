@@ -7,7 +7,7 @@ import gameStateSlice from './slices/gameStateSlice.js';
 const logger = createLogger();
 
 const ipcMiddleware = () => (next) => (action) => {
-  console.log('Sending action to main process:', action);
+  console.log('Sending action to main process:');
   const actionWithOrigin = { ...action, origin: 'renderer' };
   const serializedAction = JSON.stringify(actionWithOrigin);
   window.electron.ipcRenderer.send('state-change', serializedAction);

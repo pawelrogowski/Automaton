@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import path from 'path';
 import url, { fileURLToPath } from 'url';
 
@@ -7,9 +7,9 @@ let mainWindow;
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-export const createWindow = () => {
+export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 1000,
+    width: 1400,
     height: 720,
     webPreferences: {
       nodeIntegration: false,
@@ -32,6 +32,10 @@ export const createWindow = () => {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    if (process.platform !== 'darwin') {
+      process.kill(-process.pid);
+      app.quit();
+    }
   });
 
   mainWindow.on('ready-to-show', () => {
@@ -40,7 +44,3 @@ export const createWindow = () => {
 };
 
 export const getMainWindow = () => mainWindow;
-
-process.on('message', (message) => {
-  console.log('Received message:', message);
-});

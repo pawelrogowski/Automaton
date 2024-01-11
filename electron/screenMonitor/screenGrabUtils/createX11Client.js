@@ -7,9 +7,9 @@ async function createX11Client() {
         reject(err);
         return;
       }
-      resolve(display);
+      const X = display.client;
+      resolve({ display, X });
     });
   });
 }
-
 export default createX11Client;

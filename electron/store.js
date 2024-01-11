@@ -6,8 +6,10 @@ import gameStateSlice from '../src/redux/slices/gameStateSlice.js';
 import lastActionSlice, { setLastAction } from '../src/redux/slices/lastAction.js';
 
 const logger = () => (next) => (action) => {
-  console.log(action.origin);
-  console.table(action);
+  if (action.type !== setLastAction.type) {
+    console.log(action.origin);
+    console.table(action);
+  }
   return next(action);
 };
 
@@ -15,7 +17,6 @@ const lastActionMiddleware = (store) => (next) => (action) => {
   if (action.type !== setLastAction.type) {
     next(action);
     store.dispatch(setLastAction(action));
-    console.log(action);
   } else {
     next(action);
   }

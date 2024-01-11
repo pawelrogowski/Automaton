@@ -2,10 +2,22 @@ import createX11Client from './screenGrabUtils/createX11Client.js';
 import getWindowGeometry from './windowUtils/getWindowGeometry.js';
 import grabScreen from './screenGrabUtils/grabScreen.js';
 import findColorSequence from './searchUtils/findColorSequence.js';
-import mainStore from '../mainStore.js';
-import { setHealthPercent } from '../../src/redux/slices/gameStateSlice.js';
+import { getSelectedWindowId } from '../menus/windowSelection.js';
+import setGlobalState from '../setGlobalState.js';
+import store from '../store.js';
 
-let pickedWindowId = null;
+console.log(store.getState());
+
+function checkWindowId() {
+  console.log(windowId, healingEnabled);
+  if (windowId !== null && windowId !== undefined) {
+    return;
+  } else {
+    checkWindowId();
+  }
+}
+
+let pickedWindowId = getSelectedWindowId;
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
 let lastManaPercentDispatchTime = Date.now();
@@ -14,6 +26,7 @@ let areBarsVisible = null;
 let lastBarDispatchedValue = false;
 let cooldownRegion = null;
 let lastHealingCooldownStatus = null;
+let lastHealCdChange = null;
 
 const monitorRegions = {
   health: {
@@ -56,10 +69,10 @@ function combinedBarProcessor(pixels, region) {
   areBarsVisible = healthFound && manaFound;
 
   if (areBarsVisible !== lastBarDispatchedValue) {
-    process.send({
-      type: 'gameState/setBarVisibility',
-      payload: { isBarVisible: areBarsVisible },
-    });
+    // process.send({
+    //   type: 'gameState/setBarVisibility',
+    //   payload: { isBarVisible: areBarsVisible },
+    // });
     lastBarDispatchedValue = areBarsVisible;
   }
 
@@ -136,10 +149,10 @@ function combinedBarProcessor(pixels, region) {
     if (lastHealthPercentage !== null && healthPercentage !== 0) {
       console.log(`HEALTH: ${lastHealthPercentage} -> ${healthPercentage}%`);
 
-      process.send({
-        type: 'gameState/setHealthPercent',
-        payload: { hpPercentage: healthPercentage },
-      });
+      // process.send({
+      //   type: 'gameState/setHealthPercent',
+      //   payload: { hpPercentage: healthPercentage },
+      // });
 
       lastHealthPercentage = healthPercentage;
       lastHealthPercentDispatchTime = Date.now();
@@ -150,10 +163,10 @@ function combinedBarProcessor(pixels, region) {
   if (lastManaPercentage !== manaPercentage) {
     if (lastManaPercentage !== null && manaPercentage !== 0) {
       console.log(`MANA: ${lastManaPercentage} -> ${manaPercentage}%`);
-      process.send({
-        type: 'gameState/setManaPercent',
-        payload: { manaPercentage: manaPercentage },
-      });
+      // process.send({
+      //   type: 'gameState/setManaPercent',
+      //   payload: { manaPercentage: manaPercentage },
+      // });
       lastManaPercentage = manaPercentage;
       lastManaPercentDispatchTime = Date.now();
     }
@@ -163,31 +176,28 @@ function combinedBarProcessor(pixels, region) {
   // Ensure that values are dispatched at least every 500ms
   const now = Date.now();
   if (now - lastHealthPercentDispatchTime >= 500) {
-    process.send({
-      type: 'gameState/setHealthPercent',
-      payload: { hpPercentage: healthPercentage },
-    });
+    // process.send({
+    //   type: 'gameState/setHealthPercent',
+    //   payload: { hpPercentage: healthPercentage },
+    // });
     lastHealthPercentDispatchTime = now;
   }
 
   if (now - lastManaPercentDispatchTime >= 500) {
-    process.send({
-      type: 'gameState/setManaPercent',
-      payload: { manaPercentage: manaPercentage },
-    });
+    // process.send({
+    //   type: 'gameState/setManaPercent',
+    //   payload: { manaPercentage: manaPercentage },
+    // });
     lastManaPercentDispatchTime = now;
   }
 
   return combinedRegion;
 }
 
-let lastHealCdChange = null;
-
 const healingCooldownProcessor = (pixels, region) => {
   return new Promise((resolve) => {
     const sequenceOff = ['#737373', '#28323b'];
     const sequenceCdBar = ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'];
-    const barWidth = 2;
 
     if (!cooldownRegion) {
       const offResult = findColorSequence(pixels, region, sequenceOff, pickedWindowId, true);
@@ -216,10 +226,9 @@ const healingCooldownProcessor = (pixels, region) => {
           );
         }
         lastHealCdChange = Date.now();
-        console.log('dispatching CD');
-        process.send({
-          type: 'gameState/setHealingCooldownVisibility',
-          payload: { isHealingCooldown: onResult.found },
+
+        setGlobalState('gameState/setHealingCooldownVisibility', {
+          isHealingCooldown: onResult.found,
         });
         lastHealingCooldownStatus = onResult.found;
       }
@@ -231,18 +240,13 @@ const healingCooldownProcessor = (pixels, region) => {
   });
 };
 
-process.on('message', (message) => {
-  const { windowId } = message;
-  pickedWindowId = windowId;
+store.subscribe(() => {
+  const { global } = store.getState();
+  const { windowId, healingEnabled } = global;
 
-  monitorRegion(getWindowGeometry(windowId), healingCooldownProcessor, false, false, 50);
-  monitorRegion(getWindowGeometry(windowId), combinedBarProcessor, false, false, 50);
+  if (healingEnabled) {
+    monitorRegion(getWindowGeometry(windowId), healingCooldownProcessor, false, false, 50);
+  }
 });
 
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception in monitorStats.js:', err);
-});
-
-process.on('SIGINT', () => {
-  process.exit();
-});
+// monitorRegion(getWindowGeometry(pickedWindowId), combinedBarProcessor, false, false, 50);

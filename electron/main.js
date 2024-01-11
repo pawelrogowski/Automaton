@@ -1,12 +1,19 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
-import { createWindow } from './createWindow.js';
-import mainStore from './mainStore.js';
+import { app } from 'electron';
+import { Worker } from 'worker_threads';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+import { createMainWindow } from './createMainWindow.js';
+import './ipcListeners.js';
 import './colorPicker/colorPicker.js';
 import './screenMonitor/monitoring.js';
-import setupAppMenu from './menus/appMenu.js';
+import setupAppMenu from './menus/setupAppMenu.js';
+import store from './store.js';
+
+const filename = fileURLToPath(import.meta.url);
+const cwd = dirname(filename);
 
 app.whenReady().then(() => {
-  createWindow();
+  createMainWindow();
   setupAppMenu();
 });
 
@@ -17,35 +24,26 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
+let StatCheckWorker = null;
+let prevWindowId = null;
 
-ipcMain.on('state-change', (event, serializedAction) => {
-  try {
-    const action = JSON.parse(serializedAction);
-    if (action.origin === 'renderer') {
-      mainStore.dispatch(action);
-    }
-  } catch (error) {
-    console.error('Error dispatching action in main process:', error);
-  }
-});
+store.subscribe(() => {
+  const state = store.getState();
+  const { global } = state;
+  const windowId = global;
 
-mainStore.subscribe(() => {
-  const state = mainStore.getState();
-  const { lastAction } = state;
-  console.log('??????????????????????????????', state, lastAction);
-  if (lastAction && lastAction.payload.origin === 'main') {
-    console.log('sending dispatch from main');
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('state-update', JSON.stringify(lastAction));
-    });
+  // If a worker exists and a new windowId is set, terminate the existing worker.
+  if (StatCheckWorker && windowId !== prevWindowId) {
+    StatCheckWorker.terminate();
+    StatCheckWorker = null;
   }
-});
 
-// ipcMain.on('gameState/setManaPercent', (event, action) => {
-//   mainStore.dispatch(action);
-// });
+  // Start a new worker with the updated state.
+  if (!StatCheckWorker && windowId) {
+    const statCheckPath = resolve(cwd, './workers', 'statCheck.js');
+    StatCheckWorker = new Worker(statCheckPath, { name: 'StatCheckWorker' });
+    StatCheckWorker.postMessage(state);
+  }
+
+  prevWindowId = windowId;
+});

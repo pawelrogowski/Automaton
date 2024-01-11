@@ -1,6 +1,6 @@
 import * as X11 from 'x11';
 
-const getDisplayGeometry = () => {
+const getDisplayGeometry = async () => {
   return new Promise((resolve, reject) => {
     X11.createClient((err, display) => {
       if (err) {

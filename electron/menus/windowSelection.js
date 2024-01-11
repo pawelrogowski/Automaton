@@ -1,12 +1,11 @@
-import { dialog, BrowserWindow } from 'electron';
+import { dialog } from 'electron';
 import { exec, fork } from 'child_process';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { getMainWindow } from '../createWindow.js';
-import mainStore from '../mainStore.js';
+import store from '../store.js';
+import { getMainWindow } from '../createMainWindow.js';
+import { setWindowTitle, setWindowId } from '../../src/redux/slices/globalSlice.js';
+import setGlobalState from '../setGlobalState.js';
 
-let selectedWindowId;
-let monitorStats;
+let selectedWindowId = null;
 
 const getGeometry = (id) =>
   new Promise((resolve, reject) => {
@@ -30,32 +29,6 @@ const getWindowName = (id) =>
     });
   });
 
-const startWorkerProcess = () => {
-  const currentURL = new URL(import.meta.url);
-  const currentDirname = path.dirname(fileURLToPath(currentURL));
-  monitorStats = fork(
-    path.join(currentDirname, '..', 'screenMonitor', 'monitorStats.js'),
-    ['MonitorStats'],
-    {
-      stdio: 'inherit',
-    },
-  );
-
-  monitorStats.send({ command: 'start', windowId: selectedWindowId });
-
-  monitorStats.on('message', (message) => {
-    console.log(message);
-
-    // Then send it to the renderer process
-    getMainWindow().webContents.send('state-update', message);
-  });
-
-  // When the parent process is closed, kill the child process
-  process.on('exit', () => {
-    monitorStats.kill();
-  });
-};
-
 export const selectWindow = async () => {
   const electronWindowId = getMainWindow().getNativeWindowHandle().readUInt32LE().toString();
   exec('xdotool search --name "Tibia -"', async (error, stdout) => {
@@ -77,33 +50,25 @@ export const selectWindow = async () => {
     const windowList = validWindowIds.map((id, index) => `${windowNames[index]}`);
     dialog
       .showMessageBox({
-        buttons: windowList,
+        buttons: ['Cancel', ...windowList],
         title: 'Select Tibia Client',
-        checkboxLabel: 'Censor window title',
       })
       .then((result) => {
-        selectedWindowId = validWindowIds[result.response];
-        let windowTitle = windowNames[result.response];
-        if (result.response === -1) {
-          console.log('Window picking cancelled');
+        if (result.response === 0) {
+          setGlobalState('global/setWindowId', null);
+          setGlobalState('global/setWindowTitle', 'Pick a window from the bot menu');
           return;
         }
-        if (result.checkboxChecked) {
-          const titleParts = windowTitle.split(' - ');
-          if (titleParts.length > 1) {
-            windowTitle = `${titleParts[0]} - Censored`;
-          }
-        }
-        getMainWindow().setTitle(`Automaton - ${windowTitle}`);
+        selectedWindowId = validWindowIds[result.response - 1];
+        const selectedWindowTitle = windowNames[result.response - 1];
+        getMainWindow().setTitle(`Automaton - ${selectedWindowTitle}`);
 
-        // If a worker process is already running, kill it
-        if (monitorStats) {
-          monitorStats.kill();
-        }
-
-        exec(`xdotool windowactivate ${selectedWindowId}`);
+        exec(`xdotool windowactivate ${selectedWindowId} --sync`);
         console.log('windowID:', selectedWindowId);
-        startWorkerProcess();
+
+        setGlobalState('global/setWindowTitle', selectedWindowTitle);
+        setGlobalState('global/setWindowId', null);
+        setGlobalState('global/setWindowId', selectedWindowId);
       });
   });
 };
