@@ -1,4 +1,4 @@
-async function grabScreen(X, root, region) {
+async function grabScreen(X, root, region, logPixels = false) {
   if (!region) {
     throw new Error('Region is undefined');
   }
@@ -25,6 +25,9 @@ async function grabScreen(X, root, region) {
           const b = img.data[i].toString(16).padStart(2, '0');
           const hex = `#${r}${g}${b}`;
           pixels.push(hex);
+          if (logPixels) {
+            console.log(hex);
+          }
         }
 
         resolve(pixels);

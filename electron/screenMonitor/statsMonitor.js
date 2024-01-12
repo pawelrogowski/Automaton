@@ -8,15 +8,6 @@ import store from '../store.js';
 
 console.log(store.getState());
 
-function checkWindowId() {
-  console.log(windowId, healingEnabled);
-  if (windowId !== null && windowId !== undefined) {
-    return;
-  } else {
-    checkWindowId();
-  }
-}
-
 let pickedWindowId = getSelectedWindowId;
 let lastHealthPercentage = null;
 let lastManaPercentage = null;

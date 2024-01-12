@@ -31,9 +31,21 @@ const findRegionsOfInterest = async (
 
         if (currentSequence.length === sequence.length) {
           foundSequence = true;
+          const position = { x: region.x + x - sequence.length + 1, y: region.y + y };
+          const pixelColor = hex;
+          const pixelsToLeft = [];
+          for (let offset = 1; offset <= 3; offset++) {
+            const pixelToLeftIndex = x - offset >= 0 ? y * region.width + (x - offset) : null;
+            pixelsToLeft.unshift(pixelToLeftIndex !== null ? pixels[pixelToLeftIndex] : null); // unshift to add to the beginning
+          }
+          console.log(
+            `Position: ${JSON.stringify(
+              position,
+            )}, Pixel Color: ${pixelColor}, Pixels to Left: ${pixelsToLeft.join(', ')}`,
+          );
           results[key] = {
             found: true,
-            position: { x: region.x + x - sequence.length + 1, y: region.y + y },
+            position,
           };
           sequencesToFind.splice(i, 1); // remove this sequence from the list
           i--; // decrement i because we removed an element

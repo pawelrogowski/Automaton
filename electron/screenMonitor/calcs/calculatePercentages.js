@@ -1,20 +1,16 @@
-async function calculatePercentages(start, position, width, lastPercentage, lastDispatchTime) {
-  return new Promise((resolve) => {
-    const percentage = Math.floor(((start - position.x) / width) * 100);
+async function calculatePercentages(barPosition, combinedRegion, combinedPixels, colors, barWidth) {
+  let matchingPixelsCount = 0;
 
-    if (lastPercentage !== percentage) {
-      console.log(`${percentage}%`);
-
-      lastPercentage = percentage;
-      lastDispatchTime = Date.now();
+  for (let { x } = barPosition; x < barPosition.x + barWidth; x += 1) {
+    const index =
+      (barPosition.y - combinedRegion.y) * combinedRegion.width + (x - combinedRegion.x);
+    if (colors.includes(combinedPixels[index])) {
+      matchingPixelsCount += 1;
     }
+  }
+  const percentage = Math.floor((matchingPixelsCount / barWidth) * 100);
 
-    const now = Date.now();
-    if (now - lastDispatchTime >= 500) {
-      lastDispatchTime = now;
-    }
-
-    resolve({ lastPercentage, lastDispatchTime });
-  });
+  return { percentage };
 }
+
 export default calculatePercentages;

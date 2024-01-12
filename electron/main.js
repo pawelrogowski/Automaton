@@ -8,6 +8,7 @@ import './colorPicker/colorPicker.js';
 import './screenMonitor/monitoring.js';
 import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
+import setGlobalState from './setGlobalState.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -30,7 +31,7 @@ let prevWindowId = null;
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
-  const windowId = global;
+  const windowId = global; // Make sure to access the windowId property
 
   // If a worker exists and a new windowId is set, terminate the existing worker.
   if (StatCheckWorker && windowId !== prevWindowId) {
@@ -42,6 +43,13 @@ store.subscribe(() => {
   if (!StatCheckWorker && windowId) {
     const statCheckPath = resolve(cwd, './workers', 'statCheck.js');
     StatCheckWorker = new Worker(statCheckPath, { name: 'StatCheckWorker' });
+    StatCheckWorker.on('message', (message) => {
+      if (message.type === 'setHealthPercent') {
+        setGlobalState('gameState/setHealthPercent', message.payload);
+      } else if (message.type === 'setManaPercent') {
+        setGlobalState('gameState/setManaPercent', message.payload);
+      }
+    });
     StatCheckWorker.postMessage(state);
   }
 
