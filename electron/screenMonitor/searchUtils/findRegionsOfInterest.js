@@ -2,23 +2,24 @@ import getWindowGeometry from '../windowUtils/getWindowGeometry.js';
 
 const findRegionsOfInterest = async (
   pixels,
-  region,
   regionsOfInterest,
   windowId,
   returnWindowGeometry = true,
 ) => {
-  let results = {};
-  let sequencesToFind = Object.entries(regionsOfInterest).map(([key, sequence]) => ({
-    key,
-    sequence,
-    currentSequence: [],
-    foundSequence: false,
-  }));
+  try {
+    let results = {};
+    let sequencesToFind = Object.entries(regionsOfInterest).map(([key, sequence]) => ({
+      key,
+      sequence,
+      currentSequence: [],
+      foundSequence: false,
+    }));
 
-  while (true) {
-    for (let y = 0; y < region.height; y += 1) {
-      for (let x = 0; x < region.width; x += 1) {
-        const index = y * region.width + x;
+    let currentRegion = await getWindowGeometry(windowId);
+
+    for (let y = 0; y < currentRegion.height; y += 1) {
+      for (let x = 0; x < currentRegion.width; x += 1) {
+        const index = y * currentRegion.width + x;
         const hex = pixels[index];
 
         for (let i = 0; i < sequencesToFind.length; i++) {
@@ -32,18 +33,11 @@ const findRegionsOfInterest = async (
 
           if (currentSequence.length === sequence.length) {
             foundSequence = true;
-            const position = { x: region.x + x - sequence.length + 1, y: region.y + y };
-            const pixelColor = hex;
-            const pixelsToLeft = [];
-            for (let offset = 1; offset <= 3; offset++) {
-              const pixelToLeftIndex = x - offset >= 0 ? y * region.width + (x - offset) : null;
-              pixelsToLeft.unshift(pixelToLeftIndex !== null ? pixels[pixelToLeftIndex] : null); // unshift to add to the beginning
-            }
-            console.log(
-              `Position: ${JSON.stringify(
-                position,
-              )}, Pixel Color: ${pixelColor}, Pixels to Left: ${pixelsToLeft.join(', ')}`,
-            );
+            const position = {
+              x: currentRegion.x + x - sequence.length + 1,
+              y: currentRegion.y + y,
+            };
+
             results[key] = {
               found: true,
               position,
@@ -55,25 +49,21 @@ const findRegionsOfInterest = async (
       }
     }
 
-    if (sequencesToFind.length > 0 && returnWindowGeometry) {
-      console.log(
-        `${sequencesToFind
-          .map(({ key }) => `${key}_NOT_FOUND: updating window position`)
-          .join(', ')}`,
-      );
-      try {
-        const windowGeometry = await getWindowGeometry(windowId);
-        region = windowGeometry;
-      } catch (error) {
-        console.log(error);
-        throw error;
-      }
-    } else {
-      break;
+    // If sequences were not found, return 0 for each key
+    if (Object.keys(results).length === 0) {
+      sequencesToFind.forEach(({ key }) => {
+        results[key] = {
+          found: false,
+          position: { x: 0, y: 0 },
+        };
+      });
     }
-  }
 
-  return results;
+    return results;
+  } catch (error) {
+    console.error('An error occurred:', error);
+    throw error;
+  }
 };
 
 export default findRegionsOfInterest;

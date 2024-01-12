@@ -50,6 +50,13 @@ store.subscribe(() => {
         setGlobalState('gameState/setManaPercent', message.payload);
       }
     });
+    StatCheckWorker.on('error', (error) => {
+      console.error('An error occurred in the worker:', error);
+      console.log('Restarting the worker...');
+      StatCheckWorker.terminate();
+      StatCheckWorker = null;
+      store.dispatch({ type: 'SET_WINDOW_ID', payload: windowId }); // Dispatch an action to trigger the worker restart
+    });
     StatCheckWorker.postMessage(state);
   }
 
