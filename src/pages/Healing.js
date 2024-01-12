@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import HealingRule from '../components/HealingRule/HealingRule.js';
 import { addRule, reorderRules } from '../redux/slices/healingSlice.js';
-import { PlusSquare } from 'react-feather';
+import { Heart, Plus, Zap } from 'react-feather';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
 import { setHealing } from '../redux/slices/globalSlice.js';
@@ -13,7 +13,7 @@ export const Healing = () => {
   const dispatch = useDispatch();
   const rules = useSelector((state) => state.healing);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
-  const { windowTitle, windowId, healingEnabled } = useSelector((state) => state.global);
+  const { windowId, healingEnabled } = useSelector((state) => state.global);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
 
   const handleAddRule = () => {
@@ -27,6 +27,7 @@ export const Healing = () => {
       hpTriggerPercentage: '80',
       manaTriggerCondition: '>=',
       manaTriggerPercentage: '5',
+      priority: '1',
     };
     dispatch(addRule(newRule));
   };
@@ -47,30 +48,39 @@ export const Healing = () => {
   return (
     <StyledMain>
       <section>
-        <Switch
-          checked={healingEnabled}
-          onChange={handleHealingToggle}
-          disabled={windowId === null}
-          offColor="#ff1c1c"
-          onColor="#00ff00"
-          handleDiameter={42}
-          uncheckedIcon={false}
-          checkedIcon={false}
-          boxShadow="0px 1px 5px rgba(0, 0, 0, 0.6)"
-          activeBoxShadow="0px 0px 1px 10px rgba(0, 0, 0, 0.2)"
-          height={32}
-          width={72}
-        />
-        <div className="bar-container">
-          <StatBar value={hpPercentage} fill={` #990000`} />
-          <StatBar value={manaPercentage} fill={` #350099`} />
+        <div className="heading-wrapper">
+          <h1 className="Heading">HEALINNG</h1>
+          <Switch
+            className="main-switch"
+            checked={healingEnabled}
+            onChange={handleHealingToggle}
+            disabled={windowId === null}
+            offColor="#ff1c1c"
+            onColor="#00ff00"
+            handleDiameter={42}
+            uncheckedIcon={false}
+            checkedIcon={false}
+            boxShadow="0px 1px 5px rgba(0, 0, 0, 0.6)"
+            activeBoxShadow="0px 0px 1px 10px rgba(0, 0, 0, 0.2)"
+            height={28}
+            width={72}
+          />
         </div>
-        <h2>
-          {windowTitle}({windowId})
-        </h2>
+        <div className="bar-container">
+          <div className="health-bar">
+            <StatBar value={hpPercentage} fill={` #990000`} />
+            <Heart size={28} className="hp-icon" />
+          </div>
+
+          <div className="mana-bar">
+            <StatBar value={manaPercentage} fill={` #350099`} />
+
+            <Zap size={30} className="mp-icon" />
+          </div>
+        </div>
 
         <button className="add-button" type="button" onClick={handleAddRule}>
-          <PlusSquare size={32} />
+          <Plus size={32} /> Add new rule
         </button>
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="rules">

@@ -208,6 +208,28 @@ const HealingRule = ({ rule }) => {
             <label className="label label-percent" htmlFor="manaTriggerPercentage">
               Mana %
             </label>
+          </div>{' '}
+          <div className="input-wrapper">
+            <input
+              type="number"
+              className="input input-priority"
+              id="priority"
+              value={localHealing.priority}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  priority: event.target.value,
+                  colors: healing.colors,
+                })
+              }
+              min="0"
+              max="99"
+              placeholder="Priority"
+              disabled={healing.enabled}
+            />
+            <label className="label" htmlFor="priority">
+              Priority
+            </label>
           </div>
           <button
             className="remove-rule-button"

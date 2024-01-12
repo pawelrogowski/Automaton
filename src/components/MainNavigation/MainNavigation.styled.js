@@ -3,6 +3,7 @@ import styled from 'styled-components';
 const StyledNav = styled.nav`
   display: flex;
   align-items: center;
+  width: 100%;
   ul {
     list-style: none;
     display: flex;
@@ -10,7 +11,7 @@ const StyledNav = styled.nav`
     gap: 24px;
     margin: 0;
     padding: 0;
-
+    width: 100%;
     li {
     }
     a {
@@ -21,6 +22,12 @@ const StyledNav = styled.nav`
         color: #0066ff;
       }
     }
+  }
+  .character-name {
+    color: #fafafa;
+    font-size: 16px;
+    margin-left: auto;
+    padding-right: 24px;
   }
 `;
 

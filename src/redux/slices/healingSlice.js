@@ -1,6 +1,19 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = [];
+const initialState = [
+  {
+    name: 'New Rule',
+    enabled: false,
+    key: 'F6',
+    colors: [],
+    id: Date.now().toString(),
+    hpTriggerCondition: '<=',
+    hpTriggerPercentage: '80',
+    manaTriggerCondition: '>=',
+    manaTriggerPercentage: '5',
+    priority: '1',
+  },
+];
 
 const healingSlice = createSlice({
   name: 'healing',

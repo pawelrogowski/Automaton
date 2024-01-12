@@ -42,6 +42,10 @@ const StyledDiv = styled.div`
     width: 32px;
     background: #24292e;
   }
+  .input-priority {
+    width: 65px;
+    background: #24292e;
+  }
   .label {
     position: absolute;
     top: -7px;
