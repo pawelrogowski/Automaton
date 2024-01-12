@@ -1,15 +1,21 @@
+import getDisplayGeometry from '../windowUtils/getDisplayGeometry.js';
+
 async function grabScreen(X, root, region, logPixels = false) {
-  if (!region) {
-    throw new Error('Region is undefined');
+  let finalRegion;
+  if (!region || region === 'screen') {
+    finalRegion = await getDisplayGeometry();
+  } else {
+    finalRegion = region;
   }
+
   return new Promise((resolve, reject) => {
     X.GetImage(
       2,
       root,
-      region.x,
-      region.y,
-      region.width,
-      region.height,
+      finalRegion.x,
+      finalRegion.y,
+      finalRegion.width,
+      finalRegion.height,
       0xffffff,
       X.ZPixmapFormat,
       (er, img) => {

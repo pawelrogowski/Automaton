@@ -15,6 +15,7 @@ const regionsOfInterest = {
 let state = null;
 let global = null;
 let windowGeometry = null;
+let updateWindowGeometry = true;
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
 let statBarPixels = null;
@@ -24,6 +25,10 @@ let manaBar = null;
 let ROI;
 let lastDispatchedHealthPercentage = null;
 let lastDispatchedManaPercentage = null;
+let pixels = null;
+let manaBarPosX;
+let manaBarPosY;
+
 const waitForWindowId = new Promise((resolve) => {
   parentPort.on('message', (updatedState) => {
     state = updatedState;
@@ -38,24 +43,24 @@ async function main() {
   await waitForWindowId;
   const { display, X } = await createX11Client();
   windowGeometry = await getWindowGeometry(global.windowId);
-  const pixels = await grabScreen(X, display.screen[0].root, windowGeometry);
-
-  // Calculate the filled percentage of the health and mana bars
 
   setInterval(async () => {
-    if (!lastHealthPercentage || !lastManaPercentage || lastHealthPercentage === 0) {
+    if (updateWindowGeometry) {
       windowGeometry = await getWindowGeometry(global.windowId);
+      pixels = await grabScreen(X, display.screen[0].root, windowGeometry);
       ROI = await findRegionsOfInterest(pixels, windowGeometry, regionsOfInterest, global.windowId);
 
       healthBar = ROI.healthBar;
-      manaBar = ROI.manaBar;
+      manaBarPosX = healthBar.position.x;
+      manaBarPosY = healthBar.position.y + 13;
 
       combinedRegion = {
-        x: Math.min(healthBar.position.x, manaBar.position.x),
-        y: Math.min(healthBar.position.y, manaBar.position.y),
+        x: healthBar.position.x,
+        y: healthBar.position.y,
         width: 92,
         height: 14,
       };
+      updateWindowGeometry = false;
     }
 
     statBarPixels = await grabScreen(X, display.screen[0].root, combinedRegion);
@@ -68,15 +73,14 @@ async function main() {
       92,
     ));
     ({ percentage: lastManaPercentage } = await calculatePercentages(
-      manaBar.position,
+      { x: manaBarPosX, y: manaBarPosY },
       combinedRegion,
       statBarPixels,
       ['#5350da', '#4d4ac2', '#2d2d69', '#3d3d7d', '#524fd3'],
       92,
     ));
-
+    console.log(lastHealthPercentage, lastManaPercentage);
     if (lastHealthPercentage !== lastDispatchedHealthPercentage) {
-      console.log('HP:', lastHealthPercentage, 'MP:', lastManaPercentage);
       parentPort.postMessage({
         type: 'setHealthPercent',
         payload: { hpPercentage: lastHealthPercentage },
@@ -85,16 +89,14 @@ async function main() {
     }
 
     if (lastManaPercentage !== lastDispatchedManaPercentage) {
-      console.log('HP:', lastHealthPercentage, 'MP:', lastManaPercentage);
       parentPort.postMessage({
         type: 'setManaPercent',
         payload: { manaPercentage: lastManaPercentage },
       });
       lastDispatchedManaPercentage = lastManaPercentage;
     }
-
-    if (lastHealthPercentage < 95) {
-      execSync('xdotool key F6');
+    if (lastHealthPercentage === 0) {
+      updateWindowGeometry = true;
     }
   }, 100);
 }
