@@ -26,17 +26,29 @@ app.on('window-all-closed', () => {
 });
 
 let StatCheckWorker = null;
+let HealingWorker = null;
 let prevWindowId = null;
 
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
-  const windowId = global; // Make sure to access the windowId property
+  const { windowId } = global;
 
-  // If a worker exists and a new windowId is set, terminate the existing worker.
-  if (StatCheckWorker && windowId !== prevWindowId) {
-    StatCheckWorker.terminate();
-    StatCheckWorker = null;
+  // forward state to healing worker
+  if (HealingWorker) {
+    HealingWorker.postMessage(state);
+  }
+
+  // reset all workers on windowId change
+  if (windowId !== prevWindowId) {
+    if (StatCheckWorker) {
+      StatCheckWorker.terminate();
+      StatCheckWorker = null;
+    }
+    if (HealingWorker) {
+      HealingWorker.terminate();
+      HealingWorker = null;
+    }
   }
 
   // Start a new worker with the updated state.
@@ -46,6 +58,7 @@ store.subscribe(() => {
     StatCheckWorker.on('message', (message) => {
       if (message.type === 'setHealthPercent') {
         setGlobalState('gameState/setHealthPercent', message.payload);
+        store.dispatch({ type: 'gameState/setHealthPercent', payload: message.payload });
       } else if (message.type === 'setManaPercent') {
         setGlobalState('gameState/setManaPercent', message.payload);
       }
@@ -58,6 +71,20 @@ store.subscribe(() => {
       store.dispatch({ type: 'SET_WINDOW_ID', payload: windowId }); // Dispatch an action to trigger the worker restart
     });
     StatCheckWorker.postMessage(state);
+  }
+
+  if (!HealingWorker && state) {
+    const healingPath = resolve(cwd, './workers', 'healing.js');
+    HealingWorker = new Worker(healingPath, { name: 'HealingWorker' });
+
+    HealingWorker.on('error', (error) => {
+      console.error('An error occurred in the worker:', error);
+      console.log('Restarting the worker...');
+      HealingWorker.terminate();
+      HealingWorker = null;
+      store.dispatch({ type: 'SET_STATE', payload: state }); // Dispatch an action to trigger the worker restart
+    });
+    HealingWorker.postMessage(state);
   }
 
   prevWindowId = windowId;
