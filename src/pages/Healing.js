@@ -1,13 +1,13 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { Heart, Plus, Zap } from 'react-feather';
+import Switch from 'react-switch';
 import HealingRule from '../components/HealingRule/HealingRule.js';
 import { addRule, reorderRules } from '../redux/slices/healingSlice.js';
-import { Heart, Plus, Zap } from 'react-feather';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
 import { setHealing } from '../redux/slices/globalSlice.js';
-import Switch from 'react-switch';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -28,6 +28,7 @@ export const Healing = () => {
       manaTriggerCondition: '>=',
       manaTriggerPercentage: '5',
       priority: '1',
+      delay: '100',
     };
     dispatch(addRule(newRule));
   };

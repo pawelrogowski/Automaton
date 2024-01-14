@@ -97,6 +97,29 @@ const HealingRule = ({ rule }) => {
           </div>
           <div className="input-wrapper">
             <select
+              className="input input-category"
+              id="category"
+              value={localHealing.category}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  category: event.target.value,
+                })
+              }
+              disabled={healing.enabled}
+            >
+              <option value="Healing">Healing</option>
+              <option value="Potions">Potions</option>
+              <option value="Support">Support</option>
+              <option value="Attack">Attack</option>
+              <option value="Equip">Equip</option>
+            </select>
+            <label className="label" htmlFor="category">
+              Category
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <select
               className="input input-key"
               id="key"
               value={localHealing.key}
@@ -208,7 +231,7 @@ const HealingRule = ({ rule }) => {
             <label className="label label-percent" htmlFor="manaTriggerPercentage">
               Mana %
             </label>
-          </div>{' '}
+          </div>
           <div className="input-wrapper">
             <input
               type="number"
@@ -229,6 +252,27 @@ const HealingRule = ({ rule }) => {
             />
             <label className="label" htmlFor="priority">
               Priority
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <input
+              type="number"
+              className="input input-delay"
+              id="delay"
+              value={localHealing.delay}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  delay: event.target.value,
+                })
+              }
+              placeholder="25"
+              min="25"
+              step="25"
+              disabled={healing.enabled}
+            />
+            <label className="label" htmlFor="delay">
+              Delay (ms)
             </label>
           </div>
           <button

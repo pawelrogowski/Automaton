@@ -36,36 +36,50 @@ const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
   }
 };
 
-function checkHealingRules() {
-  let highestPriorityRule = null;
-  healing.forEach((rule) => {
-    if (rule.enabled) {
-      const hpConditionMet = parseMathCondition(
-        rule.hpTriggerCondition,
-        parseInt(rule.hpTriggerPercentage, 10),
-        gameState.hpPercentage,
-      );
-      const manaConditionMet = parseMathCondition(
-        rule.manaTriggerCondition,
-        parseInt(rule.manaTriggerPercentage, 10),
-        gameState.manaPercentage,
-      );
+let lastExecutionTimes = {};
 
-      if (hpConditionMet && manaConditionMet) {
-        if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
-          highestPriorityRule = rule;
+function checkHealingRules() {
+  const categories = Array.from(new Set(healing.map((rule) => rule.category)));
+  categories.forEach((category) => {
+    let highestPriorityRule = null;
+    healing.forEach((rule) => {
+      if (rule.enabled && rule.category === category) {
+        const hpConditionMet = parseMathCondition(
+          rule.hpTriggerCondition,
+          parseInt(rule.hpTriggerPercentage, 10),
+          gameState.hpPercentage,
+        );
+        const manaConditionMet = parseMathCondition(
+          rule.manaTriggerCondition,
+          parseInt(rule.manaTriggerPercentage, 10),
+          gameState.manaPercentage,
+        );
+
+        if (hpConditionMet && manaConditionMet) {
+          if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
+            highestPriorityRule = rule;
+          }
         }
+      }
+    });
+
+    if (highestPriorityRule) {
+      const now = Date.now();
+      const lastExecutionTime = lastExecutionTimes[highestPriorityRule.id] || 0;
+      const delay = highestPriorityRule.delay || 0;
+
+      if (now - lastExecutionTime >= delay) {
+        exec(`xdotool key --window ${global.windowId} ${highestPriorityRule.key}`);
+        lastExecutionTimes[highestPriorityRule.id] = now;
       }
     }
   });
-
-  if (highestPriorityRule) {
-    exec(`xdotool key --window ${global.windowId} ${highestPriorityRule.key}`);
-  }
 }
 
 setInterval(() => {
   if (global.healingEnabled) {
+    console.time('hotkey');
     checkHealingRules();
+    console.timeEnd('hotkey');
   }
 }, 100);
