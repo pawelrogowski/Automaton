@@ -4,7 +4,8 @@ const initialState = {
   hpPercentage: null,
   manaPercentage: null,
   isVisible: false,
-  isHealingCooldown: false,
+  healingCdActive: false,
+  supportCdActive: false,
 };
 
 const gameStateSlice = createSlice({
@@ -20,12 +21,15 @@ const gameStateSlice = createSlice({
     setBarVisibility: (state, action) => {
       state.isBarVisible = action.payload.isBarVisible;
     },
-    setHealingCooldownVisibility: (state, action) => {
-      state.isHealingCooldown = action.payload.isHealingCooldown;
+    setHealingCdActive: (state, action) => {
+      state.healingCdActive = action.payload.HealingCdActive;
+    },
+    setSupportCdActive: (state, action) => {
+      state.supportCdActive = action.payload.supportCdActive;
     },
   },
 });
 
-export const { setHealthPercent, setManaPercent, setBarVisibility } = gameStateSlice.actions;
+export const { setHealthPercent, setManaPercent, setHealingCdActive } = gameStateSlice.actions;
 
 export default gameStateSlice;

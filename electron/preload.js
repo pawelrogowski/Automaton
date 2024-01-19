@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('electron', {
     on: (channel, func) => ipcRenderer.on(channel, func),
     removeListener: (channel, func) => ipcRenderer.removeListener(channel, func),
   },
+  saveRules: () => ipcRenderer.send('save-rules'),
+  loadRules: () => ipcRenderer.invoke('load-rules'),
+  onRulesLoaded: (callback) => ipcRenderer.on('load-rules-reply', callback),
 });
 
 contextBridge.exposeInMainWorld('api', {

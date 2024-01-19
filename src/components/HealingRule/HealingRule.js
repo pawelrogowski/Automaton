@@ -47,7 +47,9 @@ const HealingRule = ({ rule }) => {
     healing.hpTriggerCondition &&
     healing.hpTriggerPercentage &&
     healing.manaTriggerCondition &&
-    healing.manaTriggerPercentage;
+    healing.manaTriggerPercentage &&
+    healing.priority &&
+    healing.category;
 
   return (
     <StyledDiv $running={healing.enabled}>
@@ -120,7 +122,7 @@ const HealingRule = ({ rule }) => {
           </div>
           <div className="input-wrapper">
             <select
-              className="input input-key"
+              className="input input-hotkey"
               id="key"
               value={localHealing.key}
               onChange={(event) =>
@@ -276,25 +278,29 @@ const HealingRule = ({ rule }) => {
             </label>
           </div>
           <button
-            className="remove-rule-button"
+            className="remove-rule-button rule-button"
             type="button"
             onClick={handleRemoveRule}
             disabled={healing.enabled}
             aria-label="remove-rule"
           >
-            <Trash2 className="remove-rule-icon" size={24} />
+            Remove
           </button>
           {isOpen ? (
-            <ChevronUp className="details-arrow" />
+            <button type="button" className="rule-button button-expand">
+              Expand
+            </button>
           ) : (
-            <ChevronDown className="details-arrow" />
+            <button type="button" className="rule-button button-expand">
+              Expand
+            </button>
           )}
         </summary>
         <div className="details-wrapper">
           <div className="conditions-header-wrapper">
             <h2 className="conditions-header">Color Conditions</h2>
             <button
-              className="button pick-pixel-button"
+              className="rule-button pick-pixel-button"
               type="button"
               onClick={handleColorPick}
               disabled={healing.enabled}
@@ -321,7 +327,7 @@ const HealingRule = ({ rule }) => {
                 <option value="false">Absent</option>
               </select>
               <button
-                className="button remove-color"
+                className="rule-button remove-color"
                 type="button"
                 onClick={() => dispatch(removeColor({ id: healing.id, colorId: color.id }))}
                 disabled={healing.enabled}

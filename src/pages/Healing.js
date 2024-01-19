@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import { Heart, Plus, Zap } from 'react-feather';
+import { Download, Heart, Plus, Save, Zap } from 'react-feather';
 import Switch from 'react-switch';
 import HealingRule from '../components/HealingRule/HealingRule.js';
 import { addRule, reorderRules } from '../redux/slices/healingSlice.js';
@@ -29,6 +29,7 @@ export const Healing = () => {
       manaTriggerPercentage: '5',
       priority: '1',
       delay: '100',
+      category: 'Healing',
     };
     dispatch(addRule(newRule));
   };
@@ -45,12 +46,21 @@ export const Healing = () => {
       }),
     );
   };
+  const { saveRules, loadRules } = window.electron;
+
+  const handleSaveRules = () => {
+    saveRules();
+  };
+
+  const handleLoadRules = async () => {
+    await loadRules();
+  };
 
   return (
     <StyledMain>
       <section>
         <div className="heading-wrapper">
-          <h1 className="Heading">HEALINNG</h1>
+          <h1 className="heading">Healing</h1>
           <Switch
             className="main-switch"
             checked={healingEnabled}
@@ -79,10 +89,17 @@ export const Healing = () => {
             <Zap size={30} className="mp-icon" />
           </div>
         </div>
-
-        <button className="add-button" type="button" onClick={handleAddRule}>
-          <Plus size={32} /> Add new rule
-        </button>
+        <div className="button-container">
+          <button className="add-button button-page" type="button" onClick={handleAddRule}>
+            Add New Rule
+          </button>
+          <button className="save-button button-page" type="button" onClick={handleLoadRules}>
+            Load
+          </button>
+          <button className="load-button button-page" type="button" onClick={handleSaveRules}>
+            Save
+          </button>
+        </div>
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="rules">
             {(provided) => (

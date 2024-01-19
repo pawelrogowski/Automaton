@@ -9,9 +9,8 @@ import { Healing } from './pages/Healing.js';
 import { Actions } from './pages/Actions.js';
 import { Console } from './pages/Console.js';
 import Layout from './layouts/Layout.js';
-
 import store from './redux/store.js';
-
+import GlobalStyles from './galobalStyles.js';
 const { ipcRenderer } = window.electron;
 
 ipcRenderer.on('state-update', (_, action) => {
@@ -26,6 +25,7 @@ const theme = {
 
 const App = () => (
   <ThemeProvider theme={theme}>
+    <GlobalStyles />
     <Provider store={store}>
       <Router>
         <Routes>

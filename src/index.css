@@ -1,24 +1,15 @@
 @font-face {
-  font-family: 'Poppins';
+  font-family: 'Verdana';
   src:
-    local('Poppins-Regular'),
-    url('./assets/fonts/Poppins-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Poppins';
-  src:
-    local('Poppins-SemiBold'),
-    url('./assets/fonts/Poppins-SemiBold.woff2') format('woff2');
+    local('Verdana'),
+    url('./assets/fonts/Verdana.woff2') format('woff2');
   font-weight: 600;
   font-display: swap;
 }
-
 /* set default font */
 * {
-  font-family: Poppins;
+  font-family: Verdana;
+  font-weight: 600;
 }
 
 /* Remove default padding */
@@ -56,8 +47,8 @@ body {
   width: 100dvw;
   text-rendering: optimizeSpeed;
   line-height: 1.5;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: #222227;
+
+  background-repeat: repeat;
   min-width: 560px;
   overflow-x: hidden;
 }

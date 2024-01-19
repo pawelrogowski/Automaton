@@ -54,8 +54,11 @@ function checkHealingRules() {
           parseInt(rule.manaTriggerPercentage, 10),
           gameState.manaPercentage,
         );
+        const cooldownNotActive =
+          (category === 'healing' && !gameState.healingCdActive) ||
+          (category === 'support' && !gameState.supportCdActive);
 
-        if (hpConditionMet && manaConditionMet) {
+        if (hpConditionMet && manaConditionMet && cooldownNotActive) {
           if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
             highestPriorityRule = rule;
           }
@@ -78,8 +81,6 @@ function checkHealingRules() {
 
 setInterval(() => {
   if (global.healingEnabled) {
-    console.time('hotkey');
     checkHealingRules();
-    console.timeEnd('hotkey');
   }
-}, 100);
+}, 10);

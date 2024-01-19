@@ -1,4 +1,5 @@
 import styled from 'styled-components';
+import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
   section {
@@ -11,26 +12,31 @@ const StyledMain = styled.main`
     gap: 9px;
     margin-bottom: 20px;
   }
-  .add-button {
-    background: none;
-    border: none;
-    min-width: 164px;
-    height: 42px;
-    margin-bottom: 20px;
+  .button-container {
     display: flex;
-    padding: 6px 14px;
+    width: 100%;
     align-items: center;
-    border-radius: 12px;
-    color: #fafafa;
-    font-size: 18px;
-    gap: 16px;
-    transition:
-      scale 100ms,
-      color 100ms;
-    box-shadow:
-      rgba(6, 24, 44, 0.4) 0px 0px 0px 2px,
-      rgb(1 1 4 / 44%) 0px 4px 6px -1px,
-      rgba(255, 255, 255, 0.08) 0px 1px 0px inset;
+    gap: 24px;
+  }
+  .button-page {
+    border: none;
+    background: none;
+    height: 24px;
+    margin-bottom: 16px;
+    text-align: center;
+    display: flex;
+    padding: 4px 8px;
+    padding-bottom: 6px;
+    align-items: center;
+    color: #757676;
+    font-size: 14px;
+    border-top: 2px solid #757676;
+    border-left: 2px solid #757676;
+    border-bottom: 2px solid #2c2c2c;
+    border-right: 2px solid #2c2c2c;
+
+    background-image: url(${tibiaBg});
+    background-repeat: repeat;
     s &:active {
       scale: 0.98;
     }
@@ -45,6 +51,14 @@ const StyledMain = styled.main`
       stroke: #fafafa;
       transition: stroke 200ms;
     }
+  }
+  .add-button {
+  }
+  .save-button {
+    margin-left: auto;
+  }
+  .save-button,
+  .load-button {
   }
   .heading-wrapper {
     display: flex;

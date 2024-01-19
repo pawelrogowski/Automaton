@@ -8,7 +8,12 @@ import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js
 const regionsOfInterest = {
   healthBar: ['#783d40', '#d34f4f'],
   manaBar: ['#3d3d7d', '#524fd3'],
-  healingCd: ['#737373', '#28323b'],
+  cooldownBar: ['#6d6d6e', '#411202', '#310e04'],
+};
+
+const cooldowns = {
+  support: ['#6d6d6e', '#5dece9', '#75f4ee'],
+  healing: ['#6d6d6e', '#6790b5', '#0e548d'],
 };
 
 let state = null;
@@ -17,16 +22,22 @@ let windowGeometry = null;
 let updateWindowGeometry = true;
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
+let lastCooldownStates = {};
 let statBarPixels = null;
 let combinedRegion = null;
 let healthBar = null;
-
+let cooldownBarRegion = null;
 let ROI;
 let lastDispatchedHealthPercentage = null;
 let lastDispatchedManaPercentage = null;
 let pixels = null;
 let manaBarPosX;
 let manaBarPosY;
+
+parentPort.on('message', (updatedState) => {
+  state = updatedState;
+  ({ global } = state);
+});
 
 const waitForWindowId = new Promise((resolve) => {
   parentPort.on('message', (updatedState) => {
@@ -39,61 +50,39 @@ const waitForWindowId = new Promise((resolve) => {
 });
 
 async function main() {
-  // console.log('1.', 'waiting for window');
   await waitForWindowId;
-  // console.log('1.', 'window picked:', global.windowId);
-
-  // console.log('2.', 'creating x11 client');
   const { display, X } = await createX11Client();
-  // console.log('2.', 'x11 client created');
-
-  // console.log('3.', 'getting initial window geometry');
   windowGeometry = await getWindowGeometry(global.windowId);
-  // console.log('3.', 'succesfully got window geometry:', windowGeometry);
 
-  // console.log('4.', 'starting the loop');
   async function loop() {
     if (updateWindowGeometry) {
-      // console.log('5.', 'getting new window geometry');
       windowGeometry = await getWindowGeometry(global.windowId);
-      // console.log('5.', 'succesfully got new window geometry:', windowGeometry);
-
-      // console.log('6.', 'getting the pixel data from window region');
       pixels = await grabScreen(X, display.screen[0].root, windowGeometry);
-      // console.log('6.', 'succesfully got the pixel data, pixels in region:', pixels.length);
-
-      // console.log('7.', 'getting ROI start coordinates');
       ROI = await findRegionsOfInterest(pixels, regionsOfInterest, global.windowId);
-      // console.log('7.', 'succesfully got ROI start coordinates:', ROI);
-
-      // console.log('8.', 'getting health bar coordinnates from ROI output');
       healthBar = ROI.healthBar;
       manaBarPosX = healthBar.position.x;
       manaBarPosY = healthBar.position.y + 13;
-      // console.log('8.', 'succesfully got ROI start coordinates:', healthBar.position, {
-      //   x: manaBarPosX,
-      //   y: manaBarPosY,
-      // });
-
-      // console.log('9.', 'creating combined region object for bars');
       combinedRegion = {
         x: healthBar.position.x,
         y: healthBar.position.y,
         width: 92,
         height: 14,
       };
-      // console.log('9.', 'succesfull combined region object: for bars', combinedRegion);
+
+      if (ROI.cooldownBar && ROI.cooldownBar.found) {
+        cooldownBarRegion = {
+          x: ROI.cooldownBar.position.x,
+          y: ROI.cooldownBar.position.y,
+          width: 1200, // Adjust width as needed
+          height: 1, // Adjust height as needed
+        };
+      }
+
       updateWindowGeometry = false;
     }
-    // console.log('10.', 'grabbing pixels of combined region for bars');
-    statBarPixels = await grabScreen(X, display.screen[0].root, combinedRegion);
-    // console.log(
-    //   '10.',
-    //   'succesfully grabbed pixels of combined region for bars',
-    //   statBarPixels.length,
-    // );
 
-    // console.log('11.', 'calculating current percentage of the bars');
+    statBarPixels = await grabScreen(X, display.screen[0].root, combinedRegion);
+
     ({ percentage: lastHealthPercentage } = await calculatePercentages(
       healthBar.position,
       combinedRegion,
@@ -108,14 +97,7 @@ async function main() {
       ['#5350da', '#4d4ac2', '#2d2d69', '#3d3d7d', '#524fd3'],
       92,
     ));
-    // console.log(
-    //   '11.',
-    //   'succesfully calculated current percentage of the bars:',
-    //   lastHealthPercentage,
-    //   lastManaPercentage,
-    // );
 
-    // console.log('12.', 'dispatching an update if value changed');
     if (lastHealthPercentage !== lastDispatchedHealthPercentage) {
       parentPort.postMessage({
         type: 'setHealthPercent',
@@ -131,16 +113,38 @@ async function main() {
       });
       lastDispatchedManaPercentage = lastManaPercentage;
     }
-    // console.log('12.', 'succesfully processed dispatches');
 
-    // console.log('13.', 'checking if health bar is present');
+    if (cooldownBarRegion) {
+      const cooldownPixels = await grabScreen(X, display.screen[0].root, cooldownBarRegion);
+      const cooldownROIs = await findRegionsOfInterest(
+        cooldownPixels,
+        cooldowns,
+        global.windowId,
+        false,
+      );
+
+      Object.entries(cooldownROIs).forEach(([key, value]) => {
+        if (value.found !== lastCooldownStates[key]) {
+          let type, payload;
+          if (key === 'healing') {
+            type = 'setHealingCdActive';
+            payload = { HealingCdActive: value.found };
+          } else if (key === 'support') {
+            type = 'setSupportCdActive';
+            payload = { supportCdActive: value.found };
+          }
+
+          parentPort.postMessage({ type, payload });
+          lastCooldownStates[key] = value.found;
+        }
+      });
+    }
+
     if (lastHealthPercentage === 0) {
       updateWindowGeometry = true;
     }
-    // console.log('13.', 'succesfully checked if health bar is present:', !updateWindowGeometry);
 
-    // Schedule the next iteration after the current one completes
-    setTimeout(loop, 100);
+    setTimeout(loop, 55);
   }
 
   loop(); // Start the loop
