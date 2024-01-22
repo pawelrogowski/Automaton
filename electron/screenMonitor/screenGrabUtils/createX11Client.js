@@ -14,6 +14,7 @@ async function createX11Client() {
         const client = await new Promise((resolve, reject) => {
           x11.createClient((err, display) => {
             if (err) {
+              console.log('error in x client');
               reject(err);
               return;
             }
@@ -27,6 +28,10 @@ async function createX11Client() {
         console.error('An error occurred:', error);
         retries += 1;
         await new Promise((resolve) => setTimeout(resolve, 10));
+        if (clientInstance) {
+          clientInstance.X.terminate();
+          clientInstance = null;
+        }
       }
     }
     throw new Error('Failed to create X11 client after 5 attempts');

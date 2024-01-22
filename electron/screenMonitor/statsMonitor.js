@@ -8,7 +8,7 @@ import store from '../store.js';
 
 console.log(store.getState());
 
-let pickedWindowId = getSelectedWindowId;
+const pickedWindowId = getSelectedWindowId;
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
 let lastManaPercentDispatchTime = Date.now();

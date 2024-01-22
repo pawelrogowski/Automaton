@@ -1,50 +1,110 @@
-import getDisplayGeometry from '../windowUtils/getDisplayGeometry.js';
+import convertRGBToBGR from './convertRGBToBGR.js';
+import createX11Client from './createX11Client.js';
+import findSequencesInImageData from './findSequencesInImageData.js';
+import findWindowById from './findWindowById.js';
+import getPixelRGB from './getPixelRGB.js';
 
-async function grabScreen(X, root, region, logPixels = false) {
+/**
+ * Grabs the screen content of a specific window.
+ *
+ * @param {number} windowId - The ID of the window to grab the screen content from.
+ * @param {Object} [region] - The region of the screen to grab. If not provided, the entire window will be grabbed.
+ * @returns {Promise<Uint8Array>} A promise that resolves with the screen content as a Uint8Array.
+ */
+async function grabScreen(windowId, region) {
   try {
-    let finalRegion;
-    if (!region || region === 'screen') {
-      finalRegion = await getDisplayGeometry();
-    } else {
-      finalRegion = region;
-    }
+    const { X } = await createX11Client();
 
     return new Promise((resolve, reject) => {
-      X.GetImage(
-        2,
-        root,
-        finalRegion.x,
-        finalRegion.y,
-        finalRegion.width,
-        finalRegion.height,
-        0xffffff,
-        X.ZPixmapFormat,
-        (er, img) => {
-          if (er) {
-            reject(er);
-            return;
-          }
-          // Preprocess image data to RGB hex format
-          const pixels = [];
-          for (let i = 0; i < img.data.length; i += 4) {
-            const r = img.data[i + 2].toString(16).padStart(2, '0');
-            const g = img.data[i + 1].toString(16).padStart(2, '0');
-            const b = img.data[i].toString(16).padStart(2, '0');
-            const hex = `#${r}${g}${b}`;
-            pixels.push(hex);
-            if (logPixels) {
-              console.log(hex);
+      findWindowById(X, windowId, windowId, async (foundWindowId) => {
+        try {
+          console.time('grabScreenData');
+          X.GetGeometry(foundWindowId, (err, geom) => {
+            if (err) {
+              reject(err);
+              return;
             }
-          }
 
-          resolve(pixels);
-        },
-      );
+            const captureRegion = region || geom;
+
+            X.GetImage(
+              2,
+              foundWindowId,
+              captureRegion.x,
+              captureRegion.y,
+              captureRegion.width,
+              captureRegion.height,
+              0xffffff,
+              (error, image) => {
+                if (error) {
+                  if (error.message.includes('Bad match')) {
+                    console.log('Window is minimized, waiting for it to be maximized...');
+                    setTimeout(() => {
+                      grabScreen(windowId, region).then(resolve).catch(reject);
+                    }, 100); // Wait for 5 seconds before retrying
+                  } else {
+                    console.log('error GrabScreen Callback');
+                    reject(new Error(`X.GetImage failed: ${error.message}`));
+                    return;
+                  }
+                }
+
+                if (!image) {
+                  console.log('Image is undefined');
+                  resolve([]);
+                  return;
+                }
+
+                console.log('image.data.length: ', image.data.length / 4);
+                console.timeEnd('grabScreenData');
+
+                resolve(image.data);
+              },
+            );
+          });
+        } catch (error) {
+          console.error('error grabScreen:', error);
+          setTimeout(() => {
+            grabScreen(windowId, region).then(resolve).catch(reject);
+          }, 100);
+        }
+      });
     });
   } catch (error) {
-    console.error('An error occurred:', error);
+    console.error('Error:', error);
     throw error;
   }
 }
 
 export default grabScreen;
+
+(async () => {
+  try {
+    console.time('timer');
+    const windowId = 109051930;
+    const imageData = await grabScreen(windowId);
+    console.log('ImageData length:', imageData.length, '# of pixels:', imageData.length / 4);
+
+    const targetColors = {
+      healthBar: [
+        [120, 61, 64],
+        [211, 79, 79],
+      ],
+      manaBar: [
+        [61, 61, 125],
+        [82, 79, 211],
+      ],
+      cooldownBar: [
+        [109, 109, 110],
+        [65, 18, 2],
+        [49, 14, 4],
+      ],
+    };
+
+    const width = 1920; // Assuming the width of your image is 1920
+    const regionStart = await findSequencesInImageData(imageData, targetColors, width);
+    console.log('found region', regionStart);
+  } catch (err) {
+    console.error('Error:', err);
+  }
+})();

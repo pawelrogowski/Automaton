@@ -41,6 +41,14 @@ let lastExecutionTimes = {};
 function checkHealingRules() {
   const categories = Array.from(new Set(healing.map((rule) => rule.category)));
   categories.forEach((category) => {
+    // Skip processing if the cooldown is active
+    if (
+      (category === 'Healing' && gameState.healingCdActive) ||
+      (category === 'Support' && gameState.supportCdActive)
+    ) {
+      return;
+    }
+
     let highestPriorityRule = null;
     healing.forEach((rule) => {
       if (rule.enabled && rule.category === category) {
@@ -54,11 +62,8 @@ function checkHealingRules() {
           parseInt(rule.manaTriggerPercentage, 10),
           gameState.manaPercentage,
         );
-        const cooldownNotActive =
-          (category === 'healing' && !gameState.healingCdActive) ||
-          (category === 'support' && !gameState.supportCdActive);
 
-        if (hpConditionMet && manaConditionMet && cooldownNotActive) {
+        if (hpConditionMet && manaConditionMet) {
           if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
             highestPriorityRule = rule;
           }

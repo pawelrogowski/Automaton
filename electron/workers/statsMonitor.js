@@ -1,19 +1,38 @@
 import { parentPort } from 'worker_threads';
 import createX11Client from '../screenMonitor/screenGrabUtils/createX11Client.js';
 import grabScreen from '../screenMonitor/screenGrabUtils/grabScreen.js';
-import getWindowGeometry from '../screenMonitor/windowUtils/getWindowGeometry.js';
 import findRegionsOfInterest from '../screenMonitor/searchUtils/findRegionsOfInterest.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
+import convertRGBToBGR from '../screenMonitor/screenGrabUtils/convertRGBToBGR.js';
+import findSequencesInImageData from '../screenMonitor/screenGrabUtils/findSequencesInImageData.js';
 
-const regionsOfInterest = {
-  healthBar: ['#783d40', '#d34f4f'],
-  manaBar: ['#3d3d7d', '#524fd3'],
-  cooldownBar: ['#6d6d6e', '#411202', '#310e04'],
+const regionColorSequences = {
+  healthBar: [
+    [120, 61, 64],
+    [211, 79, 79],
+  ],
+  manaBar: [
+    [61, 61, 125],
+    [82, 79, 211],
+  ],
+  cooldownBar: [
+    [109, 109, 110],
+    [65, 18, 2],
+    [49, 14, 4],
+  ],
 };
 
 const cooldowns = {
-  support: ['#6d6d6e', '#5dece9', '#75f4ee'],
-  healing: ['#6d6d6e', '#6790b5', '#0e548d'],
+  support: [
+    [109, 109, 110],
+    [93, 236, 233],
+    [117, 244, 238],
+  ],
+  healing: [
+    [109, 109, 110],
+    [103, 144, 182],
+    [14, 84, 141],
+  ],
 };
 
 let state = null;
@@ -25,12 +44,12 @@ let lastManaPercentage = null;
 let lastCooldownStates = {};
 let statBarPixels = null;
 let combinedRegion = null;
-let healthBar = null;
+// let healthBar = null;
 let cooldownBarRegion = null;
 let ROI;
 let lastDispatchedHealthPercentage = null;
 let lastDispatchedManaPercentage = null;
-let pixels = null;
+// let imageData = null;
 let manaBarPosX;
 let manaBarPosY;
 
@@ -44,110 +63,148 @@ const waitForWindowId = new Promise((resolve) => {
     state = updatedState;
     ({ global } = state);
     if (global?.windowId !== null && global?.windowId !== undefined) {
-      resolve();
+      resolve(global.windowId);
     }
   });
 });
 
 async function main() {
-  await waitForWindowId;
-  const { display, X } = await createX11Client();
-  windowGeometry = await getWindowGeometry(global.windowId);
+  const pickedWindow = await waitForWindowId;
+  // const { X } = await createX11Client();
+  const imageData = await grabScreen(pickedWindow);
+  const startRegions = await findSequencesInImageData(imageData, regionColorSequences, 1920);
+  const { healthBar, manaBar, cooldownBar } = startRegions;
+  console.log(healthBar, manaBar, cooldownBar);
+
+  manaBarPosX = healthBar.x;
+  manaBarPosY = healthBar.y + 13;
+
+  const hpManaRegion = {
+    x: healthBar.x,
+    y: healthBar.y,
+    width: 92,
+    height: 14,
+  };
+
+  const cooldownsRegion = {
+    x: cooldownBar.x,
+    y: cooldownBar.y,
+    width: 100,
+    height: 1,
+  };
 
   async function loop() {
-    if (updateWindowGeometry) {
-      windowGeometry = await getWindowGeometry(global.windowId);
-      pixels = await grabScreen(X, display.screen[0].root, windowGeometry);
-      ROI = await findRegionsOfInterest(pixels, regionsOfInterest, global.windowId);
-      healthBar = ROI.healthBar;
-      manaBarPosX = healthBar.position.x;
-      manaBarPosY = healthBar.position.y + 13;
-      combinedRegion = {
-        x: healthBar.position.x,
-        y: healthBar.position.y,
-        width: 92,
-        height: 14,
-      };
+    const hpManaImageData = await grabScreen(pickedWindow, hpManaRegion);
+    const cooldownsImageData = await grabScreen(pickedWindow, cooldownsRegion);
 
-      if (ROI.cooldownBar && ROI.cooldownBar.found) {
-        cooldownBarRegion = {
-          x: ROI.cooldownBar.position.x,
-          y: ROI.cooldownBar.position.y,
-          width: 1200, // Adjust width as needed
-          height: 1, // Adjust height as needed
-        };
-      }
+    // Process HP, mana, and cooldown areas concurrently
+    await Promise.all([
+      (async () => {
+        ({ percentage: lastHealthPercentage } = await calculatePercentages(
+          healthBar,
+          hpManaRegion,
+          hpManaImageData,
+          [
+            [120, 61, 64],
+            [211, 79, 79],
+            [219, 79, 79],
+            [194, 74, 74],
+            [100, 46, 49],
+          ],
+          hpManaRegion.width,
+        ));
 
-      updateWindowGeometry = false;
-    }
-
-    statBarPixels = await grabScreen(X, display.screen[0].root, combinedRegion);
-
-    ({ percentage: lastHealthPercentage } = await calculatePercentages(
-      healthBar.position,
-      combinedRegion,
-      statBarPixels,
-      ['#783d40', '#d34f4f', '#db4f4f', '#c24a4a', '#642e31'],
-      92,
-    ));
-    ({ percentage: lastManaPercentage } = await calculatePercentages(
-      { x: manaBarPosX, y: manaBarPosY },
-      combinedRegion,
-      statBarPixels,
-      ['#5350da', '#4d4ac2', '#2d2d69', '#3d3d7d', '#524fd3'],
-      92,
-    ));
-
-    if (lastHealthPercentage !== lastDispatchedHealthPercentage) {
-      parentPort.postMessage({
-        type: 'setHealthPercent',
-        payload: { hpPercentage: lastHealthPercentage },
-      });
-      lastDispatchedHealthPercentage = lastHealthPercentage;
-    }
-
-    if (lastManaPercentage !== lastDispatchedManaPercentage) {
-      parentPort.postMessage({
-        type: 'setManaPercent',
-        payload: { manaPercentage: lastManaPercentage },
-      });
-      lastDispatchedManaPercentage = lastManaPercentage;
-    }
-
-    if (cooldownBarRegion) {
-      const cooldownPixels = await grabScreen(X, display.screen[0].root, cooldownBarRegion);
-      const cooldownROIs = await findRegionsOfInterest(
-        cooldownPixels,
-        cooldowns,
-        global.windowId,
-        false,
-      );
-
-      Object.entries(cooldownROIs).forEach(([key, value]) => {
-        if (value.found !== lastCooldownStates[key]) {
-          let type, payload;
-          if (key === 'healing') {
-            type = 'setHealingCdActive';
-            payload = { HealingCdActive: value.found };
-          } else if (key === 'support') {
-            type = 'setSupportCdActive';
-            payload = { supportCdActive: value.found };
-          }
-
-          parentPort.postMessage({ type, payload });
-          lastCooldownStates[key] = value.found;
+        if (lastHealthPercentage !== lastDispatchedHealthPercentage) {
+          parentPort.postMessage({
+            type: 'setHealthPercent',
+            payload: { hpPercentage: lastHealthPercentage },
+          });
+          lastDispatchedHealthPercentage = lastHealthPercentage;
         }
-      });
-    }
+      })(),
+      (async () => {
+        ({ percentage: lastManaPercentage } = await calculatePercentages(
+          manaBar,
+          hpManaRegion,
+          hpManaImageData,
+          [
+            [83, 80, 218],
+            [77, 74, 193],
+            [45, 45, 105],
+            [61, 61, 125],
+            [82, 79, 211],
+          ],
+          92,
+        ));
+
+        if (lastManaPercentage !== lastDispatchedManaPercentage) {
+          parentPort.postMessage({
+            type: 'setManaPercent',
+            payload: { manaPercentage: lastManaPercentage },
+          });
+          lastDispatchedManaPercentage = lastManaPercentage;
+        }
+      })(),
+      // (async () => {
+      //   const cooldownPixels = await grabScreen(X, global.windowId, cooldownBarRegion);
+      //   const cooldownROIs = await findRegionsOfInterest(
+      //     cooldownPixels,
+      //     cooldowns,
+      //     global.windowId,
+      //     false,
+      //   );
+      // })(),
+    ]);
 
     if (lastHealthPercentage === 0) {
       updateWindowGeometry = true;
     }
 
-    setTimeout(loop, 55);
+    setTimeout(loop, 50);
   }
 
   loop(); // Start the loop
 }
 
 main();
+
+// for (const [key, value] of Object.entries(cooldownROIs)) {
+//   if (value.found) {
+//     // Grab the screen for the additional check region
+//     const checkRegion = {
+//       x: value.position.x + 10,
+//       y: value.position.y + 12,
+//       width: 1,
+//       height: 1,
+//     };
+//     const checkPixels = await grabScreen(X, global.windowId, checkRegion);
+//     const isCooldownActive = checkPixels[0] !== '#000000';
+
+//     if (isCooldownActive !== lastCooldownStates[key]) {
+//       let type, payload;
+//       if (key === 'healing') {
+//         type = 'setHealingCdActive';
+//         payload = { HealingCdActive: isCooldownActive };
+//       } else if (key === 'support') {
+//         type = 'setSupportCdActive';
+//         payload = { supportCdActive: isCooldownActive };
+//       }
+
+//       parentPort.postMessage({ type, payload });
+//       lastCooldownStates[key] = isCooldownActive;
+//     }
+//   } else if (value.found !== lastCooldownStates[key]) {
+//     // If the color sequence was not found, set the cooldown as inactive
+//     let type, payload;
+//     if (key === 'healing') {
+//       type = 'setHealingCdActive';
+//       payload = { HealingCdActive: false };
+//     } else if (key === 'support') {
+//       type = 'setSupportCdActive';
+//       payload = { supportCdActive: false };
+//     }
+
+//     parentPort.postMessage({ type, payload });
+//     lastCooldownStates[key] = false;
+//   }
+// }
