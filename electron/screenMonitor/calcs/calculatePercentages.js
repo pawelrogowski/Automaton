@@ -16,7 +16,7 @@ async function calculatePercentages(barPosition, combinedRegion, combinedPixels,
       matchingPixelsCount += 1;
     }
   }
-  const percentage = Math.floor((matchingPixelsCount / barWidth) * 100);
+  const percentage = Math.round((matchingPixelsCount / barWidth) * 100);
 
   return { percentage };
 }

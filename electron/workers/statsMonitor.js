@@ -1,9 +1,6 @@
 import { parentPort } from 'worker_threads';
-import createX11Client from '../screenMonitor/screenGrabUtils/createX11Client.js';
 import grabScreen from '../screenMonitor/screenGrabUtils/grabScreen.js';
-import findRegionsOfInterest from '../screenMonitor/searchUtils/findRegionsOfInterest.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
-import convertRGBToBGR from '../screenMonitor/screenGrabUtils/convertRGBToBGR.js';
 import findSequencesInImageData from '../screenMonitor/screenGrabUtils/findSequencesInImageData.js';
 
 const regionColorSequences = {
@@ -22,7 +19,7 @@ const regionColorSequences = {
   ],
 };
 
-const cooldowns = {
+const cooldownColorSequences = {
   support: [
     [109, 109, 110],
     [93, 236, 233],
@@ -30,27 +27,27 @@ const cooldowns = {
   ],
   healing: [
     [109, 109, 110],
-    [103, 144, 182],
+    [103, 144, 181],
     [14, 84, 141],
   ],
 };
 
 let state = null;
 let global = null;
-let windowGeometry = null;
-let updateWindowGeometry = true;
+
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
-let lastCooldownStates = {};
-let statBarPixels = null;
-let combinedRegion = null;
+const lastCooldownStates = {}; // eslint-disable-next-line no-unused-vars
+let cooldownsImageData;
 // let healthBar = null;
-let cooldownBarRegion = null;
-let ROI;
-let lastDispatchedHealthPercentage = null;
-let lastDispatchedManaPercentage = null;
-// let imageData = null;
+
+let lastDispatchedHealthPercentage;
+let lastDispatchedManaPercentage;
+let cooldownBarImageData;
+let cooldownBarRegions;
+// eslint-disable-next-line no-unused-vars
 let manaBarPosX;
+// eslint-disable-next-line no-unused-vars
 let manaBarPosY;
 
 parentPort.on('message', (updatedState) => {
@@ -70,11 +67,10 @@ const waitForWindowId = new Promise((resolve) => {
 
 async function main() {
   const pickedWindow = await waitForWindowId;
-  // const { X } = await createX11Client();
   const imageData = await grabScreen(pickedWindow);
   const startRegions = await findSequencesInImageData(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar } = startRegions;
-  console.log(healthBar, manaBar, cooldownBar);
+  // console.log(healthBar, manaBar, cooldownBar);
 
   manaBarPosX = healthBar.x;
   manaBarPosY = healthBar.y + 13;
@@ -95,7 +91,7 @@ async function main() {
 
   async function loop() {
     const hpManaImageData = await grabScreen(pickedWindow, hpManaRegion);
-    const cooldownsImageData = await grabScreen(pickedWindow, cooldownsRegion);
+    cooldownsImageData = await grabScreen(pickedWindow, cooldownsRegion);
 
     // Process HP, mana, and cooldown areas concurrently
     await Promise.all([
@@ -129,14 +125,14 @@ async function main() {
           hpManaImageData,
           [
             [83, 80, 218],
-            [77, 74, 193],
+            [77, 74, 194],
             [45, 45, 105],
             [61, 61, 125],
             [82, 79, 211],
           ],
-          92,
+          hpManaRegion.width,
         ));
-
+        // ['#5350da', '#4d4ac2', '#2d2d69', '#3d3d7d', '#524fd3'],
         if (lastManaPercentage !== lastDispatchedManaPercentage) {
           parentPort.postMessage({
             type: 'setManaPercent',
@@ -145,66 +141,42 @@ async function main() {
           lastDispatchedManaPercentage = lastManaPercentage;
         }
       })(),
-      // (async () => {
-      //   const cooldownPixels = await grabScreen(X, global.windowId, cooldownBarRegion);
-      //   const cooldownROIs = await findRegionsOfInterest(
-      //     cooldownPixels,
-      //     cooldowns,
-      //     global.windowId,
-      //     false,
-      //   );
-      // })(),
+      (async () => {
+        cooldownBarImageData = await grabScreen(pickedWindow, cooldownsRegion);
+
+        cooldownBarRegions = await findSequencesInImageData(
+          cooldownBarImageData,
+          cooldownColorSequences,
+          100,
+        );
+
+        // console.log('whaaaaaat', cooldownBarRegions);
+        // eslint-disable-next-line no-restricted-syntax
+        for (const [key, value] of Object.entries(cooldownBarRegions)) {
+          const isCooldownActive = value.x !== undefined; // Cooldown is active if the x position is present
+
+          if (isCooldownActive !== lastCooldownStates[key]) {
+            let type;
+            let payload;
+            if (key === 'healing') {
+              type = 'setHealingCdActive';
+              payload = { HealingCdActive: isCooldownActive };
+            } else if (key === 'support') {
+              type = 'setSupportCdActive';
+              payload = { supportCdActive: isCooldownActive };
+            }
+
+            parentPort.postMessage({ type, payload });
+            lastCooldownStates[key] = isCooldownActive;
+          }
+        }
+      })(),
     ]);
 
-    if (lastHealthPercentage === 0) {
-      updateWindowGeometry = true;
-    }
-
-    setTimeout(loop, 50);
+    setTimeout(loop, 55);
   }
 
   loop(); // Start the loop
 }
 
 main();
-
-// for (const [key, value] of Object.entries(cooldownROIs)) {
-//   if (value.found) {
-//     // Grab the screen for the additional check region
-//     const checkRegion = {
-//       x: value.position.x + 10,
-//       y: value.position.y + 12,
-//       width: 1,
-//       height: 1,
-//     };
-//     const checkPixels = await grabScreen(X, global.windowId, checkRegion);
-//     const isCooldownActive = checkPixels[0] !== '#000000';
-
-//     if (isCooldownActive !== lastCooldownStates[key]) {
-//       let type, payload;
-//       if (key === 'healing') {
-//         type = 'setHealingCdActive';
-//         payload = { HealingCdActive: isCooldownActive };
-//       } else if (key === 'support') {
-//         type = 'setSupportCdActive';
-//         payload = { supportCdActive: isCooldownActive };
-//       }
-
-//       parentPort.postMessage({ type, payload });
-//       lastCooldownStates[key] = isCooldownActive;
-//     }
-//   } else if (value.found !== lastCooldownStates[key]) {
-//     // If the color sequence was not found, set the cooldown as inactive
-//     let type, payload;
-//     if (key === 'healing') {
-//       type = 'setHealingCdActive';
-//       payload = { HealingCdActive: false };
-//     } else if (key === 'support') {
-//       type = 'setSupportCdActive';
-//       payload = { supportCdActive: false };
-//     }
-
-//     parentPort.postMessage({ type, payload });
-//     lastCooldownStates[key] = false;
-//   }
-// }

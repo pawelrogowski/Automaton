@@ -34,7 +34,7 @@ function findSequencesInImageData(imageData, targetSequences, width) {
       }
     }
 
-    console.log(foundSequences);
+    // console.log(foundSequences);
     resolve(foundSequences);
   });
 }

@@ -21,7 +21,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    process.kill(-process.pid);
     app.quit();
   }
 });
