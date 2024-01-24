@@ -1,18 +1,20 @@
-import convertRGBToBGR from './convertRGBToBGR.js';
 import createX11Client from './createX11Client.js';
-import findSequencesInImageData from './findSequencesInImageData.js';
 import findWindowById from './findWindowById.js';
-import getPixelRGB from './getPixelRGB.js';
 
 /**
  * Grabs the screen content of a specific window.
  *
  * @param {number} windowId - The ID of the window to grab the screen content from.
  * @param {Object} [region] - The region of the screen to grab. If not provided, the entire window will be grabbed.
+ * @param {Boolean} measureTime - Show a condole.time measurment of the function
  * @returns {Promise<Uint8Array>} A promise that resolves with the screen content as a Uint8Array.
  */
-async function grabScreen(windowId, region) {
+async function grabScreen(windowId, region, measureTime) {
   try {
+    if (measureTime) {
+      console.time('grabScreen');
+    }
+
     const { X } = await createX11Client();
 
     return new Promise((resolve, reject) => {
@@ -60,6 +62,9 @@ async function grabScreen(windowId, region) {
               },
             );
           });
+          if (measureTime) {
+            console.timeEnd('grabScreen');
+          }
         } catch (error) {
           console.error('error grabScreen:', error);
           setTimeout(() => {

@@ -11,6 +11,7 @@ import { Console } from './pages/Console.js';
 import Layout from './layouts/Layout.js';
 import store from './redux/store.js';
 import GlobalStyles from './galobalStyles.js';
+
 const { ipcRenderer } = window.electron;
 
 ipcRenderer.on('state-update', (_, action) => {

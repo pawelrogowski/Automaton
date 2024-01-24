@@ -14,18 +14,7 @@ import setGlobalState from './setGlobalState.js';
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 
-app.whenReady().then(() => {
-  createMainWindow();
-  setupAppMenu();
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-let StatCheckWorker = null;
+let ScreenMonitor = null;
 let HealingWorker = null;
 let prevWindowId = null;
 
@@ -41,9 +30,9 @@ store.subscribe(() => {
 
   // reset all workers on windowId change
   if (windowId !== prevWindowId) {
-    if (StatCheckWorker) {
-      StatCheckWorker.terminate();
-      StatCheckWorker = null;
+    if (ScreenMonitor) {
+      ScreenMonitor.terminate();
+      ScreenMonitor = null;
     }
     if (HealingWorker) {
       HealingWorker.terminate();
@@ -52,11 +41,11 @@ store.subscribe(() => {
   }
 
   // Start a new worker with the updated state.
-  if (!StatCheckWorker && windowId) {
-    const statCheckPath = resolve(cwd, './workers', 'statsMonitor.js');
-    StatCheckWorker = new Worker(statCheckPath, { name: 'StatCheckWorker' });
-    console.log('HpMp monitor started from main.js');
-    StatCheckWorker.on('message', (message) => {
+  if (!ScreenMonitor && windowId) {
+    const statCheckPath = resolve(cwd, './workers', 'screenMonitor.js');
+    ScreenMonitor = new Worker(statCheckPath, { name: 'screeenMonitor.js' });
+    console.log('screen monitor started from main.js');
+    ScreenMonitor.on('message', (message) => {
       if (message.type === 'setHealthPercent') {
         setGlobalState('gameState/setHealthPercent', message.payload);
         store.dispatch({ type: 'gameState/setHealthPercent', payload: message.payload });
@@ -68,14 +57,14 @@ store.subscribe(() => {
         store.dispatch({ type: `gameState/${message.type}`, payload: message.payload });
       }
     });
-    StatCheckWorker.on('error', (error) => {
+    ScreenMonitor.on('error', (error) => {
       console.error('An error occurred in the worker:', error);
       console.log('Restarting the worker...');
-      StatCheckWorker.terminate();
-      StatCheckWorker = null;
+      ScreenMonitor.terminate();
+      ScreenMonitor = null;
       store.dispatch({ type: 'SET_WINDOW_ID', payload: windowId }); // Dispatch an action to trigger the worker restart
     });
-    StatCheckWorker.postMessage(state);
+    ScreenMonitor.postMessage(state);
   }
 
   if (!HealingWorker && state) {
@@ -96,7 +85,7 @@ store.subscribe(() => {
 });
 
 const saveRulesToFile = () => {
-  const rules = store.getState().healing; // Assuming 'healing' is the slice of state where rules are stored
+  const rules = store.getState().healing;
   dialog
     .showSaveDialog({
       title: 'Save Rules',
@@ -135,3 +124,25 @@ const loadRulesFromFile = () => {
 
 ipcMain.on('save-rules', saveRulesToFile);
 ipcMain.handle('load-rules', loadRulesFromFile);
+
+app.whenReady().then(() => {
+  createMainWindow();
+  setupAppMenu();
+});
+
+app.on('before-quit', () => {
+  if (ScreenMonitor) {
+    ScreenMonitor.terminate();
+    ScreenMonitor = null;
+  }
+  if (HealingWorker) {
+    HealingWorker.terminate();
+    HealingWorker = null;
+  }
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});

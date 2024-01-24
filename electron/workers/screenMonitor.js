@@ -20,15 +20,30 @@ const regionColorSequences = {
 };
 
 const cooldownColorSequences = {
-  support: [
+  attack: [
     [109, 109, 110],
-    [93, 236, 233],
-    [117, 244, 238],
+    [217, 60, 7],
+    [162, 46, 12],
   ],
   healing: [
     [109, 109, 110],
     [103, 144, 181],
     [14, 84, 141],
+  ],
+  support: [
+    [109, 109, 110],
+    [93, 236, 233],
+    [117, 244, 238],
+  ],
+  focus: [
+    [109, 109, 110],
+    [210, 147, 186],
+    [122, 10, 70],
+  ],
+  ultimateStrikes: [
+    [109, 109, 110],
+    [193, 137, 132],
+    [208, 56, 34],
   ],
 };
 
@@ -85,7 +100,7 @@ async function main() {
   const cooldownsRegion = {
     x: cooldownBar.x,
     y: cooldownBar.y,
-    width: 100,
+    width: 1000,
     height: 1,
   };
 
@@ -176,7 +191,7 @@ async function main() {
     setTimeout(loop, 55);
   }
 
-  loop(); // Start the loop
+  loop();
 }
 
 main();

@@ -38,50 +38,52 @@ const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
 
 let lastExecutionTimes = {};
 
-function checkHealingRules() {
+async function checkHealingRules() {
   const categories = Array.from(new Set(healing.map((rule) => rule.category)));
-  categories.forEach((category) => {
-    // Skip processing if the cooldown is active
-    if (
-      (category === 'Healing' && gameState.healingCdActive) ||
-      (category === 'Support' && gameState.supportCdActive)
-    ) {
-      return;
-    }
+  await Promise.all(
+    categories.map(async (category) => {
+      // Skip processing if the cooldown is active
+      if (
+        (category === 'Healing' && gameState.healingCdActive) ||
+        (category === 'Support' && gameState.supportCdActive)
+      ) {
+        return;
+      }
 
-    let highestPriorityRule = null;
-    healing.forEach((rule) => {
-      if (rule.enabled && rule.category === category) {
-        const hpConditionMet = parseMathCondition(
-          rule.hpTriggerCondition,
-          parseInt(rule.hpTriggerPercentage, 10),
-          gameState.hpPercentage,
-        );
-        const manaConditionMet = parseMathCondition(
-          rule.manaTriggerCondition,
-          parseInt(rule.manaTriggerPercentage, 10),
-          gameState.manaPercentage,
-        );
+      let highestPriorityRule = null;
+      healing.forEach((rule) => {
+        if (rule.enabled && rule.category === category) {
+          const hpConditionMet = parseMathCondition(
+            rule.hpTriggerCondition,
+            parseInt(rule.hpTriggerPercentage, 10),
+            gameState.hpPercentage,
+          );
+          const manaConditionMet = parseMathCondition(
+            rule.manaTriggerCondition,
+            parseInt(rule.manaTriggerPercentage, 10),
+            gameState.manaPercentage,
+          );
 
-        if (hpConditionMet && manaConditionMet) {
-          if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
-            highestPriorityRule = rule;
+          if (hpConditionMet && manaConditionMet) {
+            if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
+              highestPriorityRule = rule;
+            }
           }
         }
-      }
-    });
+      });
 
-    if (highestPriorityRule) {
-      const now = Date.now();
-      const lastExecutionTime = lastExecutionTimes[highestPriorityRule.id] || 0;
-      const delay = highestPriorityRule.delay || 0;
+      if (highestPriorityRule) {
+        const now = Date.now();
+        const lastExecutionTime = lastExecutionTimes[highestPriorityRule.id] || 0;
+        const delay = highestPriorityRule.delay || 0;
 
-      if (now - lastExecutionTime >= delay) {
-        exec(`xdotool key --window ${global.windowId} ${highestPriorityRule.key}`);
-        lastExecutionTimes[highestPriorityRule.id] = now;
+        if (now - lastExecutionTime >= delay) {
+          exec(`xdotool key --window ${global.windowId} ${highestPriorityRule.key}`);
+          lastExecutionTimes[highestPriorityRule.id] = now;
+        }
       }
-    }
-  });
+    }),
+  );
 }
 
 setInterval(() => {

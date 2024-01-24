@@ -33,7 +33,6 @@ export const createMainWindow = () => {
   mainWindow.on('closed', () => {
     mainWindow = null;
     if (process.platform !== 'darwin') {
-      process.kill(0);
       app.quit();
     }
   });
