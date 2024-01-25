@@ -18,6 +18,8 @@ let ScreenMonitor = null;
 let HealingWorker = null;
 let prevWindowId = null;
 
+app.commandLine.appendSwitch();
+
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
