@@ -53,10 +53,12 @@ store.subscribe(() => {
         store.dispatch({ type: 'gameState/setHealthPercent', payload: message.payload });
       } else if (message.type === 'setManaPercent') {
         setGlobalState('gameState/setManaPercent', message.payload);
-      }
-      if (message.type) {
+      } else if (message.type) {
         setGlobalState(`gameState/${message.type}`, message.payload);
         store.dispatch({ type: `gameState/${message.type}`, payload: message.payload });
+      } else {
+        setGlobalState('gameState/setCharacterStatus', message.payload);
+        store.dispatch({ type: 'gameState/setCharacterStatus', payload: message.payload });
       }
     });
     ScreenMonitor.on('error', (error) => {

@@ -123,6 +123,7 @@ let cooldownsImageData;
 
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
+let lastDispatchedCharacterStatuses = {};
 let cooldownBarImageData;
 let cooldownBarRegions;
 // eslint-disable-next-line no-unused-vars
@@ -271,24 +272,31 @@ async function main() {
           106,
         );
 
-        // eslint-disable-next-line no-restricted-syntax
+        // Initialize an object to hold the status of each character status
+        const characterStatusUpdates = {};
+
+        // Update the characterStatusUpdates object based on the detected status bar regions
         for (const [key, value] of Object.entries(statusBarRegions)) {
-          const isStatusPresent = value.x !== undefined; // status is present if the x position is present
-
-          if (isStatusPresent !== lastCooldownStates[key]) {
-            let type;
-            let payload;
-            if (key === 'healing') {
-              type = 'setHealingCdActive';
-              payload = { HealingCdActive: isCooldownActive };
-            } else if (key === 'support') {
-              type = 'setSupportCdActive';
-              payload = { supportCdActive: isCooldownActive };
-            }
-
-            parentPort.postMessage({ type, payload });
-            lastCooldownStates[key] = isCooldownActive;
+          if (value.x !== undefined) {
+            // status is present if the x position is present
+            characterStatusUpdates[key] = true;
           }
+        }
+
+        // Check if there's any change in character statuses since the last dispatch
+        const hasStatusChanged = Object.keys(characterStatusUpdates).some(
+          (key) => lastDispatchedCharacterStatuses[key] !== characterStatusUpdates[key],
+        );
+
+        if (hasStatusChanged) {
+          // Dispatch an action to update the character statuses in the store
+          parentPort.postMessage({
+            type: 'setCharacterStatus',
+            payload: { characterStatus: characterStatusUpdates },
+          });
+
+          // Update the last dispatched character statuses
+          lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
         }
       })(),
     ]);

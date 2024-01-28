@@ -6,6 +6,33 @@ const initialState = {
   isVisible: false,
   healingCdActive: false,
   supportCdActive: false,
+  characterStatus: {
+    agony: false,
+    bleeding: false,
+    bakragoresTaints: false,
+    burning: false,
+    cursed: false,
+    dazzled: false,
+    drowning: false,
+    drunk: false,
+    electrified: false,
+    feared: false,
+    freezing: false,
+    goshnarsTaints: false,
+    haste: false,
+    hexed: false,
+    hungry: false,
+    logoutBlock: false,
+    utamoVita: false,
+    eRing: false,
+    poisoned: false,
+    protectionZoneBlock: false,
+    rooted: false,
+    slowed: false,
+    strenghted: false,
+    inProtectionZone: false,
+    inRestingArea: false,
+  },
 };
 
 const gameStateSlice = createSlice({
@@ -27,9 +54,19 @@ const gameStateSlice = createSlice({
     setSupportCdActive: (state, action) => {
       state.supportCdActive = action.payload.supportCdActive;
     },
+    setCharacterStatus: (state, action) => {
+      const { characterStatus } = action.payload || {};
+      // eslint-disable-next-line no-restricted-syntax
+      for (const key in characterStatus) {
+        if (characterStatus.hasOwnProperty(key)) {
+          state.characterStatus[key] = characterStatus[key];
+        }
+      }
+    },
   },
 });
 
-export const { setHealthPercent, setManaPercent, setHealingCdActive } = gameStateSlice.actions;
+export const { setHealthPercent, setManaPercent, setHealingCdActive, setCharacterStatus } =
+  gameStateSlice.actions;
 
 export default gameStateSlice;
