@@ -370,6 +370,7 @@ async function main() {
         );
 
         // Update the characterStatusUpdates object based on the detected status bar regions
+        // eslint-disable-next-line no-restricted-syntax
         for (const [key, value] of Object.entries(statusBarRegions)) {
           if (value.x !== undefined) {
             // status is present if the x position is present

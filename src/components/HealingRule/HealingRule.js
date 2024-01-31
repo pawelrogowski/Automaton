@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import Switch from 'react-switch';
-import { Trash2, ChevronDown, ChevronUp, PlusCircle } from 'react-feather';
+import { Trash2, PlusCircle } from 'react-feather';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import {
   updateRule,
@@ -10,6 +10,7 @@ import {
   removeColor,
   toggleColor,
   removeRule,
+  updateCondition,
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 
@@ -20,10 +21,12 @@ const keys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11'
 
 const HealingRule = ({ rule }) => {
   const dispatch = useDispatch();
+  const gameState = useSelector((state) => state.gameState);
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
-
-  const [isOpen, setIsOpen] = useState(false);
   const [localHealing, setLocalHealing] = useState(healing);
+  const [newConditionName, setNewConditionName] = useState('');
+  const [newConditionValue, setNewConditionValue] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     dispatch(updateRule(localHealing));
@@ -36,6 +39,27 @@ const HealingRule = ({ rule }) => {
       dispatch(addColor({ id: healing.id, color, x, y }));
     }
   };
+
+  const handleConditionChange = (conditionName, value) => {
+    const updatedConditions = { ...localHealing.conditions, [conditionName]: value };
+    setLocalHealing((prevState) => ({
+      ...prevState,
+      conditions: updatedConditions,
+    }));
+    dispatch(updateCondition({ id: healing.id, conditions: updatedConditions }));
+  };
+
+  const handleAddCondition = () => {
+    if (newConditionName && !localHealing.conditions.hasOwnProperty(newConditionName)) {
+      handleConditionChange(newConditionName, newConditionValue);
+      setNewConditionName('');
+      setNewConditionValue(false);
+    }
+  };
+
+  const availableConditions = Object.keys(gameState.characterStatus).filter(
+    (condition) => !Object.keys(localHealing.conditions).includes(condition),
+  );
 
   const handleRemoveRule = () => {
     dispatch(removeRule(healing.id));
@@ -256,6 +280,43 @@ const HealingRule = ({ rule }) => {
               Priority
             </label>
           </div>
+          {Object.entries(localHealing.conditions).map(([condition, value]) => (
+            <div key={condition}>
+              <label>{condition}: </label>
+              <input
+                type="checkbox"
+                checked={value}
+                onChange={(e) => handleConditionChange(condition, e.target.checked)}
+              />
+            </div>
+          ))}
+
+          {/* UI for adding a new condition */}
+          {availableConditions.length > 0 && (
+            <div>
+              <select
+                value={newConditionName}
+                onChange={(e) => setNewConditionName(e.target.value)}
+              >
+                <option value="">Select Condition</option>
+                {availableConditions.map((condition) => (
+                  <option key={condition} value={condition}>
+                    {condition}
+                  </option>
+                ))}
+              </select>
+              <label>
+                Value:
+                <input
+                  type="checkbox"
+                  checked={newConditionValue}
+                  onChange={(e) => setNewConditionValue(e.target.checked)}
+                />
+              </label>
+              <button onClick={handleAddCondition}>Add Condition</button>
+            </div>
+          )}
+          <button onClick={handleAddCondition}>Add Condition</button>
           <div className="input-wrapper">
             <input
               type="number"
@@ -355,6 +416,7 @@ HealingRule.propTypes = {
         enabled: PropTypes.bool,
       }),
     ),
+    conditions: PropTypes.objectOf(PropTypes.bool),
   }).isRequired,
 };
 

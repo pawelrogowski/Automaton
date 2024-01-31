@@ -29,10 +29,9 @@ const initialState = {
     protectionZoneBlock: false,
     rooted: false,
     paralyzed: false,
-    strenghted: false,
+    strengthened: false,
     inProtectedZone: false,
     inRestingArea: false,
-    battleSign: false,
   },
 };
 

@@ -11,6 +11,7 @@ const healingSlice = createSlice({
         ...action.payload,
         hpTriggerCondition: action.payload.hpTriggerCondition || '<=',
         manaTriggerCondition: action.payload.manaTriggerCondition || '>=',
+        conditions: action.payload.conditions || [], // Add this line
       };
       state.push(newRule);
     },
@@ -23,6 +24,20 @@ const healingSlice = createSlice({
         state[index] = action.payload;
         if (state[index].enabled) {
         } else {
+        }
+      }
+    },
+    updateCondition: (state, action) => {
+      const { id, condition } = action.payload;
+      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        const conditionIndex = state[ruleIndex].conditions.findIndex(
+          (c) => c.name === condition.name,
+        );
+        if (conditionIndex !== -1) {
+          state[ruleIndex].conditions[conditionIndex] = condition;
+        } else {
+          state[ruleIndex].conditions.push(condition);
         }
       }
     },
@@ -78,6 +93,7 @@ export const {
   toggleColor,
   reorderRules,
   loadRules,
+  updateCondition,
 } = healingSlice.actions;
 
 export default healingSlice;
