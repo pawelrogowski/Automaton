@@ -28,16 +28,14 @@ const healingSlice = createSlice({
       }
     },
     updateCondition: (state, action) => {
-      const { id, condition } = action.payload;
+      const { id, condition, value } = action.payload;
       const ruleIndex = state.findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        const conditionIndex = state[ruleIndex].conditions.findIndex(
-          (c) => c.name === condition.name,
-        );
+        const conditionIndex = state[ruleIndex].conditions.findIndex((c) => c.name === condition);
         if (conditionIndex !== -1) {
-          state[ruleIndex].conditions[conditionIndex] = condition;
+          state[ruleIndex].conditions[conditionIndex].value = value;
         } else {
-          state[ruleIndex].conditions.push(condition);
+          state[ruleIndex].conditions.push({ name: condition, value });
         }
       }
     },

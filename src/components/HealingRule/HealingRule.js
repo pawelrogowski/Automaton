@@ -4,6 +4,9 @@ import { useSelector, useDispatch } from 'react-redux';
 import Switch from 'react-switch';
 import { Trash2, PlusCircle } from 'react-feather';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
+import keyboardKeys from '../../constants/keyboardKeys.js';
+import characterStatusImages from '../../constants/characterStatusImages.js';
+
 import {
   updateRule,
   addColor,
@@ -15,22 +18,23 @@ import {
 import StyledDiv from './HealingRule.styled.js';
 
 const { api } = window;
-const keys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'].map(
-  (key) => ({ value: key, label: key }),
-);
 
 const HealingRule = ({ rule }) => {
   const dispatch = useDispatch();
-  const gameState = useSelector((state) => state.gameState);
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
   const [localHealing, setLocalHealing] = useState(healing);
-  const [newConditionName, setNewConditionName] = useState('');
-  const [newConditionValue, setNewConditionValue] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [characterStatusValue, setCharacterStatusValue] = useState(true);
+  const [selectedStatus, setSelectedStatus] = useState('');
 
   useEffect(() => {
     dispatch(updateRule(localHealing));
   }, [localHealing]);
+
+  const handleConditionChange = (condition, value) => {
+    dispatch(updateCondition({ id: healing.id, condition, value }));
+    console.log(healing.conditions);
+  };
 
   const handleColorPick = async () => {
     const colorData = await api.pickColor();
@@ -39,27 +43,6 @@ const HealingRule = ({ rule }) => {
       dispatch(addColor({ id: healing.id, color, x, y }));
     }
   };
-
-  const handleConditionChange = (conditionName, value) => {
-    const updatedConditions = { ...localHealing.conditions, [conditionName]: value };
-    setLocalHealing((prevState) => ({
-      ...prevState,
-      conditions: updatedConditions,
-    }));
-    dispatch(updateCondition({ id: healing.id, conditions: updatedConditions }));
-  };
-
-  const handleAddCondition = () => {
-    if (newConditionName && !localHealing.conditions.hasOwnProperty(newConditionName)) {
-      handleConditionChange(newConditionName, newConditionValue);
-      setNewConditionName('');
-      setNewConditionValue(false);
-    }
-  };
-
-  const availableConditions = Object.keys(gameState.characterStatus).filter(
-    (condition) => !Object.keys(localHealing.conditions).includes(condition),
-  );
 
   const handleRemoveRule = () => {
     dispatch(removeRule(healing.id));
@@ -159,7 +142,7 @@ const HealingRule = ({ rule }) => {
               placeholder="F1"
               disabled={healing.enabled}
             >
-              {keys.map((key) => (
+              {keyboardKeys.map((key) => (
                 <option key={key.value} value={key.value}>
                   {key.label}
                 </option>
@@ -290,33 +273,6 @@ const HealingRule = ({ rule }) => {
               />
             </div>
           ))}
-
-          {/* UI for adding a new condition */}
-          {availableConditions.length > 0 && (
-            <div>
-              <select
-                value={newConditionName}
-                onChange={(e) => setNewConditionName(e.target.value)}
-              >
-                <option value="">Select Condition</option>
-                {availableConditions.map((condition) => (
-                  <option key={condition} value={condition}>
-                    {condition}
-                  </option>
-                ))}
-              </select>
-              <label>
-                Value:
-                <input
-                  type="checkbox"
-                  checked={newConditionValue}
-                  onChange={(e) => setNewConditionValue(e.target.checked)}
-                />
-              </label>
-              <button onClick={handleAddCondition}>Add Condition</button>
-            </div>
-          )}
-          <button onClick={handleAddCondition}>Add Condition</button>
           <div className="input-wrapper">
             <input
               type="number"
@@ -337,6 +293,65 @@ const HealingRule = ({ rule }) => {
             <label className="label" htmlFor="delay">
               Delay (ms)
             </label>
+          </div>
+          <div className="input-wrapper">
+            <select
+              className="input input-status-select"
+              id="characterStatus"
+              value={selectedStatus}
+              onChange={(event) => setSelectedStatus(event.target.value)}
+              disabled={healing.enabled}
+            >
+              {Object.keys(characterStatusImages).map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+            <label className="label" htmlFor="characterStatus">
+              Character Status
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <input
+              type="checkbox"
+              id="characterStatusValue"
+              onChange={(event) => {
+                setCharacterStatusValue(event.target.checked);
+              }}
+              disabled={healing.enabled}
+            />
+            <label className="label" htmlFor="characterStatusValue">
+              Value
+            </label>
+            <button
+              type="button"
+              onClick={() => handleConditionChange(selectedStatus, characterStatusValue)}
+              disabled={!selectedStatus || healing.enabled}
+            >
+              Add
+            </button>
+          </div>
+
+          <div className="input-wrapper">
+            <h2 className="conditions-header">True Statuses</h2>
+            {healing.conditions
+              .filter((condition) => condition.value)
+              .map((condition) => (
+                <img
+                  key={condition.name}
+                  src={characterStatusImages[condition.name]}
+                  alt={condition.name}
+                />
+              ))}
+          </div>
+          <div className="input-wrapper">
+            <h2 className="conditions-header">False Statuses</h2>
+            {healing.conditions
+              .filter((condition) => !condition.value)
+              .map((condition) => (
+                <img src={characterStatusImages[condition.name]} alt={condition.name} />
+              ))}
           </div>
           <button
             className="remove-rule-button rule-button"
@@ -416,7 +431,7 @@ HealingRule.propTypes = {
         enabled: PropTypes.bool,
       }),
     ),
-    conditions: PropTypes.objectOf(PropTypes.bool),
+    conditions: PropTypes.arrayOf(PropTypes.bool),
   }).isRequired,
 };
 
