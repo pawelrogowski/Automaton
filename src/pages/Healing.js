@@ -60,7 +60,6 @@ export const Healing = () => {
     <StyledMain>
       <section>
         <div className="heading-wrapper">
-          <h1 className="heading">Healing</h1>
           <Switch
             className="main-switch"
             checked={healingEnabled}
@@ -91,13 +90,13 @@ export const Healing = () => {
         </div>
         <div className="button-container">
           <button className="add-button button-page" type="button" onClick={handleAddRule}>
-            Add New Rule
+            ADD NEW RULE
           </button>
           <button className="save-button button-page" type="button" onClick={handleLoadRules}>
-            Load
+            LOAD
           </button>
           <button className="load-button button-page" type="button" onClick={handleSaveRules}>
-            Save
+            SAVE
           </button>
         </div>
         <DragDropContext onDragEnd={handleDragEnd}>

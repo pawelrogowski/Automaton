@@ -21,10 +21,12 @@ const healingSlice = createSlice({
     updateRule: (state, action) => {
       const index = state.findIndex((rule) => rule.id === action.payload.id);
       if (index !== -1) {
-        state[index] = action.payload;
-        if (state[index].enabled) {
-        } else {
-        }
+        // Merge the existing rule with the payload, preserving the conditions array
+        state[index] = {
+          ...state[index],
+          ...action.payload,
+          conditions: state[index].conditions, // Preserve the existing conditions
+        };
       }
     },
     updateCondition: (state, action) => {

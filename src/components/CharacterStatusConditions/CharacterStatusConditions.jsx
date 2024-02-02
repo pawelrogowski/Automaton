@@ -17,7 +17,7 @@ const CharacterStatusConditions = ({ statusConditions, onStatusConditionChange }
 
   const handleClick = (status) => {
     let newState;
-    switch (statusConditions[status]) {
+    switch (localStatusConditions[status]) {
       case null:
         newState = true;
         break;
@@ -30,22 +30,19 @@ const CharacterStatusConditions = ({ statusConditions, onStatusConditionChange }
       default:
         newState = true; // This should never happen if the state is correctly managed
     }
-    onStatusConditionChange(status, newState);
+    setLocalStatusConditions((prevState) => ({
+      ...prevState,
+      [status]: newState,
+    }));
+    onStatusConditionChange(status, newState); // Update Redux state
   };
 
   return (
     <StyledList>
       {Object.keys(characterStatusImages).map((status) => (
-        <StyledListItem key={status}>
+        <StyledListItem key={status} checked={localStatusConditions[status]}>
           <StyledImageContainer>
             <StyledCheckboxImage
-              className={
-                localStatusConditions[status] === true
-                  ? 'checked'
-                  : localStatusConditions[status] === false
-                    ? 'unchecked'
-                    : ''
-              }
               src={characterStatusImages[status]}
               alt={status}
               onClick={() => handleClick(status)}

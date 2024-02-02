@@ -17,6 +17,12 @@ const MainNavigation = () => {
         <li>
           <Link to="/console">Console</Link>
         </li>
+        <li>
+          <Link to="/console">Cavebot</Link>
+        </li>
+        <li>
+          <Link to="/console">Market</Link>
+        </li>
         <li className="character-name">{windowTitle}</li>
       </ul>
     </StyledNav>

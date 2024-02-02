@@ -78,11 +78,12 @@ const HealingRule = ({ rule }) => {
             <Switch
               checked={healing.enabled}
               onChange={() =>
-                setLocalHealing({
-                  ...localHealing,
-                  enabled: !localHealing.enabled,
+                setLocalHealing((prevLocalHealing) => ({
+                  ...prevLocalHealing,
+                  enabled: !prevLocalHealing.enabled,
                   colors: healing.colors,
-                })
+                  conditions: prevLocalHealing.conditions, // Preserve the conditions
+                }))
               }
               disabled={!requiredFieldsFilled}
               offColor="#ff1c1c"
@@ -375,7 +376,8 @@ HealingRule.propTypes = {
         enabled: PropTypes.bool,
       }),
     ),
-    conditions: PropTypes.arrayOf(PropTypes.bool),
+    // eslint-disable-next-line react/forbid-prop-types
+    conditions: PropTypes.arrayOf(PropTypes.object),
   }).isRequired,
 };
 

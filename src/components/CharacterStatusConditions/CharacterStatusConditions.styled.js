@@ -6,7 +6,6 @@ export const StyledList = styled.ul`
   flex-direction: row;
   gap: 3px;
   align-items: center;
-  padding: 1px 1px;
   border-top: 1px solid #2c2c2c;
   border-left: 1px solid #2c2c2c;
   border-bottom: 1px solid #757676;
@@ -19,6 +18,22 @@ export const StyledList = styled.ul`
 export const StyledListItem = styled.li`
   position: relative;
   list-style: none;
+  display: flex;
+  align-items: center;
+  width: 18px;
+  display: flex;
+  justify-content: center;
+  padding: 1px;
+  border: ${({ checked }) => {
+    switch (checked) {
+      case true:
+        return '2px solid green';
+      case false:
+        return '2px solid red';
+      default:
+        return '2px solid transparent';
+    }
+  }};
 `;
 
 export const StyledImageContainer = styled.span`
@@ -27,25 +42,13 @@ export const StyledImageContainer = styled.span`
 `;
 
 export const StyledImage = styled.img`
-  width: 11px;
+  width: 14px;
   height: auto;
   cursor: pointer;
-  &.green-border {
-    border-bottom: 2px solid green;
-  }
-  &.red-border {
-    border-bottom: 2px solid red;
-  }
 `;
 
 export const StyledCheckboxImage = styled.img`
-  width: 11px;
+  width: 14px;
   height: auto;
   cursor: pointer;
-  &.checked {
-    border-bottom: 2px solid green;
-  }
-  &.unchecked {
-    border-bottom: 2px solid red;
-  }
 `;

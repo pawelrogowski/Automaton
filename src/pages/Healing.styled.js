@@ -21,11 +21,11 @@ const StyledMain = styled.main`
   .button-page {
     border: none;
     background: none;
-    height: 24px;
+    height: 28px;
     margin-bottom: 16px;
     text-align: center;
     display: flex;
-    padding: 4px 8px;
+    padding: 2px 6px;
     padding-bottom: 6px;
     align-items: center;
     color: #757676;
@@ -34,15 +34,18 @@ const StyledMain = styled.main`
     border-left: 2px solid #757676;
     border-bottom: 2px solid #2c2c2c;
     border-right: 2px solid #2c2c2c;
-
+    color: rgb(175, 175, 175);
     background-image: url(${tibiaBg});
     background-repeat: repeat;
-    s &:active {
-      scale: 0.98;
+    &:active {
+      border-top: 2px solid #2c2c2c;
+      border-left: 2px solid #2c2c2c;
+      border-bottom: 2px solid #757676;
+      border-right: 2px solid #757676;
     }
+
     &:hover {
       cursor: pointer;
-      color: #0066ff;
       > svg {
         stroke: #0066ff;
       }
@@ -53,6 +56,11 @@ const StyledMain = styled.main`
     }
   }
   .add-button {
+    background: #008d0c4f;
+    border-top: 2px solid #486554;
+    border-left: 2px solid #486554;
+    border-bottom: 2px solid #143518;
+    border-right: 2px solid #143518;
   }
   .save-button {
     margin-left: auto;
@@ -71,7 +79,6 @@ const StyledMain = styled.main`
     color: #fafafa;
   }
   .main-switch {
-    margin-left: auto;
   }
 
   .health-bar,

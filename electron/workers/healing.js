@@ -64,7 +64,18 @@ async function checkHealingRules() {
             gameState.manaPercentage,
           );
 
-          if (hpConditionMet && manaConditionMet) {
+          // Check character status conditions
+          const charStatusConditionsMet = rule.conditions.every((condition) => {
+            const charStatusValue = gameState.characterStatus[condition.name];
+            // If the key is missing or has a null value, skip the check
+            if (charStatusValue === undefined || charStatusValue === null) {
+              return true;
+            }
+            // Compare the condition value with the actual character status value
+            return charStatusValue === condition.value;
+          });
+
+          if (hpConditionMet && manaConditionMet && charStatusConditionsMet) {
             if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
               highestPriorityRule = rule;
             }

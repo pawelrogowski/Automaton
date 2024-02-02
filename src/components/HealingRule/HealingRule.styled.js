@@ -17,6 +17,7 @@ const StyledDiv = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 810px;
 
   summary {
     cursor: pointer;
@@ -98,6 +99,8 @@ const StyledDiv = styled.div`
     background-repeat: repeat;
   }
   .rule-button {
+    font-size: 11px;
+    height: 21px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -107,6 +110,19 @@ const StyledDiv = styled.div`
     border-left: 1px solid #757676;
     border-bottom: 1px solid #2c2c2c;
     border-right: 1px solid #2c2c2c;
+    color: rgb(175, 175, 175);
+    margin-bottom: 8px;
+
+    cursor: pointer;
+    &:active {
+      border-top: 1px solid #2c2c2c;
+      border-left: 1px solid #2c2c2c;
+      border-bottom: 1px solid #757676;
+      border-right: 1px solid #757676;
+    }
+  }
+  .button-expand {
+    margin-left: 6px;
   }
   .details-arrow {
     transition: stroke 200ms;
@@ -146,18 +162,14 @@ const StyledDiv = styled.div`
       padding-top: 5px;
     }
   }
-  .remove-color-icon,
-  .remove-rule-icon {
-    transition: stroke 200ms;
-    stroke: #fafafa;
 
-    &:hover {
-      cursor: pointer;
-      stroke: #bf2828;
-    }
-  }
   .remove-rule-button {
     margin-left: auto;
+    background: #8f000052;
+    border-top: 1px solid #8b5757;
+    border-left: 1px solid #8b5757;
+    border-bottom: 1px solid #470909;
+    border-right: 1px solid #470909;
   }
   .remove-color {
     margin-left: auto;
