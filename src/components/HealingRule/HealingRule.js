@@ -6,6 +6,7 @@ import { Trash2, PlusCircle } from 'react-feather';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import characterStatusImages from '../../constants/characterStatusImages.js';
+import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
 import {
   updateRule,
@@ -26,15 +27,11 @@ const HealingRule = ({ rule }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [characterStatusValue, setCharacterStatusValue] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [statusConditions, setStatusConditions] = useState({});
 
   useEffect(() => {
     dispatch(updateRule(localHealing));
   }, [localHealing]);
-
-  const handleConditionChange = (condition, value) => {
-    dispatch(updateCondition({ id: healing.id, condition, value }));
-    console.log(healing.conditions);
-  };
 
   const handleColorPick = async () => {
     const colorData = await api.pickColor();
@@ -42,6 +39,14 @@ const HealingRule = ({ rule }) => {
       const { color, x, y } = colorData;
       dispatch(addColor({ id: healing.id, color, x, y }));
     }
+  };
+
+  const handleStatusConditionChange = (status, value) => {
+    setStatusConditions((prevState) => ({
+      ...prevState,
+      [status]: value,
+    }));
+    dispatch(updateCondition({ id: healing.id, condition: status, value }));
   };
 
   const handleRemoveRule = () => {
@@ -61,6 +66,13 @@ const HealingRule = ({ rule }) => {
   return (
     <StyledDiv $running={healing.enabled}>
       <details open={isOpen} onToggle={() => setIsOpen(!isOpen)}>
+        {/* ////////////////////////////////////////////////////////////////////////////////// */}
+        <div className="input-wrapper">
+          <CharacterStatusConditions
+            statusConditions={statusConditions}
+            onStatusConditionChange={handleStatusConditionChange}
+          />
+        </div>
         <summary>
           <div className="input-wrapper input-wrapper-checkbox">
             <Switch
@@ -263,16 +275,6 @@ const HealingRule = ({ rule }) => {
               Priority
             </label>
           </div>
-          {Object.entries(localHealing.conditions).map(([condition, value]) => (
-            <div key={condition}>
-              <label>{condition}: </label>
-              <input
-                type="checkbox"
-                checked={value}
-                onChange={(e) => handleConditionChange(condition, e.target.checked)}
-              />
-            </div>
-          ))}
           <div className="input-wrapper">
             <input
               type="number"
@@ -294,65 +296,7 @@ const HealingRule = ({ rule }) => {
               Delay (ms)
             </label>
           </div>
-          <div className="input-wrapper">
-            <select
-              className="input input-status-select"
-              id="characterStatus"
-              value={selectedStatus}
-              onChange={(event) => setSelectedStatus(event.target.value)}
-              disabled={healing.enabled}
-            >
-              {Object.keys(characterStatusImages).map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-            <label className="label" htmlFor="characterStatus">
-              Character Status
-            </label>
-          </div>
-          <div className="input-wrapper">
-            <input
-              type="checkbox"
-              id="characterStatusValue"
-              onChange={(event) => {
-                setCharacterStatusValue(event.target.checked);
-              }}
-              disabled={healing.enabled}
-            />
-            <label className="label" htmlFor="characterStatusValue">
-              Value
-            </label>
-            <button
-              type="button"
-              onClick={() => handleConditionChange(selectedStatus, characterStatusValue)}
-              disabled={!selectedStatus || healing.enabled}
-            >
-              Add
-            </button>
-          </div>
 
-          <div className="input-wrapper">
-            <h2 className="conditions-header">True Statuses</h2>
-            {healing.conditions
-              .filter((condition) => condition.value)
-              .map((condition) => (
-                <img
-                  key={condition.name}
-                  src={characterStatusImages[condition.name]}
-                  alt={condition.name}
-                />
-              ))}
-          </div>
-          <div className="input-wrapper">
-            <h2 className="conditions-header">False Statuses</h2>
-            {healing.conditions
-              .filter((condition) => !condition.value)
-              .map((condition) => (
-                <img src={characterStatusImages[condition.name]} alt={condition.name} />
-              ))}
-          </div>
           <button
             className="remove-rule-button rule-button"
             type="button"

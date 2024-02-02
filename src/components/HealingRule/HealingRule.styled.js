@@ -3,9 +3,9 @@ import tibiaBg from '../../assets/tibiaBg.webp';
 import tibiaBgDark from '../../assets/tibiaBgDark.webp';
 
 const StyledDiv = styled.div`
-  padding: 8px;
-  padding-top: 13px;
-  margin-bottom: 12px;
+  padding: 0px 4px;
+  padding-top: 7px;
+  margin-bottom: -1px;
   /* background: #1a1d21; */
   background-image: url(${tibiaBg});
   background-repeat: repeat;
@@ -14,6 +14,9 @@ const StyledDiv = styled.div`
   border-left: 2px solid #757676;
   border-bottom: 3px solid #2c2c2c;
   border-right: 3px solid #2c2c2c;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 
   summary {
     cursor: pointer;
