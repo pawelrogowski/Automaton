@@ -5,7 +5,7 @@ import Switch from 'react-switch';
 import { Trash2, PlusCircle } from 'react-feather';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import keyboardKeys from '../../constants/keyboardKeys.js';
-import characterStatusImages from '../../constants/characterStatusImages.js';
+
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
 import {
@@ -69,8 +69,8 @@ const HealingRule = ({ rule }) => {
         {/* ////////////////////////////////////////////////////////////////////////////////// */}
         <div className="input-wrapper">
           <CharacterStatusConditions
-            statusConditions={statusConditions}
-            onStatusConditionChange={handleStatusConditionChange}
+            ruleId={rule.id} // Pass the ruleId to the CharacterStatusConditions component
+            onStatusConditionChange={handleStatusConditionChange} // Define the callback if needed
           />
         </div>
         <summary>

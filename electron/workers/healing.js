@@ -67,7 +67,7 @@ async function checkHealingRules() {
           // Check character status conditions
           const charStatusConditionsMet = rule.conditions.every((condition) => {
             const charStatusValue = gameState.characterStatus[condition.name];
-            // If the key is missing or has a null value, skip the check
+            // If the key is missing or has a null value, consider it passed
             if (charStatusValue === undefined || charStatusValue === null) {
               return true;
             }

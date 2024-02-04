@@ -35,10 +35,26 @@ const healingSlice = createSlice({
       if (ruleIndex !== -1) {
         const conditionIndex = state[ruleIndex].conditions.findIndex((c) => c.name === condition);
         if (conditionIndex !== -1) {
-          state[ruleIndex].conditions[conditionIndex].value = value;
+          if (value === undefined) {
+            // Remove the condition object if the value is undefined
+            state[ruleIndex].conditions.splice(conditionIndex, 1);
+          } else {
+            // Update the condition value if it's not undefined
+            state[ruleIndex].conditions[conditionIndex].value = value;
+          }
         } else {
+          // Push a new condition object if it doesn't exist
           state[ruleIndex].conditions.push({ name: condition, value });
         }
+      }
+    },
+    removeCondition: (state, action) => {
+      const { id, condition } = action.payload;
+      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state[ruleIndex].conditions = state[ruleIndex].conditions.filter(
+          (c) => c.name !== condition,
+        );
       }
     },
     addColor: (state, action) => {
@@ -94,6 +110,7 @@ export const {
   reorderRules,
   loadRules,
   updateCondition,
+  removeCondition,
 } = healingSlice.actions;
 
 export default healingSlice;

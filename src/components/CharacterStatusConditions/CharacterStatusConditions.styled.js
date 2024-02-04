@@ -21,7 +21,6 @@ export const StyledListItem = styled.li`
   display: flex;
   align-items: center;
   width: 18px;
-  display: flex;
   justify-content: center;
   padding: 1px;
   border: ${({ checked }) => {
