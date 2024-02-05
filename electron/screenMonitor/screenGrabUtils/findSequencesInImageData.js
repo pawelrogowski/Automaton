@@ -1,5 +1,5 @@
 function findSequencesInImageData(imageData, targetSequences, width) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const length = imageData.length / 4;
     const foundSequences = {};
 

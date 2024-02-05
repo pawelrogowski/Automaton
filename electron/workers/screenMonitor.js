@@ -105,9 +105,9 @@ const statusBarSequences = {
   hungry: {
     direction: 'horizontal',
     sequence: [
+      [246, 212, 143],
+      [246, 212, 143],
       [239, 180, 63],
-      [54, 38, 5],
-      [54, 38, 5],
     ],
   },
   poisoned: {
@@ -272,7 +272,6 @@ async function main() {
   async function loop() {
     const hpManaImageData = await grabScreen(pickedWindow, hpManaRegion);
     cooldownsImageData = await grabScreen(pickedWindow, cooldownsRegion);
-    const statusBarData = await grabScreen(pickedWindow, statusBarRegion);
 
     // Process HP, mana, and cooldown areas concurrently
     await Promise.all([
