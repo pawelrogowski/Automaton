@@ -395,7 +395,7 @@ async function main() {
       })(),
     ]);
 
-    setTimeout(loop, 5);
+    setTimeout(loop, 50);
   }
 
   loop();

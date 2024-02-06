@@ -20,7 +20,7 @@ async function getPixelColor(windowId, x, y, returnHex) {
     }
     return rgbValues;
   } catch (error) {
-    console.error('getPixelColor error::', error);
+    console.error('getPixelColor error:', error);
     throw error;
   }
 }
