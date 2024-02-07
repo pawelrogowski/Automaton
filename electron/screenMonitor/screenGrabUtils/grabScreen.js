@@ -52,10 +52,14 @@ async function grabScreen(windowId, region, measureTime) {
 
                 if (!image) {
                   console.log('Image is undefined');
-                  resolve([]);
+                  setTimeout(() => {
+                    resolve([]);
+                  }, 10); // Added  10ms timeout before resolving
                   return;
                 }
-                resolve(image.data);
+                setTimeout(() => {
+                  resolve(image.data);
+                }, 10);
               },
             );
           });
@@ -66,7 +70,7 @@ async function grabScreen(windowId, region, measureTime) {
           console.error('error grabScreen:', error);
           setTimeout(() => {
             grabScreen(windowId, region).then(resolve).catch(reject);
-          }, 100);
+          }, 250);
         }
       });
     });

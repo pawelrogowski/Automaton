@@ -24,12 +24,10 @@ ipcMain.handle('pick-color', (event) => {
       });
     });
 
-    // Create a transparent window for each display
-
     const colorPickerWindow = new BrowserWindow({
       sandbox: false,
-      width: 50,
-      height: 50,
+      width: 150,
+      height: 150,
       alwaysOnTop: true,
       frame: false,
       resizable: false,
@@ -55,23 +53,85 @@ ipcMain.handle('pick-color', (event) => {
     mainWindow.hide();
 
     const mouseMoveListener = (mouseEvent) => {
-      const updateColor = () => {
-        const color = `#${robotjs.getPixelColor(mouseEvent.x, mouseEvent.y)}`;
-        const code = `
-            document.getElementById('color').style.backgroundColor = '${color}';
+      const updateColors = () => {
+        console.time('colorPicker');
+        // Define the offsets for the  3x3 grid
+        const offsets = [
+          [-1, -1],
+          [0, -1],
+          [1, -1],
+          [-1, 0],
+          [0, 0],
+          [1, 0],
+          [-1, 1],
+          [0, 1],
+          [1, 1],
+        ];
+        // Get the colors of the surrounding pixels
+        const colors = offsets.map(([dx, dy]) => {
+          return `#${robotjs.getPixelColor(mouseEvent.x + dx, mouseEvent.y + dy)}`;
+        });
+        console.timeEnd('colorPicker');
+        // Apply the colors to the cells
+        colors.forEach((color, index) => {
+          const code = `
+            document.querySelectorAll('.colorCell')[${index}].style.backgroundColor = '${color}';
           `;
-        colorPickerWindow.webContents.executeJavaScript(code);
+          colorPickerWindow.webContents.executeJavaScript(code);
+        });
       };
-      updateColor();
+      updateColors();
 
       if (intervalId) {
         clearInterval(intervalId);
       }
 
-      intervalId = setInterval(updateColor, 10);
+      intervalId = setInterval(updateColors, 25);
 
-      const windowX = mouseEvent.x + 20;
-      const windowY = mouseEvent.y - 20;
+      // Find the display that contains the cursor
+      const cursorPoint = { x: mouseEvent.x, y: mouseEvent.y };
+      const display = screen.getAllDisplays().find((d) => {
+        const { x, y, width, height } = d.bounds;
+        return (
+          cursorPoint.x >= x &&
+          cursorPoint.x <= x + width &&
+          cursorPoint.y >= y &&
+          cursorPoint.y <= y + height
+        );
+      });
+
+      // Calculate the safe boundaries for the color picker window
+      const windowWidth = 150;
+      const windowHeight = 150;
+      const bufferZone = 180; // Buffer zone in pixels
+      const safeLeftBoundary = Math.max(display.bounds.x, display.bounds.x + bufferZone);
+      const safeRightBoundary = Math.min(
+        display.bounds.x + display.bounds.width - windowWidth - bufferZone,
+        display.bounds.x + display.bounds.width - bufferZone,
+      );
+      const safeTopBoundary = Math.max(display.bounds.y, display.bounds.y + bufferZone);
+      const safeBottomBoundary = Math.min(
+        display.bounds.y + display.bounds.height - windowHeight - bufferZone,
+        display.bounds.y + display.bounds.height - bufferZone,
+      );
+
+      // Calculate the proposed position of the color picker window
+      let windowX = mouseEvent.x + 20;
+      let windowY = mouseEvent.y - 20;
+
+      // Adjust the position if it goes beyond the safe boundaries
+      if (windowX > safeRightBoundary) {
+        windowX = safeRightBoundary;
+      } else if (windowX < safeLeftBoundary) {
+        windowX = safeLeftBoundary;
+      }
+
+      if (windowY > safeBottomBoundary) {
+        windowY = safeBottomBoundary;
+      } else if (windowY < safeTopBoundary) {
+        windowY = safeTopBoundary;
+      }
+
       colorPickerWindow.setPosition(windowX, windowY);
     };
 
