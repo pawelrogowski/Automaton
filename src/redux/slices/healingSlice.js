@@ -1,6 +1,27 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = [];
+const initialState = [
+  {
+    name: 'manaSync',
+    enabled: false,
+    key: 'F12',
+    colors: [],
+    id: 'manaSync',
+    hpTriggerCondition: '>=',
+    hpTriggerPercentage: '1',
+    manaTriggerCondition: '<=',
+    manaTriggerPercentage: '80',
+    priority: '0',
+    delay: '1150',
+    category: 'Potion',
+    conditions: [
+      {
+        name: 'inProtectedZone',
+        value: false,
+      },
+    ],
+  },
+];
 
 const healingSlice = createSlice({
   name: 'healing',
@@ -89,6 +110,26 @@ const healingSlice = createSlice({
         }
       }
     },
+    updateManaSync: (state, action) => {
+      const { key, manaTriggerPercentage, enabled } = action.payload;
+      const manaSyncIndex = state.findIndex((rule) => rule.category === 'Potion');
+      if (manaSyncIndex !== -1) {
+        state[manaSyncIndex] = {
+          ...state[manaSyncIndex],
+          key,
+          enabled,
+          manaTriggerPercentage,
+          hpTriggerCondition: '>',
+          hpTriggerPercentage: '0',
+          manaTriggerCondition: '<=',
+          priority: '0',
+          delay: '2050',
+          colors: [],
+          conditions: [],
+          name: 'manaSync',
+        };
+      }
+    },
     reorderRules: (state, action) => {
       const { startIndex, endIndex } = action.payload;
       const [removed] = state.splice(startIndex, 1);
@@ -111,6 +152,7 @@ export const {
   loadRules,
   updateCondition,
   removeCondition,
+  updateManaSync,
 } = healingSlice.actions;
 
 export default healingSlice;

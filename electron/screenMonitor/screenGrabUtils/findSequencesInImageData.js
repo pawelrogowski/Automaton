@@ -2,7 +2,6 @@ function findSequencesInImageData(imageData, targetSequences, width) {
   return new Promise((resolve) => {
     const length = imageData.length / 4;
     const foundSequences = {};
-
     // eslint-disable-next-line no-restricted-syntax
     for (const [name, sequenceObj] of Object.entries(targetSequences)) {
       foundSequences[name] = {};

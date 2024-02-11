@@ -42,7 +42,7 @@ async function grabScreen(windowId, region, measureTime) {
                     console.log('Window is minimized, waiting for it to be maximized...');
                     setTimeout(() => {
                       grabScreen(windowId, region).then(resolve).catch(reject);
-                    }, 100);
+                    }, 250);
                   } else {
                     console.log('error GrabScreen Callback');
                     reject(new Error(`X.GetImage failed: ${error.message}`));
@@ -54,12 +54,12 @@ async function grabScreen(windowId, region, measureTime) {
                   console.log('Image is undefined');
                   setTimeout(() => {
                     resolve([]);
-                  }, 10); // Added  10ms timeout before resolving
+                  }, 5); // Added  10ms timeout before resolving
                   return;
                 }
                 setTimeout(() => {
                   resolve(image.data);
-                }, 10);
+                }, 5);
               },
             );
           });

@@ -48,6 +48,7 @@ store.subscribe(() => {
     ScreenMonitor = new Worker(statCheckPath, { name: 'screeenMonitor.js' });
     console.log('screen monitor started from main.js');
     ScreenMonitor.on('message', (message) => {
+      console.log(message);
       if (message.type === 'setHealthPercent') {
         setGlobalState('gameState/setHealthPercent', message.payload);
         store.dispatch({ type: 'gameState/setHealthPercent', payload: message.payload });

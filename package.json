@@ -1,6 +1,6 @@
 {
-  "name": "automatonBeta",
-  "productName": "automatonBeta",
+  "name": "automaton",
+  "productName": "automaton",
   "version": "1.0.0",
   "description": "automaton is a simple app for automating task on x11 systems",
   "type": "module",

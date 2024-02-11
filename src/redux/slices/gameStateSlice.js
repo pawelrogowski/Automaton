@@ -6,6 +6,7 @@ const initialState = {
   isVisible: false,
   healingCdActive: false,
   supportCdActive: false,
+  attackCdActive: false,
   characterStatus: {
     agony: false,
     bleeding: false,
@@ -53,6 +54,9 @@ const gameStateSlice = createSlice({
     },
     setSupportCdActive: (state, action) => {
       state.supportCdActive = action.payload.supportCdActive;
+    },
+    setAttackCdActive: (state, action) => {
+      state.attackCdActive = action.payload.attackCdActive;
     },
     setCharacterStatus: (state, action) => {
       const { characterStatus } = action.payload || {};

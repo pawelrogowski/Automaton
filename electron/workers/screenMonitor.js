@@ -256,7 +256,7 @@ async function main() {
   };
 
   const cooldownsRegion = {
-    x: cooldownBar.x,
+    x: cooldownBar.x - 10,
     y: cooldownBar.y,
     width: 1000,
     height: 1,
@@ -343,8 +343,11 @@ async function main() {
             } else if (key === 'support') {
               type = 'setSupportCdActive';
               payload = { supportCdActive: isCooldownActive };
+            } else if (key === 'attack') {
+              type = 'setAttackCdActive';
+              payload = { attackCdActive: isCooldownActive };
             }
-
+            console.log({ type, payload });
             parentPort.postMessage({ type, payload });
             lastCooldownStates[key] = isCooldownActive;
           }
@@ -395,7 +398,7 @@ async function main() {
       })(),
     ]);
 
-    setTimeout(loop, 50);
+    setTimeout(loop, 1);
   }
 
   loop();

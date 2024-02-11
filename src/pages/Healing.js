@@ -1,10 +1,10 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import { Download, Heart, Plus, Save, Zap } from 'react-feather';
+import { Heart, Zap } from 'react-feather';
 import Switch from 'react-switch';
 import HealingRule from '../components/HealingRule/HealingRule.js';
-import { addRule, reorderRules } from '../redux/slices/healingSlice.js';
+import { addRule, reorderRules, updateManaSync } from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
 import { setHealing } from '../redux/slices/globalSlice.js';
@@ -15,6 +15,9 @@ export const Healing = () => {
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const { windowId, healingEnabled } = useSelector((state) => state.global);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
+  const manaSyncRule = useSelector((state) =>
+    state.healing.find((rule) => rule.category === 'Potion'),
+  );
 
   const handleAddRule = () => {
     const newRule = {
@@ -99,28 +102,102 @@ export const Healing = () => {
             SAVE
           </button>
         </div>
+        {manaSyncRule && (
+          <div className="manaSync-rule">
+            <div className="input-wrapper">
+              <Switch
+                checked={manaSyncRule.enabled}
+                onChange={() =>
+                  dispatch(
+                    updateManaSync({
+                      key: manaSyncRule.key,
+                      manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
+                      enabled: !manaSyncRule.enabled,
+                    }),
+                  )
+                }
+                disabled={healingEnabled}
+                offColor="#ff1c1c"
+                onColor="#00ff00"
+                handleDiameter={26}
+                uncheckedIcon={false}
+                checkedIcon={false}
+                boxShadow="0px   1px   5px rgba(0,   0,   0,   0.6)"
+                activeBoxShadow="0px   0px   1px   10px rgba(0,   0,   0,   0.2)"
+                height={18}
+                width={48}
+                className="react-switch"
+              />
+            </div>
+            <div className="input-wrapper">
+              <input
+                className="input input-hotkey"
+                id="manaSyncKey"
+                value={manaSyncRule.key}
+                onChange={(event) =>
+                  dispatch(
+                    updateManaSync({
+                      key: event.target.value,
+                      manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
+                    }),
+                  )
+                }
+                placeholder="F1"
+                disabled={healingEnabled}
+              />
+              <label className="label" htmlFor="manaSyncKey">
+                Hotkey
+              </label>
+            </div>
+            <div className="input-wrapper">
+              <input
+                type="number"
+                className="input input-percent"
+                id="manaSyncPercentage"
+                value={manaSyncRule.manaTriggerPercentage}
+                onChange={(event) => {
+                  if (event.target.value !== undefined) {
+                    dispatch(
+                      updateManaSync({
+                        key: manaSyncRule.key,
+                        manaTriggerPercentage: event.target.value,
+                      }),
+                    );
+                  }
+                }}
+                placeholder="0"
+                disabled={healingEnabled}
+              />
+              <label className="label" htmlFor="manaSyncPercentage">
+                Mana %
+              </label>
+            </div>
+          </div>
+        )}
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="rules">
             {(provided) => (
               <div {...provided.droppableProps} ref={provided.innerRef}>
-                {rules.map((rule, index) => (
-                  <Draggable
-                    key={rule.id}
-                    draggableId={rule.id}
-                    index={index}
-                    isDragDisabled={isAnyRuleEnabled}
-                  >
-                    {(provided) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                      >
-                        <HealingRule rule={rule} />
-                      </div>
-                    )}
-                  </Draggable>
-                ))}
+                {rules
+                  .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
+                  .map((rule, index) => (
+                    <Draggable
+                      key={rule.id}
+                      draggableId={rule.id}
+                      index={index}
+                      isDragDisabled={isAnyRuleEnabled}
+                    >
+                      {(provided) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                        >
+                          <HealingRule rule={rule} />
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
                 {provided.placeholder}
               </div>
             )}
