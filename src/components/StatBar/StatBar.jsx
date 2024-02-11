@@ -7,7 +7,7 @@ const StatBar = ({ value, fill }) => {
       <div>
         <div />
       </div>
-      <span>{value ? `${value}%` : '??%'}</span>
+      <span>{value ? `${value}%` : '??%'} </span>
     </StyledDiv>
   );
 };

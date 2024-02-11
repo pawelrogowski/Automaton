@@ -1,22 +1,28 @@
 import styled from 'styled-components';
+import tibiaBg from '../../assets/tibiaBg.webp';
+import tibiaBgDark from '../../assets/tibiaBgDark.webp';
 
 const StyledDiv = styled.div`
-  border-radius: 4px;
-  padding: 8px;
-  padding-top: 13px;
-  margin-bottom: 12px;
-  background: #1a1d21;
-
+  padding: 0px 4px;
+  padding-top: 7px;
+  margin-bottom: -1px;
+  /* background: #1a1d21; */
+  background-image: url(${tibiaBg});
+  background-repeat: repeat;
   position: relative;
-  box-shadow:
-    rgba(6, 24, 44, 0.4) 0px 0px 0px 2px,
-    rgb(1 1 4 / 44%) 0px 4px 6px -1px,
-    rgba(255, 255, 255, 0.08) 0px 1px 0px inset;
+  border-top: 2px solid #757676;
+  border-left: 2px solid #757676;
+  border-bottom: 3px solid #2c2c2c;
+  border-right: 3px solid #2c2c2c;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 810px;
 
   summary {
     cursor: pointer;
     display: flex;
-    gap: 8px;
+
     align-items: center;
   }
   .input-wrapper {
@@ -31,33 +37,92 @@ const StyledDiv = styled.div`
     width: 100px;
     height: 32px;
     padding: 0 12px;
-    background: #24292e;
-    font-size: 12px;
+    background: #2b2b2b;
+    font-size: 10px;
     border: none;
-    border-radius: 4px;
     color: #d3d3d3;
     outline: none;
+    position: relative;
+    border-top: 1px solid #757676;
+    border-left: 1px solid #757676;
+    border-bottom: 1px solid #2c2c2c;
+    border-right: 1px solid #2c2c2c;
+    &:disabled {
+      background: #404040;
+    }
   }
   .input-checkbox {
     width: 32px;
-    background: #24292e;
+    background: #2b2b2b;
+  }
+  .input-hotkey {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    width: 60px;
+  }
+  .input-category {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    width: 90px;
+  }
+  .input-priority {
+    width: 55px;
+    background: #2b2b2b;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+  }
+  .input-delay {
+    width: 85px;
+    background: #2b2b2b;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
   }
   .label {
     position: absolute;
-    top: -7px;
-    left: 8px;
+    top: -10px;
+    left: 0px;
     font-size: 10px;
-    background: #24292e;
-    padding: 0 4px;
-    border-radius: 4px;
+    line-height: 10px;
+    background: #363636;
+    padding: 2px 4px;
     color: #7c8085;
+    text-align: center;
+    border-top: 1px solid #757676;
+    border-left: 1px solid #757676;
+    border-right: 1px solid #2c2c2c;
+    width: 100%;
+    background-image: url(${tibiaBgDark});
+    background-repeat: repeat;
   }
-  button {
+  .rule-button {
+    font-size: 11px;
+    height: 21px;
     display: flex;
     justify-content: center;
     align-items: center;
     border: none;
     background: none;
+    border-top: 1px solid #757676;
+    border-left: 1px solid #757676;
+    border-bottom: 1px solid #2c2c2c;
+    border-right: 1px solid #2c2c2c;
+    color: rgb(175, 175, 175);
+    margin-bottom: 8px;
+
+    cursor: pointer;
+    &:active {
+      border-top: 1px solid #2c2c2c;
+      border-left: 1px solid #2c2c2c;
+      border-bottom: 1px solid #757676;
+      border-right: 1px solid #757676;
+    }
+  }
+  .button-expand {
+    margin-left: 6px;
   }
   .details-arrow {
     transition: stroke 200ms;
@@ -97,18 +162,14 @@ const StyledDiv = styled.div`
       padding-top: 5px;
     }
   }
-  .remove-color-icon,
-  .remove-rule-icon {
-    transition: stroke 200ms;
-    stroke: #fafafa;
 
-    &:hover {
-      cursor: pointer;
-      stroke: #bf2828;
-    }
-  }
   .remove-rule-button {
     margin-left: auto;
+    background: #8f000052;
+    border-top: 1px solid #8b5757;
+    border-left: 1px solid #8b5757;
+    border-bottom: 1px solid #470909;
+    border-right: 1px solid #470909;
   }
   .remove-color {
     margin-left: auto;
@@ -135,14 +196,24 @@ const StyledDiv = styled.div`
   }
 
   .input-percent {
-    width: 56px;
+    width: 52px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
+    text-align: center;
+    padding: 0;
     padding-right: 4px;
+    border-left: none;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
   }
   .input-percent-select {
-    width: 58px;
-
+    padding: 0;
+    width: 42px;
+    appearance: none;
+    text-align: center;
+    -webkit-appearance: none;
+    -moz-appearance: none;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
   }

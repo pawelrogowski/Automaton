@@ -24,6 +24,7 @@
     "copy-webpack-plugin": "^11.0.0",
     "electron": "20.0.0",
     "electron-squirrel-startup": "^1.0.0",
+    "electron-store": "^8.1.0",
     "iohook2": "^1.0.6",
     "lodash": "^4.17.21",
     "modern-normalize": "^2.0.0",

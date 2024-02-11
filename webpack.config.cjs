@@ -40,6 +40,45 @@ module.exports = {
         test: /\.svg$/,
         use: ['file-loader'],
       },
+      {
+        test: /\.webp$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {
+              name: '[name].[ext]',
+              outputPath: 'images/',
+              publicPath: 'images/',
+            },
+          },
+        ],
+      },
+      {
+        test: /\.png$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {
+              name: '[name].[ext]',
+              outputPath: 'images/',
+              publicPath: 'images/',
+            },
+          },
+        ],
+      },
+      {
+        test: /\.gif$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {
+              name: '[name].[ext]',
+              outputPath: 'images/',
+              publicPath: 'images/',
+            },
+          },
+        ],
+      },
     ],
   },
   plugins: [
@@ -47,7 +86,10 @@ module.exports = {
       template: './src/index.html',
     }),
     new CopyWebpackPlugin({
-      patterns: [{ from: 'node_modules/robotjs/build/Release', to: 'build/Release' }],
+      patterns: [
+        { from: 'node_modules/robotjs/build/Release', to: 'build/Release' },
+        { from: 'src/assets', to: 'dist/assets' },
+      ],
     }),
   ],
 };

@@ -2,28 +2,32 @@ import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import Switch from 'react-switch';
-import { Trash2, ChevronDown, ChevronUp, PlusCircle } from 'react-feather';
+import { Trash2, PlusCircle } from 'react-feather';
 import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
+import keyboardKeys from '../../constants/keyboardKeys.js';
+
+import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
+
 import {
   updateRule,
   addColor,
   removeColor,
   toggleColor,
   removeRule,
+  updateCondition,
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 
 const { api } = window;
-const keys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'].map(
-  (key) => ({ value: key, label: key }),
-);
 
 const HealingRule = ({ rule }) => {
   const dispatch = useDispatch();
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
-
-  const [isOpen, setIsOpen] = useState(false);
   const [localHealing, setLocalHealing] = useState(healing);
+  const [isOpen, setIsOpen] = useState(false);
+  const [characterStatusValue, setCharacterStatusValue] = useState(true);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [statusConditions, setStatusConditions] = useState({});
 
   useEffect(() => {
     dispatch(updateRule(localHealing));
@@ -37,6 +41,14 @@ const HealingRule = ({ rule }) => {
     }
   };
 
+  const handleStatusConditionChange = (status, value) => {
+    setStatusConditions((prevState) => ({
+      ...prevState,
+      [status]: value,
+    }));
+    dispatch(updateCondition({ id: healing.id, condition: status, value }));
+  };
+
   const handleRemoveRule = () => {
     dispatch(removeRule(healing.id));
   };
@@ -47,21 +59,31 @@ const HealingRule = ({ rule }) => {
     healing.hpTriggerCondition &&
     healing.hpTriggerPercentage &&
     healing.manaTriggerCondition &&
-    healing.manaTriggerPercentage;
+    healing.manaTriggerPercentage &&
+    healing.priority &&
+    healing.category;
 
   return (
     <StyledDiv $running={healing.enabled}>
       <details open={isOpen} onToggle={() => setIsOpen(!isOpen)}>
+        {/* ////////////////////////////////////////////////////////////////////////////////// */}
+        <div className="input-wrapper">
+          <CharacterStatusConditions
+            ruleId={rule.id} // Pass the ruleId to the CharacterStatusConditions component
+            onStatusConditionChange={handleStatusConditionChange} // Define the callback if needed
+          />
+        </div>
         <summary>
           <div className="input-wrapper input-wrapper-checkbox">
             <Switch
               checked={healing.enabled}
               onChange={() =>
-                setLocalHealing({
-                  ...localHealing,
-                  enabled: !localHealing.enabled,
+                setLocalHealing((prevLocalHealing) => ({
+                  ...prevLocalHealing,
+                  enabled: !prevLocalHealing.enabled,
                   colors: healing.colors,
-                })
+                  conditions: prevLocalHealing.conditions, // Preserve the conditions
+                }))
               }
               disabled={!requiredFieldsFilled}
               offColor="#ff1c1c"
@@ -97,7 +119,30 @@ const HealingRule = ({ rule }) => {
           </div>
           <div className="input-wrapper">
             <select
-              className="input input-key"
+              className="input input-category"
+              id="category"
+              value={localHealing.category}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  category: event.target.value,
+                })
+              }
+              disabled={healing.enabled}
+            >
+              <option value="Healing">Healing</option>
+              <option value="Potions">Potions</option>
+              <option value="Support">Support</option>
+              <option value="Attack">Attack</option>
+              <option value="Equip">Equip</option>
+            </select>
+            <label className="label" htmlFor="category">
+              Category
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <select
+              className="input input-hotkey"
               id="key"
               value={localHealing.key}
               onChange={(event) =>
@@ -110,7 +155,7 @@ const HealingRule = ({ rule }) => {
               placeholder="F1"
               disabled={healing.enabled}
             >
-              {keys.map((key) => (
+              {keyboardKeys.map((key) => (
                 <option key={key.value} value={key.value}>
                   {key.label}
                 </option>
@@ -209,26 +254,74 @@ const HealingRule = ({ rule }) => {
               Mana %
             </label>
           </div>
+          <div className="input-wrapper">
+            <input
+              type="number"
+              className="input input-priority"
+              id="priority"
+              value={localHealing.priority}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  priority: event.target.value,
+                  colors: healing.colors,
+                })
+              }
+              min="0"
+              max="99"
+              placeholder="Priority"
+              disabled={healing.enabled}
+            />
+            <label className="label" htmlFor="priority">
+              Priority
+            </label>
+          </div>
+          <div className="input-wrapper">
+            <input
+              type="number"
+              className="input input-delay"
+              id="delay"
+              value={localHealing.delay}
+              onChange={(event) =>
+                setLocalHealing({
+                  ...localHealing,
+                  delay: event.target.value,
+                })
+              }
+              placeholder="25"
+              min="25"
+              step="25"
+              disabled={healing.enabled}
+            />
+            <label className="label" htmlFor="delay">
+              Delay (ms)
+            </label>
+          </div>
+
           <button
-            className="remove-rule-button"
+            className="remove-rule-button rule-button"
             type="button"
             onClick={handleRemoveRule}
             disabled={healing.enabled}
             aria-label="remove-rule"
           >
-            <Trash2 className="remove-rule-icon" size={24} />
+            Remove
           </button>
           {isOpen ? (
-            <ChevronUp className="details-arrow" />
+            <button type="button" className="rule-button button-expand">
+              Expand
+            </button>
           ) : (
-            <ChevronDown className="details-arrow" />
+            <button type="button" className="rule-button button-expand">
+              Expand
+            </button>
           )}
         </summary>
         <div className="details-wrapper">
           <div className="conditions-header-wrapper">
             <h2 className="conditions-header">Color Conditions</h2>
             <button
-              className="button pick-pixel-button"
+              className="rule-button pick-pixel-button"
               type="button"
               onClick={handleColorPick}
               disabled={healing.enabled}
@@ -255,7 +348,7 @@ const HealingRule = ({ rule }) => {
                 <option value="false">Absent</option>
               </select>
               <button
-                className="button remove-color"
+                className="rule-button remove-color"
                 type="button"
                 onClick={() => dispatch(removeColor({ id: healing.id, colorId: color.id }))}
                 disabled={healing.enabled}
@@ -283,6 +376,8 @@ HealingRule.propTypes = {
         enabled: PropTypes.bool,
       }),
     ),
+    // eslint-disable-next-line react/forbid-prop-types
+    conditions: PropTypes.arrayOf(PropTypes.object),
   }).isRequired,
 };
 

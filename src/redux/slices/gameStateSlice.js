@@ -4,7 +4,36 @@ const initialState = {
   hpPercentage: null,
   manaPercentage: null,
   isVisible: false,
-  isHealingCooldown: false,
+  healingCdActive: false,
+  supportCdActive: false,
+  attackCdActive: false,
+  characterStatus: {
+    agony: false,
+    bleeding: false,
+    bakragoresTaints: false,
+    burning: false,
+    cursed: false,
+    dazzled: false,
+    drowning: false,
+    drunk: false,
+    electrified: false,
+    feared: false,
+    freezing: false,
+    goshnarsTaints: false,
+    hasted: false,
+    hexed: false,
+    hungry: false,
+    logoutBlock: false,
+    magicShield: false,
+    eRing: false,
+    poisoned: false,
+    protectionZoneBlock: false,
+    rooted: false,
+    paralyzed: false,
+    strengthened: false,
+    inProtectedZone: false,
+    inRestingArea: false,
+  },
 };
 
 const gameStateSlice = createSlice({
@@ -20,12 +49,28 @@ const gameStateSlice = createSlice({
     setBarVisibility: (state, action) => {
       state.isBarVisible = action.payload.isBarVisible;
     },
-    setHealingCooldownVisibility: (state, action) => {
-      state.isHealingCooldown = action.payload.isHealingCooldown;
+    setHealingCdActive: (state, action) => {
+      state.healingCdActive = action.payload.HealingCdActive;
+    },
+    setSupportCdActive: (state, action) => {
+      state.supportCdActive = action.payload.supportCdActive;
+    },
+    setAttackCdActive: (state, action) => {
+      state.attackCdActive = action.payload.attackCdActive;
+    },
+    setCharacterStatus: (state, action) => {
+      const { characterStatus } = action.payload || {};
+      // eslint-disable-next-line no-restricted-syntax
+      for (const key in characterStatus) {
+        if (characterStatus.hasOwnProperty(key)) {
+          state.characterStatus[key] = characterStatus[key];
+        }
+      }
     },
   },
 });
 
-export const { setHealthPercent, setManaPercent, setBarVisibility } = gameStateSlice.actions;
+export const { setHealthPercent, setManaPercent, setHealingCdActive, setCharacterStatus } =
+  gameStateSlice.actions;
 
 export default gameStateSlice;

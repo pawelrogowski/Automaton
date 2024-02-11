@@ -2,10 +2,10 @@ import styled from 'styled-components';
 
 const StyledDiv = styled.div`
   display: flex;
-  gap: 12px;
-
+  gap: 16px;
+  width: 100%;
   > span {
-    font-size: 16px;
+    font-size: 18px;
     color: #fff;
     mix-blend-mode: difference;
     white-space: nowrap;
