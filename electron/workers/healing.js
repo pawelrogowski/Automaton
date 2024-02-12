@@ -36,7 +36,7 @@ const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
   }
 };
 
-let lastExecutionTimes = {};
+const lastExecutionTimes = {};
 
 async function checkHealingRules() {
   const categories = Array.from(new Set(healing.map((rule) => rule.category)));
