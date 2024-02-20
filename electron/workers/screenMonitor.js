@@ -21,10 +21,6 @@ let lastDispatchedCharacterStatuses = {};
 let cooldownBarImageData;
 let cooldownBarRegions;
 // eslint-disable-next-line no-unused-vars
-let manaBarPosX;
-// eslint-disable-next-line no-unused-vars
-let manaBarPosY;
-// eslint-disable-next-line no-unused-vars
 let statusBarX;
 let statusBarImageData;
 let statusBarRegions;
@@ -50,18 +46,15 @@ async function main() {
   const startRegions = await findSequencesInImageData(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
   console.log(healthBar, manaBar, cooldownBar, statusBar);
-  manaBarPosX = healthBar.x;
-  manaBarPosY = healthBar.y + 13;
-
   const hpManaRegion = {
     x: healthBar.x,
     y: healthBar.y,
-    width: 92,
+    width: 94,
     height: 14,
   };
 
   const cooldownsRegion = {
-    x: cooldownBar.x - 2,
+    x: cooldownBar.x,
     y: cooldownBar.y,
     width: 1000,
     height: 1,
@@ -70,7 +63,7 @@ async function main() {
   const statusBarRegion = {
     x: statusBar.x,
     y: statusBar.y,
-    width: 106,
+    width: 104,
     height: 9,
   };
 
@@ -203,7 +196,7 @@ async function main() {
       })(),
     ]);
 
-    setTimeout(loop, 1);
+    setTimeout(loop, 10);
   }
 
   loop();

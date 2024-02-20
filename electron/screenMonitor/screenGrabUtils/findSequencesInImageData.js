@@ -2,7 +2,6 @@ function findSequencesInImageData(imageData, targetSequences, width) {
   return new Promise((resolve) => {
     const length = imageData.length / 4;
     const foundSequences = {};
-    // eslint-disable-next-line no-restricted-syntax
     for (const [name, sequenceObj] of Object.entries(targetSequences)) {
       foundSequences[name] = {};
 
@@ -29,7 +28,9 @@ function findSequencesInImageData(imageData, targetSequences, width) {
           }
 
           if (j === sequenceObj.sequence.length - 1) {
-            foundSequences[name] = { x, y };
+            // Apply the offset to the coordinates
+            const offset = sequenceObj.offset || { x: 0, y: 0 };
+            foundSequences[name] = { x: x + offset.x, y: y + offset.y };
             break;
           }
         }
