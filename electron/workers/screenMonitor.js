@@ -54,7 +54,7 @@ async function main() {
   };
 
   const cooldownsRegion = {
-    x: cooldownBar.x,
+    x: cooldownBar.x - 2,
     y: cooldownBar.y,
     width: 1000,
     height: 1,
