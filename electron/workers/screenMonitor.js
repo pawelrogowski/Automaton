@@ -196,7 +196,7 @@ async function main() {
       })(),
     ]);
 
-    setTimeout(loop, 10);
+    setTimeout(loop, 1);
   }
 
   loop();
