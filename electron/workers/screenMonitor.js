@@ -44,8 +44,17 @@ async function main() {
   const pickedWindow = await waitForWindowId;
   const imageData = await grabScreen(pickedWindow);
   const startRegions = await findSequencesInImageData(imageData, regionColorSequences, 1920);
-  const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
-  console.log(healthBar, manaBar, cooldownBar, statusBar);
+  const { healthBar, manaBar, cooldownBar, statusBar, hotkeyBarBottomStart, hotkeyBarBottomEnd } =
+    startRegions;
+  console.log(
+    'region objects: ',
+    healthBar,
+    manaBar,
+    cooldownBar,
+    statusBar,
+    hotkeyBarBottomStart,
+    hotkeyBarBottomEnd,
+  );
   const hpManaRegion = {
     x: healthBar.x,
     y: healthBar.y,
@@ -54,7 +63,7 @@ async function main() {
   };
 
   const cooldownsRegion = {
-    x: cooldownBar.x - 2,
+    x: cooldownBar.x,
     y: cooldownBar.y,
     width: 1000,
     height: 1,
