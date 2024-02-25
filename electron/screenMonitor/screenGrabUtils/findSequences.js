@@ -1,10 +1,4 @@
-function findSequencesInImageData(
-  imageData,
-  targetSequences,
-  width,
-  searchArea = null,
-  occurrence = 'first',
-) {
+function findSequences(imageData, targetSequences, width, searchArea = null, occurrence = 'first') {
   return new Promise((resolve) => {
     const length = imageData.length / 4;
     const foundSequences = {};
@@ -57,4 +51,4 @@ function findSequencesInImageData(
   });
 }
 
-export default findSequencesInImageData;
+export default findSequences;

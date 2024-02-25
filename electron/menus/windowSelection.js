@@ -64,7 +64,7 @@ export const selectWindow = async () => {
         getMainWindow().setTitle(`Automaton - ${selectedWindowTitle}`);
 
         exec(`xdotool windowactivate ${selectedWindowId} --sync`);
-        console.log('windowID:', selectedWindowId);
+        // console.log('windowID:', selectedWindowId);
 
         setGlobalState('global/setWindowTitle', selectedWindowTitle);
         setGlobalState('global/setWindowId', null);

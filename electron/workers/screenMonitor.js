@@ -1,10 +1,11 @@
 import { parentPort } from 'worker_threads';
 import grabScreen from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
-import findSequencesInImageData from '../screenMonitor/screenGrabUtils/findSequencesInImageData.js';
+import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
 import regionColorSequences from '../constants/regionColorSequeces.js';
 import cooldownColorSequences from '../constants/cooldownColorSequences.js';
 import statusBarSequences from '../constants/statusBarSequences.js';
+import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 
 let state = null;
 let global = null;
@@ -43,18 +44,23 @@ const waitForWindowId = new Promise((resolve) => {
 async function main() {
   const pickedWindow = await waitForWindowId;
   const imageData = await grabScreen(pickedWindow);
-  const startRegions = await findSequencesInImageData(imageData, regionColorSequences, 1920);
+  const startRegions = await findSequences(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar, hotkeyBarBottomStart, hotkeyBarBottomEnd } =
     startRegions;
-  console.log(
-    'region objects: ',
-    healthBar,
-    manaBar,
-    cooldownBar,
-    statusBar,
-    hotkeyBarBottomStart,
-    hotkeyBarBottomEnd,
+  const hotkeyBars = await findBoundingRect(
+    imageData,
+    regionColorSequences.hotkeyBarBottomStart,
+    regionColorSequences.hotkeyBarBottomEnd,
+    1920,
   );
+
+  console.log(`
+  HPBar: ${JSON.stringify(healthBar, null, 2)}
+  MPBar: ${JSON.stringify(manaBar, null, 2)}
+  CDBar: ${JSON.stringify(cooldownBar, null, 2)}
+  StatusBar: ${JSON.stringify(statusBar, null, 2)}
+  BottomHotkeyBar: ${JSON.stringify(hotkeyBars, null, 2)}
+`);
   const hpManaRegion = {
     x: healthBar.x,
     y: healthBar.y,
@@ -131,7 +137,7 @@ async function main() {
       (async () => {
         cooldownBarImageData = await grabScreen(pickedWindow, cooldownsRegion);
 
-        cooldownBarRegions = await findSequencesInImageData(
+        cooldownBarRegions = await findSequences(
           cooldownBarImageData,
           cooldownColorSequences,
           1000,
@@ -154,7 +160,7 @@ async function main() {
               type = 'setAttackCdActive';
               payload = { attackCdActive: isCooldownActive };
             }
-            console.log({ type, payload });
+            // console.log({ type, payload });
             parentPort.postMessage({ type, payload });
             lastCooldownStates[key] = isCooldownActive;
           }
@@ -163,11 +169,7 @@ async function main() {
       (async () => {
         statusBarImageData = await grabScreen(pickedWindow, statusBarRegion);
 
-        statusBarRegions = await findSequencesInImageData(
-          statusBarImageData,
-          statusBarSequences,
-          106,
-        );
+        statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
 
         // Initialize an object to hold the status of each character status with all statuses set to false
         const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(

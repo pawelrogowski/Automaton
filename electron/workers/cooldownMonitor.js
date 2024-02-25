@@ -84,7 +84,7 @@ async function main() {
         parentPort.postMessage({ type, payload });
         lastCooldownStates[key] = value.found;
 
-        console.log(key, value);
+        // console.log(key, value);
       }
     });
 

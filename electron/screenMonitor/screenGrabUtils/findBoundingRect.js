@@ -1,7 +1,8 @@
-async function findBoundingRect(imageData, startSequence, endSequence, width) {
+import findSequence from './findSequence.js';
+
+async function findBoundingRect(imageData, startSequence, endSequence, imageWidth) {
   // Find the first occurrence of the start sequence
-  const startRegions = await findSequencesInImageData(imageData, [startSequence], width);
-  const startRegion = startRegions[startSequence.name];
+  const startRegion = await findSequence(imageData, startSequence, imageWidth);
 
   // If the start sequence is not found, return an empty result
   if (!startRegion || startRegion.y === undefined) {
@@ -10,19 +11,12 @@ async function findBoundingRect(imageData, startSequence, endSequence, width) {
 
   // Define the search area for the end sequence based on the start sequence
   const endSearchArea = {
-    startIndex: startRegion.x * width + startRegion.y,
-    endIndex: width * width - 1, // Assuming the end sequence can be anywhere to the right and down from the start sequence
+    startIndex: startRegion.x * imageWidth + startRegion.y,
+    endIndex: imageWidth * imageWidth - 1, // Assuming the end sequence can be anywhere to the right and down from the start sequence
   };
 
   // Find the last occurrence of the end sequence within the defined search area
-  const endRegions = await findSequencesInImageData(
-    imageData,
-    [endSequence],
-    width,
-    endSearchArea,
-    'last',
-  );
-  const endRegion = endRegions[endSequence.name];
+  const endRegion = await findSequence(imageData, endSequence, imageWidth, endSearchArea, -1);
 
   // If the end sequence is not found, return an empty result
   if (!endRegion || endRegion.x === undefined) {
@@ -30,10 +24,9 @@ async function findBoundingRect(imageData, startSequence, endSequence, width) {
   }
 
   // Calculate the width and height based on the start and end sequences
-  const width = Math.abs(endRegion.x - startRegion.x);
-  const height = Math.abs(endRegion.y - startRegion.y);
+  const rectWidth = Math.abs(endRegion.x - startRegion.x);
+  const rectHeight = Math.abs(endRegion.y - startRegion.y);
 
-  return { x: startRegion.x, y: startRegion.y, width, height };
+  return { x: startRegion.x, y: startRegion.y, width: rectWidth, height: rectHeight };
 }
-
 export default findBoundingRect;

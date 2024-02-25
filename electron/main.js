@@ -48,18 +48,17 @@ store.subscribe(() => {
     ScreenMonitor = new Worker(statCheckPath, { name: 'screeenMonitor.js' });
     console.log('screen monitor started from main.js');
     ScreenMonitor.on('message', (message) => {
-      console.log(message);
       if (message.type === 'setHealthPercent') {
         setGlobalState('gameState/setHealthPercent', message.payload);
-        store.dispatch({ type: 'gameState/setHealthPercent', payload: message.payload });
+        // store.dispatch({ type: 'gameState/setHealthPercent', payload: message.payload });
       } else if (message.type === 'setManaPercent') {
         setGlobalState('gameState/setManaPercent', message.payload);
       } else if (message.type) {
         setGlobalState(`gameState/${message.type}`, message.payload);
-        store.dispatch({ type: `gameState/${message.type}`, payload: message.payload });
+        // store.dispatch({ type: `gameState/${message.type}`, payload: message.payload });
       } else {
         setGlobalState('gameState/setCharacterStatus', message.payload);
-        store.dispatch({ type: 'gameState/setCharacterStatus', payload: message.payload });
+        // store.dispatch({ type: 'gameState/setCharacterStatus', payload: message.payload });
       }
     });
     ScreenMonitor.on('error', (error) => {

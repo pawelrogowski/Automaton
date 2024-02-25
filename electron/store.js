@@ -7,20 +7,21 @@ import lastActionSlice, { setLastAction } from '../src/redux/slices/lastAction.j
 
 const logger = () => (next) => (action) => {
   if (action.type !== setLastAction.type) {
-    console.log(action.origin);
     console.table(action);
   }
   return next(action);
 };
 
-const lastActionMiddleware = (store) => (next) => (action) => {
-  if (action.type !== setLastAction.type) {
-    next(action);
-    store.dispatch(setLastAction(action));
-  } else {
-    next(action);
-  }
-};
+// const lastActionMiddleware = (store) => (next) => (action) => {
+//   if (action.type !== setLastAction.type) {
+//     next(action);
+//     action.origin = 'backend';
+//     // store.dispatch(setLastAction(action));
+//   } else {
+//     next(action);
+//   }
+// };
+
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
   gameState: gameStateSlice.reducer,
@@ -29,7 +30,7 @@ const rootReducer = combineReducers({
 });
 const store = configureStore({
   reducer: rootReducer,
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(logger, lastActionMiddleware),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(logger),
 });
 
 export default store;

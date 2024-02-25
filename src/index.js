@@ -15,7 +15,9 @@ import GlobalStyles from './galobalStyles.js';
 const { ipcRenderer } = window.electron;
 
 ipcRenderer.on('state-update', (_, action) => {
-  store.dispatch(action);
+  if (action.origin === 'backend') {
+    store.dispatch(action);
+  }
 });
 
 const theme = {
