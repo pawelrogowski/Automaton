@@ -9,7 +9,8 @@ const StyledDiv = styled.div`
     color: #fff;
     mix-blend-mode: difference;
     white-space: nowrap;
-    min-width: 38px;
+    min-width: 52px;
+    margin-left: auto;
   }
   > div {
     box-shadow:
@@ -24,7 +25,7 @@ const StyledDiv = styled.div`
     display: flex;
     justify-content: center;
     align-items: center;
-
+    background: #6f6f6f4f;
     > div {
       position: absolute;
       top: 50%;

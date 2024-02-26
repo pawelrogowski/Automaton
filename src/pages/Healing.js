@@ -87,7 +87,6 @@ export const Healing = () => {
 
           <div className="mana-bar">
             <StatBar value={manaPercentage} fill={` #350099`} />
-
             <Zap size={30} className="mp-icon" />
           </div>
         </div>

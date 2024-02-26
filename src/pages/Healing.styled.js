@@ -3,7 +3,7 @@ import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
   section {
-    padding: 54px 12px;
+    padding: 0px 12px;
     margin: 0 12px;
   }
   .bar-container {
@@ -11,6 +11,8 @@ const StyledMain = styled.main`
     flex-direction: column;
     gap: 9px;
     margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #717171;
   }
   .button-container {
     display: flex;
@@ -85,6 +87,12 @@ const StyledMain = styled.main`
   .mana-bar {
     display: flex;
     gap: 12px;
+
+    > svg {
+      margin-left: auto;
+      width: 30px;
+      height: 30px;
+    }
   }
 
   .hp-icon {

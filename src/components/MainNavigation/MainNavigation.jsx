@@ -8,10 +8,10 @@ const MainNavigation = () => {
   return (
     <StyledNav>
       <ul>
-        <li>
+        {/* <li>
           <Link to="/healing">Healing</Link>
-        </li>
-        <li>
+        </li> */}
+        {/* <li>
           <Link to="/actions">Actions</Link>
         </li>
         <li>
@@ -22,7 +22,7 @@ const MainNavigation = () => {
         </li>
         <li>
           <Link to="/console">Market</Link>
-        </li>
+        </li> */}
         <li className="character-name">{windowTitle}</li>
       </ul>
     </StyledNav>
