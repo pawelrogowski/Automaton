@@ -88,7 +88,7 @@ async function main() {
       }
     });
 
-    setTimeout(loop, 50); // Adjust the timeout as needed
+    setTimeout(loop, 1); // Adjust the timeout as needed
   }
 
   loop(); // Start the loop

@@ -45,21 +45,20 @@ async function main() {
   const pickedWindow = await waitForWindowId;
   const imageData = await grabScreen(pickedWindow);
   const startRegions = await findSequences(imageData, regionColorSequences, 1920);
-  const { healthBar, manaBar, cooldownBar, statusBar, hotkeyBarBottomStart, hotkeyBarBottomEnd } =
-    startRegions;
-  const hotkeyBars = await findBoundingRect(
-    imageData,
-    regionColorSequences.hotkeyBarBottomStart,
-    regionColorSequences.hotkeyBarBottomEnd,
-    1920,
-  );
+  const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
+  // const hotkeyBarsRegion = await findBoundingRect(
+  //   imageData,
+  //   regionColorSequences.hotkeyBarBottomStart,
+  //   regionColorSequences.hotkeyBarBottomEnd,
+  //   1920,
+  // );
 
   console.log(`
   HPBar: ${JSON.stringify(healthBar, null, 2)}
   MPBar: ${JSON.stringify(manaBar, null, 2)}
   CDBar: ${JSON.stringify(cooldownBar, null, 2)}
   StatusBar: ${JSON.stringify(statusBar, null, 2)}
-  BottomHotkeyBar: ${JSON.stringify(hotkeyBars, null, 2)}
+
 `);
   const hpManaRegion = {
     x: healthBar.x,

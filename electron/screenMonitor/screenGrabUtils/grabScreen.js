@@ -59,7 +59,7 @@ async function grabScreen(windowId, region, measureTime) {
                 }
                 setTimeout(() => {
                   resolve(image.data);
-                }, 5);
+                }, 10);
               },
             );
           });

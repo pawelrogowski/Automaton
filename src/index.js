@@ -14,9 +14,9 @@ import GlobalStyles from './galobalStyles.js';
 
 const { ipcRenderer } = window.electron;
 
-ipcRenderer.on('state-update', (_, action) => {
-  if (action.origin === 'backend') {
-    store.dispatch(action);
+ipcRenderer.on('state-update', (_, update) => {
+  if (update.origin === 'backend') {
+    store.dispatch(update);
   }
 });
 

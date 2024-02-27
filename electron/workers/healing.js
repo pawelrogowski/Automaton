@@ -134,4 +134,4 @@ setInterval(() => {
   if (global.healingEnabled) {
     checkHealingRules();
   }
-}, 1);
+}, 10);
