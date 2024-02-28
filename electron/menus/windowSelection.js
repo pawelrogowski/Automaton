@@ -30,46 +30,22 @@ const getWindowName = (id) =>
   });
 
 export const selectWindow = async () => {
-  const electronWindowId = getMainWindow().getNativeWindowHandle().readUInt32LE().toString();
-  exec('xdotool search --name "Tibia -"', async (error, stdout) => {
+  exec('xdotool selectwindow', async (error, stdout) => {
     if (error) {
       console.error(`exec error: ${error}`);
       return;
     }
-    const windowIds = await Promise.all(
-      stdout.split('\n').map(async (id) => {
-        if (id && id !== electronWindowId) {
-          const geometry = await getGeometry(id);
-          return !geometry.includes('1x1') ? id : null;
-        }
-        return null;
-      }),
-    );
-    const validWindowIds = windowIds.filter((id) => id !== null);
-    const windowNames = await Promise.all(validWindowIds.map(getWindowName));
-    const windowList = validWindowIds.map((id, index) => `${windowNames[index]}`);
-    dialog
-      .showMessageBox({
-        buttons: ['Cancel', ...windowList],
-        title: 'Select Tibia Client',
-      })
-      .then((result) => {
-        if (result.response === 0) {
-          setGlobalState('global/setWindowId', null);
-          setGlobalState('global/setWindowTitle', 'Pick a window from the bot menu');
-          return;
-        }
-        selectedWindowId = validWindowIds[result.response - 1];
-        const selectedWindowTitle = windowNames[result.response - 1];
-        getMainWindow().setTitle(`Automaton - ${selectedWindowTitle}`);
-
-        exec(`xdotool windowactivate ${selectedWindowId} --sync`);
-        // console.log('windowID:', selectedWindowId);
-
-        setGlobalState('global/setWindowTitle', selectedWindowTitle);
-        setGlobalState('global/setWindowId', null);
-        setGlobalState('global/setWindowId', selectedWindowId);
-      });
+    const windowId = stdout.trim();
+    console.log(`Selected window ID: ${windowId}`);
+    const geometry = await getGeometry(windowId);
+    if (geometry.includes('1x1')) {
+      console.error('Invalid window selected. Please select a valid window.');
+      return;
+    }
+    const windowTitle = await getWindowName(windowId);
+    getMainWindow().setTitle(`Automaton - ${windowTitle}`);
+    setGlobalState('global/setWindowTitle', windowTitle);
+    setGlobalState('global/setWindowId', windowId);
   });
 };
 

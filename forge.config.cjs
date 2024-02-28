@@ -9,6 +9,7 @@ module.exports = {
       config: {
         options: {
           executableName: 'automaton',
+          icon: './electron/icons/skull.png',
         },
       },
     },

@@ -3,13 +3,14 @@ import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import fs from 'fs';
-import { createMainWindow } from './createMainWindow.js';
+import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
 import './colorPicker/colorPicker.js';
 import './screenMonitor/monitoring.js';
 import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
+import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './globalShortcuts.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -17,6 +18,7 @@ const cwd = dirname(filename);
 let ScreenMonitor = null;
 let HealingWorker = null;
 let prevWindowId = null;
+let mainWindow = getMainWindow;
 
 app.commandLine.appendSwitch();
 
@@ -83,6 +85,9 @@ store.subscribe(() => {
 
 const saveRulesToFile = () => {
   const rules = store.getState().healing;
+  // Minimize the main window
+  if (mainWindow) mainWindow.minimize();
+
   dialog
     .showSaveDialog({
       title: 'Save Rules',
@@ -92,14 +97,20 @@ const saveRulesToFile = () => {
       if (!result.canceled && result.filePath) {
         fs.writeFileSync(result.filePath, JSON.stringify(rules, null, 2));
       }
+      // Restore the main window
+      if (mainWindow) mainWindow.restore();
     })
     .catch((err) => {
       console.error('Failed to save rules:', err);
+      // Restore the main window in case of error
+      if (mainWindow) mainWindow.restore();
     });
 };
 
-// Function to load rules from a file
 const loadRulesFromFile = () => {
+  // Minimize the main window
+  if (mainWindow) mainWindow.minimize();
+
   return dialog
     .showOpenDialog({
       title: 'Load Rules',
@@ -113,9 +124,13 @@ const loadRulesFromFile = () => {
         store.dispatch({ type: 'healing/loadRules', payload: loadedRules }); // Dispatch action to update state with loaded rules
         setGlobalState('healing/loadRules', loadedRules); // Notify the renderer process
       }
+      // Restore the main window
+      if (mainWindow) mainWindow.restore();
     })
     .catch((err) => {
       console.error('Failed to load rules:', err);
+      // Restore the main window in case of error
+      if (mainWindow) mainWindow.restore();
     });
 };
 
@@ -123,8 +138,9 @@ ipcMain.on('save-rules', saveRulesToFile);
 ipcMain.handle('load-rules', loadRulesFromFile);
 
 app.whenReady().then(() => {
-  createMainWindow();
+  mainWindow = createMainWindow(); // Assuming createMainWindow returns the main window instance
   setupAppMenu();
+  registerGlobalShortcuts();
 });
 
 app.on('before-quit', () => {
@@ -136,6 +152,10 @@ app.on('before-quit', () => {
     HealingWorker.terminate();
     HealingWorker = null;
   }
+});
+
+app.on('will-quit', () => {
+  unregisterGlobalShortcuts();
 });
 
 app.on('window-all-closed', () => {
