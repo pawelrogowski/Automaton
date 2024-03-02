@@ -43,10 +43,45 @@ export const selectWindow = async () => {
       return;
     }
     const windowTitle = await getWindowName(windowId);
-    getMainWindow().setTitle(`Automaton - ${windowTitle}`);
-    setGlobalState('global/setWindowTitle', windowTitle);
+    getMainWindow().setTitle(`Automaton - ${windowId}`);
+    setGlobalState('global/setWindowTitle', windowId);
     setGlobalState('global/setWindowId', windowId);
   });
+};
+
+const getActiveWindowId = () =>
+  new Promise((resolve, reject) => {
+    exec('xdotool getactivewindow', (error, stdout) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+  });
+
+export const selectActiveWindow = async () => {
+  try {
+    const windowId = await getActiveWindowId();
+    console.log(`Active window ID: ${windowId}`);
+    const geometry = await getGeometry(windowId);
+    if (geometry.includes('1x1')) {
+      console.error('Invalid window selected. Please select a valid window.');
+      return;
+    }
+    const windowTitle = await getWindowName(windowId);
+    if (!windowTitle.includes('Tibia')) {
+      console.error(
+        'The selected window does not include "Tibia" in its title. Please select a valid window.',
+      );
+      return;
+    }
+    getMainWindow().setTitle(`Automaton - ${windowId}`);
+    setGlobalState('global/setWindowTitle', windowTitle);
+    setGlobalState('global/setWindowId', windowId);
+  } catch (error) {
+    console.error(`Error getting active window ID: ${error}`);
+  }
 };
 
 export const getSelectedWindowId = () => selectedWindowId;

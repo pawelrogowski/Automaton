@@ -7,11 +7,7 @@ let global = null;
 let gameState = null;
 let healing = null;
 
-parentPort.on('message', (state) => {
-  if (prevState !== state) {
-    ({ gameState, global, healing } = state);
-  }
-});
+const lastExecutionTimes = {};
 
 const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
   if (gameState.hpPercentage > 0) {
@@ -35,8 +31,6 @@ const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
     return false;
   }
 };
-
-const lastExecutionTimes = {};
 
 async function checkHealingRules() {
   const categories = Array.from(new Set(healing.map((rule) => rule.category)));
@@ -71,7 +65,6 @@ async function checkHealingRules() {
           }
         }
       }
-
       // Existing logic for other categories
       if (
         (category === 'Healing' && gameState.healingCdActive) ||
@@ -82,36 +75,39 @@ async function checkHealingRules() {
       }
 
       let highestPriorityRule = null;
-      healing.forEach((rule) => {
-        if (rule.id !== 'manaSync') {
-          if (rule.enabled && rule.category === category) {
-            const hpConditionMet = parseMathCondition(
-              rule.hpTriggerCondition,
-              parseInt(rule.hpTriggerPercentage, 10),
-              gameState.hpPercentage,
-            );
-            const manaConditionMet = parseMathCondition(
-              rule.manaTriggerCondition,
-              parseInt(rule.manaTriggerPercentage, 10),
-              gameState.manaPercentage,
-            );
+      // Filter rules based on the current game state
+      const filteredRules = healing.filter((rule) => {
+        if (rule.id !== 'manaSync' && rule.enabled && rule.category === category) {
+          const hpConditionMet = parseMathCondition(
+            rule.hpTriggerCondition,
+            parseInt(rule.hpTriggerPercentage, 10),
+            gameState.hpPercentage,
+          );
+          const manaConditionMet = parseMathCondition(
+            rule.manaTriggerCondition,
+            parseInt(rule.manaTriggerPercentage, 10),
+            gameState.manaPercentage,
+          );
+          return hpConditionMet && manaConditionMet;
+        }
+        return false;
+      });
 
-            // Check character status conditions
-            const charStatusConditionsMet = rule.conditions.every((condition) => {
-              const charStatusValue = gameState.characterStatus[condition.name];
-              // If the key is missing or has a null value, consider it passed
-              if (charStatusValue === undefined || charStatusValue === null) {
-                return true;
-              }
-              // Compare the condition value with the actual character status value
-              return charStatusValue === condition.value;
-            });
+      // Evaluate the rules
+      filteredRules.forEach((rule) => {
+        const charStatusConditionsMet = rule.conditions.every((condition) => {
+          const charStatusValue = gameState.characterStatus[condition.name];
+          // If the key is missing or has a null value, consider it passed
+          if (charStatusValue === undefined || charStatusValue === null) {
+            return true;
+          }
+          // Compare the condition value with the actual character status value
+          return charStatusValue === condition.value;
+        });
 
-            if (hpConditionMet && manaConditionMet && charStatusConditionsMet) {
-              if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
-                highestPriorityRule = rule;
-              }
-            }
+        if (charStatusConditionsMet) {
+          if (!highestPriorityRule || rule.priority > highestPriorityRule.priority) {
+            highestPriorityRule = rule;
           }
         }
       });
@@ -130,8 +126,19 @@ async function checkHealingRules() {
   );
 }
 
+// Set up an interval to check the conditions every 16ms (60 times per second)
 setInterval(() => {
   if (global.healingEnabled) {
     checkHealingRules();
   }
-}, 10);
+}, 16);
+
+// Call checkHealingRules immediately when the state changes to force a check
+parentPort.on('message', (state) => {
+  if (prevState !== state) {
+    ({ gameState, global, healing } = state);
+    if (global.healingEnabled) {
+      checkHealingRules(); // Force a check because the state has changed
+    }
+  }
+});

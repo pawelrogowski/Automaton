@@ -12,17 +12,13 @@ let global = null;
 
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
-const lastCooldownStates = {}; // eslint-disable-next-line no-unused-vars
+const lastCooldownStates = {};
 let cooldownsImageData;
-// let healthBar = null;
-
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
 let lastDispatchedCharacterStatuses = {};
 let cooldownBarImageData;
 let cooldownBarRegions;
-// eslint-disable-next-line no-unused-vars
-let statusBarX;
 let statusBarImageData;
 let statusBarRegions;
 
@@ -46,20 +42,7 @@ async function main() {
   const imageData = await grabScreen(pickedWindow);
   const startRegions = await findSequences(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
-  // const hotkeyBarsRegion = await findBoundingRect(
-  //   imageData,
-  //   regionColorSequences.hotkeyBarBottomStart,
-  //   regionColorSequences.hotkeyBarBottomEnd,
-  //   1920,
-  // );
 
-  console.log(`
-  HPBar: ${JSON.stringify(healthBar, null, 2)}
-  MPBar: ${JSON.stringify(manaBar, null, 2)}
-  CDBar: ${JSON.stringify(cooldownBar, null, 2)}
-  StatusBar: ${JSON.stringify(statusBar, null, 2)}
-
-`);
   const hpManaRegion = {
     x: healthBar.x,
     y: healthBar.y,
@@ -82,8 +65,12 @@ async function main() {
   };
 
   async function loop() {
-    const hpManaImageData = await grabScreen(pickedWindow, hpManaRegion);
-    cooldownsImageData = await grabScreen(pickedWindow, cooldownsRegion);
+    // Start all grabScreen calls concurrently
+    const [hpManaImageData, cooldownsImageData, statusBarImageData] = await Promise.all([
+      grabScreen(pickedWindow, hpManaRegion),
+      grabScreen(pickedWindow, cooldownsRegion),
+      grabScreen(pickedWindow, statusBarRegion),
+    ]);
 
     // Process HP, mana, and cooldown areas concurrently
     await Promise.all([
@@ -124,7 +111,6 @@ async function main() {
           ],
           hpManaRegion.width,
         ));
-        // ['#5350da', '#4d4ac2', '#2d2d69', '#3d3d7d', '#524fd3'],
         if (lastManaPercentage !== lastDispatchedManaPercentage) {
           parentPort.postMessage({
             type: 'setManaPercent',
@@ -166,8 +152,6 @@ async function main() {
         }
       })(),
       (async () => {
-        statusBarImageData = await grabScreen(pickedWindow, statusBarRegion);
-
         statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
 
         // Initialize an object to hold the status of each character status with all statuses set to false

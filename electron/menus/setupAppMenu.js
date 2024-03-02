@@ -5,7 +5,11 @@ const setupAppMenu = () => {
   const template = [
     {
       label: 'Select Window',
-      click: selectWindow,
+      click: () => {
+        setTimeout(() => {
+          selectWindow();
+        }, 75);
+      },
     },
   ];
 
