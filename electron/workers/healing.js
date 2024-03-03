@@ -128,7 +128,7 @@ async function checkHealingRules() {
 
 // Set up an interval to check the conditions every 16ms (60 times per second)
 setInterval(() => {
-  if (global.healingEnabled) {
+  if (global.botEnabled) {
     checkHealingRules();
   }
 }, 16);
@@ -137,7 +137,7 @@ setInterval(() => {
 parentPort.on('message', (state) => {
   if (prevState !== state) {
     ({ gameState, global, healing } = state);
-    if (global.healingEnabled) {
+    if (global.botEnabled) {
       checkHealingRules(); // Force a check because the state has changed
     }
   }

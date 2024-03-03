@@ -233,9 +233,9 @@ const healingCooldownProcessor = (pixels, region) => {
 
 store.subscribe(() => {
   const { global } = store.getState();
-  const { windowId, healingEnabled } = global;
+  const { windowId, botEnabled } = global;
 
-  if (healingEnabled) {
+  if (botEnabled) {
     monitorRegion(getWindowGeometry(windowId), healingCooldownProcessor, false, false, 50);
   }
 });
