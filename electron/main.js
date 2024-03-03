@@ -139,7 +139,7 @@ ipcMain.handle('load-rules', loadRulesFromFile);
 
 app.whenReady().then(() => {
   mainWindow = createMainWindow();
-  // setupAppMenu();
+  setupAppMenu(null);
   registerGlobalShortcuts();
 });
 

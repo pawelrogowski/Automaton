@@ -3,16 +3,19 @@ import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
   section {
-    padding: 0px 12px;
-    margin: 0 12px;
+    padding: 12px 12px;
+    margin: 12px 12px;
+    border-top: 2px solid #757676;
+    border-left: 2px solid #757676;
+    border-bottom: 3px solid #2c2c2c;
+    border-right: 3px solid #2c2c2c;
+    background-image: url(${tibiaBg});
+    background-repeat: repeat;
   }
   .bar-container {
     display: flex;
     flex-direction: column;
     gap: 9px;
-    margin-bottom: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #717171;
   }
   .button-container {
     display: flex;
@@ -90,8 +93,8 @@ const StyledMain = styled.main`
 
     > svg {
       margin-left: auto;
-      width: 30px;
-      height: 30px;
+      width: 22px;
+      height: 22px;
     }
   }
 
@@ -99,11 +102,14 @@ const StyledMain = styled.main`
     stroke: none;
     fill: #ff1c1c;
     margin-left: auto;
+    filter: drop-shadow(0px 1px 1px #000000);
+    rotate: 4deg;
   }
   .mp-icon {
     stroke: none;
     fill: #0066ff;
-
+    filter: drop-shadow(0px 1px 1px #000000);
+    rotate: 18deg;
     margin-left: auto;
   }
 `;

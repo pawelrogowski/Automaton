@@ -62,6 +62,19 @@ export const Healing = () => {
   return (
     <StyledMain>
       <section>
+        <div className="bar-container">
+          <div className="health-bar">
+            <StatBar value={hpPercentage} fill={`#d10000`} />
+            <Heart size={16} className="hp-icon" />
+          </div>
+
+          <div className="mana-bar">
+            <StatBar value={manaPercentage} fill={`#3800a1`} />
+            <Zap size={16} className="mp-icon" />
+          </div>
+        </div>
+      </section>
+      <section>
         <div className="heading-wrapper">
           <Switch
             className="main-switch"
@@ -78,17 +91,6 @@ export const Healing = () => {
             height={28}
             width={72}
           />
-        </div>
-        <div className="bar-container">
-          <div className="health-bar">
-            <StatBar value={hpPercentage} fill={` #990000`} />
-            <Heart size={28} className="hp-icon" />
-          </div>
-
-          <div className="mana-bar">
-            <StatBar value={manaPercentage} fill={` #350099`} />
-            <Zap size={30} className="mp-icon" />
-          </div>
         </div>
         <div className="button-container">
           <button className="add-button button-page" type="button" onClick={handleAddRule}>

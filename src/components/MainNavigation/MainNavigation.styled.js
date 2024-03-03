@@ -5,12 +5,12 @@ import tibiaBg from '../../assets/tibiaBg.webp';
 const StyledNav = styled.nav`
   display: flex;
   align-items: center;
+  justify-content: center;
   width: 100%;
   position: fixed;
   top: 0;
   justify-content: center;
-  background-image: url(${tibiaBg});
-  padding-left: 18px;
+  background-image: url(${tibiaBgDark});
   border-left: 2px solid #717171;
   border-right: 2px solid #717171;
   border-top: 2px solid #717171;
@@ -21,7 +21,6 @@ const StyledNav = styled.nav`
     gap: 0px;
     margin: 0;
     padding: 0;
-    width: 100%;
     align-items: center;
     li {
     }
@@ -47,10 +46,8 @@ const StyledNav = styled.nav`
   }
   .character-name {
     color: #fafafa;
-    font-size: 12px;
-
-    /* margin-left: auto;
-    padding-right: 24px; */
+    font-size: 11px;
+    line-height: 20px;
   }
 `;
 

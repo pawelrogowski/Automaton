@@ -10,7 +10,7 @@ const dirname = path.dirname(filename);
 
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 1400,
+    width: 920,
     height: 720,
     icon: path.join(dirname, './skull.png'),
     webPreferences: {
@@ -18,6 +18,8 @@ export const createMainWindow = () => {
       contextIsolation: true,
       preload: path.join(dirname, '/preload.js'),
     },
+    autoHideMenuBar: true,
+    // frame: false,
   });
 
   mainWindow.webContents.openDevTools();
