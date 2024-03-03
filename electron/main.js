@@ -138,8 +138,8 @@ ipcMain.on('save-rules', saveRulesToFile);
 ipcMain.handle('load-rules', loadRulesFromFile);
 
 app.whenReady().then(() => {
-  mainWindow = createMainWindow(); // Assuming createMainWindow returns the main window instance
-  setupAppMenu();
+  mainWindow = createMainWindow();
+  // setupAppMenu();
   registerGlobalShortcuts();
 });
 
