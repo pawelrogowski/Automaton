@@ -2,6 +2,7 @@ import { app, globalShortcut } from 'electron';
 import { selectWindow } from './menus/windowSelection.js';
 import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
+import { getMainWindow } from './createMainWindow.js';
 
 export const registerGlobalShortcuts = () => {
   // Register a shortcut to select the active window
@@ -14,12 +15,23 @@ export const registerGlobalShortcuts = () => {
     selectWindow();
   });
 
-  globalShortcut.register('Alt+1', () => {
+  globalShortcut.register('Alt+E', () => {
     setGlobalState('global/toggleBotEnabled');
   });
 
   globalShortcut.register('Ctrl+Shift+Home', () => {
     setGlobalState('global/toggleBotEnabled');
+  });
+
+  globalShortcut.register('Alt+S', () => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+      }
+    }
   });
 };
 

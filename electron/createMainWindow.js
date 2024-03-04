@@ -1,4 +1,4 @@
-import { BrowserWindow, app, Tray, Menu } from 'electron';
+import { BrowserWindow, app, Tray, Menu, dialog } from 'electron';
 import path from 'path';
 import url, { fileURLToPath } from 'url';
 
@@ -7,7 +7,6 @@ let tray;
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
-
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
     width: 920,
@@ -36,9 +35,13 @@ export const createMainWindow = () => {
 
   // Create a tray icon
   tray = new Tray(path.join(dirname, './icons/skull.png'));
-  tray.on('click', () => {
-    mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
-  });
+  // tray.on('click', () => {
+  //   setTimeout(() => {
+  //     if (!mainWindow.isVisible()) {
+  //       mainWindow.show();
+  //     }
+  //   }, 500); // Adjust the delay as needed
+  // });
 
   const trayContextMenu = Menu.buildFromTemplate([
     { label: 'Show', click: () => mainWindow.show() },
@@ -58,6 +61,36 @@ export const createMainWindow = () => {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
+  });
+
+  mainWindow.on('show', () => {
+    mainWindow.setMinimizable(false);
+  });
+
+  let shouldClose = false;
+
+  mainWindow.on('close', (event) => {
+    if (!shouldClose) {
+      event.preventDefault(); // Prevent the window from closing immediately
+      const options = {
+        type: 'question',
+        buttons: ['Yes', 'No'],
+        defaultId: 1,
+        title: 'Confirm',
+        message: 'Are you sure you want to quit the application?',
+        cancelId: 1,
+      };
+
+      dialog.showMessageBox(mainWindow, options).then((response) => {
+        if (response.response === 0) {
+          // If the user clicks 'Yes'
+          shouldClose = true; // Set the flag to allow closing
+          app.quit(); // Quit the application
+        } else {
+          // Do nothing if the user clicks 'No'
+        }
+      });
+    }
   });
 };
 
