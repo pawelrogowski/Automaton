@@ -7,13 +7,14 @@ import HealingRule from '../components/HealingRule/HealingRule.js';
 import { addRule, reorderRules, updateManaSync } from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
-import { setHealing } from '../redux/slices/globalSlice.js';
+import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
+import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
   const rules = useSelector((state) => state.healing);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
-  const { windowId, healingEnabled } = useSelector((state) => state.global);
+  const { windowId, botEnabled } = useSelector((state) => state.global);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
   const manaSyncRule = useSelector((state) =>
     state.healing.find((rule) => rule.category === 'Potion'),
@@ -37,7 +38,7 @@ export const Healing = () => {
     dispatch(addRule(newRule));
   };
   const handleHealingToggle = () => {
-    dispatch(setHealing(!healingEnabled));
+    dispatch(setIsBotEnabled(!botEnabled));
   };
 
   const handleDragEnd = (result) => {
@@ -58,14 +59,26 @@ export const Healing = () => {
   const handleLoadRules = async () => {
     await loadRules();
   };
-
   return (
     <StyledMain>
-      <section>
+      <StyledSection>
+        <div className="bar-container">
+          <div className="health-bar">
+            <StatBar value={hpPercentage} fill={`#d10000`} />
+            <Heart size={16} className="hp-icon" />
+          </div>
+
+          <div className="mana-bar">
+            <StatBar value={manaPercentage} fill={`#3800a1`} />
+            <Zap size={16} className="mp-icon" />
+          </div>
+        </div>
+      </StyledSection>
+      <StyledSection>
         <div className="heading-wrapper">
           <Switch
             className="main-switch"
-            checked={healingEnabled}
+            checked={botEnabled}
             onChange={handleHealingToggle}
             disabled={windowId === null}
             offColor="#ff1c1c"
@@ -78,18 +91,6 @@ export const Healing = () => {
             height={28}
             width={72}
           />
-        </div>
-        <div className="bar-container">
-          <div className="health-bar">
-            <StatBar value={hpPercentage} fill={` #990000`} />
-            <Heart size={28} className="hp-icon" />
-          </div>
-
-          <div className="mana-bar">
-            <StatBar value={manaPercentage} fill={` #350099`} />
-
-            <Zap size={30} className="mp-icon" />
-          </div>
         </div>
         <div className="button-container">
           <button className="add-button button-page" type="button" onClick={handleAddRule}>
@@ -116,7 +117,7 @@ export const Healing = () => {
                     }),
                   )
                 }
-                disabled={healingEnabled}
+                disabled={botEnabled}
                 offColor="#ff1c1c"
                 onColor="#00ff00"
                 handleDiameter={26}
@@ -143,7 +144,7 @@ export const Healing = () => {
                   )
                 }
                 placeholder="F1"
-                disabled={healingEnabled}
+                disabled={botEnabled}
               />
               <label className="label" htmlFor="manaSyncKey">
                 Hotkey
@@ -166,7 +167,7 @@ export const Healing = () => {
                   }
                 }}
                 placeholder="0"
-                disabled={healingEnabled}
+                disabled={botEnabled}
               />
               <label className="label" htmlFor="manaSyncPercentage">
                 Mana %
@@ -203,7 +204,7 @@ export const Healing = () => {
             )}
           </Droppable>
         </DragDropContext>
-      </section>
+      </StyledSection>
     </StyledMain>
   );
 };

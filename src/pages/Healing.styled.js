@@ -2,15 +2,14 @@ import styled from 'styled-components';
 import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
-  section {
-    padding: 54px 12px;
-    margin: 0 12px;
-  }
+  padding: 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   .bar-container {
     display: flex;
     flex-direction: column;
     gap: 9px;
-    margin-bottom: 20px;
   }
   .button-container {
     display: flex;
@@ -85,17 +84,26 @@ const StyledMain = styled.main`
   .mana-bar {
     display: flex;
     gap: 12px;
+
+    > svg {
+      margin-left: auto;
+      width: 22px;
+      height: 22px;
+    }
   }
 
   .hp-icon {
     stroke: none;
     fill: #ff1c1c;
     margin-left: auto;
+    filter: drop-shadow(0px 1px 1px #000000);
+    rotate: 4deg;
   }
   .mp-icon {
     stroke: none;
     fill: #0066ff;
-
+    filter: drop-shadow(0px 1px 1px #000000);
+    rotate: 18deg;
     margin-left: auto;
   }
 `;

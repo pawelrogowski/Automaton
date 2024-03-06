@@ -5,39 +5,35 @@ const StyledDiv = styled.div`
   gap: 16px;
   width: 100%;
   > span {
-    font-size: 18px;
+    font-size: 14px;
     color: #fff;
     mix-blend-mode: difference;
     white-space: nowrap;
-    min-width: 38px;
+    min-width: 42px;
+    margin-left: auto;
   }
   > div {
-    box-shadow:
-      rgba(6, 24, 44, 0.4) 0px 0px 0px 2px,
-      rgb(1 1 4 / 44%) 0px 4px 6px -1px,
-      rgba(255, 255, 255, 0.08) 0px 1px 0px inset;
-    height: 26px;
+    border-top: 2px solid #2c2c2c;
+    border-left: 2px solid #2c2c2c;
+    border-bottom: 2px solid #757676;
+    border-right: 2px solid #757676;
+    height: 22px;
     width: 100%;
     position: relative;
-    border-radius: 12px;
     overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
-
+    background: #1c1c1c4f;
+    filter: drop-shadow(0px -1px 1px #000000);
     > div {
       position: absolute;
       top: 50%;
       left: 0;
       background: ${(props) => props.$fill};
-      border-radius: 12px;
-      height: 88%;
+      height: 100%;
       transform: translateY(-50%);
       width: ${(props) => props.$value || 0}%;
-      box-shadow:
-        rgba(6, 24, 44, 0.4) 0px 0px 0px 2px,
-        rgb(1 1 4 / 44%) 0px 4px 6px -1px,
-        rgba(255, 255, 255, 0.08) 0px 1px 0px inset;
     }
   }
 `;

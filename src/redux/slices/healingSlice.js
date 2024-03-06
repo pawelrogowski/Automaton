@@ -12,7 +12,7 @@ const initialState = [
     manaTriggerCondition: '<=',
     manaTriggerPercentage: '80',
     priority: '0',
-    delay: '1150',
+    delay: '1800',
     category: 'Potion',
     conditions: [
       {

@@ -1,6 +1,6 @@
 {
   "parser": "@babel/eslint-parser",
-  "extends": ["airbnb", "plugin:prettier/recommended", "plugin:react/recommended"],
+  "extends": ["plugin:prettier/recommended", "plugin:react/recommended"],
   "env": {
     "browser": true,
     "node": true
@@ -8,14 +8,8 @@
   "rules": {
     "react/function-component-definition": [2, { "namedComponents": "arrow-function" }],
     "react/jsx-filename-extension": [1, { "extensions": [".js", ".jsx", ".mjs"] }],
-    "import/extensions": [
-      "error",
-      "ignorePackages",
-      {
-        "js": "always",
-        "mjs": "never"
-      }
-    ],
+    "no-generator-functions": "off",
+    "no-iterator": "off",
     "no-console": "off"
   }
 }

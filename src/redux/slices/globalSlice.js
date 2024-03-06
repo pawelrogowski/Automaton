@@ -2,9 +2,9 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  windowTitle: 'Pick a window from the bot menu',
+  windowTitle: 'Press Alt+W on focused tibia window or Alt+Shift+W to manually select',
   windowId: null,
-  healingEnabled: false,
+  botEnabled: false,
 };
 
 const globalSlice = createSlice({
@@ -17,12 +17,17 @@ const globalSlice = createSlice({
     setWindowId: (state, action) => {
       state.windowId = action.payload;
     },
-    setHealing: (state, action) => {
-      state.healingEnabled = action.payload;
+    setIsBotEnabled: (state, action) => {
+      state.botEnabled = action.payload;
+    },
+    toggleBotEnabled: (state) => {
+      if (state.windowId !== null) {
+        state.botEnabled = !state.botEnabled;
+      }
     },
   },
 });
 
-export const { setWindowTitle, setWindowId, setHealing } = globalSlice.actions;
+export const { setWindowTitle, setWindowId, setIsBotEnabled } = globalSlice.actions;
 
 export default globalSlice;

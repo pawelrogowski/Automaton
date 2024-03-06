@@ -84,11 +84,11 @@ async function main() {
         parentPort.postMessage({ type, payload });
         lastCooldownStates[key] = value.found;
 
-        console.log(key, value);
+        // console.log(key, value);
       }
     });
 
-    setTimeout(loop, 50); // Adjust the timeout as needed
+    setTimeout(loop, 1); // Adjust the timeout as needed
   }
 
   loop(); // Start the loop

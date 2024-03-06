@@ -54,12 +54,12 @@ async function grabScreen(windowId, region, measureTime) {
                   console.log('Image is undefined');
                   setTimeout(() => {
                     resolve([]);
-                  }, 5); // Added  10ms timeout before resolving
+                  }, 1);
                   return;
                 }
                 setTimeout(() => {
                   resolve(image.data);
-                }, 5);
+                }, 1);
               },
             );
           });
