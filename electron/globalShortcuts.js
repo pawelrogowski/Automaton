@@ -5,25 +5,19 @@ import setGlobalState from './setGlobalState.js';
 import { getMainWindow } from './createMainWindow.js';
 
 export const registerGlobalShortcuts = () => {
-  // Register a shortcut to select the active window
-  globalShortcut.register('Alt+W', () => {
+  globalShortcut.register('Alt+0', () => {
     selectActiveWindow();
   });
 
-  // Register a new shortcut for selecting a window
-  globalShortcut.register('Alt+Shift+W', () => {
+  globalShortcut.register('Alt+Shift+0', () => {
     selectWindow();
   });
 
-  globalShortcut.register('Alt+E', () => {
+  globalShortcut.register('Alt+1', () => {
     setGlobalState('global/toggleBotEnabled');
   });
 
-  globalShortcut.register('Ctrl+Shift+Home', () => {
-    setGlobalState('global/toggleBotEnabled');
-  });
-
-  globalShortcut.register('Alt+S', () => {
+  globalShortcut.register('Alt+2', () => {
     const mainWindow = getMainWindow();
     if (mainWindow) {
       if (mainWindow.isVisible()) {
@@ -36,6 +30,5 @@ export const registerGlobalShortcuts = () => {
 };
 
 export const unregisterGlobalShortcuts = () => {
-  // Unregister all shortcuts
   globalShortcut.unregisterAll();
 };

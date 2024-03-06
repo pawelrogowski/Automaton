@@ -143,6 +143,8 @@ app.whenReady().then(() => {
   registerGlobalShortcuts();
 });
 
+
+
 app.on('before-quit', () => {
   if (ScreenMonitor) {
     ScreenMonitor.terminate();
