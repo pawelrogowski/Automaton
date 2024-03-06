@@ -95,7 +95,11 @@ const saveRulesToFile = () => {
     })
     .then((result) => {
       if (!result.canceled && result.filePath) {
-        fs.writeFileSync(result.filePath, JSON.stringify(rules, null, 2));
+        // Check if the file path ends with .json, if not, append it
+        const filePath = result.filePath.endsWith('.json')
+          ? result.filePath
+          : `${result.filePath}.json`;
+        fs.writeFileSync(filePath, JSON.stringify(rules, null, 2));
       }
       // Restore the main window
       if (mainWindow) mainWindow.restore();
@@ -142,8 +146,6 @@ app.whenReady().then(() => {
   setupAppMenu(null);
   registerGlobalShortcuts();
 });
-
-
 
 app.on('before-quit', () => {
   if (ScreenMonitor) {

@@ -2,16 +2,10 @@ import styled from 'styled-components';
 import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
-  section {
-    padding: 12px 12px;
-    margin: 12px 12px;
-    border-top: 2px solid #757676;
-    border-left: 2px solid #757676;
-    border-bottom: 3px solid #2c2c2c;
-    border-right: 3px solid #2c2c2c;
-    background-image: url(${tibiaBg});
-    background-repeat: repeat;
-  }
+  padding: 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   .bar-container {
     display: flex;
     flex-direction: column;

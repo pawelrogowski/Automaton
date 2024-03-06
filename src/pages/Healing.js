@@ -8,6 +8,7 @@ import { addRule, reorderRules, updateManaSync } from '../redux/slices/healingSl
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
 import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
+import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -58,10 +59,9 @@ export const Healing = () => {
   const handleLoadRules = async () => {
     await loadRules();
   };
-
   return (
     <StyledMain>
-      <section>
+      <StyledSection>
         <div className="bar-container">
           <div className="health-bar">
             <StatBar value={hpPercentage} fill={`#d10000`} />
@@ -73,8 +73,8 @@ export const Healing = () => {
             <Zap size={16} className="mp-icon" />
           </div>
         </div>
-      </section>
-      <section>
+      </StyledSection>
+      <StyledSection>
         <div className="heading-wrapper">
           <Switch
             className="main-switch"
@@ -204,7 +204,7 @@ export const Healing = () => {
             )}
           </Droppable>
         </DragDropContext>
-      </section>
+      </StyledSection>
     </StyledMain>
   );
 };

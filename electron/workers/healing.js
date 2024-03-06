@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import { parentPort } from 'worker_threads';
+import { keyPress } from '../keyboardControll/keyPress.js';
 
 let currentState = null;
 let prevState = null;
@@ -59,7 +60,7 @@ async function checkHealingRules() {
             const delay = manaSyncRule.delay || 0;
 
             if (now - lastExecutionTime >= delay) {
-              exec(`xdotool key --window ${global.windowId} ${manaSyncRule.key}`);
+              await keyPress(global.windowId, manaSyncRule.key);
               lastExecutionTimes[manaSyncRule.id] = now;
             }
           }
@@ -118,14 +119,13 @@ async function checkHealingRules() {
         const delay = highestPriorityRule.delay || 0;
 
         if (now - lastExecutionTime >= delay) {
-          exec(`xdotool key --window ${global.windowId} ${highestPriorityRule.key}`);
+          await keyPress(global.windowId, highestPriorityRule.key);
           lastExecutionTimes[highestPriorityRule.id] = now;
         }
       }
     }),
   );
 }
-
 // Set up an interval to check the conditions every 16ms (60 times per second)
 setInterval(() => {
   if (global.botEnabled) {

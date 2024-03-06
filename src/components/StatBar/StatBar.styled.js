@@ -31,7 +31,7 @@ const StyledDiv = styled.div`
       top: 50%;
       left: 0;
       background: ${(props) => props.$fill};
-      height: 98%;
+      height: 100%;
       transform: translateY(-50%);
       width: ${(props) => props.$value || 0}%;
     }
