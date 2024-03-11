@@ -17,63 +17,58 @@ async function grabScreen(windowId, region, measureTime) {
 
     const { X } = await createX11Client();
 
-    return new Promise((resolve, reject) => {
-      findWindowById(X, windowId, windowId, async (foundWindowId) => {
-        try {
-          X.GetGeometry(foundWindowId, (err, geom) => {
-            if (err) {
-              reject(err);
-              return;
-            }
+    const foundWindowId = await new Promise((resolve, reject) => {
+      findWindowById(X, windowId, windowId, (windowId) => resolve(windowId));
+    });
 
-            const captureRegion = region || geom;
-
-            X.GetImage(
-              2,
-              foundWindowId,
-              captureRegion.x,
-              captureRegion.y,
-              captureRegion.width,
-              captureRegion.height,
-              0xffffff,
-              (error, image) => {
-                if (error) {
-                  if (error.message.includes('Bad match')) {
-                    console.log('Window is minimized, waiting for it to be maximized...');
-                    setTimeout(() => {
-                      grabScreen(windowId, region).then(resolve).catch(reject);
-                    }, 250);
-                  } else {
-                    console.log('error GrabScreen Callback');
-                    reject(new Error(`X.GetImage failed: ${error.message}`));
-                    return;
-                  }
-                }
-
-                if (!image) {
-                  console.log('Image is undefined');
-                  setTimeout(() => {
-                    resolve([]);
-                  }, 1);
-                  return;
-                }
-                setTimeout(() => {
-                  resolve(image.data);
-                }, 1);
-              },
-            );
-          });
-          if (measureTime) {
-            console.timeEnd('grabScreen');
-          }
-        } catch (error) {
-          console.error('error grabScreen:', error);
-          setTimeout(() => {
-            grabScreen(windowId, region).then(resolve).catch(reject);
-          }, 250);
+    const geom = await new Promise((resolve, reject) => {
+      X.GetGeometry(foundWindowId, (err, geom) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(geom);
         }
       });
     });
+
+    const captureRegion = region || geom;
+
+    const image = await new Promise((resolve, reject) => {
+      X.GetImage(
+        2,
+        foundWindowId,
+        captureRegion.x,
+        captureRegion.y,
+        captureRegion.width,
+        captureRegion.height,
+        0xffffff,
+        (error, image) => {
+          if (error) {
+            if (error.message.includes('Bad match')) {
+              console.log('Window is minimized, waiting for it to be maximized...');
+              setTimeout(() => {
+                grabScreen(windowId, region).then(resolve).catch(reject);
+              }, 250);
+            } else {
+              console.log('error GrabScreen Callback');
+              reject(new Error(`X.GetImage failed: ${error.message}`));
+            }
+          } else if (!image) {
+            console.log('Image is undefined');
+            resolve([]);
+          } else {
+            const uint8ArrayData = new Uint8Array(image.data);
+            resolve(uint8ArrayData);
+          }
+        },
+      );
+    });
+
+    if (measureTime) {
+      console.timeEnd('grabScreen');
+    }
+
+    return image;
   } catch (error) {
     console.error('Error:', error);
     throw error;

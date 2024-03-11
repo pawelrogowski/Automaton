@@ -69,9 +69,9 @@ const processRule = async (rule, gameState, global) => {
     const delay = rule.delay || 0;
 
     if (now - lastExecutionTime >= delay) {
-      console.log(
-        `Rule ${rule.id} executed by processing ${rule.category} category, attackCdActive is currently ${gameState.attackCdActive}`,
-      );
+      // console.log(
+      //   `Rule ${rule.id} executed by processing ${rule.category} category, attackCdActive is currently ${gameState.attackCdActive}`,
+      // );
       await keyPress(global.windowId, rule.key);
       lastExecutionTimes[rule.id] = now;
       // Wait for 25ms before processing the next rule
@@ -82,13 +82,13 @@ const processRule = async (rule, gameState, global) => {
 
 // Function to process a category of rules
 const processCategory = async (category, rules, gameState, global) => {
-  console.log(`Processing category: ${category}`);
+  // console.log(`Processing category: ${category}`);
   if (
     (category === 'Healing' && gameState.healingCdActive) ||
     (category === 'Support' && gameState.supportCdActive) ||
     (category === 'Attack' && gameState.attackCdActive)
   ) {
-    console.log(`Skipping category due to cooldown: ${category}`);
+    // console.log(`Skipping category due to cooldown: ${category}`);
     return; // Skip processing if the category is on cooldown
   }
 
@@ -98,12 +98,12 @@ const processCategory = async (category, rules, gameState, global) => {
   if (category === 'Potion') {
     const manaSyncRule = filteredRules.find((rule) => rule.id === 'manaSync');
     if (manaSyncRule && gameState.attackCdActive) {
-      console.log('Processing manaSync rule');
+      // console.log('Processing manaSync rule');
       await processRule(manaSyncRule, gameState, global);
       // Remove the manaSync rule from the filteredRules to avoid processing it again
       filteredRules = filteredRules.filter((rule) => rule.id !== 'manaSync');
     } else {
-      console.log('Skipping manaSync rule due to attackCdActive:', gameState.attackCdActive);
+      // console.log('Skipping manaSync rule due to attackCdActive:', gameState.attackCdActive);
     }
   }
 
@@ -116,12 +116,12 @@ const processCategory = async (category, rules, gameState, global) => {
 
 // Main function to check healing rules
 async function checkHealingRules() {
-  console.log('Checking healing rules');
+  // console.log('Checking healing rules');
 
   // Special handling for the 'manaSync' rule
   const manaSyncRule = healing.find((rule) => rule.id === 'manaSync');
   if (manaSyncRule && manaSyncRule.enabled && gameState.attackCdActive) {
-    console.log(`Processing manaSync rule`);
+    // console.log(`Processing manaSync rule`);
     await processRule(manaSyncRule, gameState, global);
   }
 
@@ -156,15 +156,15 @@ setInterval(() => {
   if (global.botEnabled) {
     checkHealingRules();
   }
-}, 25);
+}, 100);
 
 // Call checkHealingRules immediately when the state changes to force a check
 parentPort.on('message', (state) => {
   if (prevState !== state) {
     ({ gameState, global, healing } = state);
-    if (global.botEnabled) {
-      checkHealingRules(); // Force a check because the state has changed
-    }
+    // if (global.botEnabled) {
+    //   checkHealingRules(); // Force a check because the state has changed
+    // }
   }
   prevState = state; // Update prevState with the current state
 });

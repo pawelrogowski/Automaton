@@ -6,6 +6,7 @@ import regionColorSequences from '../constants/regionColorSequeces.js';
 import cooldownColorSequences from '../constants/cooldownColorSequences.js';
 import statusBarSequences from '../constants/statusBarSequences.js';
 import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
+import actionBarItems from '../constants/actionBarItems.js';
 
 let state = null;
 let global = null;
@@ -42,7 +43,24 @@ async function main() {
   const imageData = await grabScreen(pickedWindow);
   const startRegions = await findSequences(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
-
+  console.time('actionbar');
+  const actionBarRegionBottom = await findBoundingRect(
+    imageData,
+    regionColorSequences.hotkeyBarBottomStart,
+    regionColorSequences.hotkeyBarBottomEnd,
+    1920,
+  );
+  console.log(healthBar);
+  console.log('Action Bar Region Bottom ', actionBarRegionBottom);
+  console.time('grabActionBar');
+  const actionBarFoundSequences = await findSequences(
+    await grabScreen(pickedWindow, actionBarRegionBottom),
+    actionBarItems,
+    actionBarRegionBottom.width,
+  );
+  console.timeEnd('grabActionBar');
+  console.log(actionBarFoundSequences);
+  console.timeEnd('actionbar');
   const hpManaRegion = {
     x: healthBar.x,
     y: healthBar.y,
@@ -65,131 +83,130 @@ async function main() {
   };
 
   async function loop() {
-    // Start all grabScreen calls concurrently
-    const [hpManaImageData, cooldownsImageData, statusBarImageData] = await Promise.all([
-      grabScreen(pickedWindow, hpManaRegion),
-      grabScreen(pickedWindow, cooldownsRegion),
-      grabScreen(pickedWindow, statusBarRegion),
-    ]);
+    console.time('ScreenRead');
+    // Grab screen data for HP and mana region
+    const hpManaImageData = await grabScreen(pickedWindow, hpManaRegion);
 
-    // Process HP, mana, and cooldown areas concurrently
-    await Promise.all([
-      (async () => {
-        ({ percentage: lastHealthPercentage } = await calculatePercentages(
-          healthBar,
-          hpManaRegion,
-          hpManaImageData,
-          [
-            [120, 61, 64],
-            [211, 79, 79],
-            [219, 79, 79],
-            [194, 74, 74],
-            [100, 46, 49],
-          ],
-          hpManaRegion.width,
-        ));
+    const actionBar = await findSequences(
+      await grabScreen(pickedWindow, actionBarRegionBottom),
+      actionBarItems,
+      actionBarRegionBottom.width,
+    );
 
-        if (lastHealthPercentage !== lastDispatchedHealthPercentage) {
-          parentPort.postMessage({
-            type: 'setHealthPercent',
-            payload: { hpPercentage: lastHealthPercentage },
-          });
-          lastDispatchedHealthPercentage = lastHealthPercentage;
+    // console.log(actionBar);
+    // Process HP and mana percentages sequentially
+    const { percentage: newHealthPercentage } = await calculatePercentages(
+      healthBar,
+      hpManaRegion,
+      hpManaImageData,
+      [
+        [120, 61, 64],
+        [211, 79, 79],
+        [219, 79, 79],
+        [194, 74, 74],
+        [100, 46, 49],
+      ],
+      hpManaRegion.width,
+    );
+
+    if (newHealthPercentage !== lastDispatchedHealthPercentage) {
+      parentPort.postMessage({
+        type: 'setHealthPercent',
+        payload: { hpPercentage: newHealthPercentage },
+      });
+      lastDispatchedHealthPercentage = newHealthPercentage;
+    }
+    lastHealthPercentage = newHealthPercentage;
+
+    const { percentage: newManaPercentage } = await calculatePercentages(
+      manaBar,
+      hpManaRegion,
+      hpManaImageData,
+      [
+        [83, 80, 218],
+        [77, 74, 194],
+        [45, 45, 105],
+        [61, 61, 125],
+        [82, 79, 211],
+      ],
+      hpManaRegion.width,
+    );
+
+    if (newManaPercentage !== lastDispatchedManaPercentage) {
+      parentPort.postMessage({
+        type: 'setManaPercent',
+        payload: { manaPercentage: newManaPercentage },
+      });
+      lastDispatchedManaPercentage = newManaPercentage;
+    }
+    lastManaPercentage = newManaPercentage;
+
+    // Grab screen data for cooldown bar region
+    cooldownBarImageData = await grabScreen(pickedWindow, cooldownsRegion);
+
+    // Process cooldown bar regions
+    cooldownBarRegions = await findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
+
+    for (const [key, value] of Object.entries(cooldownBarRegions)) {
+      const isCooldownActive = value.x !== undefined; // Cooldown is active if the x position is present
+
+      if (isCooldownActive !== lastCooldownStates[key]) {
+        let type;
+        let payload;
+        if (key === 'healing') {
+          type = 'setHealingCdActive';
+          payload = { HealingCdActive: isCooldownActive };
+        } else if (key === 'support') {
+          type = 'setSupportCdActive';
+          payload = { supportCdActive: isCooldownActive };
+        } else if (key === 'attack') {
+          type = 'setAttackCdActive';
+          payload = { attackCdActive: isCooldownActive };
         }
-      })(),
-      (async () => {
-        ({ percentage: lastManaPercentage } = await calculatePercentages(
-          manaBar,
-          hpManaRegion,
-          hpManaImageData,
-          [
-            [83, 80, 218],
-            [77, 74, 194],
-            [45, 45, 105],
-            [61, 61, 125],
-            [82, 79, 211],
-          ],
-          hpManaRegion.width,
-        ));
-        if (lastManaPercentage !== lastDispatchedManaPercentage) {
-          parentPort.postMessage({
-            type: 'setManaPercent',
-            payload: { manaPercentage: lastManaPercentage },
-          });
-          lastDispatchedManaPercentage = lastManaPercentage;
-        }
-      })(),
-      (async () => {
-        cooldownBarImageData = await grabScreen(pickedWindow, cooldownsRegion);
+        parentPort.postMessage({ type, payload });
+        lastCooldownStates[key] = isCooldownActive;
+      }
+    }
 
-        cooldownBarRegions = await findSequences(
-          cooldownBarImageData,
-          cooldownColorSequences,
-          1000,
-        );
+    // Grab screen data for status bar region
+    statusBarImageData = await grabScreen(pickedWindow, statusBarRegion);
 
-        // eslint-disable-next-line no-restricted-syntax
-        for (const [key, value] of Object.entries(cooldownBarRegions)) {
-          const isCooldownActive = value.x !== undefined; // Cooldown is active if the x position is present
+    // Process status bar regions
+    statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
 
-          if (isCooldownActive !== lastCooldownStates[key]) {
-            let type;
-            let payload;
-            if (key === 'healing') {
-              type = 'setHealingCdActive';
-              payload = { HealingCdActive: isCooldownActive };
-            } else if (key === 'support') {
-              type = 'setSupportCdActive';
-              payload = { supportCdActive: isCooldownActive };
-            } else if (key === 'attack') {
-              type = 'setAttackCdActive';
-              payload = { attackCdActive: isCooldownActive };
-            }
-            // console.log({ type, payload });
-            parentPort.postMessage({ type, payload });
-            lastCooldownStates[key] = isCooldownActive;
-          }
-        }
-      })(),
-      (async () => {
-        statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
+    // Initialize an object to hold the status of each character status with all statuses set to false
+    const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(
+      (acc, key) => {
+        acc[key] = false; // Initialize all statuses to false
+        return acc;
+      },
+      {},
+    );
 
-        // Initialize an object to hold the status of each character status with all statuses set to false
-        const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(
-          (acc, key) => {
-            acc[key] = false; // Initialize all statuses to false
-            return acc;
-          },
-          {},
-        );
+    // Update the characterStatusUpdates object based on the detected status bar regions
+    for (const [key, value] of Object.entries(statusBarRegions)) {
+      if (value.x !== undefined) {
+        // status is present if the x position is present
+        characterStatusUpdates[key] = true;
+      }
+    }
 
-        // Update the characterStatusUpdates object based on the detected status bar regions
-        // eslint-disable-next-line no-restricted-syntax
-        for (const [key, value] of Object.entries(statusBarRegions)) {
-          if (value.x !== undefined) {
-            // status is present if the x position is present
-            characterStatusUpdates[key] = true;
-          }
-        }
+    // Check if there's any change in character statuses since the last dispatch
+    const hasStatusChanged = Object.keys(characterStatusUpdates).some(
+      (key) => lastDispatchedCharacterStatuses[key] !== characterStatusUpdates[key],
+    );
 
-        // Check if there's any change in character statuses since the last dispatch
-        const hasStatusChanged = Object.keys(characterStatusUpdates).some(
-          (key) => lastDispatchedCharacterStatuses[key] !== characterStatusUpdates[key],
-        );
+    if (hasStatusChanged) {
+      // Dispatch an action to update the character statuses in the store
+      parentPort.postMessage({
+        type: 'setCharacterStatus',
+        payload: { characterStatus: characterStatusUpdates },
+      });
 
-        if (hasStatusChanged) {
-          // Dispatch an action to update the character statuses in the store
-          parentPort.postMessage({
-            type: 'setCharacterStatus',
-            payload: { characterStatus: characterStatusUpdates },
-          });
-
-          // Update the last dispatched character statuses
-          lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
-        }
-      })(),
-    ]);
-
+      // Update the last dispatched character statuses
+      lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
+    }
+    console.timeEnd('ScreenRead');
     setTimeout(loop, 1);
   }
 

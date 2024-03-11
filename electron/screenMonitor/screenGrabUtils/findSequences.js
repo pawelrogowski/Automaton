@@ -1,8 +1,10 @@
 function findSequences(imageData, targetSequences, width, searchArea = null, occurrence = 'first') {
-  return new Promise((resolve) => {
-    const length = imageData.length / 4;
-    const foundSequences = {};
-    for (const [name, sequenceObj] of Object.entries(targetSequences)) {
+  const length = imageData.length / 4;
+  const foundSequences = {};
+
+  // Create an array of promises for each sequence
+  const sequencePromises = Object.entries(targetSequences).map(([name, sequenceObj]) => {
+    return new Promise((resolve) => {
       foundSequences[name] = {};
 
       // Adjust the loop to start from the search area if defined
@@ -46,9 +48,13 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
           }
         }
       }
-    }
-    resolve(foundSequences);
+
+      resolve(foundSequences[name]);
+    });
   });
+
+  // Use Promise.all to wait for all sequences to be processed
+  return Promise.all(sequencePromises).then(() => foundSequences);
 }
 
 export default findSequences;

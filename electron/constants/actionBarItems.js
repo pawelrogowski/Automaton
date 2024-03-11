@@ -1,4 +1,4 @@
-const hotkeyBarSequences = {
+const actionBarItems = {
   //health potions
   healthPotion: {
     name: 'Health Potion',
@@ -73,12 +73,11 @@ const hotkeyBarSequences = {
   },
   greatManaPotion: {
     name: 'Great Mana Potion',
-    direction: 'horizontal',
+    direction: 'vertical',
     sequence: [
-      [75, 7, 65],
-      [94, 8, 81],
-      [94, 8, 81],
-      [84, 7, 72],
+      [145, 49, 108],
+      [171, 57, 128],
+      [185, 63, 138],
     ],
   },
   ultimateManaPotion: {
@@ -112,6 +111,49 @@ const hotkeyBarSequences = {
       [42, 31, 31],
     ],
   },
+  // healing spells
+
+  exuraInfir: {
+    name: 'Exura Infir',
+    direction: 'horizontal',
+    sequence: [
+      [85, 145, 185],
+      [116, 168, 203],
+      [166, 201, 223],
+      [133, 165, 193],
+      [161, 198, 221],
+      [111, 165, 199],
+    ],
+  },
+  exura: {
+    name: 'Exura',
+    direction: 'vertical',
+    sequence: [
+      [234, 245, 250],
+      [236, 243, 247],
+      [187, 179, 194],
+      [146, 135, 160],
+    ],
+  },
+  exuraGran: {
+    name: 'Exura Gran',
+    direction: 'vertical',
+    sequence: [
+      [234, 237, 243],
+      [202, 189, 202],
+      [170, 140, 159],
+    ],
+  },
+  exuraVita: {
+    name: 'Exura Vita',
+    direction: 'vertical',
+    sequence: [
+      [230, 243, 255],
+      [244, 249, 255],
+      [253, 253, 255],
+      [251, 253, 255],
+    ],
+  },
 };
 
-export default cooldownColorSequences;
+export default actionBarItems;

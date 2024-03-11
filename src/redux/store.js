@@ -8,7 +8,7 @@ const logger = createLogger();
 
 const ipcMiddleware = () => (next) => (action) => {
   if (action.origin !== 'backend') {
-    console.log('Sending action to main process:', action.origin);
+    // console.log('Sending action to main process:', action.origin);
     const actionWithOrigin = { ...action, origin: 'renderer' };
     const serializedAction = JSON.stringify(actionWithOrigin);
     window.electron.ipcRenderer.send('state-change', serializedAction);
@@ -22,7 +22,7 @@ const store = configureStore({
     gameState: gameStateSlice.reducer,
     healing: healingSlice.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware, logger),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });
 
 export default store;
