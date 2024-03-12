@@ -43,24 +43,22 @@ async function main() {
   const imageData = await grabScreen(pickedWindow);
   const startRegions = await findSequences(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
-  console.time('actionbar');
-  const actionBarRegionBottom = await findBoundingRect(
-    imageData,
-    regionColorSequences.hotkeyBarBottomStart,
-    regionColorSequences.hotkeyBarBottomEnd,
-    1920,
-  );
-  console.log(healthBar);
-  console.log('Action Bar Region Bottom ', actionBarRegionBottom);
-  console.time('grabActionBar');
-  const actionBarFoundSequences = await findSequences(
-    await grabScreen(pickedWindow, actionBarRegionBottom),
-    actionBarItems,
-    actionBarRegionBottom.width,
-  );
-  console.timeEnd('grabActionBar');
-  console.log(actionBarFoundSequences);
-  console.timeEnd('actionbar');
+
+  // const actionBarRegionBottom = await findBoundingRect(
+  //   imageData,
+  //   regionColorSequences.hotkeyBarBottomStart,
+  //   regionColorSequences.hotkeyBarBottomEnd,
+  //   1920,
+  // );
+  // console.log(healthBar);
+  // console.log('Action Bar Region Bottom ', actionBarRegionBottom);
+
+  // const actionBarFoundSequences = await findSequences(
+  //   await grabScreen(pickedWindow, actionBarRegionBottom),
+  //   actionBarItems,
+  //   actionBarRegionBottom.width,
+  // );
+
   const hpManaRegion = {
     x: healthBar.x,
     y: healthBar.y,
@@ -83,17 +81,14 @@ async function main() {
   };
 
   async function loop() {
-    console.time('ScreenRead');
-    // Grab screen data for HP and mana region
-    const hpManaImageData = await grabScreen(pickedWindow, hpManaRegion);
+    console.time('actionbar');
+    // Use Promise.all to grab screen data for HP, mana, cooldown bar, and status bar regions in parallel
+    const [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
+      grabScreen(pickedWindow, hpManaRegion),
+      grabScreen(pickedWindow, cooldownsRegion),
+      grabScreen(pickedWindow, statusBarRegion),
+    ]);
 
-    const actionBar = await findSequences(
-      await grabScreen(pickedWindow, actionBarRegionBottom),
-      actionBarItems,
-      actionBarRegionBottom.width,
-    );
-
-    // console.log(actionBar);
     // Process HP and mana percentages sequentially
     const { percentage: newHealthPercentage } = await calculatePercentages(
       healthBar,
@@ -141,9 +136,6 @@ async function main() {
     }
     lastManaPercentage = newManaPercentage;
 
-    // Grab screen data for cooldown bar region
-    cooldownBarImageData = await grabScreen(pickedWindow, cooldownsRegion);
-
     // Process cooldown bar regions
     cooldownBarRegions = await findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
 
@@ -167,9 +159,6 @@ async function main() {
         lastCooldownStates[key] = isCooldownActive;
       }
     }
-
-    // Grab screen data for status bar region
-    statusBarImageData = await grabScreen(pickedWindow, statusBarRegion);
 
     // Process status bar regions
     statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
@@ -206,8 +195,8 @@ async function main() {
       // Update the last dispatched character statuses
       lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
     }
-    console.timeEnd('ScreenRead');
-    setTimeout(loop, 1);
+    console.timeEnd('actionbar');
+    setTimeout(loop, 20);
   }
 
   loop();
