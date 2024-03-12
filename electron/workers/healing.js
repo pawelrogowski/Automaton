@@ -8,12 +8,10 @@ let gameState = null;
 let global = null;
 let healing = null;
 
-// Store the last execution time for each rule
 const lastExecutionTimes = {};
 
-// Parse the math condition based on the condition and trigger percentage
 const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
-  if (gameState.hpPercentage > 0) {
+  if (gameState && gameState.hpPercentage > 0) {
     switch (condition) {
       case '<':
         return actualPercentage < triggerPercentage;
@@ -35,23 +33,19 @@ const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
   }
 };
 
-// Function to check if the character status conditions are met
 const areCharStatusConditionsMet = (rule, gameState) => {
   return rule.conditions.every((condition) => {
     const charStatusValue = gameState.characterStatus[condition.name];
-    // If the key is missing or has a null value, consider it passed
     if (charStatusValue === undefined || charStatusValue === null) {
       return true;
     }
-    // Compare the condition value with the actual character status value
     return charStatusValue === condition.value;
   });
 };
 
-// Function to process a single rule
-// Function to process a single rule
-// Function to process a single rule
 const processRule = async (rule, gameState, global) => {
+  if (!global || !global.botEnabled) return;
+
   const hpConditionMet = parseMathCondition(
     rule.hpTriggerCondition,
     parseInt(rule.hpTriggerPercentage, 10),
@@ -69,102 +63,71 @@ const processRule = async (rule, gameState, global) => {
     const delay = rule.delay || 0;
 
     if (now - lastExecutionTime >= delay) {
-      // console.log(
-      //   `Rule ${rule.id} executed by processing ${rule.category} category, attackCdActive is currently ${gameState.attackCdActive}`,
-      // );
       await keyPress(global.windowId, rule.key);
       lastExecutionTimes[rule.id] = now;
-      // Wait for 25ms before processing the next rule
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 };
 
-// Function to process a category of rules
 const processCategory = async (category, rules, gameState, global) => {
-  // console.log(`Processing category: ${category}`);
+  if (!global || !global.botEnabled) return;
+
   if (
     (category === 'Healing' && gameState.healingCdActive) ||
     (category === 'Support' && gameState.supportCdActive) ||
     (category === 'Attack' && gameState.attackCdActive)
   ) {
-    // console.log(`Skipping category due to cooldown: ${category}`);
-    return; // Skip processing if the category is on cooldown
+    return;
   }
 
   let filteredRules = rules.filter((rule) => rule.enabled && rule.category === category);
 
-  // Special handling for the 'manaSync' rule
   if (category === 'Potion') {
     const manaSyncRule = filteredRules.find((rule) => rule.id === 'manaSync');
     if (manaSyncRule && gameState.attackCdActive) {
-      // console.log('Processing manaSync rule');
       await processRule(manaSyncRule, gameState, global);
-      // Remove the manaSync rule from the filteredRules to avoid processing it again
       filteredRules = filteredRules.filter((rule) => rule.id !== 'manaSync');
-    } else {
-      // console.log('Skipping manaSync rule due to attackCdActive:', gameState.attackCdActive);
     }
   }
 
-  filteredRules.sort((a, b) => b.priority - a.priority); // Sort rules by priority (descending)
+  filteredRules.sort((a, b) => b.priority - a.priority);
 
   for (const rule of filteredRules) {
     await processRule(rule, gameState, global);
   }
 };
 
-// Main function to check healing rules
 async function checkHealingRules() {
-  // console.log('Checking healing rules');
+  if (!global || !global.botEnabled) return;
 
-  // Special handling for the 'manaSync' rule
-  const manaSyncRule = healing.find((rule) => rule.id === 'manaSync');
-  if (manaSyncRule && manaSyncRule.enabled && gameState.attackCdActive) {
-    // console.log(`Processing manaSync rule`);
-    await processRule(manaSyncRule, gameState, global);
-  }
-
-  // Process other categories
   const categories = Array.from(new Set(healing.map((rule) => rule.category)));
-  for (const category of categories) {
-    if (category === 'Potion' && manaSyncRule) {
-      // console.log(`Skipping manaSync rule due to attackCdActive: ${gameState.attackCdActive}`);
-      continue; // Skip processing the 'manaSync' rule here
-    }
-
-    if (
-      (category === 'Healing' && gameState.healingCdActive) ||
-      (category === 'Support' && gameState.supportCdActive) ||
-      (category === 'Attack' && gameState.attackCdActive)
-    ) {
-      // console.log(`Skipping category due to cooldown: ${category}`);
-      continue; // Skip processing if the category is on cooldown
-    }
-
-    const filteredRules = healing.filter((rule) => rule.enabled && rule.category === category);
-    filteredRules.sort((a, b) => b.priority - a.priority); // Sort rules by priority (descending)
-
-    for (const rule of filteredRules) {
-      await processRule(rule, gameState, global);
-    }
-  }
+  await Promise.all(
+    categories.map((category) => processCategory(category, healing, gameState, global)),
+  );
 }
 
-// Set up an interval to check the conditions every 16ms (60 times per second)
-setInterval(() => {
-  if (global.botEnabled) {
+function checkHealingRulesLoop() {
+  if (global && global.botEnabled) {
     checkHealingRules();
   }
-}, 100);
+  setTimeout(checkHealingRulesLoop, 25);
+}
 
-// Call checkHealingRules immediately when the state changes to force a check
+// Function to wait for global.botEnabled to be true
+async function waitForBotEnabled() {
+  while (!global || !global.botEnabled) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  checkHealingRulesLoop();
+}
+
+// Start the loop after global.botEnabled becomes true
+waitForBotEnabled();
+
 parentPort.on('message', (state) => {
   if (prevState !== state) {
     ({ gameState, global, healing } = state);
-    // if (global.botEnabled) {
-    //   checkHealingRules(); // Force a check because the state has changed
-    // }
   }
-  prevState = state; // Update prevState with the current state
+  prevState = state;
 });
