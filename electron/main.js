@@ -3,6 +3,7 @@ import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import fs from 'fs';
+import path from 'path';
 import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
 import './colorPicker/colorPicker.js';
@@ -19,6 +20,9 @@ let ScreenMonitor = null;
 let HealingWorker = null;
 let prevWindowId = null;
 let mainWindow = getMainWindow;
+
+const userDataPath = app.getPath('userData');
+const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
 
 app.commandLine.appendSwitch();
 
@@ -138,13 +142,37 @@ const loadRulesFromFile = () => {
     });
 };
 
+const autoSaveRules = () => {
+  try {
+    const rules = store.getState().healing;
+    fs.writeFileSync(autoLoadFilePath, JSON.stringify(rules, null, 2));
+    console.log('Rules saved successfully');
+  } catch (error) {
+    console.error('Failed to save rules:', error);
+  }
+};
+
+const autoLoadRules = () => {
+  if (fs.existsSync(autoLoadFilePath)) {
+    const content = fs.readFileSync(autoLoadFilePath, 'utf8');
+    const loadedRules = JSON.parse(content);
+    store.dispatch({ type: 'healing/loadRules', payload: loadedRules });
+    setGlobalState('healing/loadRules', loadedRules);
+    console.log('Rules loaded successfully:', loadedRules);
+  }
+};
+
 ipcMain.on('save-rules', saveRulesToFile);
 ipcMain.handle('load-rules', loadRulesFromFile);
+ipcMain.on('renderer-ready', (event) => {
+  autoLoadRules();
+});
 
 app.whenReady().then(() => {
   mainWindow = createMainWindow();
   setupAppMenu(null);
   registerGlobalShortcuts();
+  autoLoadRules();
 });
 
 app.on('before-quit', () => {
@@ -156,6 +184,7 @@ app.on('before-quit', () => {
     HealingWorker.terminate();
     HealingWorker = null;
   }
+  autoSaveRules();
 });
 
 app.on('will-quit', () => {
