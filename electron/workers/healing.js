@@ -83,10 +83,12 @@ const processCategory = async (category, rules, gameState, global) => {
 
   let filteredRules = rules.filter((rule) => rule.enabled && rule.category === category);
 
+  // Special handling for the 'manaSync' rule
   if (category === 'Potion') {
     const manaSyncRule = filteredRules.find((rule) => rule.id === 'manaSync');
     if (manaSyncRule && gameState.attackCdActive) {
       await processRule(manaSyncRule, gameState, global);
+      // Exclude the manaSync rule from the filteredRules to avoid processing it again
       filteredRules = filteredRules.filter((rule) => rule.id !== 'manaSync');
     }
   }

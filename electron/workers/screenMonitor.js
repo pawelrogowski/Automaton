@@ -81,7 +81,7 @@ async function main() {
   };
 
   async function loop() {
-    console.time('actionbar');
+    // console.time('actionbar');
     // Use Promise.all to grab screen data for HP, mana, cooldown bar, and status bar regions in parallel
     const [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
       grabScreen(pickedWindow, hpManaRegion),
@@ -195,7 +195,7 @@ async function main() {
       // Update the last dispatched character statuses
       lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
     }
-    console.timeEnd('actionbar');
+    // console.timeEnd('actionbar');
     setTimeout(loop, 20);
   }
 
