@@ -63,7 +63,11 @@ const processRule = async (rule, gameState, global) => {
     const delay = rule.delay || 0;
 
     if (now - lastExecutionTime >= delay) {
-      await keyPress(global.windowId, rule.key);
+      if (rule.name === 'manaSync' && gameState.attackCdActive) {
+        await keyPress(global.windowId, rule.key);
+      } else if (rule.name !== 'manaSync') {
+        await keyPress(global.windowId, rule.key);
+      }
       lastExecutionTimes[rule.id] = now;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }

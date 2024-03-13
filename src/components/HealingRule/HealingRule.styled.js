@@ -1,32 +1,33 @@
 import styled from 'styled-components';
 import tibiaBg from '../../assets/tibiaBg.webp';
-import tibiaBgDark from '../../assets/tibiaBgDark.webp';
-
 const StyledDiv = styled.div`
-  padding: 0px 4px;
+  /* padding: 0px 4px;
   padding-top: 7px;
-  margin-bottom: -1px;
+  margin-bottom: -1px; */
   /* background: #1a1d21; */
   background-image: url(${tibiaBg});
   background-repeat: repeat;
   position: relative;
-  border-top: 2px solid #757676;
+  /* border-top: 2px solid #757676;
   border-left: 2px solid #757676;
   border-bottom: 3px solid #2c2c2c;
-  border-right: 3px solid #2c2c2c;
+  border-right: 3px solid #2c2c2c; */
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  /* gap: 2px; */
   min-width: 810px;
-
+  background: #2b2b2b;
   summary {
     cursor: pointer;
     display: flex;
-
+    height: 18px;
     align-items: center;
   }
   .input-wrapper {
     position: relative;
+    height: 100%;
+    padding: 0;
+    margin: 0;
   }
   .input-wrapper-checkbox {
     position: relative;
@@ -35,8 +36,8 @@ const StyledDiv = styled.div`
   }
   .input {
     width: 100px;
-    height: 32px;
-    padding: 0 12px;
+    height: 18px;
+    padding: 0 6px;
     background: #2b2b2b;
     font-size: 10px;
     border: none;
@@ -81,26 +82,9 @@ const StyledDiv = styled.div`
     -webkit-appearance: none;
     -moz-appearance: none;
   }
-  .label {
-    position: absolute;
-    top: -10px;
-    left: 0px;
-    font-size: 10px;
-    line-height: 10px;
-    background: #363636;
-    padding: 2px 4px;
-    color: #7c8085;
-    text-align: center;
-    border-top: 1px solid #757676;
-    border-left: 1px solid #757676;
-    border-right: 1px solid #2c2c2c;
-    width: 100%;
-    background-image: url(${tibiaBgDark});
-    background-repeat: repeat;
-  }
   .rule-button {
     font-size: 11px;
-    height: 21px;
+    height: 18px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -131,9 +115,7 @@ const StyledDiv = styled.div`
       stroke: #0066ff;
     }
   }
-  .details-wrapper {
-    padding-top: 10px;
-  }
+
   .pick-pixel-button {
     padding: 0;
 
@@ -143,23 +125,6 @@ const StyledDiv = styled.div`
     }
     svg:hover {
       stroke: #0066ff;
-    }
-  }
-  .conditions-header {
-    color: #fafafa;
-    font-size: 14px;
-    padding: 4px;
-  }
-  .picked-color-wrapper {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    &:not(:last-of-type) {
-      padding-bottom: 5px;
-      border-bottom: 1px solid #44444b;
-    }
-    &:not(:first-of-type) {
-      padding-top: 5px;
     }
   }
 
@@ -180,18 +145,6 @@ const StyledDiv = styled.div`
     gap: 10px;
     svg {
       margin-bottom: 4px;
-    }
-  }
-  .coordinate-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    list-style: none;
-    padding: 0;
-    min-width: 45px;
-    > li {
-      font-size: 9px;
-      color: #fafafa;
     }
   }
 
