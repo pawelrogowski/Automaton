@@ -17,6 +17,20 @@ const StyledMain = styled.main`
     align-items: center;
     gap: 24px;
   }
+  .header-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    h2 {
+      font-size: 26px;
+    }
+    .enable-wrapper {
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+      outline: red;
+    }
+  }
   .button-page {
     border: none;
     background: none;

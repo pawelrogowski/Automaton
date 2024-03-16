@@ -78,7 +78,7 @@ const HealingRule = ({ rule }) => {
                 ...prevLocalHealing,
                 enabled: !prevLocalHealing.enabled,
                 colors: healing.colors,
-                conditions: prevLocalHealing.conditions, 
+                conditions: prevLocalHealing.conditions,
               }))
             }
             disabled={!requiredFieldsFilled}
@@ -152,12 +152,12 @@ const HealingRule = ({ rule }) => {
             }
             disabled={healing.enabled}
           >
-            <option value="<=">{'<='}</option>
+            <option value="<=">{'≤'}</option>
             <option value="<">{'<'}</option>
-            <option value="=">=</option>
+            <option value="=">{'='}</option>
             <option value=">">{'>'}</option>
-            <option value=">=">{'>='}</option>
-            <option value="!=">!=</option>
+            <option value=">=">{'≥'}</option>
+            <option value="!=">{'≠'}</option>
           </select>
           <input
             className="input input-percent"
@@ -191,12 +191,12 @@ const HealingRule = ({ rule }) => {
             }
             disabled={healing.enabled}
           >
-            <option value="<=">{'<='}</option>
+            <option value="<=">{'≤'}</option>
             <option value="<">{'<'}</option>
-            <option value="=">=</option>
+            <option value="=">{'='}</option>
             <option value=">">{'>'}</option>
-            <option value=">=">{'>='}</option>
-            <option value="!=">!=</option>
+            <option value=">=">{'≥'}</option>
+            <option value="!=">{'≠'}</option>
           </select>
           <input
             type="number"
@@ -261,17 +261,15 @@ const HealingRule = ({ rule }) => {
             disabled={healing.enabled}
             aria-label="remove-rule"
           >
-            Remove
+            ×
           </button>
-          {isOpen ? (
-            <button type="button" className="rule-button button-expand">
-              Hide
-            </button>
-          ) : (
-            <button type="button" className="rule-button button-expand">
-              Expand
-            </button>
-          )}
+          <button
+            type="button"
+            className="rule-button button-expand"
+            style={{ pointerEvents: 'none' }}
+          >
+            {isOpen ? '▴' : '▾'}
+          </button>
         </summary>
       </details>
     </StyledDiv>

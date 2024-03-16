@@ -6,10 +6,15 @@
   font-weight: 600;
   font-display: swap;
 }
+
+@font-face {
+  font-family: 'Joystix';
+  src: url('./assets/fonts/joystix.otf') format('opentype');
+}
 /* set default font */
 * {
-  font-family: Verdana;
-  font-weight: 600;
+  font-family: Joystix;
+  font-weight: 400;
 }
 
 /* Remove default padding */
@@ -49,7 +54,7 @@ body {
   line-height: 1.5;
 
   background-repeat: repeat;
-  min-width: 560px;
+  min-width: 911px;
   overflow-x: hidden;
 }
 

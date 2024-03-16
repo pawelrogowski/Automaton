@@ -9,6 +9,9 @@ import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
 import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
+import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
+import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
+import SunkenWrapper from '../components/SunkenWrapper/SunkenWrapper.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -75,34 +78,28 @@ export const Healing = () => {
         </div>
       </StyledSection>
       <StyledSection>
-        <div className="heading-wrapper">
-          <Switch
-            className="main-switch"
-            checked={botEnabled}
-            onChange={handleHealingToggle}
-            disabled={windowId === null}
-            offColor="#ff1c1c"
-            onColor="#00ff00"
-            handleDiameter={42}
-            uncheckedIcon={false}
-            checkedIcon={false}
-            boxShadow="0px 1px 5px rgba(0, 0, 0, 0.6)"
-            activeBoxShadow="0px 0px 1px 10px rgba(0, 0, 0, 0.2)"
-            height={28}
-            width={72}
-          />
-        </div>
-        <div className="button-container">
-          <button className="add-button button-page" type="button" onClick={handleAddRule}>
-            ADD NEW RULE
-          </button>
-          <button className="save-button button-page" type="button" onClick={handleLoadRules}>
-            LOAD
-          </button>
-          <button className="load-button button-page" type="button" onClick={handleSaveRules}>
-            SAVE
-          </button>
-        </div>
+        <SunkenWrapper className="header-wrapper">
+          <div className="enable-wrapper">
+            <CustomCheckbox
+              checked={botEnabled}
+              onChange={handleHealingToggle}
+              disabled={windowId === null}
+            />
+            <h2>Enable Bot</h2>
+          </div>
+          <div className="button-container">
+            <button className="add-button button-page" type="button" onClick={handleAddRule}>
+              ADD NEW RULE
+            </button>
+            <button className="save-button button-page" type="button" onClick={handleLoadRules}>
+              LOAD
+            </button>
+            <button className="load-button button-page" type="button" onClick={handleSaveRules}>
+              SAVE
+            </button>
+          </div>
+        </SunkenWrapper>
+
         {manaSyncRule && (
           <div className="manaSync-rule">
             <div className="input-wrapper">
@@ -175,35 +172,37 @@ export const Healing = () => {
             </div>
           </div>
         )}
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="rules">
-            {(provided) => (
-              <div {...provided.droppableProps} ref={provided.innerRef}>
-                {rules
-                  .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
-                  .map((rule, index) => (
-                    <Draggable
-                      key={rule.id}
-                      draggableId={rule.id}
-                      index={index}
-                      isDragDisabled={isAnyRuleEnabled}
-                    >
-                      {(provided) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                        >
-                          <HealingRule rule={rule} />
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                {provided.placeholder}
-              </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+        <RuleListWrapper>
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="rules">
+              {(provided) => (
+                <div {...provided.droppableProps} ref={provided.innerRef}>
+                  {rules
+                    .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
+                    .map((rule, index) => (
+                      <Draggable
+                        key={rule.id}
+                        draggableId={rule.id}
+                        index={index}
+                        isDragDisabled={isAnyRuleEnabled}
+                      >
+                        {(provided) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            {...provided.dragHandleProps}
+                          >
+                            <HealingRule rule={rule} />
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+        </RuleListWrapper>
       </StyledSection>
     </StyledMain>
   );

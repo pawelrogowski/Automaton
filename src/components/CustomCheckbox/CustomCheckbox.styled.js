@@ -5,20 +5,23 @@ export const TibiaCheckbox = styled.div`
   position: relative;
   display: inline-block;
   overflow: hidden;
-
+  height: 32px;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
   .custom-checkbox {
-    display: none; /* Hide the default checkbox */
+    display: none;
   }
 
   .custom-checkbox-label {
     display: inline-block;
-    width: 12px; /* Adjust as needed */
-    height: 12px; /* Adjust as needed */
-    background-color: #363636; /* Default background color */
+    width: 32px;
+    height: 32px;
+    background-color: #363636;
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
-    border-bottom: 1px solid #757676;
-    border-right: 1px solid #757676;
+    border-bottom: 1px solid #79797930;
+    border-right: 1px solid #2b2b2b;
     cursor: pointer;
     position: relative;
   }
@@ -45,7 +48,7 @@ export const TibiaCheckbox = styled.div`
     left: 50%;
     transform: translate(-50%, -50%);
     color: #d3d3d3;
-    font-size: 12px;
+    font-size: 18px;
   }
 
   .custom-checkbox-label:active {

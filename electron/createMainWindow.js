@@ -16,8 +16,10 @@ const dirname = path.dirname(filename);
 export const createMainWindow = () => {
   // Create the main window with specified dimensions and settings
   mainWindow = new BrowserWindow({
-    width: 920,
-    height: 720,
+    width: 911,
+    height: 728,
+    minWidth: 911,
+    minHeight: 728,
     icon: path.join(dirname, './skull.png'),
     webPreferences: {
       nodeIntegration: false, // Disable Node.js integration for security
