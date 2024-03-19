@@ -4,6 +4,7 @@ import store from '../store.js';
 import { getMainWindow } from '../createMainWindow.js';
 import { setWindowTitle, setWindowId } from '../../src/redux/slices/globalSlice.js';
 import setGlobalState from '../setGlobalState.js';
+import { resetWorkers } from '../main.js';
 
 let selectedWindowId = null;
 
@@ -30,6 +31,7 @@ const getWindowName = (id) =>
   });
 
 export const selectWindow = async () => {
+  resetWorkers();
   exec('xdotool selectwindow', async (error, stdout) => {
     if (error) {
       console.error(`exec error: ${error}`);
@@ -39,12 +41,26 @@ export const selectWindow = async () => {
     console.log(`Selected window ID: ${windowId}`);
     const geometry = await getGeometry(windowId);
     if (geometry.includes('1x1')) {
-      console.error('Invalid window selected. Please select a valid window.');
+      console.error('Error: Please select a valid tibia window.');
+      getMainWindow().setTitle('Automaton - No Window Selected');
+      setGlobalState(
+        'global/setWindowTitle',
+        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
+      );
       return;
     }
     const windowTitle = await getWindowName(windowId);
+    if (!windowTitle.includes('Tibia')) {
+      console.error('Error: Please select a valid tibia window.');
+      getMainWindow().setTitle('Automaton - No Window Selected');
+      setGlobalState(
+        'global/setWindowTitle',
+        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
+      );
+      return;
+    }
     getMainWindow().setTitle(`Automaton - ${windowId}`);
-    setGlobalState('global/setWindowTitle', windowId);
+    setGlobalState('global/setWindowTitle', `Automaton - (${windowId})`);
     setGlobalState('global/setWindowId', windowId);
   });
 };
@@ -66,18 +82,28 @@ export const selectActiveWindow = async () => {
     console.log(`Active window ID: ${windowId}`);
     const geometry = await getGeometry(windowId);
     if (geometry.includes('1x1')) {
-      console.error('Invalid window selected. Please select a valid window.');
+      console.error('Error: Please select a valid tibia window.');
+      getMainWindow().setTitle('Automaton - No Window Selected');
+      setGlobalState(
+        'global/setWindowTitle',
+        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
+      );
       return;
     }
     const windowTitle = await getWindowName(windowId);
     if (!windowTitle.includes('Tibia')) {
-      console.error(
-        'The selected window does not include "Tibia" in its title. Please select a valid window.',
+      console.error('Error: Please select a valid tibia window.');
+      getMainWindow().setTitle('Automaton - No Window Selected');
+      setGlobalState(
+        'global/setWindowTitle',
+        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
       );
       return;
     }
+
     getMainWindow().setTitle(`Automaton - ${windowId}`);
-    setGlobalState('global/setWindowTitle', windowTitle);
+    resetWorkers();
+    setGlobalState('global/setWindowTitle', `Automaton - (${windowId})`);
     setGlobalState('global/setWindowId', windowId);
   } catch (error) {
     console.error(`Error getting active window ID: ${error}`);

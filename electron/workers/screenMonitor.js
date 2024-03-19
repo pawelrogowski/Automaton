@@ -81,8 +81,7 @@ async function main() {
   };
 
   async function loop() {
-    // console.time('actionbar');
-    // Use Promise.all to grab screen data for HP, mana, cooldown bar, and status bar regions in parallel
+    // console.time('full-scan');
     const [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
       grabScreen(pickedWindow, hpManaRegion),
       grabScreen(pickedWindow, cooldownsRegion),
@@ -136,7 +135,6 @@ async function main() {
     }
     lastManaPercentage = newManaPercentage;
 
-    // Process cooldown bar regions
     cooldownBarRegions = await findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
 
     for (const [key, value] of Object.entries(cooldownBarRegions)) {
@@ -160,7 +158,6 @@ async function main() {
       }
     }
 
-    // Process status bar regions
     statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
 
     // Initialize an object to hold the status of each character status with all statuses set to false
@@ -195,7 +192,7 @@ async function main() {
       // Update the last dispatched character statuses
       lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
     }
-    // console.timeEnd('actionbar');
+    console.timeEnd('full-scan');
     setTimeout(loop, 20);
   }
 

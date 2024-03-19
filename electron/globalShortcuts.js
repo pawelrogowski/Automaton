@@ -3,6 +3,7 @@ import { selectWindow } from './menus/windowSelection.js';
 import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
 import { getMainWindow } from './createMainWindow.js';
+import { resetWorkers } from './main.js';
 import pkg from 'lodash';
 const { debounce } = pkg;
 
@@ -10,6 +11,7 @@ const debounceTime = 75;
 
 const debouncedSelectActiveWindow = debounce(() => {
   console.log('Alt+0 shortcut clicked');
+  resetWorkers();
   selectActiveWindow();
 }, debounceTime);
 

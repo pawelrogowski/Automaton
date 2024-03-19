@@ -87,6 +87,17 @@ store.subscribe(() => {
   prevWindowId = windowId;
 });
 
+export const resetWorkers = () => {
+  if (ScreenMonitor) {
+    ScreenMonitor.terminate();
+    ScreenMonitor = null;
+  }
+  if (HealingWorker) {
+    HealingWorker.terminate();
+    HealingWorker = null;
+  }
+};
+
 const saveRulesToFile = () => {
   const rules = store.getState().healing;
   // Minimize the main window

@@ -2,7 +2,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  windowTitle: 'Press Alt+W on focused tibia window or Alt+Shift+W to manually select',
+  windowTitle: 'Press Alt+0 on focused tibia window or Alt+Shift+0 to manually select',
   windowId: null,
   botEnabled: false,
 };

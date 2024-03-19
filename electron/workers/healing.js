@@ -117,13 +117,13 @@ function checkHealingRulesLoop() {
   if (global && global.botEnabled) {
     checkHealingRules();
   }
-  setTimeout(checkHealingRulesLoop, 25);
+  setTimeout(checkHealingRulesLoop, 50);
 }
 
 // Function to wait for global.botEnabled to be true
 async function waitForBotEnabled() {
   while (!global || !global.botEnabled) {
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   checkHealingRulesLoop();
 }

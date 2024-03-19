@@ -85,7 +85,7 @@ export const Healing = () => {
               onChange={handleHealingToggle}
               disabled={windowId === null}
             />
-            <h2>Enable Bot</h2>
+            <h2>Enable (Alt+1)</h2>
           </div>
           <div className="button-container">
             <button className="add-button button-page" type="button" onClick={handleAddRule}>
