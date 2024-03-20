@@ -5,18 +5,19 @@ export const TibiaCheckbox = styled.div`
   position: relative;
   display: inline-block;
   overflow: hidden;
-  height: 32px;
-  width: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  height: ${({ size }) => size}px;
+  width: ${({ size }) => size}px;
+  min-width: ${({ size }) => size}px;
+  min-height: ${({ size }) => size}px;
+
   .custom-checkbox {
     display: none;
   }
 
   .custom-checkbox-label {
     display: inline-block;
-    width: 32px;
-    height: 32px;
+    width: ${({ size }) => size}px;
+    height: ${({ size }) => size}px;
     background-color: #363636;
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
@@ -48,7 +49,7 @@ export const TibiaCheckbox = styled.div`
     left: 50%;
     transform: translate(-50%, -50%);
     color: #d3d3d3;
-    font-size: 18px;
+    font-size: ${({ size }) => size / 2}px;
   }
 
   .custom-checkbox-label:active {

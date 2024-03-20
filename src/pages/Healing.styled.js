@@ -24,18 +24,28 @@ const StyledMain = styled.main`
     h2 {
       font-size: 26px;
     }
-    .enable-wrapper {
-      display: flex;
-      flex-direction: row;
-      gap: 8px;
-      outline: red;
-    }
+  }
+  .mana-sync-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .enable-wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    outline: red;
+  }
+  .enable-text {
+    font-size: 16px;
+    color: rgb(175, 175, 175);
   }
   .button-page {
     border: none;
     background: none;
     height: 28px;
-    margin-bottom: 16px;
+    margin-bottom: 4px;
     text-align: center;
     display: flex;
     padding: 2px 6px;
@@ -89,7 +99,7 @@ const StyledMain = styled.main`
     margin-bottom: 30px;
   }
   .heading {
-    color: #fafafa;
+    color: rgb(175, 175, 175);
   }
   .main-switch {
   }
@@ -120,6 +130,40 @@ const StyledMain = styled.main`
     rotate: 18deg;
     margin-left: auto;
   }
+  .mana-sync-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mana-sync-row-text {
+    font-size: 10px;
+    color: rgb(175, 175, 175);
+  }
+  .mana-sync-checkbox-text {
+    font-size: 12px;
+    color: rgb(175, 175, 175);
+  }
+  h5 {
+    margin: 0;
+    color: rgb(175, 175, 175);
+  }
+  .list-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .input-field {
+    width: 56px;
+    height: 24px;
+    background-color: #363636;
+    border-top: 1px solid #2c2c2c;
+    border-left: 1px solid #2c2c2c;
+    border-bottom: 1px solid #79797930;
+    border-right: 1px solid #2b2b2b;
+    * {
+      font-size: 12px;
+      color: rgb(175, 175, 175);
+    }
+  }
 `;
-
 export default StyledMain;

@@ -4,7 +4,7 @@ const MainLayout = styled.div`
   border: 2px solid #717171;
   padding: 2px;
   width: 100vw;
-  height: 100vh;
+  min-height: 100vh;
   padding-top: 20px;
   > div {
     padding: 1px;

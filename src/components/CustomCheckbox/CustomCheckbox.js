@@ -1,10 +1,11 @@
 // CustomCheckbox.js
 import React from 'react';
 import { TibiaCheckbox } from './CustomCheckbox.styled.js';
-const CustomCheckbox = ({ checked, onChange, disabled }) => {
+
+const CustomCheckbox = ({ checked, onChange, disabled, size = 32 }) => {
   const uniqueId = `custom-checkbox-${Math.random().toString(36).substr(2, 9)}`;
   return (
-    <TibiaCheckbox>
+    <TibiaCheckbox size={size}>
       <input
         type="checkbox"
         id={uniqueId}

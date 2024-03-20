@@ -6,6 +6,7 @@ export const StyledDiv = styled.div`
   height: auto;
   border-top: 1px solid #181818;
   border-left: 1px solid #181818;
+  border-right: 1px solid #7d7d7d;
   border-bottom: 1px solid #7d7d7d;
 
   min-width: 681px;
@@ -15,13 +16,13 @@ export const StyledDiv = styled.div`
     flex-direction: row;
     /* border-bottom: 1px solid #292929; */
     color: #c0c0c0;
-    font-size: 10px;
+    font-size: 12px;
     .header-item {
       text-align: center;
       border-right: 1px solid #181818;
     }
     .header-item_1 {
-      width: 32px;
+      width: 22px;
     }
     .header-item_2 {
       width: 100px;

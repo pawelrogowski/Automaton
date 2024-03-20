@@ -1,60 +1,131 @@
 function findSequences(imageData, targetSequences, width, searchArea = null, occurrence = 'first') {
   const length = imageData.length / 4;
-  const foundSequences = {};
+  const packedImageData = new Uint32Array(length);
+  for (let i = 0; i < length; i++) {
+    const index = i * 4;
+    packedImageData[i] =
+      (imageData[index + 2] << 16) | (imageData[index + 1] << 8) | imageData[index];
+  }
 
-  // Create an array of promises for each sequence
-  const sequencePromises = Object.entries(targetSequences).map(([name, sequenceObj]) => {
-    return new Promise((resolve) => {
-      foundSequences[name] = {};
+  const foundSequences = Object.fromEntries(Object.keys(targetSequences).map((name) => [name, {}]));
+  const trie = buildTrie(targetSequences);
+  const startIndex = searchArea ? searchArea.startIndex : 0;
+  const endIndex = searchArea ? searchArea.endIndex : length;
 
-      // Adjust the loop to start from the search area if defined
-      const startIndex = searchArea ? searchArea.startIndex : 0;
-      const endIndex = searchArea ? searchArea.endIndex : length - sequenceObj.sequence.length;
+  const numTargetSequences = Object.keys(targetSequences).length;
+  let numSequencesFound = 0;
 
-      for (let i = startIndex; i <= endIndex; i += 1) {
-        for (let j = 0; j < sequenceObj.sequence.length; j += 1) {
-          let x;
-          let y;
-          if (sequenceObj.direction === 'vertical') {
-            x = Math.floor((i + j) / width);
-            y = (i + j) % width;
-          } else {
-            x = (i + j) % width;
-            y = Math.floor((i + j) / width);
-          }
-          const index = (y * width + x) * 4;
-          const currentColor = [imageData[index + 2], imageData[index + 1], imageData[index]];
+  outer: for (
+    let i = startIndex;
+    i <= endIndex && (occurrence !== 'first' || numSequencesFound < numTargetSequences);
+    i++
+  ) {
+    let x = i % width;
+    let y = Math.floor(i / width);
+    let node = trie;
+    let sequenceLength = 0;
 
-          if (
-            currentColor[0] !== sequenceObj.sequence[j][0] ||
-            currentColor[1] !== sequenceObj.sequence[j][1] ||
-            currentColor[2] !== sequenceObj.sequence[j][2]
-          ) {
-            break;
-          }
+    for (let j = i; j < length; j++) {
+      const color = packedImageData[j];
 
-          if (j === sequenceObj.sequence.length - 1) {
-            // Apply the offset to the coordinates
-            const offset = sequenceObj.offset || { x: 0, y: 0 };
-            // Update the result based on the occurrence parameter
+      // Prefix pruning
+      if (!(color in node.children)) {
+        break;
+      }
+
+      node = node.children[color];
+      sequenceLength++;
+
+      // Sequence length pruning
+      if (sequenceLength > node.sequenceLength) {
+        break;
+      }
+
+      if (sequenceLength === node.sequenceLength) {
+        if (node.sequences.length > 0) {
+          for (const { name, direction, offset } of node.sequences) {
+            let foundX, foundY;
+
+            if (direction === 'horizontal') {
+              foundX = x + offset.x + 1 - sequenceLength;
+              foundY = y + offset.y;
+            } else {
+              foundX = x - offset.x;
+              foundY = y - offset.y + 1 - sequenceLength;
+            }
+
             if (
               occurrence === 'first' ||
-              !foundSequences[name].x ||
-              x + offset.x > foundSequences[name].x
+              !foundSequences[name] ||
+              (direction === 'horizontal' && foundX > foundSequences[name].x) ||
+              (direction === 'vertical' && foundY > foundSequences[name].y)
             ) {
-              foundSequences[name] = { x: x + offset.x, y: y + offset.y };
+              foundSequences[name] = { x: foundX, y: foundY };
             }
+
+            if (occurrence === 'first') {
+              break;
+            }
+          }
+
+          if (occurrence === 'first') {
             break;
           }
         }
+
+        sequenceLength = 0;
       }
 
-      resolve(foundSequences[name]);
-    });
+      x = (x + 1) % width;
+      y = x === 0 ? y + 1 : y;
+    }
+
+    if (
+      occurrence === 'first' &&
+      Object.values(foundSequences).every((obj) => Object.keys(obj).length > 0)
+    ) {
+      numSequencesFound = numTargetSequences;
+      continue outer;
+    }
+  }
+
+  return foundSequences;
+}
+
+class TrieNode {
+  constructor() {
+    this.children = {};
+    this.sequences = [];
+    this.sequenceLength = 0;
+  }
+}
+
+function buildTrie(targetSequences) {
+  const root = new TrieNode();
+
+  Object.entries(targetSequences).forEach(([name, sequenceObj]) => {
+    let node = root;
+    const { sequence, direction, offset = { x: 0, y: 0 } } = sequenceObj;
+    const packedSequence = sequence.map(([r, g, b]) => (r << 16) | (g << 8) | b);
+    const sequenceLength = packedSequence.length;
+
+    for (let i = 0; i < sequenceLength; i++) {
+      const color = packedSequence[i];
+
+      if (!(color in node.children)) {
+        node.children[color] = new TrieNode();
+      }
+
+      node = node.children[color];
+      node.sequenceLength = sequenceLength;
+
+      if (i === sequenceLength - 1) {
+        node.sequences.push({ name, direction, offset });
+      }
+    }
   });
 
-  // Use Promise.all to wait for all sequences to be processed
-  return Promise.all(sequencePromises).then(() => foundSequences);
+  return root;
 }
 
 export default findSequences;

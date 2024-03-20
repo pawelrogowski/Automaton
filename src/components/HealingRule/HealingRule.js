@@ -17,6 +17,8 @@ import {
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
+import ListInput from '../ListInput/ListInput.js';
+import ListSelect from '../ListSelect/ListSelect.js';
 
 const { api } = window;
 
@@ -82,9 +84,9 @@ const HealingRule = ({ rule }) => {
               }))
             }
             disabled={!requiredFieldsFilled}
+            size={22}
           />
-
-          <input
+          <ListInput
             className="input"
             id="name"
             value={localHealing.name}
@@ -99,8 +101,8 @@ const HealingRule = ({ rule }) => {
             disabled={healing.enabled}
           />
 
-          <select
-            className="input input-category"
+          <ListSelect
+            className="input input-category select-with-arrow"
             id="category"
             value={localHealing.category}
             onChange={(event) =>
@@ -116,9 +118,8 @@ const HealingRule = ({ rule }) => {
             <option value="Support">Support</option>
             <option value="Attack">Attack</option>
             <option value="Equip">Equip</option>
-          </select>
-
-          <select
+          </ListSelect>
+          <ListSelect
             className="input input-hotkey"
             id="key"
             value={localHealing.key}
@@ -126,7 +127,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing({
                 ...localHealing,
                 key: event.target.value,
-                colors: healing.colors,
               })
             }
             placeholder="F1"
@@ -137,9 +137,8 @@ const HealingRule = ({ rule }) => {
                 {key.label}
               </option>
             ))}
-          </select>
-
-          <select
+          </ListSelect>
+          <ListSelect
             className="input input-percent-select"
             id="hpTriggerCondition"
             value={localHealing.hpTriggerCondition}
@@ -158,9 +157,9 @@ const HealingRule = ({ rule }) => {
             <option value=">">{'>'}</option>
             <option value=">=">{'≥'}</option>
             <option value="!=">{'≠'}</option>
-          </select>
-          <input
-            className="input input-percent"
+          </ListSelect>
+          <ListInput
+            className="input-percent"
             type="number"
             min="1"
             max="100"
@@ -177,7 +176,6 @@ const HealingRule = ({ rule }) => {
             placeholder="0"
             disabled={healing.enabled}
           />
-
           <select
             className="input input-percent-select"
             id="manaTriggerCondition"
@@ -198,7 +196,7 @@ const HealingRule = ({ rule }) => {
             <option value=">=">{'≥'}</option>
             <option value="!=">{'≠'}</option>
           </select>
-          <input
+          <ListInput
             type="number"
             min="1"
             max="100"
@@ -218,8 +216,7 @@ const HealingRule = ({ rule }) => {
             placeholder="0"
             disabled={healing.enabled}
           />
-
-          <input
+          <ListInput
             type="number"
             className="input input-priority"
             id="priority"
@@ -236,10 +233,9 @@ const HealingRule = ({ rule }) => {
             placeholder="Priority"
             disabled={healing.enabled}
           />
-
-          <input
+          <ListInput
             type="number"
-            className="input input-delay"
+            className="input-delay"
             id="delay"
             value={localHealing.delay}
             onChange={(event) =>
@@ -253,7 +249,6 @@ const HealingRule = ({ rule }) => {
             step="25"
             disabled={healing.enabled}
           />
-
           <button
             className="remove-rule-button rule-button"
             type="button"

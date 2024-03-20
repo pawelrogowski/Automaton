@@ -76,34 +76,3 @@ async function grabScreen(windowId, region, measureTime) {
 }
 
 export default grabScreen;
-
-// (async () => {
-//   try {
-//     console.time('timer');
-//     const windowId = 109051930;
-//     const imageData = await grabScreen(windowId);
-//     console.log('ImageData length:', imageData.length, '# of pixels:', imageData.length / 4);
-
-//     const targetColors = {
-//       healthBar: [
-//         [120, 61, 64],
-//         [211, 79, 79],
-//       ],
-//       manaBar: [
-//         [61, 61, 125],
-//         [82, 79, 211],
-//       ],
-//       cooldownBar: [
-//         [109, 109, 110],
-//         [65, 18, 2],
-//         [49, 14, 4],
-//       ],
-//     };
-
-//     const width = 1920; // Assuming the width of your image is 1920
-//     const regionStart = await findSequencesInImageData(imageData, targetColors, width);
-//     console.log('found region', regionStart);
-//   } catch (err) {
-//     console.error('Error:', err);
-//   }
-// })();

@@ -7,7 +7,7 @@ const StyledDiv = styled.div`
   summary {
     cursor: pointer;
     display: flex;
-    height: 32px;
+    height: 22px;
     align-items: center;
   }
   .input-wrapper {
@@ -15,18 +15,19 @@ const StyledDiv = styled.div`
     height: 100%;
     padding: 0;
     margin: 0;
+    position: relative;
   }
   .input-wrapper-checkbox {
     position: relative;
-    height: 32px;
+    height: 22px;
     margin-top: 4px;
   }
   input,
   select {
     width: 100px;
-    height: 32px;
+    height: 22px;
     padding: 0 6px;
-    font-size: 12px;
+    font-size: 10px;
     border: none;
     color: #d3d3d3;
     background: #414141;
@@ -67,7 +68,7 @@ const StyledDiv = styled.div`
   }
   .rule-button {
     font-size: 12px;
-    height: 18px;
+    height: 22px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -89,17 +90,17 @@ const StyledDiv = styled.div`
     }
   }
   .button-expand {
-    font-size: 18px;
-    width: 32px;
-    height: 32px;
+    font-size: 16px;
+    width: 22px;
+    height: 22px;
   }
 
   .remove-rule-button {
-    font-size: 22px;
+    font-size: 20px;
     margin-left: auto;
     justify-self: flex-end;
-    width: 32px;
-    height: 32px;
+    width: 22px;
+    height: 22px;
     background: #8f000052;
     border-top: 1px solid #8b5757;
     border-left: 1px solid #8b5757;
@@ -129,6 +130,15 @@ const StyledDiv = styled.div`
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
     border-right: none;
+  }
+  .select-with-arrow::after {
+    content: ' ▾';
+    color: #fafafa;
+    position: absolute;
+    right: 10px; /* Adjust as needed */
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none; /* Ensures clicks go through to the select */
   }
 `;
 

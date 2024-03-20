@@ -44,20 +44,14 @@ async function main() {
   const startRegions = await findSequences(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
 
-  // const actionBarRegionBottom = await findBoundingRect(
-  //   imageData,
-  //   regionColorSequences.hotkeyBarBottomStart,
-  //   regionColorSequences.hotkeyBarBottomEnd,
-  //   1920,
-  // );
-  // console.log(healthBar);
-  // console.log('Action Bar Region Bottom ', actionBarRegionBottom);
+  const actionBarRegionBottom = await findBoundingRect(
+    imageData,
+    regionColorSequences.hotkeyBarBottomStart,
+    regionColorSequences.hotkeyBarBottomEnd,
+    1920,
+  );
 
-  // const actionBarFoundSequences = await findSequences(
-  //   await grabScreen(pickedWindow, actionBarRegionBottom),
-  //   actionBarItems,
-  //   actionBarRegionBottom.width,
-  // );
+  // console.log('Action Bar Region Bottom ', actionBarRegionBottom);
 
   const hpManaRegion = {
     x: healthBar.x,
@@ -81,7 +75,14 @@ async function main() {
   };
 
   async function loop() {
-    // console.time('full-scan');
+    console.time('full-scan');
+
+    // const actionBarFoundSequences = await findSequences(
+    //   await grabScreen(pickedWindow, actionBarRegionBottom),
+    //   actionBarItems,
+    //   actionBarRegionBottom.width,
+    // );
+
     const [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
       grabScreen(pickedWindow, hpManaRegion),
       grabScreen(pickedWindow, cooldownsRegion),
@@ -193,7 +194,7 @@ async function main() {
       lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
     }
     console.timeEnd('full-scan');
-    setTimeout(loop, 20);
+    setTimeout(loop, 1);
   }
 
   loop();

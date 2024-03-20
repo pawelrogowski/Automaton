@@ -6,8 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
-import './colorPicker/colorPicker.js';
-import './screenMonitor/monitoring.js';
+
 import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
