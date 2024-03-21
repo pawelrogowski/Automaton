@@ -7,19 +7,12 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
       (imageData[index + 2] << 16) | (imageData[index + 1] << 8) | imageData[index];
   }
 
-  const foundSequences = Object.fromEntries(Object.keys(targetSequences).map((name) => [name, {}]));
+  const foundSequences = Object.fromEntries(Object.keys(targetSequences).map((name) => [name, []]));
   const trie = buildTrie(targetSequences);
   const startIndex = searchArea ? searchArea.startIndex : 0;
   const endIndex = searchArea ? searchArea.endIndex : length;
 
-  const numTargetSequences = Object.keys(targetSequences).length;
-  let numSequencesFound = 0;
-
-  outer: for (
-    let i = startIndex;
-    i <= endIndex && (occurrence !== 'first' || numSequencesFound < numTargetSequences);
-    i++
-  ) {
+  outer: for (let i = startIndex; i <= endIndex; i++) {
     let x = i % width;
     let y = Math.floor(i / width);
     let node = trie;
@@ -45,31 +38,31 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
         if (node.sequences.length > 0) {
           for (const { name, direction, offset } of node.sequences) {
             let foundX, foundY;
-
             if (direction === 'horizontal') {
-              foundX = x + offset.x + 1 - sequenceLength;
+              foundX = x + offset.x;
               foundY = y + offset.y;
             } else {
               foundX = x - offset.x;
-              foundY = y - offset.y + 1 - sequenceLength;
+              foundY = y - offset.y;
             }
 
-            if (
-              occurrence === 'first' ||
-              !foundSequences[name] ||
-              (direction === 'horizontal' && foundX > foundSequences[name].x) ||
-              (direction === 'vertical' && foundY > foundSequences[name].y)
-            ) {
-              foundSequences[name] = { x: foundX, y: foundY };
-            }
+            const existingSequence = foundSequences[name].find((seq) => {
+              if (direction === 'horizontal') {
+                return seq.x === foundX && seq.y === foundY;
+              } else {
+                return seq.x === foundX && seq.y === foundY;
+              }
+            });
 
-            if (occurrence === 'first') {
-              break;
-            }
-          }
+            if (!existingSequence) {
+              foundSequences[name].push({ x: foundX, y: foundY });
 
-          if (occurrence === 'first') {
-            break;
+              if (occurrence === 'first') {
+                if (Object.values(foundSequences).every((arr) => arr.length > 0)) {
+                  break outer;
+                }
+              }
+            }
           }
         }
 
@@ -79,16 +72,14 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
       x = (x + 1) % width;
       y = x === 0 ? y + 1 : y;
     }
-
-    if (
-      occurrence === 'first' &&
-      Object.values(foundSequences).every((obj) => Object.keys(obj).length > 0)
-    ) {
-      numSequencesFound = numTargetSequences;
-      continue outer;
-    }
   }
 
+  if (occurrence === 'first') {
+    Object.keys(foundSequences).forEach((name) => {
+      foundSequences[name] = foundSequences[name].length > 0 ? foundSequences[name][0] : {};
+    });
+  }
+  // console.log(foundSequences);
   return foundSequences;
 }
 
@@ -111,14 +102,11 @@ function buildTrie(targetSequences) {
 
     for (let i = 0; i < sequenceLength; i++) {
       const color = packedSequence[i];
-
       if (!(color in node.children)) {
         node.children[color] = new TrieNode();
       }
-
       node = node.children[color];
       node.sequenceLength = sequenceLength;
-
       if (i === sequenceLength - 1) {
         node.sequences.push({ name, direction, offset });
       }

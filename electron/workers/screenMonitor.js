@@ -75,7 +75,7 @@ async function main() {
   };
 
   async function loop() {
-    console.time('full-scan');
+    // console.time('full-scan');
 
     // const actionBarFoundSequences = await findSequences(
     //   await grabScreen(pickedWindow, actionBarRegionBottom),
@@ -146,7 +146,7 @@ async function main() {
         let payload;
         if (key === 'healing') {
           type = 'setHealingCdActive';
-          payload = { HealingCdActive: isCooldownActive };
+          payload = { healingCdActive: isCooldownActive };
         } else if (key === 'support') {
           type = 'setSupportCdActive';
           payload = { supportCdActive: isCooldownActive };
@@ -193,7 +193,7 @@ async function main() {
       // Update the last dispatched character statuses
       lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
     }
-    console.timeEnd('full-scan');
+    // console.timeEnd('full-scan');
     setTimeout(loop, 1);
   }
 
