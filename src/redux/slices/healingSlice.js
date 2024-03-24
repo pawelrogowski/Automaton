@@ -112,24 +112,22 @@ const healingSlice = createSlice({
     },
     updateManaSync: (state, action) => {
       const { key, manaTriggerPercentage, enabled } = action.payload;
-      const manaSyncIndex = state.findIndex((rule) => rule.category === 'Potion');
-      if (manaSyncIndex !== -1) {
-        state[manaSyncIndex] = {
-          ...state[manaSyncIndex],
-          key,
-          enabled,
-          manaTriggerPercentage,
-          hpTriggerCondition: '>',
-          hpTriggerPercentage: '0',
-          manaTriggerCondition: '<=',
-          priority: '0',
-          delay: '2050',
-          colors: [],
-          conditions: [],
-          name: 'manaSync',
-        };
+      const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
+      if (manaSyncRule) {
+        manaSyncRule.key = key;
+        manaSyncRule.enabled = enabled;
+        manaSyncRule.manaTriggerPercentage = manaTriggerPercentage;
+        manaSyncRule.hpTriggerCondition = '>';
+        manaSyncRule.hpTriggerPercentage = '0';
+        manaSyncRule.manaTriggerCondition = '<=';
+        manaSyncRule.priority = '0';
+        manaSyncRule.delay = '2050';
+        manaSyncRule.colors = [];
+        manaSyncRule.conditions = [];
+        manaSyncRule.name = 'manaSync';
       }
     },
+
     reorderRules: (state, action) => {
       const { startIndex, endIndex } = action.payload;
       const [removed] = state.splice(startIndex, 1);

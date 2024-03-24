@@ -14,14 +14,9 @@ let global = null;
 let lastHealthPercentage = null;
 let lastManaPercentage = null;
 const lastCooldownStates = {};
-let cooldownsImageData;
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
 let lastDispatchedCharacterStatuses = {};
-let cooldownBarImageData;
-let cooldownBarRegions;
-let statusBarImageData;
-let statusBarRegions;
 
 parentPort.on('message', (updatedState) => {
   state = updatedState;
@@ -44,14 +39,12 @@ async function main() {
   const startRegions = await findSequences(imageData, regionColorSequences, 1920);
   const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
 
-  const actionBarRegionBottom = await findBoundingRect(
-    imageData,
-    regionColorSequences.hotkeyBarBottomStart,
-    regionColorSequences.hotkeyBarBottomEnd,
-    1920,
-  );
-
-  // console.log('Action Bar Region Bottom ', actionBarRegionBottom);
+  // const actionBarRegionBottom = await findBoundingRect(
+  //   imageData,
+  //   regionColorSequences.hotkeyBarBottomStart,
+  //   regionColorSequences.hotkeyBarBottomEnd,
+  //   1920,
+  // );
 
   const hpManaRegion = {
     x: healthBar.x,
@@ -75,126 +68,127 @@ async function main() {
   };
 
   async function loop() {
-    // console.time('full-scan');
+    let hpManaImageData;
+    let cooldownBarImageData;
+    let statusBarImageData;
+    let cooldownBarRegions;
+    let statusBarRegions;
 
-    // const actionBarFoundSequences = await findSequences(
-    //   await grabScreen(pickedWindow, actionBarRegionBottom),
-    //   actionBarItems,
-    //   actionBarRegionBottom.width,
-    // );
+    try {
+      [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
+        grabScreen(pickedWindow, hpManaRegion),
+        grabScreen(pickedWindow, cooldownsRegion),
+        grabScreen(pickedWindow, statusBarRegion),
+      ]);
 
-    const [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
-      grabScreen(pickedWindow, hpManaRegion),
-      grabScreen(pickedWindow, cooldownsRegion),
-      grabScreen(pickedWindow, statusBarRegion),
-    ]);
+      const { percentage: newHealthPercentage } = await calculatePercentages(
+        healthBar,
+        hpManaRegion,
+        hpManaImageData,
+        [
+          [120, 61, 64],
+          [211, 79, 79],
+          [219, 79, 79],
+          [194, 74, 74],
+          [100, 46, 49],
+        ],
+        hpManaRegion.width,
+      );
 
-    // Process HP and mana percentages sequentially
-    const { percentage: newHealthPercentage } = await calculatePercentages(
-      healthBar,
-      hpManaRegion,
-      hpManaImageData,
-      [
-        [120, 61, 64],
-        [211, 79, 79],
-        [219, 79, 79],
-        [194, 74, 74],
-        [100, 46, 49],
-      ],
-      hpManaRegion.width,
-    );
+      if (newHealthPercentage !== lastDispatchedHealthPercentage) {
+        parentPort.postMessage({
+          type: 'setHealthPercent',
+          payload: { hpPercentage: newHealthPercentage },
+        });
+        lastDispatchedHealthPercentage = newHealthPercentage;
+      }
+      lastHealthPercentage = newHealthPercentage;
 
-    if (newHealthPercentage !== lastDispatchedHealthPercentage) {
-      parentPort.postMessage({
-        type: 'setHealthPercent',
-        payload: { hpPercentage: newHealthPercentage },
-      });
-      lastDispatchedHealthPercentage = newHealthPercentage;
-    }
-    lastHealthPercentage = newHealthPercentage;
+      const { percentage: newManaPercentage } = await calculatePercentages(
+        manaBar,
+        hpManaRegion,
+        hpManaImageData,
+        [
+          [83, 80, 218],
+          [77, 74, 194],
+          [45, 45, 105],
+          [61, 61, 125],
+          [82, 79, 211],
+        ],
+        hpManaRegion.width,
+      );
 
-    const { percentage: newManaPercentage } = await calculatePercentages(
-      manaBar,
-      hpManaRegion,
-      hpManaImageData,
-      [
-        [83, 80, 218],
-        [77, 74, 194],
-        [45, 45, 105],
-        [61, 61, 125],
-        [82, 79, 211],
-      ],
-      hpManaRegion.width,
-    );
+      if (newManaPercentage !== lastDispatchedManaPercentage) {
+        parentPort.postMessage({
+          type: 'setManaPercent',
+          payload: { manaPercentage: newManaPercentage },
+        });
+        lastDispatchedManaPercentage = newManaPercentage;
+      }
+      lastManaPercentage = newManaPercentage;
 
-    if (newManaPercentage !== lastDispatchedManaPercentage) {
-      parentPort.postMessage({
-        type: 'setManaPercent',
-        payload: { manaPercentage: newManaPercentage },
-      });
-      lastDispatchedManaPercentage = newManaPercentage;
-    }
-    lastManaPercentage = newManaPercentage;
+      cooldownBarRegions = await findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
 
-    cooldownBarRegions = await findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
+      for (const [key, value] of Object.entries(cooldownBarRegions)) {
+        const isCooldownActive = value.x !== undefined;
 
-    for (const [key, value] of Object.entries(cooldownBarRegions)) {
-      const isCooldownActive = value.x !== undefined; // Cooldown is active if the x position is present
-
-      if (isCooldownActive !== lastCooldownStates[key]) {
-        let type;
-        let payload;
-        if (key === 'healing') {
-          type = 'setHealingCdActive';
-          payload = { healingCdActive: isCooldownActive };
-        } else if (key === 'support') {
-          type = 'setSupportCdActive';
-          payload = { supportCdActive: isCooldownActive };
-        } else if (key === 'attack') {
-          type = 'setAttackCdActive';
-          payload = { attackCdActive: isCooldownActive };
+        if (isCooldownActive !== lastCooldownStates[key]) {
+          let type;
+          let payload;
+          if (key === 'healing') {
+            type = 'setHealingCdActive';
+            payload = { HealingCdActive: isCooldownActive };
+          } else if (key === 'support') {
+            type = 'setSupportCdActive';
+            payload = { supportCdActive: isCooldownActive };
+          } else if (key === 'attack') {
+            type = 'setAttackCdActive';
+            payload = { attackCdActive: isCooldownActive };
+          }
+          parentPort.postMessage({ type, payload });
+          lastCooldownStates[key] = isCooldownActive;
         }
-        parentPort.postMessage({ type, payload });
-        lastCooldownStates[key] = isCooldownActive;
       }
-    }
 
-    statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
+      statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
 
-    // Initialize an object to hold the status of each character status with all statuses set to false
-    const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(
-      (acc, key) => {
-        acc[key] = false; // Initialize all statuses to false
-        return acc;
-      },
-      {},
-    );
+      const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(
+        (acc, key) => {
+          acc[key] = false;
+          return acc;
+        },
+        {},
+      );
 
-    // Update the characterStatusUpdates object based on the detected status bar regions
-    for (const [key, value] of Object.entries(statusBarRegions)) {
-      if (value.x !== undefined) {
-        // status is present if the x position is present
-        characterStatusUpdates[key] = true;
+      for (const [key, value] of Object.entries(statusBarRegions)) {
+        if (value.x !== undefined) {
+          characterStatusUpdates[key] = true;
+        }
       }
+
+      const hasStatusChanged = Object.keys(characterStatusUpdates).some(
+        (key) => lastDispatchedCharacterStatuses[key] !== characterStatusUpdates[key],
+      );
+
+      if (hasStatusChanged) {
+        parentPort.postMessage({
+          type: 'setCharacterStatus',
+          payload: { characterStatus: characterStatusUpdates },
+        });
+
+        lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
+      }
+    } finally {
+      // Explicitly release the memory used by the image data
+      hpManaImageData = null;
+      cooldownBarImageData = null;
+      statusBarImageData = null;
+
+      // cooldownBarRegions = null;
+      // statusBarRegions = null;
     }
 
-    // Check if there's any change in character statuses since the last dispatch
-    const hasStatusChanged = Object.keys(characterStatusUpdates).some(
-      (key) => lastDispatchedCharacterStatuses[key] !== characterStatusUpdates[key],
-    );
-
-    if (hasStatusChanged) {
-      // Dispatch an action to update the character statuses in the store
-      parentPort.postMessage({
-        type: 'setCharacterStatus',
-        payload: { characterStatus: characterStatusUpdates },
-      });
-
-      // Update the last dispatched character statuses
-      lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
-    }
-    // console.timeEnd('full-scan');
-    setTimeout(loop, 1);
+    setTimeout(loop, 50);
   }
 
   loop();

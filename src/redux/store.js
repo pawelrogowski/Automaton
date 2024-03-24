@@ -22,7 +22,7 @@ const store = configureStore({
     gameState: gameStateSlice.reducer,
     healing: healingSlice.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware, logger),
+  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });
 
 export default store;

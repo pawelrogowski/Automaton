@@ -22,9 +22,7 @@ export const Healing = () => {
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const { windowId, botEnabled } = useSelector((state) => state.global);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
-  const manaSyncRule = useSelector((state) =>
-    state.healing.find((rule) => rule.category === 'Potion'),
-  );
+  const manaSyncRule = useSelector((state) => state.healing.find((rule) => rule.id === 'manaSync'));
 
   const [inputValue, setInputValue] = useState(manaSyncRule.manaTriggerPercentage || '50');
   const debounceTimeout = useRef(null);
@@ -136,7 +134,6 @@ export const Healing = () => {
                       }),
                     )
                   }
-                  disabled={botEnabled}
                   size={18}
                 />
                 <h5 className="mana-sync-row-text mana-sync-checkbox-text">
@@ -158,7 +155,6 @@ export const Healing = () => {
                     )
                   }
                   placeholder="F1"
-                  disabled={botEnabled}
                 >
                   {keyboardKeys.map((key) => (
                     <option key={key.value} value={key.value}>
@@ -177,7 +173,6 @@ export const Healing = () => {
                   value={inputValue} // Use the local state for the input's value
                   onChange={handleManaSyncPercentageChange}
                   placeholder="80"
-                  disabled={botEnabled}
                   min="1"
                   max="100"
                 />

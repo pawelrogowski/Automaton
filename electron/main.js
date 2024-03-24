@@ -23,7 +23,8 @@ let mainWindow = getMainWindow;
 const userDataPath = app.getPath('userData');
 const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
 
-app.commandLine.appendSwitch();
+app.commandLine.appendSwitch('inspect', 'true');
+app.commandLine.appendSwitch('inspect-brk', '9222');
 
 store.subscribe(() => {
   const state = store.getState();
@@ -182,7 +183,6 @@ app.whenReady().then(() => {
   mainWindow = createMainWindow();
   setupAppMenu(null);
   registerGlobalShortcuts();
-  autoLoadRules();
 });
 
 app.on('before-quit', () => {

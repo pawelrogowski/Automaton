@@ -1,6 +1,8 @@
 import { exec } from 'child_process';
 import { parentPort } from 'worker_threads';
 import { keyPress } from '../keyboardControll/keyPress.js';
+import parseMathCondition from '../utils/parseMathCondition.js';
+import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
 
 // State variables to track game and bot states
 let currentState = null;
@@ -8,71 +10,24 @@ let prevState = null;
 let gameState = null;
 let global = null;
 let healing = null;
+let isLoopRunning = false;
 
 // Track the last execution time for each rule
-const lastExecutionTimes = {};
+const lastRuleExecitionTimes = {};
+// Track the last execution time for each category
+const lastCategoriesExecitionTimes = {};
 
 // Define options for delays and logging
 const options = {
-  globalDelay: 50, // Global delay in ms
+  globalDelay: 1,
   categoryDelays: {
-    Healing: 1000, // Delay for Healing category in ms
+    Healing: 1000,
     Potion: 1000,
-    Support: 500, // Delay for Support category in ms
-    Attack: 1000, // Delay for Attack category in ms
+    Support: 500,
+    Attack: 1000,
     Equip: 500,
-    // Add more categories as needed
   },
-  logsEnabled: false, // Disable logs by default
-};
-
-/**
- * Parse mathematical conditions for HP and mana triggers.
- * @param {string} condition - The mathematical condition to check.
- * @param {number} triggerPercentage - The trigger percentage value.
- * @param {number} actualPercentage - The actual percentage value to check against.
- * @returns {boolean} - True if the condition is met, false otherwise.
- */
-const parseMathCondition = (condition, triggerPercentage, actualPercentage) => {
-  // Check if gameState is valid and then evaluate the condition
-  if (gameState && gameState.hpPercentage > 0) {
-    switch (condition) {
-      case '<':
-        return actualPercentage < triggerPercentage;
-      case '<=':
-        return actualPercentage <= triggerPercentage;
-      case '=':
-        return actualPercentage === triggerPercentage;
-      case '>':
-        return actualPercentage > triggerPercentage;
-      case '>=':
-        return actualPercentage >= triggerPercentage;
-      case '!=':
-        return actualPercentage !== triggerPercentage;
-      default:
-        return false;
-    }
-  } else {
-    return false;
-  }
-};
-
-/**
- * Check if character status conditions are met.
- * @param {Object} rule - The rule object.
- * @param {Object} gameState - The game state object.
- * @returns {boolean} - True if all conditions are met, false otherwise.
- */
-const areCharStatusConditionsMet = (rule, gameState) => {
-  // Check each condition in the rule's conditions array
-  return rule.conditions.every((condition) => {
-    const charStatusValue = gameState.characterStatus[condition.name];
-    // If the condition's value is undefined or null, consider it met
-    if (charStatusValue === undefined || charStatusValue === null) {
-      return true;
-    }
-    return charStatusValue === condition.value;
-  });
+  logsEnabled: false,
 };
 
 /**
@@ -85,133 +40,154 @@ const areCharStatusConditionsMet = (rule, gameState) => {
  */
 const executeClick = async (key, category, ruleDelay, rule) => {
   const now = Date.now();
-  // Calculate the delay based on the highest of global, category, and rule-specific delays
-  const delay = Math.max(options.globalDelay, options.categoryDelays[category] || 0, ruleDelay);
-
-  // Log the execution and perform the click
   if (options.logsEnabled) {
     console.log(
       `Executing click for key: ${key}, category: ${category}, delay: ${ruleDelay}, current time: ${now}`,
     );
   }
   await keyPress(global.windowId, key);
-  lastExecutionTimes[rule.id] = now; // Update the last execution time
+  lastRuleExecitionTimes[rule.id] = now; // Update the last execution time of this individual rule
+  lastCategoriesExecitionTimes[rule.category] = now; // Update the last execution time of this category
 };
 
 /**
- * Process a single rule.
- * @param {Object} rule - The rule object.
- * @param {Object} gameState - The game state object.
- * @param {Object} global - The global object.
- * @returns {Promise<void>} - A Promise that resolves after the rule is processed.
+ * Filter rules by enabled status.
+ * @param {Object[]} rules - The list of rules.
+ * @returns {Object[]} - The filtered list of enabled rules.
  */
-const processRule = async (rule, gameState, global) => {
-  // Check if the bot is enabled and if the rule's conditions are met
-  if (!global || !global.botEnabled) return;
-
-  const hpConditionMet = parseMathCondition(
-    rule.hpTriggerCondition,
-    parseInt(rule.hpTriggerPercentage, 10),
-    gameState.hpPercentage,
-  );
-  const manaConditionMet = parseMathCondition(
-    rule.manaTriggerCondition,
-    parseInt(rule.manaTriggerPercentage, 10),
-    gameState.manaPercentage,
-  );
-
-  if (hpConditionMet && manaConditionMet && areCharStatusConditionsMet(rule, gameState)) {
-    const now = Date.now();
-    const lastExecutionTime = lastExecutionTimes[rule.id] || 0;
-    const delay = rule.delay || 0;
-
-    // Check if the rule's delay has passed since the last execution
-    if (now - lastExecutionTime >= delay) {
-      if (options.logsEnabled) {
-        console.log(`Processing rule: ${rule.name}, delay: ${delay}, current time: ${now}`);
-      }
-      await executeClick(rule.key, rule.category, delay, rule);
-    } else {
-      if (options.logsEnabled) {
-        console.log(
-          `Skipping rule: ${rule.name}, last execution time: ${lastExecutionTime}, current time: ${now}`,
-        );
-      }
-    }
-  }
-};
+const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
 
 /**
- * Process all rules within a category.
- * @param {string} category - The category to process.
+ * Filter rules by delay.
+ * @param {Object[]} rules - The list of rules.
+ * @param {number} now - The current time.
+ * @returns {Object[]} - The filtered list of rules not on delay.
+ */
+const filterRulesNotOnDelay = (rules, now) =>
+  rules.filter(
+    (rule) =>
+      now - (lastRuleExecitionTimes[rule.id] || 0) >= (rule.delay || 0) &&
+      now -
+        Math.max(
+          ...rules
+            .filter((r) => r.category === rule.category)
+            .map((r) => lastRuleExecitionTimes[r.id] || 0),
+        ) >=
+        options.categoryDelays[rule.category],
+  );
+
+/**
+ * Filter rules by active cooldowns.
+ * @param {Object[]} rules - The list of rules.
+ * @param {Object} gameState - The game state object.
+ * @returns {Object[]} - The filtered list of rules not affected by active cooldowns.
+ */
+const filterRulesByActiveCooldowns = (rules, gameState) =>
+  rules.filter(
+    (rule) =>
+      !(
+        (rule.category === 'Healing' && gameState.healingCdActive) ||
+        (rule.category === 'Support' && gameState.supportCdActive) ||
+        (rule.category === 'Attack' && gameState.attackCdActive)
+      ),
+  );
+
+/**
+ * Filter rules by conditions.
+ * @param {Object[]} rules - The list of rules.
+ * @param {Object} gameState - The game state object.
+ * @returns {Object[]} - The filtered list of rules that meet the conditions.
+ */
+const filterRulesByConditions = (rules, gameState) =>
+  rules.filter(
+    (rule) =>
+      parseMathCondition(
+        rule.hpTriggerCondition,
+        parseInt(rule.hpTriggerPercentage, 10),
+        gameState.hpPercentage,
+      ) &&
+      parseMathCondition(
+        rule.manaTriggerCondition,
+        parseInt(rule.manaTriggerPercentage, 10),
+        gameState.manaPercentage,
+      ) &&
+      areCharStatusConditionsMet(rule, gameState) &&
+      (rule.id !== 'manaSync' || gameState.attackCdActive), // Special case for "manaSync" rule
+  );
+
+/**
+ * Get the highest priority rule from a list of rules.
+ * @param {Object[]} rules - The list of rules.
+ * @returns {Object|null} - The highest priority rule or null if no rules are provided.
+ */
+const getHighestPriorityRule = (rules) =>
+  rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
+
+/**
+ * Process all rules.
  * @param {Object[]} rules - The list of rules.
  * @param {Object} gameState - The game state object.
  * @param {Object} global - The global object.
- * @returns {Promise<void>} - A Promise that resolves after all rules in the category are processed.
+ * @returns {Promise<void>} - A Promise that resolves after all rules are processed.
  */
-const processCategory = async (category, rules, gameState, global) => {
+const processRules = async (rules, gameState, global) => {
   // Check if the bot is enabled
   if (!global || !global.botEnabled) return;
 
   // Get the current time
   const now = Date.now();
 
-  // Filter rules by category, enabled status, and no active delays
-  let filteredRules = rules.filter(
-    (rule) =>
-      rule.enabled &&
-      rule.category === category &&
-      // Check if the rule's delay has passed since the last execution
-      now - (lastExecutionTimes[rule.id] || 0) >= (rule.delay || 0) &&
-      // Check if the category-specific delay has passed since the last execution of any rule in the category
-      now -
-        Math.max(
-          ...rules.filter((r) => r.category === category).map((r) => lastExecutionTimes[r.id] || 0),
-        ) >=
-        options.categoryDelays[category],
-  );
+  // Filter rules by enabled status, delay, and conditions
+  const enabledRules = filterEnabledRules(rules);
+  const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, gameState);
+  const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns, now);
+  const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, gameState);
 
-  // Special handling for the 'manaSync' rule in the 'Potion' category
-  if (category === 'Potion') {
-    // Include the 'manaSync' rule only if the attack cooldown is active
-    if (!gameState.attackCdActive) {
-      filteredRules = filteredRules.filter((rule) => rule.id !== 'manaSync');
-    }
-  }
+  // Get the highest priority rule
+  const highestPriorityRule = getHighestPriorityRule(rulesWithConditionsMet);
 
-  // Process each rule in the filtered list
-  for (const rule of filteredRules) {
-    await processRule(rule, gameState, global);
+  // Execute the highest priority rule if it exists
+  if (highestPriorityRule) {
+    await executeClick(
+      highestPriorityRule.key,
+      highestPriorityRule.category,
+      highestPriorityRule.delay,
+      highestPriorityRule,
+    );
   }
 };
 
 /**
- * Check healing rules and process them.
- * @returns {Promise<void>} - A Promise that resolves after all healing rules are processed.
+ * Continuously process rules in a loop.
  */
-async function checkHealingRules() {
-  if (!global || !global.botEnabled) return;
-
-  // Get unique categories from the healing rules
-  const categories = Array.from(new Set(healing.map((rule) => rule.category)));
-
-  // Process each category
-  await Promise.all(
-    categories.map((category) => processCategory(category, healing, gameState, global)),
-  );
-}
-
-/**
- * Continuously check healing rules in a loop.
- */
-function checkHealingRulesLoop() {
-  if (global && global.botEnabled) {
+function processRulesLoop() {
+  // Check if the bot is enabled and the loop is not already running
+  if (global && global.botEnabled && !isLoopRunning) {
+    isLoopRunning = true;
     if (options.logsEnabled) {
       console.log('new loop iteration', 'current time:', Date.now());
     }
-    checkHealingRules();
+
+    const localHealing = healing;
+    const localGameState = gameState;
+    const localGlobal = global;
+
+    // Call processRules and ensure it's awaited to complete before resetting the flag
+    processRules(localHealing, localGameState, localGlobal)
+      .then(() => {
+        isLoopRunning = false; // Reset the flag when the loop iteration is complete
+        // Schedule the next iteration of the loop
+        setTimeout(processRulesLoop, options.globalDelay);
+      })
+      .catch((error) => {
+        console.error('Error processing rules:', error);
+        isLoopRunning = false; // Ensure the flag is reset even if an error occurs
+        setTimeout(processRulesLoop, options.globalDelay);
+      });
+  } else {
+    // If the loop is already running or the bot is not enabled, schedule the next iteration
+    setTimeout(processRulesLoop, options.globalDelay);
   }
-  setTimeout(checkHealingRulesLoop, options.globalDelay);
 }
 
 /**
@@ -221,7 +197,7 @@ async function waitForBotEnabled() {
   while (!global || !global.botEnabled) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  checkHealingRulesLoop();
+  processRulesLoop();
 }
 
 // Start the loop after global.botEnabled becomes true

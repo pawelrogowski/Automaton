@@ -114,7 +114,7 @@ const HealingRule = ({ rule }) => {
             disabled={healing.enabled}
           >
             <option value="Healing">Healing</option>
-            <option value="Potions">Potions</option>
+            <option value="Potion">Potion</option>
             <option value="Support">Support</option>
             <option value="Attack">Attack</option>
             <option value="Equip">Equip</option>
