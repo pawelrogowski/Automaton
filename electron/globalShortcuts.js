@@ -1,10 +1,13 @@
-import { app, globalShortcut } from 'electron';
+// globalShortcuts.js
+import { globalShortcut } from 'electron';
 import { selectWindow } from './menus/windowSelection.js';
 import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
 import { getMainWindow } from './createMainWindow.js';
 import { resetWorkers } from './main.js';
+import { showNotification } from './notificationHandler.js';
 import pkg from 'lodash';
+
 const { debounce } = pkg;
 
 const debounceTime = 75;
@@ -13,16 +16,19 @@ const debouncedSelectActiveWindow = debounce(() => {
   console.log('Alt+0 shortcut clicked');
   resetWorkers();
   selectActiveWindow();
+  showNotification('Automaton', 'Window Picked');
 }, debounceTime);
 
 const debouncedSelectWindow = debounce(() => {
   console.log('Alt+Shift+0 shortcut clicked');
   selectWindow();
+  showNotification('Automaton', 'Window Selected');
 }, debounceTime);
 
 const debouncedToggleBotEnabled = debounce(() => {
   console.log('Alt+1 shortcut clicked');
   setGlobalState('global/toggleBotEnabled');
+  showNotification('Automaton', 'Bot Enabled/Disabled');
 }, debounceTime);
 
 const debouncedToggleMainWindowVisibility = debounce(() => {
@@ -31,6 +37,7 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
   if (mainWindow) {
     if (mainWindow.isVisible()) {
       mainWindow.hide();
+      showNotification('Automaton', 'hidden to tray');
     } else {
       mainWindow.show();
     }

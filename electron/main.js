@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
-
+import { showNotification } from './notificationHandler.js';
 import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
@@ -115,12 +115,16 @@ const saveRulesToFile = () => {
           ? result.filePath
           : `${result.filePath}.json`;
         fs.writeFileSync(filePath, JSON.stringify(rules, null, 2));
+        // Show notification with the file name
+        showNotification('Automaton', `Rules saved successfully | ${path.basename(filePath)}`);
       }
       // Restore the main window
       if (mainWindow) mainWindow.restore();
     })
     .catch((err) => {
       console.error('Failed to save rules:', err);
+      // Show notification for error
+      showNotification('Automaton', 'Failed to save rules');
       // Restore the main window in case of error
       if (mainWindow) mainWindow.restore();
     });
@@ -142,17 +146,23 @@ const loadRulesFromFile = () => {
         const loadedRules = JSON.parse(content);
         store.dispatch({ type: 'healing/loadRules', payload: loadedRules }); // Dispatch action to update state with loaded rules
         setGlobalState('healing/loadRules', loadedRules); // Notify the renderer process
+        // Show notification with the file name
+        showNotification(
+          'Automaton',
+          `Rules loaded successfully | ${path.basename(result.filePaths[0])}`,
+        );
       }
       // Restore the main window
       if (mainWindow) mainWindow.restore();
     })
     .catch((err) => {
       console.error('Failed to load rules:', err);
+      // Show notification for error
+      showNotification('Automaton', 'Failed to load rules');
       // Restore the main window in case of error
       if (mainWindow) mainWindow.restore();
     });
 };
-
 const autoSaveRules = () => {
   try {
     const rules = store.getState().healing;
