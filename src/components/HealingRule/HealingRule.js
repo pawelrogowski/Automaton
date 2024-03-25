@@ -161,7 +161,7 @@ const HealingRule = ({ rule }) => {
           <ListInput
             className="input-percent"
             type="number"
-            min="1"
+            min="0"
             max="100"
             step="1"
             id="hpTriggerPercentage"
@@ -198,7 +198,7 @@ const HealingRule = ({ rule }) => {
           </select>
           <ListInput
             type="number"
-            min="1"
+            min="0"
             max="100"
             step="1"
             className="input input-percent"

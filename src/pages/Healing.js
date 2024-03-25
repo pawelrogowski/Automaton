@@ -141,7 +141,8 @@ export const Healing = () => {
                 </h5>
               </div>
 
-              <div className="mana-sync-row">
+              <div className="mana-sync-row mana-sync-hotkey">
+                <h5>HK:</h5>
                 <ListSelect
                   className="input-hotkey input-field"
                   id="manaSyncKey"
@@ -162,10 +163,9 @@ export const Healing = () => {
                     </option>
                   ))}
                 </ListSelect>
-
-                <h5>Hotkey</h5>
               </div>
               <div className="mana-sync-row">
+                <h5>Mana%:</h5>
                 <ListInput
                   type="number"
                   className="input-percent input-field"
@@ -176,7 +176,6 @@ export const Healing = () => {
                   min="1"
                   max="100"
                 />
-                <h5>Max Mana %</h5>
               </div>
             </div>
           )}

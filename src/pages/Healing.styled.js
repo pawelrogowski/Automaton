@@ -27,8 +27,9 @@ const StyledMain = styled.main`
   }
   .mana-sync-column {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    flex-direction: row;
+    gap: 4px;
+    width: 100%;
   }
   .enable-wrapper {
     display: flex;
@@ -133,7 +134,10 @@ const StyledMain = styled.main`
   .mana-sync-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 2px;
+  }
+  .mana-sync-hotkey {
+    margin-left: auto;
   }
   .mana-sync-row-text {
     font-size: 10px;
@@ -146,6 +150,7 @@ const StyledMain = styled.main`
   h5 {
     margin: 0;
     color: rgb(175, 175, 175);
+    font-size: 12px;
   }
   .list-wrapper {
     display: flex;
