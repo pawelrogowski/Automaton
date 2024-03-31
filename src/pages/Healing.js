@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { Heart, Zap } from 'react-feather';
-import Switch from 'react-switch';
 import HealingRule from '../components/HealingRule/HealingRule.js';
-import { addRule, reorderRules, updateManaSync } from '../redux/slices/healingSlice.js';
+import { addRule, updateManaSync } from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
-import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
+import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
 import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
 import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
@@ -20,11 +18,14 @@ export const Healing = () => {
   const dispatch = useDispatch();
   const rules = useSelector((state) => state.healing);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
-  const { windowId, botEnabled } = useSelector((state) => state.global);
+  const { windowId, botEnabled, refreshRate } = useSelector((state) => state.global);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
-  const manaSyncRule = useSelector((state) => state.healing.find((rule) => rule.id === 'manaSync'));
 
-  const [inputValue, setInputValue] = useState(manaSyncRule.manaTriggerPercentage || '50');
+  const manaSyncRule = useSelector((state) =>
+    state.healing.find((rule) => rule.id === 'manaSync'),
+  ) || { manaTriggerPercentage: '80' };
+  const [inputValue, setInputValue] = useState(manaSyncRule.manaTriggerPercentage || '80');
+
   const debounceTimeout = useRef(null);
 
   useEffect(() => {
@@ -55,31 +56,26 @@ export const Healing = () => {
     dispatch(setIsBotEnabled(!botEnabled));
   };
 
-  const handleDragEnd = (result) => {
-    if (!result.destination) return;
-    dispatch(
-      reorderRules({
-        startIndex: result.source.index,
-        endIndex: result.destination.index,
-      }),
-    );
-  };
-
   const handleManaSyncPercentageChange = (event) => {
     const value = event.target.value;
-    setInputValue(value); // Update the local state immediately
+    if (value !== undefined) {
+      setInputValue(value); // Update the local state immediately
 
-    clearTimeout(debounceTimeout.current);
-    debounceTimeout.current = setTimeout(() => {
-      if (value !== undefined) {
+      clearTimeout(debounceTimeout.current);
+      debounceTimeout.current = setTimeout(() => {
         dispatch(
           updateManaSync({
             key: manaSyncRule.key,
             manaTriggerPercentage: value,
           }),
         );
-      }
-    }, 500); // Adjust the delay as needed
+      }, 500); // Adjust the delay as needed
+    }
+  };
+
+  const handleRefreshRateChange = (event) => {
+    const value = event.target.value;
+    dispatch(setRefreshRate(value));
   };
 
   const { saveRules, loadRules } = window.electron;
@@ -105,6 +101,20 @@ export const Healing = () => {
             <StatBar value={manaPercentage} fill={`#3800a1`} />
             <Zap size={16} className="mp-icon" />
           </div>
+        </div>
+        <div className="refresh-rate-row">
+          <h5>Update every:</h5>
+          <ListInput
+            type="number"
+            className="input-percent input-field input-long"
+            id="refreshRate"
+            value={refreshRate}
+            onChange={handleRefreshRateChange}
+            placeholder="50"
+            min="0"
+            max="10000"
+          />
+          <h5>ms</h5>
         </div>
       </StyledSection>
       <StyledSection>
@@ -193,35 +203,11 @@ export const Healing = () => {
             </button>
           </div>
           <RuleListWrapper>
-            <DragDropContext onDragEnd={handleDragEnd}>
-              <Droppable droppableId="rules">
-                {(provided) => (
-                  <div {...provided.droppableProps} ref={provided.innerRef}>
-                    {rules
-                      .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
-                      .map((rule, index) => (
-                        <Draggable
-                          key={rule.id}
-                          draggableId={rule.id}
-                          index={index}
-                          isDragDisabled={true}
-                        >
-                          {(provided) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                            >
-                              <HealingRule rule={rule} />
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                    {provided.placeholder}
-                  </div>
-                )}
-              </Droppable>
-            </DragDropContext>
+            {rules
+              .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
+              .map((rule, index) => (
+                <HealingRule key={rule.id} rule={rule} />
+              ))}
           </RuleListWrapper>
         </SunkenWrapper>
       </StyledSection>

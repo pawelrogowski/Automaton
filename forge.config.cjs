@@ -13,6 +13,16 @@ module.exports = {
         },
       },
     },
+
+    {
+      name: '@electron-forge/maker-rpm',
+      config: {
+        options: {
+          executableName: 'automaton',
+          icon: './electron/icons/skull.png',
+        },
+      },
+    },
   ],
   plugins: [
     {

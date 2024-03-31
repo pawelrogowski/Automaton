@@ -1,20 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
-import Switch from 'react-switch';
-import { Trash2, PlusCircle } from 'react-feather';
-import ColorDisplay from '../ColorDisplay/ColorDisplay.js';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import {
-  updateRule,
-  addColor,
-  removeColor,
-  toggleColor,
-  removeRule,
-  updateCondition,
-} from '../../redux/slices/healingSlice.js';
+import { updateRule, removeRule, updateCondition } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -27,21 +17,12 @@ const HealingRule = ({ rule }) => {
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
   const [localHealing, setLocalHealing] = useState(healing);
   const [isOpen, setIsOpen] = useState(false);
-  const [characterStatusValue, setCharacterStatusValue] = useState(true);
-  const [selectedStatus, setSelectedStatus] = useState('');
+
   const [statusConditions, setStatusConditions] = useState({});
 
   useEffect(() => {
     dispatch(updateRule(localHealing));
   }, [localHealing]);
-
-  const handleColorPick = async () => {
-    const colorData = await api.pickColor();
-    if (colorData) {
-      const { color, x, y } = colorData;
-      dispatch(addColor({ id: healing.id, color, x, y }));
-    }
-  };
 
   const handleStatusConditionChange = (status, value) => {
     setStatusConditions((prevState) => ({
@@ -79,7 +60,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing((prevLocalHealing) => ({
                 ...prevLocalHealing,
                 enabled: !prevLocalHealing.enabled,
-                colors: healing.colors,
                 conditions: prevLocalHealing.conditions,
               }))
             }
@@ -94,7 +74,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing({
                 ...localHealing,
                 name: event.target.value,
-                colors: healing.colors,
               })
             }
             placeholder="Rule Name"
@@ -146,7 +125,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing({
                 ...localHealing,
                 hpTriggerCondition: event.target.value,
-                colors: healing.colors,
               })
             }
             disabled={healing.enabled}
@@ -170,7 +148,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing({
                 ...localHealing,
                 hpTriggerPercentage: event.target.value,
-                colors: healing.colors,
               })
             }
             placeholder="0"
@@ -184,7 +161,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing({
                 ...localHealing,
                 manaTriggerCondition: event.target.value,
-                colors: healing.colors,
               })
             }
             disabled={healing.enabled}
@@ -209,7 +185,6 @@ const HealingRule = ({ rule }) => {
                 setLocalHealing({
                   ...localHealing,
                   manaTriggerPercentage: event.target.value,
-                  colors: healing.colors,
                 });
               }
             }}
@@ -225,7 +200,6 @@ const HealingRule = ({ rule }) => {
               setLocalHealing({
                 ...localHealing,
                 priority: event.target.value,
-                colors: healing.colors,
               })
             }
             min="0"
@@ -277,13 +251,7 @@ HealingRule.propTypes = {
     name: PropTypes.string,
     enabled: PropTypes.bool,
     key: PropTypes.string,
-    colors: PropTypes.arrayOf(
-      PropTypes.shape({
-        id: PropTypes.string.isRequired,
-        color: PropTypes.string,
-        enabled: PropTypes.bool,
-      }),
-    ),
+
     // eslint-disable-next-line react/forbid-prop-types
     conditions: PropTypes.arrayOf(PropTypes.object),
   }).isRequired,

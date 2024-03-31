@@ -32,8 +32,8 @@ store.subscribe(() => {
   const { windowId } = global;
 
   // forward state to healing worker
-  if (HealingWorker) {
-    HealingWorker.postMessage(state);
+  if (ScreenMonitor) {
+    ScreenMonitor.postMessage(state);
   }
 
   // reset all workers on windowId change
@@ -70,19 +70,19 @@ store.subscribe(() => {
     ScreenMonitor.postMessage(state);
   }
 
-  if (!HealingWorker && state) {
-    const healingPath = resolve(cwd, './workers', 'healing.js');
-    HealingWorker = new Worker(healingPath, { name: 'HealingWorker' });
-    console.log('Healing processor started from main.js');
-    HealingWorker.on('error', (error) => {
-      console.error('An error occurred in the worker:', error);
-      console.log('Restarting the worker...');
-      HealingWorker.terminate();
-      HealingWorker = null;
-      store.dispatch({ type: 'SET_STATE', payload: state }); // Dispatch an action to trigger the worker restart
-    });
-    HealingWorker.postMessage(state);
-  }
+  // if (!HealingWorker && state) {
+  //   const healingPath = resolve(cwd, './workers', 'healing.js');
+  //   HealingWorker = new Worker(healingPath, { name: 'HealingWorker' });
+  //   console.log('Healing processor started from main.js');
+  //   HealingWorker.on('error', (error) => {
+  //     console.error('An error occurred in the worker:', error);
+  //     console.log('Restarting the worker...');
+  //     HealingWorker.terminate();
+  //     HealingWorker = null;
+  //     store.dispatch({ type: 'SET_STATE', payload: state }); // Dispatch an action to trigger the worker restart
+  //   });
+  //   HealingWorker.postMessage(state);
+  // }
 
   prevWindowId = windowId;
 });
@@ -116,7 +116,7 @@ const saveRulesToFile = () => {
           : `${result.filePath}.json`;
         fs.writeFileSync(filePath, JSON.stringify(rules, null, 2));
         // Show notification with the file name
-        showNotification('Automaton', `Rules saved successfully | ${path.basename(filePath)}`);
+        showNotification('Automaton', `📥 Saved | ${path.basename(filePath)}`);
       }
       // Restore the main window
       if (mainWindow) mainWindow.restore();
@@ -124,7 +124,7 @@ const saveRulesToFile = () => {
     .catch((err) => {
       console.error('Failed to save rules:', err);
       // Show notification for error
-      showNotification('Automaton', 'Failed to save rules');
+      showNotification('Automaton', '❌ Failed to save rules');
       // Restore the main window in case of error
       if (mainWindow) mainWindow.restore();
     });
@@ -147,10 +147,7 @@ const loadRulesFromFile = () => {
         store.dispatch({ type: 'healing/loadRules', payload: loadedRules }); // Dispatch action to update state with loaded rules
         setGlobalState('healing/loadRules', loadedRules); // Notify the renderer process
         // Show notification with the file name
-        showNotification(
-          'Automaton',
-          `Rules loaded successfully | ${path.basename(result.filePaths[0])}`,
-        );
+        showNotification('Automaton', `📤 Loaded | ${path.basename(result.filePaths[0])}`);
       }
       // Restore the main window
       if (mainWindow) mainWindow.restore();
@@ -158,7 +155,7 @@ const loadRulesFromFile = () => {
     .catch((err) => {
       console.error('Failed to load rules:', err);
       // Show notification for error
-      showNotification('Automaton', 'Failed to load rules');
+      showNotification('Automaton', '❌ Failed to load rules');
       // Restore the main window in case of error
       if (mainWindow) mainWindow.restore();
     });

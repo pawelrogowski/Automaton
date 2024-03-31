@@ -4,6 +4,10 @@ const StyledDiv = styled.div`
   position: relative;
   display: flex;
   flex-direction: column;
+  &:hover {
+    z-index: 500;
+    outline: 2px solid rgba(255, 255, 255, 0.6) !important;
+  }
   summary {
     cursor: pointer;
     display: flex;

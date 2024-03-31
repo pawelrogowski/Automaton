@@ -6,14 +6,19 @@ const MainLayout = styled.div`
   width: 100vw;
   min-height: 100vh;
   padding-top: 20px;
+  flex-grow: 1;
   > div {
     padding: 1px;
     border: 1px solid #717171;
-    height: 100%;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    min-height: calc(100dvh - 26px);
     > div {
       padding: 3px;
-      border: 1px solid #262727;
-      height: 100%;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
     }
   }
 `;

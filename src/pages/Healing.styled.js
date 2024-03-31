@@ -143,6 +143,14 @@ const StyledMain = styled.main`
     font-size: 10px;
     color: rgb(175, 175, 175);
   }
+  .refresh-rate-row {
+    font-size: 8px;
+    color: rgb(175, 175, 175);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
   .mana-sync-checkbox-text {
     font-size: 12px;
     color: rgb(175, 175, 175);
@@ -169,6 +177,9 @@ const StyledMain = styled.main`
       font-size: 12px;
       color: rgb(175, 175, 175);
     }
+  }
+  .input-long {
+    width: 84px;
   }
 `;
 export default StyledMain;

@@ -5,14 +5,13 @@ const initialState = [
     name: 'manaSync',
     enabled: false,
     key: 'F12',
-    colors: [],
     id: 'manaSync',
     hpTriggerCondition: '>=',
     hpTriggerPercentage: '1',
     manaTriggerCondition: '<=',
     manaTriggerPercentage: '80',
     priority: '0',
-    delay: '1800',
+    delay: '1000',
     category: 'Potion',
     conditions: [
       {
@@ -78,38 +77,7 @@ const healingSlice = createSlice({
         );
       }
     },
-    addColor: (state, action) => {
-      const index = state.findIndex((rule) => rule.id === action.payload.id);
-      if (index !== -1) {
-        const color = {
-          id: Date.now().toString(),
-          color: action.payload.color,
-          enabled: true,
-          x: action.payload.x,
-          y: action.payload.y,
-        };
-        state[index].colors.push(color);
-      }
-    },
-    removeColor: (state, action) => {
-      const index = state.findIndex((rule) => rule.id === action.payload.id);
-      if (index !== -1) {
-        state[index].colors = state[index].colors.filter(
-          (color) => color.id !== action.payload.colorId,
-        );
-      }
-    },
-    toggleColor: (state, action) => {
-      const index = state.findIndex((rule) => rule.id === action.payload.id);
-      if (index !== -1) {
-        const colorIndex = state[index].colors.findIndex(
-          (color) => color.id === action.payload.colorId, // Find the color by its ID
-        );
-        if (colorIndex !== -1) {
-          state[index].colors[colorIndex].enabled = !state[index].colors[colorIndex].enabled;
-        }
-      }
-    },
+
     updateManaSync: (state, action) => {
       const { key, manaTriggerPercentage, enabled } = action.payload;
       const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
@@ -121,17 +89,10 @@ const healingSlice = createSlice({
         manaSyncRule.hpTriggerPercentage = '0';
         manaSyncRule.manaTriggerCondition = '<=';
         manaSyncRule.priority = '0';
-        manaSyncRule.delay = '2050';
-        manaSyncRule.colors = [];
+        manaSyncRule.delay = '1000';
         manaSyncRule.conditions = [];
         manaSyncRule.name = 'manaSync';
       }
-    },
-
-    reorderRules: (state, action) => {
-      const { startIndex, endIndex } = action.payload;
-      const [removed] = state.splice(startIndex, 1);
-      state.splice(endIndex, 0, removed);
     },
     loadRules: (state, action) => {
       return action.payload;
@@ -143,10 +104,6 @@ export const {
   addRule,
   removeRule,
   updateRule,
-  addColor,
-  removeColor,
-  toggleColor,
-  reorderRules,
   loadRules,
   updateCondition,
   removeCondition,

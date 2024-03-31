@@ -1,5 +1,4 @@
 import createX11Client from './createX11Client.js';
-import findWindowById from './findWindowById.js';
 
 /**
  * Grabs the screen content of a specific window.
@@ -11,17 +10,9 @@ import findWindowById from './findWindowById.js';
  */
 async function grabScreen(windowId, region, measureTime) {
   try {
-    if (measureTime) {
-      console.time('grabScreen');
-    }
-
     const { X } = await createX11Client();
-    const foundWindowId = await new Promise((resolve, reject) => {
-      findWindowById(X, windowId, windowId, (windowId) => resolve(windowId));
-    });
-
     const geom = await new Promise((resolve, reject) => {
-      X.GetGeometry(foundWindowId, (err, geom) => {
+      X.GetGeometry(windowId, (err, geom) => {
         if (err) {
           reject(err);
         } else {
@@ -31,11 +22,7 @@ async function grabScreen(windowId, region, measureTime) {
     });
 
     const captureRegion = region || geom;
-    const image = await getImageFromWindow(X, foundWindowId, captureRegion, windowId, region);
-
-    if (measureTime) {
-      console.timeEnd('grabScreen');
-    }
+    const image = await getImageFromWindow(X, windowId, captureRegion, region);
 
     return image;
   } catch (error) {
@@ -44,7 +31,7 @@ async function grabScreen(windowId, region, measureTime) {
   }
 }
 
-async function getImageFromWindow(X, windowId, captureRegion, originalWindowId, region) {
+async function getImageFromWindow(X, windowId, captureRegion, region) {
   return new Promise((resolve, reject) => {
     X.GetImage(
       2,
@@ -59,10 +46,8 @@ async function getImageFromWindow(X, windowId, captureRegion, originalWindowId, 
           if (error.message.includes('Bad match')) {
             console.log('Window is minimized, waiting for it to be maximized...');
             setTimeout(() => {
-              getImageFromWindow(X, originalWindowId, region, originalWindowId, region)
-                .then(resolve)
-                .catch(reject);
-            }, 250);
+              getImageFromWindow(X, windowId, region, windowId, region).then(resolve).catch(reject);
+            }, 25);
           } else {
             console.log('error GrabScreen Callback');
             reject(new Error(`X.GetImage failed: ${error.message}`));

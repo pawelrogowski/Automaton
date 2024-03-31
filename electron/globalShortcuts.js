@@ -1,4 +1,3 @@
-// globalShortcuts.js
 import { globalShortcut } from 'electron';
 import { selectWindow } from './menus/windowSelection.js';
 import { selectActiveWindow } from './menus/windowSelection.js';
@@ -7,28 +6,59 @@ import { getMainWindow } from './createMainWindow.js';
 import { resetWorkers } from './main.js';
 import { showNotification } from './notificationHandler.js';
 import pkg from 'lodash';
-
+import store from './store.js';
 const { debounce } = pkg;
-
 const debounceTime = 75;
+
+let windId = '';
+let windTitle = '';
+let isEnabled = false;
+
+store.subscribe(() => {
+  const state = store.getState();
+  const { global } = state;
+  const { windowId, botEnabled } = global;
+  windId = windowId;
+  isEnabled = botEnabled;
+});
 
 const debouncedSelectActiveWindow = debounce(() => {
   console.log('Alt+0 shortcut clicked');
   resetWorkers();
   selectActiveWindow();
-  showNotification('Automaton', 'Window Picked');
+  setTimeout(() => {
+    showNotification('Automaton', `🔐 Window Selected - ${windId}`);
+  }, 100);
 }, debounceTime);
 
 const debouncedSelectWindow = debounce(() => {
   console.log('Alt+Shift+0 shortcut clicked');
   selectWindow();
-  showNotification('Automaton', 'Window Selected');
+  setTimeout(() => {
+    showNotification('Automaton', `🔐 Window Selected - ${windId}`);
+  }, 100);
 }, debounceTime);
 
 const debouncedToggleBotEnabled = debounce(() => {
   console.log('Alt+1 shortcut clicked');
   setGlobalState('global/toggleBotEnabled');
-  showNotification('Automaton', 'Bot Enabled/Disabled');
+  console.log(isEnabled);
+  if (isEnabled) {
+    showNotification('Automaton', '🟢 Bot Enabled');
+  } else {
+    showNotification('Automaton', '🔴 Bot Disabled');
+  }
+}, debounceTime);
+
+const debouncedToggleManaSync = debounce(() => {
+  console.log('Alt+S shortcut clicked');
+  setGlobalState('global/toggleBotEnabled');
+  console.log(isEnabled);
+  if (isEnabled) {
+    showNotification('Automaton', '🟢 Bot Enabled');
+  } else {
+    showNotification('Automaton', '🔴 Bot Disabled');
+  }
 }, debounceTime);
 
 const debouncedToggleMainWindowVisibility = debounce(() => {
@@ -37,7 +67,7 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
   if (mainWindow) {
     if (mainWindow.isVisible()) {
       mainWindow.hide();
-      showNotification('Automaton', 'hidden to tray');
+      showNotification('Automaton', '🙈 Hidden');
     } else {
       mainWindow.show();
     }
