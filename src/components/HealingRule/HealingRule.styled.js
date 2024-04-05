@@ -94,7 +94,7 @@ const StyledDiv = styled.div`
     }
   }
   .button-expand {
-    font-size: 16px;
+    font-size: 13px;
     width: 22px;
     height: 22px;
   }

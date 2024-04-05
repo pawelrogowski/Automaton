@@ -187,7 +187,7 @@ const processRules = async (rules, gameState, global) => {
 
 async function main() {
   if (global.windowId) {
-    const { width, height } = await getViewport(global.windowId);
+    const { width } = await getViewport(global.windowId);
     const imageData = await grabScreen(global.windowId);
     const startRegions = await findSequences(imageData, regionColorSequences, width);
     const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
@@ -221,8 +221,6 @@ async function main() {
     };
 
     async function loop() {
-      const startTime = performance.now();
-
       // wholeWindowData = await grabScreen(global.windowId);
       [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
         grabScreen(global.windowId, hpManaRegion),
@@ -330,22 +328,6 @@ async function main() {
       if (global.botEnabled) {
         await processRules(healing, gameState, global);
       }
-      // Explicitly release the memory used by the image data
-      hpManaImageData = null;
-      cooldownBarImageData = null;
-      statusBarImageData = null;
-      cooldownBarRegions = null;
-      statusBarRegions = null;
-      wholeWindowData = null;
-
-      const endTime = performance.now();
-      const iterationDuration = endTime - startTime;
-      totalExecutionTime += iterationDuration;
-      iterationCounter++;
-
-      // Calculate and log the average execution time
-      const averageExecutionTime = totalExecutionTime / iterationCounter;
-      // console.log('Average iteration execution time:', averageExecutionTime);
 
       setTimeout(loop, Math.max(global.refreshRate, 25));
     }

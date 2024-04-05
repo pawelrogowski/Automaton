@@ -90,7 +90,7 @@ export const Healing = () => {
 
   return (
     <StyledMain>
-      <StyledSection>
+      <StyledSection className="setting-section">
         <div className="bar-container">
           <div className="health-bar">
             <StatBar value={hpPercentage} fill={`#d10000`} />
@@ -102,36 +102,34 @@ export const Healing = () => {
             <Zap size={16} className="mp-icon" />
           </div>
         </div>
-        <div className="refresh-rate-row">
-          <h5>Update every:</h5>
-          <ListInput
-            type="number"
-            className="input-percent input-field input-long"
-            id="refreshRate"
-            value={refreshRate}
-            onChange={handleRefreshRateChange}
-            placeholder="50"
-            min="0"
-            max="10000"
-          />
-          <h5>ms</h5>
-        </div>
-      </StyledSection>
-      <StyledSection>
-        <SunkenWrapper>
+
+        <div className="settings-row">
           <div className="enable-wrapper">
             <CustomCheckbox
               checked={botEnabled}
               onChange={handleHealingToggle}
               disabled={windowId === null}
-              size={24}
+              size={16}
             />
-            <h2 className="enable-text">Enable (Alt+1)</h2>
+            <h2 className="enable-text">Enabled</h2>
           </div>
-        </SunkenWrapper>
-        <SunkenWrapper>
+
+          <div className="refresh-rate-row">
+            <h5>refresh</h5>
+            <ListInput
+              type="number"
+              className="input-percent input-field input-long"
+              id="refreshRate"
+              value={refreshRate}
+              onChange={handleRefreshRateChange}
+              placeholder="50"
+              min="25"
+              max="2000"
+            />
+            <h5>ms</h5>
+          </div>
           {manaSyncRule && (
-            <div className="mana-sync-column">
+            <div className="mana-sync-column margin-left">
               <div className="mana-sync-row">
                 <CustomCheckbox
                   checked={manaSyncRule.enabled}
@@ -147,7 +145,7 @@ export const Healing = () => {
                   size={18}
                 />
                 <h5 className="mana-sync-row-text mana-sync-checkbox-text">
-                  Sync Mana Pot with Attack Spells/Runes
+                  Sync HK with Attack CD:
                 </h5>
               </div>
 
@@ -189,7 +187,9 @@ export const Healing = () => {
               </div>
             </div>
           )}
-        </SunkenWrapper>
+        </div>
+      </StyledSection>
+      <StyledSection>
         <SunkenWrapper className="list-wrapper">
           <div className="button-container">
             <button className="add-button button-page" type="button" onClick={handleAddRule}>

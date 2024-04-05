@@ -1,57 +1,65 @@
 import { BrowserWindow, app, Tray, Menu, dialog } from 'electron';
 import path from 'path';
 import url, { fileURLToPath } from 'url';
+import { loadRulesFromFile, resetWorkers, saveRulesToFile } from './main.js';
+import { selectWindow } from './menus/windowSelection.js';
 
-// Reference to the main window and tray icon
 let mainWindow;
 let tray;
 
-// Determine the directory of the current file
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-/**
- * Creates the main application window.
- */
 export const createMainWindow = () => {
-  // Create the main window with specified dimensions and settings
   mainWindow = new BrowserWindow({
-    width: 911,
-    height: 728,
-    minWidth: 911,
-    minHeight: 728,
+    width: 760,
+    height: 76,
+    minWidth: 330,
+    minHeight: 33,
     icon: path.join(dirname, './skull.png'),
     webPreferences: {
-      nodeIntegration: false, // Disable Node.js integration for security
-      contextIsolation: true, // Isolate the context to prevent potential security issues
-      preload: path.join(dirname, '/preload.js'), // Specify the preload script
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(dirname, '/preload.js'),
     },
-    autoHideMenuBar: true, // Hide the menu bar by default
+    autoHideMenuBar: true,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
   });
 
   // Open the developer tools for debugging
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 
-  // Determine the URL to load in the main window
-  const startUrl =
-    process.env.ELECTRON_START_URL ||
+  mainWindow.loadURL(
     url.format({
       pathname: path.join(dirname, '../dist/index.html'),
       protocol: 'file:',
       slashes: true,
-    });
+    }),
+  );
 
-  // Load the URL in the main window
-  mainWindow.loadURL(startUrl);
-
-  // Create a tray icon for the application
   tray = new Tray(path.join(dirname, './icons/skull.png'));
 
   // Set up the context menu for the tray icon
   const trayContextMenu = Menu.buildFromTemplate([
-    { label: 'Show', click: () => mainWindow.show() },
-    { label: 'Hide', click: () => mainWindow.hide() },
+    {
+      label: 'Show/Hide',
+      click: () => {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+        }
+      },
+    },
     { type: 'separator' },
+    { label: 'Select Window', click: () => selectWindow() },
+    { label: 'Reset Engine', click: () => resetWorkers() },
+    { type: 'separator' },
+    { label: 'Load Settings', click: () => loadRulesFromFile() },
+    { label: 'Save Settings', click: () => saveRulesToFile() },
+    { type: 'separator', label: 'save/load' },
     { label: 'Close', click: () => app.quit() },
   ]);
 
@@ -98,6 +106,16 @@ export const createMainWindow = () => {
         }
       });
     }
+  });
+  win.webContents.on('zoom-changed', (event, zoomDirection) => {
+    let currentZoomFactor = win.webContents.getZoomFactor();
+    if (zoomDirection === 'in') {
+      currentZoomFactor += 0.1;
+    } else if (zoomDirection === 'out') {
+      currentZoomFactor -= 0.1;
+    }
+
+    win.webContents.setZoomFactor(currentZoomFactor);
   });
 };
 

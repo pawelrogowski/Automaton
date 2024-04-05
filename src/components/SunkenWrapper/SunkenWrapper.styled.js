@@ -5,8 +5,7 @@ export const StyledDiv = styled.div`
   border-left: 2px solid #2c2c2c;
   border-bottom: 2px solid #757676;
   border-right: 2px solid #757676;
-  padding: 4px;
+  padding: 1px;
   align-items: center;
   display: flex;
-  margin-bottom: 4px;
 `;

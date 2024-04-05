@@ -23,9 +23,6 @@ let mainWindow = getMainWindow;
 const userDataPath = app.getPath('userData');
 const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
 
-app.commandLine.appendSwitch('inspect', 'true');
-app.commandLine.appendSwitch('inspect-brk', '9222');
-
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
@@ -42,16 +39,12 @@ store.subscribe(() => {
       ScreenMonitor.terminate();
       ScreenMonitor = null;
     }
-    if (HealingWorker) {
-      HealingWorker.terminate();
-      HealingWorker = null;
-    }
   }
 
   // Start a new worker with the updated state.
   if (!ScreenMonitor && windowId) {
-    const statCheckPath = resolve(cwd, './workers', 'screenMonitor.js');
-    ScreenMonitor = new Worker(statCheckPath, { name: 'screeenMonitor.js' });
+    const screenMonitorWorkerPath = resolve(cwd, './workers', 'screenMonitor.js');
+    ScreenMonitor = new Worker(screenMonitorWorkerPath, { name: 'screeenMonitor.js' });
     console.log('screen monitor started from main.js');
     ScreenMonitor.on('message', (message) => {
       if (message.type) {
@@ -62,27 +55,10 @@ store.subscribe(() => {
     });
     ScreenMonitor.on('error', (error) => {
       console.error('An error occurred in the worker:', error);
-      console.log('Restarting the worker...');
-      ScreenMonitor.terminate();
-      ScreenMonitor = null;
-      store.dispatch({ type: 'SET_WINDOW_ID', payload: windowId }); // Dispatch an action to trigger the worker restart
+      resetWorkers();
     });
     ScreenMonitor.postMessage(state);
   }
-
-  // if (!HealingWorker && state) {
-  //   const healingPath = resolve(cwd, './workers', 'healing.js');
-  //   HealingWorker = new Worker(healingPath, { name: 'HealingWorker' });
-  //   console.log('Healing processor started from main.js');
-  //   HealingWorker.on('error', (error) => {
-  //     console.error('An error occurred in the worker:', error);
-  //     console.log('Restarting the worker...');
-  //     HealingWorker.terminate();
-  //     HealingWorker = null;
-  //     store.dispatch({ type: 'SET_STATE', payload: state }); // Dispatch an action to trigger the worker restart
-  //   });
-  //   HealingWorker.postMessage(state);
-  // }
 
   prevWindowId = windowId;
 });
@@ -92,13 +68,9 @@ export const resetWorkers = () => {
     ScreenMonitor.terminate();
     ScreenMonitor = null;
   }
-  if (HealingWorker) {
-    HealingWorker.terminate();
-    HealingWorker = null;
-  }
 };
 
-const saveRulesToFile = () => {
+export const saveRulesToFile = () => {
   const rules = store.getState().healing;
   // Minimize the main window
   if (mainWindow) mainWindow.minimize();
@@ -130,7 +102,7 @@ const saveRulesToFile = () => {
     });
 };
 
-const loadRulesFromFile = () => {
+export const loadRulesFromFile = () => {
   // Minimize the main window
   if (mainWindow) mainWindow.minimize();
 

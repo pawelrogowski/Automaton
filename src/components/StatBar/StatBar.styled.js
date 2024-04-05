@@ -2,22 +2,25 @@ import styled from 'styled-components';
 
 const StyledDiv = styled.div`
   display: flex;
-  gap: 16px;
+  gap: 8px;
+  align-items: center;
   width: 100%;
   > span {
-    font-size: 14px;
+    font-size: 12px;
+    line-height: 0.9;
     color: #fff;
     mix-blend-mode: difference;
     white-space: nowrap;
     min-width: 42px;
     margin-left: auto;
+    margin-top: -2px;
   }
   > div {
     border-top: 2px solid #2c2c2c;
     border-left: 2px solid #2c2c2c;
     border-bottom: 2px solid #757676;
     border-right: 2px solid #757676;
-    height: 22px;
+    height: 16px;
     width: 100%;
     position: relative;
     overflow: hidden;

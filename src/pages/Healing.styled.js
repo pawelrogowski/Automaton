@@ -2,14 +2,13 @@ import styled from 'styled-components';
 import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
-  padding: 12px 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   .bar-container {
     display: flex;
     flex-direction: column;
-    gap: 9px;
+    gap: 4px;
   }
   .button-container {
     display: flex;
@@ -29,17 +28,23 @@ const StyledMain = styled.main`
     display: flex;
     flex-direction: row;
     gap: 4px;
+    margin-top: 2px;
     width: 100%;
+    input,
+    select {
+      max-width: 46px;
+    }
   }
   .enable-wrapper {
+    font-size: 8px;
+    color: rgb(175, 175, 175);
+    margin-top: 2px;
     display: flex;
-    flex-direction: row;
     align-items: center;
-    gap: 8px;
-    outline: red;
+    gap: 4px;
   }
   .enable-text {
-    font-size: 16px;
+    font-size: 11px;
     color: rgb(175, 175, 175);
   }
   .button-page {
@@ -108,12 +113,12 @@ const StyledMain = styled.main`
   .health-bar,
   .mana-bar {
     display: flex;
-    gap: 12px;
+    gap: 6px;
 
     > svg {
       margin-left: auto;
-      width: 22px;
-      height: 22px;
+      width: 16px;
+      height: 16px;
     }
   }
 
@@ -135,6 +140,7 @@ const StyledMain = styled.main`
     display: flex;
     align-items: center;
     gap: 2px;
+    margin-top: 2px;
   }
   .mana-sync-hotkey {
     margin-left: auto;
@@ -146,7 +152,7 @@ const StyledMain = styled.main`
   .refresh-rate-row {
     font-size: 8px;
     color: rgb(175, 175, 175);
-    margin-top: 4px;
+    margin-top: 2px;
     display: flex;
     align-items: center;
     gap: 2px;
@@ -158,7 +164,7 @@ const StyledMain = styled.main`
   h5 {
     margin: 0;
     color: rgb(175, 175, 175);
-    font-size: 12px;
+    font-size: 11px;
   }
   .list-wrapper {
     display: flex;
@@ -179,7 +185,41 @@ const StyledMain = styled.main`
     }
   }
   .input-long {
-    width: 84px;
+    width: 64px;
+    font-size: 11px;
+    height: 16px;
+    color: #fafafa;
+  }
+  .settings-row {
+    display: flex;
+    flex-direction: row;
+    margin-top: 2px;
+    > div:not(:first-child) {
+      padding-left: 5px;
+      border-left: 1px solid rgba(175, 175, 175, 0.9);
+    }
+    > div:not(:last-child) {
+      padding-right: 5px;
+      border-right: 1px, rgba(0, 0, 0, 0.7);
+    }
+  }
+  .margin-left {
+    margin-left: auto;
+  }
+  .setting-section {
+    min-height: 72px;
+    max-height: 72px;
+    overflow: hidden;
+    gap: 0px;
+    * {
+      font-size: 11px !important;
+      white-space: nowrap;
+      line-height: 0.9;
+      input,
+      select {
+        max-height: 18px;
+      }
+    }
   }
 `;
 export default StyledMain;
