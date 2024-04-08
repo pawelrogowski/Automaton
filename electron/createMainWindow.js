@@ -1,8 +1,9 @@
 import { BrowserWindow, app, Tray, Menu, dialog } from 'electron';
 import path from 'path';
 import url, { fileURLToPath } from 'url';
-import { loadRulesFromFile, resetWorkers, saveRulesToFile } from './main.js';
+import { resetWorkers } from './main.js';
 import { selectWindow } from './menus/windowSelection.js';
+import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 
 let mainWindow;
 let tray;
@@ -41,7 +42,6 @@ export const createMainWindow = () => {
 
   tray = new Tray(path.join(dirname, './icons/skull.png'));
 
-  // Set up the context menu for the tray icon
   const trayContextMenu = Menu.buildFromTemplate([
     {
       label: 'Show/Hide',
@@ -117,6 +117,14 @@ export const createMainWindow = () => {
 
     win.webContents.setZoomFactor(currentZoomFactor);
   });
+};
+
+export const toggleMainWindowVisibility = () => {
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
+  } else {
+    mainWindow.show();
+  }
 };
 
 /**

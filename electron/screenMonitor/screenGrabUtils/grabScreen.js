@@ -56,8 +56,7 @@ async function getImageFromWindow(X, windowId, captureRegion, region) {
           console.log('Image is undefined');
           resolve([]);
         } else {
-          const uint8ArrayData = new Uint8Array(image.data);
-          resolve(uint8ArrayData);
+          resolve(new Uint8Array(image.data));
         }
       },
     );

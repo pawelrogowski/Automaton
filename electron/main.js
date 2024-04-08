@@ -4,13 +4,19 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import fs from 'fs';
 import path from 'path';
-import { createMainWindow, getMainWindow } from './createMainWindow.js';
+import { createMainWindow, getMainWindow, toggleMainWindowVisibility } from './createMainWindow.js';
 import './ipcListeners.js';
 import { showNotification } from './notificationHandler.js';
 import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './globalShortcuts.js';
+import {
+  saveRulesToFile,
+  loadRulesFromFile,
+  autoSaveRules,
+  autoLoadRules,
+} from './rulesManager.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -70,98 +76,29 @@ export const resetWorkers = () => {
   }
 };
 
-export const saveRulesToFile = () => {
-  const rules = store.getState().healing;
-  // Minimize the main window
-  if (mainWindow) mainWindow.minimize();
+ipcMain.on('save-rules', async (event) => {
+  const mainWindow = getMainWindow();
+  mainWindow.minimize(); // Minimize the window
+  await saveRulesToFile(() => {
+    mainWindow.restore(); // Restore the window after saving
+  });
+});
+ipcMain.handle('load-rules', async (event) => {
+  const mainWindow = getMainWindow();
+  mainWindow.minimize(); // Minimize the window
+  await loadRulesFromFile(() => {
+    mainWindow.restore(); // Restore the window after loading
+  });
+});
 
-  dialog
-    .showSaveDialog({
-      title: 'Save Rules',
-      filters: [{ extensions: ['json'] }],
-    })
-    .then((result) => {
-      if (!result.canceled && result.filePath) {
-        // Check if the file path ends with .json, if not, append it
-        const filePath = result.filePath.endsWith('.json')
-          ? result.filePath
-          : `${result.filePath}.json`;
-        fs.writeFileSync(filePath, JSON.stringify(rules, null, 2));
-        // Show notification with the file name
-        showNotification('Automaton', `📥 Saved | ${path.basename(filePath)}`);
-      }
-      // Restore the main window
-      if (mainWindow) mainWindow.restore();
-    })
-    .catch((err) => {
-      console.error('Failed to save rules:', err);
-      // Show notification for error
-      showNotification('Automaton', '❌ Failed to save rules');
-      // Restore the main window in case of error
-      if (mainWindow) mainWindow.restore();
-    });
-};
-
-export const loadRulesFromFile = () => {
-  // Minimize the main window
-  if (mainWindow) mainWindow.minimize();
-
-  return dialog
-    .showOpenDialog({
-      title: 'Load Rules',
-      filters: [{ extensions: ['json'] }],
-      properties: ['openFile'],
-    })
-    .then((result) => {
-      if (!result.canceled && result.filePaths.length > 0) {
-        const content = fs.readFileSync(result.filePaths[0], 'utf8');
-        const loadedRules = JSON.parse(content);
-        store.dispatch({ type: 'healing/loadRules', payload: loadedRules }); // Dispatch action to update state with loaded rules
-        setGlobalState('healing/loadRules', loadedRules); // Notify the renderer process
-        // Show notification with the file name
-        showNotification('Automaton', `📤 Loaded | ${path.basename(result.filePaths[0])}`);
-      }
-      // Restore the main window
-      if (mainWindow) mainWindow.restore();
-    })
-    .catch((err) => {
-      console.error('Failed to load rules:', err);
-      // Show notification for error
-      showNotification('Automaton', '❌ Failed to load rules');
-      // Restore the main window in case of error
-      if (mainWindow) mainWindow.restore();
-    });
-};
-const autoSaveRules = () => {
-  try {
-    const rules = store.getState().healing;
-    fs.writeFileSync(autoLoadFilePath, JSON.stringify(rules, null, 2));
-    console.log('Rules saved successfully');
-  } catch (error) {
-    console.error('Failed to save rules:', error);
-  }
-};
-
-const autoLoadRules = () => {
-  if (fs.existsSync(autoLoadFilePath)) {
-    const content = fs.readFileSync(autoLoadFilePath, 'utf8');
-    const loadedRules = JSON.parse(content);
-    store.dispatch({ type: 'healing/loadRules', payload: loadedRules });
-    setGlobalState('healing/loadRules', loadedRules);
-    console.log('Rules loaded successfully:', loadedRules);
-  }
-};
-
-ipcMain.on('save-rules', saveRulesToFile);
-ipcMain.handle('load-rules', loadRulesFromFile);
 ipcMain.on('renderer-ready', (event) => {
   autoLoadRules();
+  registerGlobalShortcuts();
 });
 
 app.whenReady().then(() => {
   mainWindow = createMainWindow();
   setupAppMenu(null);
-  registerGlobalShortcuts();
 });
 
 app.on('before-quit', () => {

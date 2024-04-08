@@ -9,7 +9,6 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
 
   const foundSequences = Object.fromEntries(Object.keys(targetSequences).map((name) => [name, []]));
 
-  // Nested buildTrie function
   function buildTrie(targetSequences) {
     const root = new TrieNode();
     Object.entries(targetSequences).forEach(([name, sequenceObj]) => {
@@ -49,7 +48,7 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
       }
       node = node.children[color];
       sequenceLength++;
-      // Sequence length pruning
+
       if (sequenceLength > node.sequenceLength) {
         break;
       }
@@ -94,7 +93,6 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
     });
   }
 
-  // Clearing references to allow garbage collection
   packedImageData.fill(0);
   clearTrieNodes(trie);
 
