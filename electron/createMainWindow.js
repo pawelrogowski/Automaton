@@ -13,10 +13,11 @@ const dirname = path.dirname(filename);
 
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 760,
-    height: 76,
-    minWidth: 330,
-    minHeight: 33,
+    width: 700,
+    height: 346,
+    minWidth: 700,
+    minHeight: 42,
+    maxHeight: 346,
     icon: path.join(dirname, './skull.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -30,7 +31,7 @@ export const createMainWindow = () => {
   });
 
   // Open the developer tools for debugging
-  // mainWindow.webContents.openDevTools();
+  mainWindow.webContents.openDevTools();
 
   mainWindow.loadURL(
     url.format({
@@ -107,16 +108,16 @@ export const createMainWindow = () => {
       });
     }
   });
-  win.webContents.on('zoom-changed', (event, zoomDirection) => {
-    let currentZoomFactor = win.webContents.getZoomFactor();
-    if (zoomDirection === 'in') {
-      currentZoomFactor += 0.1;
-    } else if (zoomDirection === 'out') {
-      currentZoomFactor -= 0.1;
-    }
+  // win.webContents.on('zoom-changed', (event, zoomDirection) => {
+  //   let currentZoomFactor = win.webContents.getZoomFactor();
+  //   if (zoomDirection === 'in') {
+  //     currentZoomFactor += 0.1;
+  //   } else if (zoomDirection === 'out') {
+  //     currentZoomFactor -= 0.1;
+  //   }
 
-    win.webContents.setZoomFactor(currentZoomFactor);
-  });
+  //   win.webContents.setZoomFactor(currentZoomFactor);
+  // });
 };
 
 export const toggleMainWindowVisibility = () => {

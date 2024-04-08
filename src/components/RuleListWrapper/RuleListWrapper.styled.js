@@ -8,7 +8,7 @@ export const StyledDiv = styled.div`
   border-left: 1px solid #181818;
   border-right: 1px solid #7d7d7d;
   border-bottom: 1px solid #7d7d7d;
-
+  min-height: 218px;
   min-width: 681px;
   .header {
     background: #363636;
@@ -16,7 +16,7 @@ export const StyledDiv = styled.div`
     flex-direction: row;
     /* border-bottom: 1px solid #292929; */
     color: #c0c0c0;
-    font-size: 12px;
+    font-size: 11px;
     .header-item {
       text-align: center;
       border-right: 1px solid #181818;

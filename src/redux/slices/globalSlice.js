@@ -6,6 +6,7 @@ const initialState = {
   windowId: null,
   botEnabled: false,
   refreshRate: 25,
+  autoLootEnabled: false,
 };
 
 const globalSlice = createSlice({
@@ -29,9 +30,20 @@ const globalSlice = createSlice({
         state.botEnabled = !state.botEnabled;
       }
     },
+    toogleAutoLootEnabled: (state) => {
+      if (state.windowId !== null) {
+        state.autoLootEnabled = !state.autoLootEnabled;
+      }
+    },
   },
 });
 
-export const { setWindowTitle, setWindowId, setIsBotEnabled, setRefreshRate } = globalSlice.actions;
+export const {
+  setWindowTitle,
+  setWindowId,
+  setIsBotEnabled,
+  setRefreshRate,
+  toogleAutoLootEnabled,
+} = globalSlice.actions;
 
 export default globalSlice;

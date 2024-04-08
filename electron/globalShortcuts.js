@@ -7,6 +7,10 @@ import { resetWorkers } from './main.js';
 import { showNotification } from './notificationHandler.js';
 import pkg from 'lodash';
 import store from './store.js';
+import soundPlayer from 'play-sound';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
 const { debounce } = pkg;
 const debounceTime = 75;
 
@@ -21,6 +25,24 @@ store.subscribe(() => {
   windId = windowId;
   isEnabled = botEnabled;
 });
+
+// Function to play a sound file
+const playSound = async (filePath) => {
+  // Resolve the directory path of the current module
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+
+  // Construct the path to the sound file
+  const soundPath = path.join(__dirname, 'sounds', filePath);
+
+  // Play the sound
+  try {
+    const player = soundPlayer(); // Use the renamed module
+    player.play(soundPath);
+  } catch (error) {
+    console.error(`Could not play sound: ${error}`);
+  }
+};
 
 const debouncedSelectActiveWindow = debounce(() => {
   console.log('Alt+0 shortcut clicked');
@@ -45,19 +67,30 @@ const debouncedToggleBotEnabled = debounce(() => {
   console.log(isEnabled);
   if (isEnabled) {
     showNotification('Automaton', '🟢 Bot Enabled');
+
+    playSound('enable.wav'); // Play the enable sound
   } else {
     showNotification('Automaton', '🔴 Bot Disabled');
+
+    playSound('disable.wav'); // Play the disable sound
   }
 }, debounceTime);
 
 const debouncedToggleManaSync = debounce(() => {
-  console.log('Alt+S shortcut clicked');
-  setGlobalState('global/toggleBotEnabled');
-  console.log(isEnabled);
-  if (isEnabled) {
-    showNotification('Automaton', '🟢 Bot Enabled');
+  console.log('Alt+3 shortcut clicked');
+  setGlobalState('healing/toggleManaSyncEnabled');
+  // Access the current state to determine the manaSync rule's status
+  const currentState = store.getState();
+  const manaSyncRule = currentState.healing.find((rule) => rule.id === 'manaSync');
+  const isManaSyncEnabled = manaSyncRule ? manaSyncRule.enabled : false;
+  if (isManaSyncEnabled) {
+    showNotification('Automaton', '🟢 Attack Sync Enabled');
+
+    playSound('manaSyncEnable.wav'); // Play the enable sound
   } else {
-    showNotification('Automaton', '🔴 Bot Disabled');
+    showNotification('Automaton', '🔴 Attack Sync Disabled');
+
+    playSound('manaSyncDisable.wav'); // Play the disable sound
   }
 }, debounceTime);
 
@@ -74,12 +107,38 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
   }
 }, debounceTime);
 
+let currentSizeIndex = 0;
+const sizes = [
+  { width: 700, height: 346 },
+  { width: 700, height: 74 },
+  { width: 700, height: 41 },
+  { width: 700, height: 74 },
+];
+
+const registerResizeShortcut = () => {
+  try {
+    globalShortcut.register('Alt+5', () => {
+      const mainWindow = getMainWindow();
+      if (mainWindow) {
+        // Cycle through the sizes
+        currentSizeIndex = (currentSizeIndex + 1) % sizes.length;
+        const newSize = sizes[currentSizeIndex];
+        mainWindow.setSize(newSize.width, newSize.height);
+      }
+    });
+  } catch (error) {
+    console.error('Failed to register resize shortcut:', error);
+  }
+};
+
 export const registerGlobalShortcuts = () => {
   try {
     globalShortcut.register('Alt+0', debouncedSelectActiveWindow);
     globalShortcut.register('Alt+Shift+0', debouncedSelectWindow);
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
+    globalShortcut.register('Alt+3', debouncedToggleManaSync);
+    registerResizeShortcut();
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

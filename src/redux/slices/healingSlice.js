@@ -97,6 +97,12 @@ const healingSlice = createSlice({
     loadRules: (state, action) => {
       return action.payload;
     },
+    toggleManaSyncEnabled: (state) => {
+      const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
+      if (manaSyncRule) {
+        manaSyncRule.enabled = !manaSyncRule.enabled;
+      }
+    },
   },
 });
 
@@ -108,6 +114,7 @@ export const {
   updateCondition,
   removeCondition,
   updateManaSync,
+  toggleManaSyncEnabled,
 } = healingSlice.actions;
 
 export default healingSlice;

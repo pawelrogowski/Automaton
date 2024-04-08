@@ -14,7 +14,8 @@ const StyledMain = styled.main`
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 24px;
+    gap: 8px;
+    padding: 0 2px;
   }
   .header-wrapper {
     display: flex;
@@ -50,15 +51,12 @@ const StyledMain = styled.main`
   .button-page {
     border: none;
     background: none;
-    height: 28px;
-    margin-bottom: 4px;
+    height: 21px;
     text-align: center;
     display: flex;
-    padding: 2px 6px;
-    padding-bottom: 6px;
+    padding: 2px 4px;
     align-items: center;
     color: #757676;
-    font-size: 14px;
     border-top: 2px solid #757676;
     border-left: 2px solid #757676;
     border-bottom: 2px solid #2c2c2c;
@@ -66,6 +64,8 @@ const StyledMain = styled.main`
     color: rgb(175, 175, 175);
     background-image: url(${tibiaBg});
     background-repeat: repeat;
+    font-size: 12px;
+    margin-top: 2px;
     &:active {
       border-top: 2px solid #2c2c2c;
       border-left: 2px solid #2c2c2c;
@@ -169,7 +169,7 @@ const StyledMain = styled.main`
   .list-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
   .input-field {
     width: 56px;
