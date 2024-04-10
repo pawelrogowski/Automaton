@@ -7,10 +7,11 @@ import { resetWorkers } from './main.js';
 import { showNotification } from './notificationHandler.js';
 import pkg from 'lodash';
 import store from './store.js';
-import soundPlayer from 'play-sound';
 import { fileURLToPath } from 'url';
 import path from 'path';
-
+import fs from 'fs';
+import os from 'os';
+import { exec } from 'child_process';
 const { debounce } = pkg;
 const debounceTime = 75;
 
@@ -26,21 +27,45 @@ store.subscribe(() => {
   isEnabled = botEnabled;
 });
 
-// Function to play a sound file
-const playSound = async (filePath) => {
-  // Resolve the directory path of the current module
+const soundCache = new Map();
+
+const playSound = (filePath) => {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
 
-  // Construct the path to the sound file
-  const soundPath = path.join(__dirname, 'sounds', filePath);
+  const asarPath = path.join(__dirname, 'sounds', filePath);
 
-  // Play the sound
-  try {
-    const player = soundPlayer(); // Use the renamed module
-    player.play(soundPath);
-  } catch (error) {
-    console.error(`Could not play sound: ${error}`);
+  if (!fs.existsSync(asarPath)) {
+    console.error(`Sound file not found in app.asar: ${asarPath}`);
+    return;
+  }
+
+  if (soundCache.has(filePath)) {
+    const cachedPath = soundCache.get(filePath);
+    exec(`aplay '${cachedPath}'`, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`exec error: ${error}`);
+        return;
+      }
+      console.log(`stdout: ${stdout}`);
+      console.error(`stderr: ${stderr}`);
+    });
+  } else {
+    const tempDir = path.join(os.tmpdir(), 'automaton-sounds');
+    const tempFilePath = path.join(tempDir, filePath);
+    fs.mkdirSync(tempDir, { recursive: true });
+    fs.copyFileSync(asarPath, tempFilePath);
+
+    soundCache.set(filePath, tempFilePath);
+
+    exec(`aplay '${tempFilePath}'`, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`exec error: ${error}`);
+        return;
+      }
+      console.log(`stdout: ${stdout}`);
+      console.error(`stderr: ${stderr}`);
+    });
   }
 };
 

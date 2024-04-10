@@ -99,6 +99,7 @@ ipcMain.on('renderer-ready', (event) => {
 app.whenReady().then(() => {
   mainWindow = createMainWindow();
   setupAppMenu(null);
+  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 });
 
 app.on('before-quit', () => {
