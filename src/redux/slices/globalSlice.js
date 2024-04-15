@@ -4,6 +4,7 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   windowTitle: 'Press Alt+0 on focused tibia window or Alt+Shift+0 to manually select',
   windowId: null,
+  windowPos: { x: 0, y: 0 },
   botEnabled: false,
   refreshRate: 25,
   autoLootEnabled: false,
@@ -36,6 +37,9 @@ const globalSlice = createSlice({
       }
     },
   },
+  setWindowPos: (state) => {
+    state.windowPos = action.payload;
+  },
 });
 
 export const {
@@ -44,6 +48,7 @@ export const {
   setIsBotEnabled,
   setRefreshRate,
   toogleAutoLootEnabled,
+  setWindowPos,
 } = globalSlice.actions;
 
 export default globalSlice;

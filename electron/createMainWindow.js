@@ -18,6 +18,8 @@ export const createMainWindow = () => {
     minWidth: 700,
     minHeight: 42,
     maxHeight: 346,
+    x: 0,
+    y: 0,
     icon: path.join(dirname, './skull.png'),
     webPreferences: {
       nodeIntegration: false,

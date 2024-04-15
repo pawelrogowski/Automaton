@@ -1,6 +1,6 @@
 function findSequences(imageData, targetSequences, width, searchArea = null, occurrence = 'first') {
   const length = imageData.length / 4;
-  const packedImageData = new Uint32Array(length);
+  let packedImageData = imageData;
   for (let i = 0; i < length; i++) {
     const index = i * 4;
     packedImageData[i] =
@@ -48,7 +48,6 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
       }
       node = node.children[color];
       sequenceLength++;
-
       if (sequenceLength > node.sequenceLength) {
         break;
       }
@@ -93,9 +92,10 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
     });
   }
 
-  packedImageData.fill(0);
-  clearTrieNodes(trie);
+  // Clear packedImageData
+  packedImageData = null;
 
+  clearTrieNodes(trie);
   return foundSequences;
 }
 
@@ -103,13 +103,12 @@ function clearTrieNodes(node) {
   if (!node) {
     return;
   }
-
   for (const childNode of Object.values(node.children)) {
     clearTrieNodes(childNode);
   }
-
-  node.children = {};
-  node.sequences.length = 0;
+  node.children = null;
+  node.sequences = null;
+  node.sequenceLength = 0;
 }
 
 class TrieNode {

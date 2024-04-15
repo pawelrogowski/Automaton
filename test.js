@@ -1,8 +1,8 @@
 const { exec } = require('child_process');
 
 // Define the coordinates of the first top left and last bottom right squares
-const topLeft = { x: 720, y: 342 };
-const bottomRight = { x: 849, y: 472 };
+const topLeft = { x: 635, y: 440 };
+const bottomRight = { x: 829, y: 633 };
 
 // Calculate the size of each square
 const squareSize = {
@@ -58,7 +58,7 @@ function nearestNeighbor(squares) {
 const sortedPath = nearestNeighbor(squares);
 
 // Assuming you have the window ID, replace 'YOUR_WINDOW_ID' with the actual ID
-const windowId = '52428826';
+const windowId = '44040218';
 
 // Define the click options
 const clickOptions = {
@@ -70,7 +70,7 @@ const clickOptions = {
 function generateXdotoolCommand(path, windowId, clickOptions) {
   let command = `xdotool`;
   for (const square of path) {
-    command += ` mousemove --sync ${square.x} ${square.y} mousemove --sync ${square.x + 1} ${square.y - 1} mousemove --sync ${square.x + 2} ${square.y + 2} mousemove --sync ${square.x} ${square.y} mousemove --sync ${square.x + 1} ${square.y} mousemove --sync ${square.x - 1} ${square.y} click --delay ${clickOptions.delay} ${clickOptions.button}`;
+    command += ` mousemove --sync ${square.x} ${square.y} mousemove --sync ${square.x + 1} ${square.y - 1} mousemove --sync ${square.x + 2} ${square.y + 2} mousemove --sync ${square.x} ${square.y} mousemove --sync ${square.x + 1} ${square.y} mousemove --sync ${square.x - 1} ${square.y} click --clearmodifiers --delay ${clickOptions.delay} ${clickOptions.button}`;
   }
   return command;
 }

@@ -192,12 +192,12 @@ async function main() {
     const startRegions = await findSequences(imageData, regionColorSequences, width);
     const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
 
-    const actionBarRegionBottom = await findBoundingRect(
-      imageData,
-      regionColorSequences.hotkeyBarBottomStart,
-      regionColorSequences.hotkeyBarBottomEnd,
-      width,
-    );
+    // const actionBarRegionBottom = await findBoundingRect(
+    //   imageData,
+    //   regionColorSequences.hotkeyBarBottomStart,
+    //   regionColorSequences.hotkeyBarBottomEnd,
+    //   width,
+    // );
 
     let hpManaRegion = {
       x: healthBar.x,
@@ -329,7 +329,11 @@ async function main() {
         await processRules(healing, gameState, global);
       }
 
-      setTimeout(loop, Math.max(global.refreshRate, 25));
+      hpManaImageData = null;
+      cooldownBarImageData = null;
+      statusBarImageData = null;
+
+      setTimeout(loop, Math.max(global.refreshRate, 0));
     }
     loop();
   }

@@ -6,9 +6,11 @@ import createX11Client from './createX11Client.js';
  * @param {number} windowId - The ID of the window to grab the screen content from.
  * @param {Object} [region] - The region of the screen to grab. If not provided, the entire window will be grabbed.
  * @param {Boolean} measureTime - Show a console.time measurement of the function
- * @returns {Promise<Uint8Array>} A promise that resolves with the screen content as a Uint8Array.
+ * @returns {Promise<Uint32Array>} A promise that resolves with the screen content as a Uint32Array.
  */
 async function grabScreen(windowId, region, measureTime) {
+  let imageData = null; // Initialize imageData to null
+
   try {
     const { X } = await createX11Client();
     const geom = await new Promise((resolve, reject) => {
@@ -20,14 +22,15 @@ async function grabScreen(windowId, region, measureTime) {
         }
       });
     });
-
     const captureRegion = region || geom;
-    const image = await getImageFromWindow(X, windowId, captureRegion, region);
-
-    return image;
+    imageData = await getImageFromWindow(X, windowId, captureRegion, region);
+    return imageData;
   } catch (error) {
     console.error('Error:', error);
     throw error;
+  } finally {
+    // Clear imageData after use
+    imageData = null;
   }
 }
 
@@ -56,7 +59,8 @@ async function getImageFromWindow(X, windowId, captureRegion, region) {
           console.log('Image is undefined');
           resolve([]);
         } else {
-          resolve(new Uint8Array(image.data));
+          const imageDataArray = new Uint32Array(image.data);
+          resolve(imageDataArray);
         }
       },
     );
