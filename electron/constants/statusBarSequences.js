@@ -107,9 +107,17 @@ const statusBarSequences = {
   bleeding: {
     direction: 'horizontal',
     sequence: [
-      [235, 37, 58],
-      [255, 168, 177],
-      [185, 36, 52],
+      [54, 28, 32],
+      [128, 42, 50],
+      [54, 28, 32],
+    ],
+  },
+  freezing: {
+    direction: 'horizontal',
+    sequence: [
+      [128, 255, 255],
+      [190, 252, 252],
+      [128, 255, 255],
     ],
   },
 };
