@@ -14,10 +14,9 @@ const dirname = path.dirname(filename);
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
     width: 700,
-    height: 346,
+    height: 330,
     minWidth: 700,
     minHeight: 42,
-    maxHeight: 346,
     x: 0,
     y: 0,
     icon: path.join(dirname, './skull.png'),
@@ -27,7 +26,7 @@ export const createMainWindow = () => {
       preload: path.join(dirname, '/preload.js'),
     },
     autoHideMenuBar: true,
-    transparent: true,
+    transparent: false,
     frame: false,
     alwaysOnTop: true,
   });

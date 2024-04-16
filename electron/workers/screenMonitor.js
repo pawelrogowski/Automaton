@@ -42,7 +42,8 @@ let options = {
     Potion: 1000,
     Support: 1000,
     Attack: 1000,
-    Equip: 250,
+    Equip: 100,
+    Others: 0,
   },
   logsEnabled: false,
 };

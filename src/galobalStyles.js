@@ -3,7 +3,8 @@ import tibiaBgDark from './assets/tibiaBgDark.webp';
 
 const GlobalStyles = createGlobalStyle`
   body {
-    background: transparent;
+    background-image: url(${tibiaBgDark});
+    background-repeat: repeat;
   }
 `;
 

@@ -4,7 +4,7 @@ import tibiaBg from '../assets/tibiaBg.webp';
 const StyledMain = styled.main`
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* gap: 6px; */
   .bar-container {
     display: flex;
     flex-direction: column;

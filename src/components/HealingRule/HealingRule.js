@@ -97,6 +97,7 @@ const HealingRule = ({ rule }) => {
             <option value="Support">Support</option>
             <option value="Attack">Attack</option>
             <option value="Equip">Equip</option>
+            <option value="Others">Others</option>
           </ListSelect>
           <ListSelect
             className="input input-hotkey"
