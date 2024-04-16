@@ -64,12 +64,12 @@ const statusBarSequences = {
       [154, 26, 55],
     ],
   },
-  strenghted: {
+  strengthened: {
     direction: 'horizontal',
     sequence: [
       [37, 170, 21],
       [32, 56, 30],
-      [241, 137, 30],
+      [243, 153, 32],
     ],
   },
   cursed: {

@@ -49,8 +49,6 @@ const characterStatusImages = {
   feared,
   hexed,
   rooted,
-  bakragoresTaints,
-  goshnarsTaints,
 };
 
 export default characterStatusImages;
