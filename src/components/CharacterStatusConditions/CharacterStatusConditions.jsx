@@ -20,24 +20,19 @@ const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
     let newValue;
 
     if (conditionIndex !== -1) {
-      // Cycle through the states: true -> false -> remove
       const currentValue = statusConditions[conditionIndex].value;
       if (currentValue === true) {
         newValue = false;
       } else if (currentValue === false) {
-        // Dispatch an action to remove the condition object
         dispatch(removeCondition({ id: ruleId, condition: status }));
-        return; // Exit the function early to prevent further execution
+        return;
       }
     } else {
-      // If the condition does not exist, initialize it to true
       newValue = true;
     }
 
-    // Dispatch the updateCondition action with the new value
     dispatch(updateCondition({ id: ruleId, condition: status, value: newValue }));
 
-    // Update parent component if needed
     onStatusConditionChange(status, newValue);
   };
 

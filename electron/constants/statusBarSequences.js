@@ -83,8 +83,8 @@ const statusBarSequences = {
   electrified: {
     direction: 'horizontal',
     sequence: [
-      [254, 232, 255],
       [67, 21, 70],
+      [241, 173, 245],
       [67, 21, 70],
     ],
   },

@@ -8,9 +8,7 @@ const initialState = {
   supportCdActive: false,
   attackCdActive: false,
   characterStatus: {
-    agony: false,
     bleeding: false,
-    bakragoresTaints: false,
     burning: false,
     cursed: false,
     dazzled: false,
@@ -28,7 +26,6 @@ const initialState = {
     eRing: false,
     poisoned: false,
     protectionZoneBlock: false,
-    rooted: false,
     paralyzed: false,
     strengthened: false,
     inProtectedZone: false,
