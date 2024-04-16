@@ -120,6 +120,22 @@ const statusBarSequences = {
       [128, 255, 255],
     ],
   },
+  eRing: {
+    direction: 'horizontal',
+    sequence: [
+      [30, 32, 119],
+      [42, 46, 148],
+      [26, 28, 111],
+    ],
+  },
+  drunk: {
+    direction: 'horizontal',
+    sequence: [
+      [95, 79, 54],
+      [151, 121, 74],
+      [145, 116, 70],
+    ],
+  },
 };
 
 export default statusBarSequences;
