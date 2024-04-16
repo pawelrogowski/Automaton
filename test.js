@@ -1,64 +1,83 @@
-import x11 from 'x11';
+const { exec } = require('child_process');
 
-// Create an X11 client
-x11
-  .createClient((err, display) => {
-    if (err) {
-      console.error('Error connecting to X server:', err);
-      process.exit(1);
+// Define the coordinates of the first top left and last bottom right squares
+const topLeft = { x: 635, y: 440 };
+const bottomRight = { x: 829, y: 633 };
+
+// Calculate the size of each square
+const squareSize = {
+  width: (bottomRight.x - topLeft.x) / 3,
+  height: (bottomRight.y - topLeft.y) / 3,
+};
+
+// Generate an array of all square coordinates
+const squares = [];
+for (let i = 0; i < 3; i++) {
+  for (let j = 0; j < 3; j++) {
+    const squareCenterX = topLeft.x + (i + 0.5) * squareSize.width;
+    const squareCenterY = topLeft.y + (j + 0.5) * squareSize.height;
+    squares.push({ x: Math.ceil(squareCenterX), y: Math.ceil(squareCenterY) });
+  }
+}
+
+// Calculate the Euclidean distance between two points
+function distance(p1, p2) {
+  return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+}
+
+// Nearest neighbor algorithm to find the shortest path
+function nearestNeighbor(squares) {
+  const path = [];
+  let squaresCopy = [...squares]; // Create a copy of squares array
+
+  // Set the starting point as the middle square
+  const middleIndex = 4; // Index of the middle square in a 3x3 grid
+  let start = squaresCopy[middleIndex];
+  path.push(start);
+  squaresCopy.splice(middleIndex, 1);
+
+  while (squaresCopy.length > 0) {
+    let minDistance = Infinity;
+    let nearest;
+    for (const square of squaresCopy) {
+      const dist = distance(start, square);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearest = square;
+      }
     }
+    path.push(nearest);
+    start = nearest;
+    squaresCopy.splice(squaresCopy.indexOf(nearest), 1);
+  }
 
-    console.log('Connected to X server');
-    const X = display.client;
-    const root = display.screen[0].root;
+  return path;
+}
 
-    // Function to find a window with a specific ID
-    function findWindowById(windowId, targetId, callback) {
-      X.QueryTree(windowId, (err, tree) => {
-        if (err) {
-          console.error('Error querying tree:', err);
-          return;
-        }
+// Get the sorted path
+const sortedPath = nearestNeighbor(squares);
 
-        // Check if this window is the one we're looking for
-        if (windowId === targetId) {
-          callback(windowId);
-          return;
-        }
+// Assuming you have the window ID, replace 'YOUR_WINDOW_ID' with the actual ID
+const windowId = '44040218';
 
-        // Recursively call findWindowById for each child window
-        tree.children.forEach((childWindowId) => {
-          findWindowById(childWindowId, targetId, callback);
-        });
-      });
-    }
+// Define the click options
+const clickOptions = {
+  delay: 135, // Delay in milliseconds between each click
+  button: 3, // Mouse button to click (3 for right click)
+};
 
-    // Usage:
-    const targetId = 102760474; // Replace with the ID you're looking for
-    findWindowById(root, targetId, (foundWindowId) => {
-      console.log(`Found window with ID: ${foundWindowId}`);
+// Function to generate the xdotool command
+function generateXdotoolCommand(path, windowId, clickOptions) {
+  let command = `xdotool`;
+  for (const square of path) {
+    command += ` mousemove --sync ${square.x} ${square.y} mousemove --sync ${square.x + 1} ${square.y - 1} mousemove --sync ${square.x + 2} ${square.y + 2} mousemove --sync ${square.x} ${square.y} mousemove --sync ${square.x + 1} ${square.y} mousemove --sync ${square.x - 1} ${square.y} click --clearmodifiers --delay ${clickOptions.delay} ${clickOptions.button}`;
+  }
+  return command;
+}
 
-      // Get the geometry of the window
-      X.GetGeometry(foundWindowId, (err, geom) => {
-        if (err) {
-          console.error('Error getting window geometry:', err);
-          return;
-        }
-
-        // Capture the image of the window
-        X.GetImage(2, foundWindowId, 0, 0, geom.width, geom.height, 0xfffff, (err, image) => {
-          if (err) {
-            console.error('Error capturing image:', err);
-            return;
-          }
-
-          // Log the length of the image data
-          console.log(`Length of image data: ${image.data.length}`);
-          X.terminate(); // Close the connection to the X server
-        });
-      });
-    });
-  })
-  .on('error', (err) => {
-    console.error('Error connecting to X server:', err);
-  });
+// Generate the xdotool command
+const xdotoolCommand = generateXdotoolCommand(sortedPath, windowId, clickOptions);
+console.log(xdotoolCommand);
+setInterval(() => {
+  exec(xdotoolCommand);
+}, 2000);

@@ -10,7 +10,7 @@ module.exports = {
   },
   devtool: 'source-map',
   target: 'electron-renderer',
-  externals: ['robotjs', 'iohook2'],
+  externals: ['iohook2'],
   resolve: {
     extensions: ['.js', '.jsx', '.mjs'],
     fallback: {

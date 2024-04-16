@@ -1,55 +1,46 @@
 import styled from 'styled-components';
 import tibiaBg from '../../assets/tibiaBg.webp';
-import tibiaBgDark from '../../assets/tibiaBgDark.webp';
-
 const StyledDiv = styled.div`
-  padding: 0px 4px;
-  padding-top: 7px;
-  margin-bottom: -1px;
-  /* background: #1a1d21; */
-  background-image: url(${tibiaBg});
-  background-repeat: repeat;
   position: relative;
-  border-top: 2px solid #757676;
-  border-left: 2px solid #757676;
-  border-bottom: 3px solid #2c2c2c;
-  border-right: 3px solid #2c2c2c;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 810px;
-
+  &:hover {
+    z-index: 500;
+    outline: 2px solid rgba(255, 255, 255, 0.6) !important;
+  }
   summary {
     cursor: pointer;
     display: flex;
-
+    height: 22px;
     align-items: center;
   }
   .input-wrapper {
     position: relative;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    position: relative;
   }
   .input-wrapper-checkbox {
     position: relative;
-    height: 32px;
+    height: 22px;
     margin-top: 4px;
   }
-  .input {
+  input,
+  select {
     width: 100px;
-    height: 32px;
-    padding: 0 12px;
-    background: #2b2b2b;
+    height: 22px;
+    padding: 0 6px;
     font-size: 10px;
     border: none;
     color: #d3d3d3;
+    background: #414141;
     outline: none;
     position: relative;
-    border-top: 1px solid #757676;
-    border-left: 1px solid #757676;
-    border-bottom: 1px solid #2c2c2c;
-    border-right: 1px solid #2c2c2c;
-    &:disabled {
-      background: #404040;
-    }
+    border-top: 1px solid #2b2b2b;
+    border-left: 1px solid #79797930;
+    border-bottom: 1px solid #79797930;
+    border-right: 1px solid #2b2b2b;
   }
   .input-checkbox {
     width: 32px;
@@ -68,39 +59,20 @@ const StyledDiv = styled.div`
     width: 90px;
   }
   .input-priority {
-    width: 55px;
-    background: #2b2b2b;
+    width: 90px;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
   }
   .input-delay {
     width: 85px;
-    background: #2b2b2b;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
   }
-  .label {
-    position: absolute;
-    top: -10px;
-    left: 0px;
-    font-size: 10px;
-    line-height: 10px;
-    background: #363636;
-    padding: 2px 4px;
-    color: #7c8085;
-    text-align: center;
-    border-top: 1px solid #757676;
-    border-left: 1px solid #757676;
-    border-right: 1px solid #2c2c2c;
-    width: 100%;
-    background-image: url(${tibiaBgDark});
-    background-repeat: repeat;
-  }
   .rule-button {
-    font-size: 11px;
-    height: 21px;
+    font-size: 12px;
+    height: 22px;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -111,7 +83,7 @@ const StyledDiv = styled.div`
     border-bottom: 1px solid #2c2c2c;
     border-right: 1px solid #2c2c2c;
     color: rgb(175, 175, 175);
-    margin-bottom: 8px;
+    /* margin-bottom: 8px; */
 
     cursor: pointer;
     &:active {
@@ -122,77 +94,22 @@ const StyledDiv = styled.div`
     }
   }
   .button-expand {
-    margin-left: 6px;
-  }
-  .details-arrow {
-    transition: stroke 200ms;
-    stroke: #fafafa;
-    &:hover {
-      stroke: #0066ff;
-    }
-  }
-  .details-wrapper {
-    padding-top: 10px;
-  }
-  .pick-pixel-button {
-    padding: 0;
-
-    svg {
-      stroke: #fafafa;
-      transition: stroke 200ms;
-    }
-    svg:hover {
-      stroke: #0066ff;
-    }
-  }
-  .conditions-header {
-    color: #fafafa;
-    font-size: 14px;
-    padding: 4px;
-  }
-  .picked-color-wrapper {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    &:not(:last-of-type) {
-      padding-bottom: 5px;
-      border-bottom: 1px solid #44444b;
-    }
-    &:not(:first-of-type) {
-      padding-top: 5px;
-    }
+    font-size: 13px;
+    width: 22px;
+    height: 22px;
   }
 
   .remove-rule-button {
+    font-size: 20px;
     margin-left: auto;
+    justify-self: flex-end;
+    width: 22px;
+    height: 22px;
     background: #8f000052;
     border-top: 1px solid #8b5757;
     border-left: 1px solid #8b5757;
     border-bottom: 1px solid #470909;
     border-right: 1px solid #470909;
-  }
-  .remove-color {
-    margin-left: auto;
-  }
-  .conditions-header-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    svg {
-      margin-bottom: 4px;
-    }
-  }
-  .coordinate-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    list-style: none;
-    padding: 0;
-    min-width: 45px;
-    > li {
-      font-size: 9px;
-      color: #fafafa;
-    }
   }
 
   .input-percent {
@@ -216,6 +133,16 @@ const StyledDiv = styled.div`
     -moz-appearance: none;
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
+    border-right: none;
+  }
+  .select-with-arrow::after {
+    content: ' ▾';
+    color: #fafafa;
+    position: absolute;
+    right: 10px; /* Adjust as needed */
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none; /* Ensures clicks go through to the select */
   }
 `;
 

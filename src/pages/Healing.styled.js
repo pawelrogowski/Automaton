@@ -2,33 +2,61 @@ import styled from 'styled-components';
 import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
-  padding: 12px 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   .bar-container {
     display: flex;
     flex-direction: column;
-    gap: 9px;
+    gap: 4px;
   }
   .button-container {
     display: flex;
     width: 100%;
     align-items: center;
-    gap: 24px;
+    gap: 8px;
+    padding: 0 2px;
+  }
+  .header-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    h2 {
+      font-size: 26px;
+    }
+  }
+  .mana-sync-column {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    margin-top: 2px;
+    width: 100%;
+    input,
+    select {
+      max-width: 46px;
+    }
+  }
+  .enable-wrapper {
+    font-size: 8px;
+    color: rgb(175, 175, 175);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .enable-text {
+    font-size: 11px;
+    color: rgb(175, 175, 175);
   }
   .button-page {
     border: none;
     background: none;
-    height: 28px;
-    margin-bottom: 16px;
+    height: 21px;
     text-align: center;
     display: flex;
-    padding: 2px 6px;
-    padding-bottom: 6px;
+    padding: 2px 4px;
     align-items: center;
     color: #757676;
-    font-size: 14px;
     border-top: 2px solid #757676;
     border-left: 2px solid #757676;
     border-bottom: 2px solid #2c2c2c;
@@ -36,6 +64,8 @@ const StyledMain = styled.main`
     color: rgb(175, 175, 175);
     background-image: url(${tibiaBg});
     background-repeat: repeat;
+    font-size: 12px;
+    margin-top: 2px;
     &:active {
       border-top: 2px solid #2c2c2c;
       border-left: 2px solid #2c2c2c;
@@ -75,7 +105,7 @@ const StyledMain = styled.main`
     margin-bottom: 30px;
   }
   .heading {
-    color: #fafafa;
+    color: rgb(175, 175, 175);
   }
   .main-switch {
   }
@@ -83,12 +113,12 @@ const StyledMain = styled.main`
   .health-bar,
   .mana-bar {
     display: flex;
-    gap: 12px;
+    gap: 6px;
 
     > svg {
       margin-left: auto;
-      width: 22px;
-      height: 22px;
+      width: 16px;
+      height: 16px;
     }
   }
 
@@ -106,6 +136,90 @@ const StyledMain = styled.main`
     rotate: 18deg;
     margin-left: auto;
   }
+  .mana-sync-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 2px;
+  }
+  .mana-sync-hotkey {
+    margin-left: auto;
+  }
+  .mana-sync-row-text {
+    font-size: 10px;
+    color: rgb(175, 175, 175);
+  }
+  .refresh-rate-row {
+    font-size: 8px;
+    color: rgb(175, 175, 175);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .mana-sync-checkbox-text {
+    font-size: 12px;
+    color: rgb(175, 175, 175);
+  }
+  h5 {
+    margin: 0;
+    color: rgb(175, 175, 175);
+    font-size: 11px;
+  }
+  .list-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .input-field {
+    width: 56px;
+    height: 24px;
+    background-color: #363636;
+    border-top: 1px solid #2c2c2c;
+    border-left: 1px solid #2c2c2c;
+    border-bottom: 1px solid #79797930;
+    border-right: 1px solid #2b2b2b;
+    * {
+      font-size: 12px;
+      color: rgb(175, 175, 175);
+    }
+  }
+  .input-long {
+    width: 64px;
+    font-size: 11px;
+    height: 16px;
+    color: #fafafa;
+  }
+  .settings-row {
+    display: flex;
+    flex-direction: row;
+    margin-top: 2px;
+    > div:not(:first-child) {
+      padding-left: 5px;
+      border-left: 1px solid rgba(175, 175, 175, 0.9);
+    }
+    > div:not(:last-child) {
+      padding-right: 5px;
+      border-right: 1px, rgba(0, 0, 0, 0.7);
+    }
+  }
+  .margin-left {
+    margin-left: auto;
+  }
+  .setting-section {
+    min-height: 72px;
+    max-height: 72px;
+    overflow: hidden;
+    gap: 0px;
+    * {
+      font-size: 11px !important;
+      white-space: nowrap;
+      line-height: 0.9;
+      input,
+      select {
+        max-height: 18px;
+      }
+    }
+  }
 `;
-
 export default StyledMain;

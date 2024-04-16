@@ -10,8 +10,9 @@ export const StyledList = styled.ul`
   border-left: 1px solid #2c2c2c;
   border-bottom: 1px solid #757676;
   border-right: 1px solid #757676;
-  background-image: url(${tibiaBgDark});
-  background-repeat: repeat;
+  /* background-image: url(${tibiaBgDark});
+  background-repeat: repeat; */
+  background: #363636;
   z-index: 10;
 `;
 
@@ -20,7 +21,7 @@ export const StyledListItem = styled.li`
   list-style: none;
   display: flex;
   align-items: center;
-  width: 18px;
+  width: 22px;
   justify-content: center;
   padding: 1px;
   border: ${({ checked }) => {
@@ -41,13 +42,13 @@ export const StyledImageContainer = styled.span`
 `;
 
 export const StyledImage = styled.img`
-  width: 14px;
+  width: 18px;
   height: auto;
   cursor: pointer;
 `;
 
 export const StyledCheckboxImage = styled.img`
-  width: 14px;
+  width: 18px;
   height: auto;
   cursor: pointer;
 `;

@@ -6,12 +6,7 @@ import MainLayout from './Layout.styled.js';
 const Layout = () => {
   return (
     <MainLayout>
-      <div>
-        <div>
-          <Header />
-          <Outlet />
-        </div>
-      </div>
+      <Outlet />
     </MainLayout>
   );
 };

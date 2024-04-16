@@ -1,24 +1,38 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { Heart, Zap } from 'react-feather';
-import Switch from 'react-switch';
 import HealingRule from '../components/HealingRule/HealingRule.js';
-import { addRule, reorderRules, updateManaSync } from '../redux/slices/healingSlice.js';
+import { addRule, updateManaSync } from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
-import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
+import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
+import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
+import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
+import SunkenWrapper from '../components/SunkenWrapper/SunkenWrapper.js';
+import ListInput from '../components/ListInput/ListInput.js';
+import ListSelect from '../components/ListSelect/ListSelect.js';
+import keyboardKeys from '../constants/keyboardKeys.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
   const rules = useSelector((state) => state.healing);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
-  const { windowId, botEnabled } = useSelector((state) => state.global);
+  const { windowId, botEnabled, refreshRate } = useSelector((state) => state.global);
   const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
+
   const manaSyncRule = useSelector((state) =>
-    state.healing.find((rule) => rule.category === 'Potion'),
-  );
+    state.healing.find((rule) => rule.id === 'manaSync'),
+  ) || { manaTriggerPercentage: '80' };
+  const [inputValue, setInputValue] = useState(manaSyncRule.manaTriggerPercentage || '80');
+
+  const debounceTimeout = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(debounceTimeout.current);
+    };
+  }, []);
 
   const handleAddRule = () => {
     const newRule = {
@@ -37,19 +51,33 @@ export const Healing = () => {
     };
     dispatch(addRule(newRule));
   };
+
   const handleHealingToggle = () => {
     dispatch(setIsBotEnabled(!botEnabled));
   };
 
-  const handleDragEnd = (result) => {
-    if (!result.destination) return;
-    dispatch(
-      reorderRules({
-        startIndex: result.source.index,
-        endIndex: result.destination.index,
-      }),
-    );
+  const handleManaSyncPercentageChange = (event) => {
+    const value = event.target.value;
+    if (value !== undefined) {
+      setInputValue(value); // Update the local state immediately
+
+      clearTimeout(debounceTimeout.current);
+      debounceTimeout.current = setTimeout(() => {
+        dispatch(
+          updateManaSync({
+            key: manaSyncRule.key,
+            manaTriggerPercentage: value,
+          }),
+        );
+      }, 500); // Adjust the delay as needed
+    }
   };
+
+  const handleRefreshRateChange = (event) => {
+    const value = event.target.value;
+    dispatch(setRefreshRate(value));
+  };
+
   const { saveRules, loadRules } = window.electron;
 
   const handleSaveRules = () => {
@@ -59,9 +87,10 @@ export const Healing = () => {
   const handleLoadRules = async () => {
     await loadRules();
   };
+
   return (
     <StyledMain>
-      <StyledSection>
+      <StyledSection className="setting-section">
         <div className="bar-container">
           <div className="health-bar">
             <StatBar value={hpPercentage} fill={`#d10000`} />
@@ -73,137 +102,114 @@ export const Healing = () => {
             <Zap size={16} className="mp-icon" />
           </div>
         </div>
-      </StyledSection>
-      <StyledSection>
-        <div className="heading-wrapper">
-          <Switch
-            className="main-switch"
-            checked={botEnabled}
-            onChange={handleHealingToggle}
-            disabled={windowId === null}
-            offColor="#ff1c1c"
-            onColor="#00ff00"
-            handleDiameter={42}
-            uncheckedIcon={false}
-            checkedIcon={false}
-            boxShadow="0px 1px 5px rgba(0, 0, 0, 0.6)"
-            activeBoxShadow="0px 0px 1px 10px rgba(0, 0, 0, 0.2)"
-            height={28}
-            width={72}
-          />
-        </div>
-        <div className="button-container">
-          <button className="add-button button-page" type="button" onClick={handleAddRule}>
-            ADD NEW RULE
-          </button>
-          <button className="save-button button-page" type="button" onClick={handleLoadRules}>
-            LOAD
-          </button>
-          <button className="load-button button-page" type="button" onClick={handleSaveRules}>
-            SAVE
-          </button>
-        </div>
-        {manaSyncRule && (
-          <div className="manaSync-rule">
-            <div className="input-wrapper">
-              <Switch
-                checked={manaSyncRule.enabled}
-                onChange={() =>
-                  dispatch(
-                    updateManaSync({
-                      key: manaSyncRule.key,
-                      manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
-                      enabled: !manaSyncRule.enabled,
-                    }),
-                  )
-                }
-                disabled={botEnabled}
-                offColor="#ff1c1c"
-                onColor="#00ff00"
-                handleDiameter={26}
-                uncheckedIcon={false}
-                checkedIcon={false}
-                boxShadow="0px   1px   5px rgba(0,   0,   0,   0.6)"
-                activeBoxShadow="0px   0px   1px   10px rgba(0,   0,   0,   0.2)"
-                height={18}
-                width={48}
-                className="react-switch"
-              />
-            </div>
-            <div className="input-wrapper">
-              <input
-                className="input input-hotkey"
-                id="manaSyncKey"
-                value={manaSyncRule.key}
-                onChange={(event) =>
-                  dispatch(
-                    updateManaSync({
-                      key: event.target.value,
-                      manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
-                    }),
-                  )
-                }
-                placeholder="F1"
-                disabled={botEnabled}
-              />
-              <label className="label" htmlFor="manaSyncKey">
-                Hotkey
-              </label>
-            </div>
-            <div className="input-wrapper">
-              <input
-                type="number"
-                className="input input-percent"
-                id="manaSyncPercentage"
-                value={manaSyncRule.manaTriggerPercentage}
-                onChange={(event) => {
-                  if (event.target.value !== undefined) {
+
+        <div className="settings-row">
+          <div className="enable-wrapper">
+            <CustomCheckbox
+              checked={botEnabled}
+              onChange={handleHealingToggle}
+              disabled={windowId === null}
+              size={16}
+            />
+            <h2 className="enable-text">Enabled</h2>
+          </div>
+
+          <div className="refresh-rate-row">
+            <h5>refresh</h5>
+            <ListInput
+              type="number"
+              className="input-percent input-field input-long"
+              id="refreshRate"
+              value={refreshRate}
+              onChange={handleRefreshRateChange}
+              placeholder="50"
+              min="25"
+              max="2000"
+            />
+            <h5>ms</h5>
+          </div>
+          {manaSyncRule && (
+            <div className="mana-sync-column margin-left">
+              <div className="mana-sync-row">
+                <CustomCheckbox
+                  checked={manaSyncRule.enabled}
+                  onChange={() =>
                     dispatch(
                       updateManaSync({
                         key: manaSyncRule.key,
-                        manaTriggerPercentage: event.target.value,
+                        manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
+                        enabled: !manaSyncRule.enabled,
                       }),
-                    );
+                    )
                   }
-                }}
-                placeholder="0"
-                disabled={botEnabled}
-              />
-              <label className="label" htmlFor="manaSyncPercentage">
-                Mana %
-              </label>
-            </div>
-          </div>
-        )}
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="rules">
-            {(provided) => (
-              <div {...provided.droppableProps} ref={provided.innerRef}>
-                {rules
-                  .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
-                  .map((rule, index) => (
-                    <Draggable
-                      key={rule.id}
-                      draggableId={rule.id}
-                      index={index}
-                      isDragDisabled={isAnyRuleEnabled}
-                    >
-                      {(provided) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                        >
-                          <HealingRule rule={rule} />
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                {provided.placeholder}
+                  size={18}
+                />
+                <h5 className="mana-sync-row-text mana-sync-checkbox-text">
+                  Sync HK with Attack CD:
+                </h5>
               </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+
+              <div className="mana-sync-row mana-sync-hotkey">
+                <h5>HK:</h5>
+                <ListSelect
+                  className="input-hotkey input-field"
+                  id="manaSyncKey"
+                  value={manaSyncRule.key || 'F1'}
+                  onChange={(event) =>
+                    dispatch(
+                      updateManaSync({
+                        key: event.target.value,
+                        manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
+                      }),
+                    )
+                  }
+                  placeholder="F1"
+                >
+                  {keyboardKeys.map((key) => (
+                    <option key={key.value} value={key.value}>
+                      {key.label}
+                    </option>
+                  ))}
+                </ListSelect>
+              </div>
+              <div className="mana-sync-row">
+                <h5>Mana%:</h5>
+                <ListInput
+                  type="number"
+                  className="input-percent input-field"
+                  id="manaSyncPercentage"
+                  value={inputValue} // Use the local state for the input's value
+                  onChange={handleManaSyncPercentageChange}
+                  placeholder="80"
+                  min="1"
+                  max="100"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </StyledSection>
+      <StyledSection>
+        <SunkenWrapper className="list-wrapper">
+          <div className="button-container">
+            <button className="add-button button-page" type="button" onClick={handleAddRule}>
+              ADD NEW RULE
+            </button>
+            <button className="save-button button-page" type="button" onClick={handleLoadRules}>
+              LOAD
+            </button>
+            <button className="load-button button-page" type="button" onClick={handleSaveRules}>
+              SAVE
+            </button>
+          </div>
+          <RuleListWrapper>
+            {rules
+              .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
+              .map((rule, index) => (
+                <HealingRule key={rule.id} rule={rule} />
+              ))}
+          </RuleListWrapper>
+        </SunkenWrapper>
       </StyledSection>
     </StyledMain>
   );

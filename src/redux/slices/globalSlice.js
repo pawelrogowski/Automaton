@@ -2,9 +2,12 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  windowTitle: 'Press Alt+W on focused tibia window or Alt+Shift+W to manually select',
+  windowTitle: 'Press Alt+0 on focused tibia window or Alt+Shift+0 to manually select',
   windowId: null,
+  windowPos: { x: 0, y: 0 },
   botEnabled: false,
+  refreshRate: 25,
+  autoLootEnabled: false,
 };
 
 const globalSlice = createSlice({
@@ -20,14 +23,32 @@ const globalSlice = createSlice({
     setIsBotEnabled: (state, action) => {
       state.botEnabled = action.payload;
     },
+    setRefreshRate: (state, action) => {
+      state.refreshRate = action.payload;
+    },
     toggleBotEnabled: (state) => {
       if (state.windowId !== null) {
         state.botEnabled = !state.botEnabled;
       }
     },
+    toogleAutoLootEnabled: (state) => {
+      if (state.windowId !== null) {
+        state.autoLootEnabled = !state.autoLootEnabled;
+      }
+    },
+  },
+  setWindowPos: (state) => {
+    state.windowPos = action.payload;
   },
 });
 
-export const { setWindowTitle, setWindowId, setIsBotEnabled } = globalSlice.actions;
+export const {
+  setWindowTitle,
+  setWindowId,
+  setIsBotEnabled,
+  setRefreshRate,
+  toogleAutoLootEnabled,
+  setWindowPos,
+} = globalSlice.actions;
 
 export default globalSlice;
