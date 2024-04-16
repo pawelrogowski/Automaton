@@ -99,9 +99,9 @@ const statusBarSequences = {
   drowning: {
     direction: 'horizontal',
     sequence: [
-      [46, 61, 64],
-      [112, 152, 158],
-      [28, 151, 158],
+      [75, 206, 222],
+      [208, 220, 224],
+      [48, 142, 170],
     ],
   },
   bleeding: {
