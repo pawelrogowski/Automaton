@@ -28,6 +28,8 @@ const initialState = {
     strengthened: false,
     inProtectedZone: false,
     inRestingArea: false,
+    whiteSkull: false,
+    redSkull: false,
   },
 };
 

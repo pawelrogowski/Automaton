@@ -134,10 +134,10 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
 
 let currentSizeIndex = 0;
 const sizes = [
-  { width: 700, height: 346 },
-  { width: 700, height: 74 },
+  { width: 700, height: 333 },
+  { width: 700, height: 72 },
   { width: 700, height: 41 },
-  { width: 700, height: 74 },
+  { width: 700, height: 72 },
 ];
 
 const registerResizeShortcut = () => {

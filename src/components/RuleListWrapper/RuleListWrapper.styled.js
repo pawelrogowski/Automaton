@@ -8,7 +8,9 @@ export const StyledDiv = styled.div`
   border-left: 1px solid #181818;
   border-right: 1px solid #7d7d7d;
   border-bottom: 1px solid #7d7d7d;
-  min-height: 218px;
+  min-height: 221px;
+  max-height: 221px;
+  overflow-y: scroll;
   min-width: 681px;
   .header {
     background: #363636;

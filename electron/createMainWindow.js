@@ -14,9 +14,10 @@ const dirname = path.dirname(filename);
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
     width: 700,
-    height: 330,
+    height: 333,
     minWidth: 700,
     minHeight: 42,
+    maxHeight: 333,
     x: 0,
     y: 0,
     icon: path.join(dirname, './skull.png'),

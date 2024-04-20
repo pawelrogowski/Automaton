@@ -42,9 +42,33 @@ const statusBarSequences = {
   battleSign: {
     direction: 'horizontal',
     sequence: [
-      [182, 122, 85],
-      [143, 100, 78],
-      [229, 154, 108],
+      [151, 151, 156],
+      [182, 182, 185],
+      [123, 123, 128],
+    ],
+  },
+  redBattleSign: {
+    direction: 'horizontal',
+    sequence: [
+      [55, 8, 8],
+      [127, 0, 0],
+      [173, 0, 0],
+    ],
+  },
+  whiteSkull: {
+    direction: 'horizontal',
+    sequence: [
+      [242, 242, 242],
+      [235, 235, 235],
+      [232, 232, 232],
+    ],
+  },
+  redSkull: {
+    direction: 'horizontal',
+    sequence: [
+      [213, 206, 206],
+      [255, 173, 173],
+      [255, 171, 171],
     ],
   },
   burning: {

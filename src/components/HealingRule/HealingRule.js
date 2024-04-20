@@ -12,7 +12,7 @@ import ListSelect from '../ListSelect/ListSelect.js';
 
 const { api } = window;
 
-const HealingRule = ({ rule }) => {
+const HealingRule = ({ rule, className }) => {
   const dispatch = useDispatch();
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
   const [localHealing, setLocalHealing] = useState(healing);
@@ -47,7 +47,7 @@ const HealingRule = ({ rule }) => {
     healing.category;
 
   return (
-    <StyledDiv $running={healing.enabled}>
+    <StyledDiv className={className} $running={healing.enabled}>
       <details open={isOpen} onToggle={() => setIsOpen(!isOpen)}>
         <CharacterStatusConditions
           ruleId={rule.id} // Pass the ruleId to the CharacterStatusConditions component

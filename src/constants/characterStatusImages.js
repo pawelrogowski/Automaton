@@ -16,6 +16,8 @@ import protectionZoneBlock from '../assets/protectionZoneBlock.gif';
 import strengthened from '../assets/strengthened.gif';
 import inProtectedZone from '../assets/inProtectionZone.gif';
 import inRestingArea from '../assets/inRestingArea.png';
+import whiteSkull from '../assets/whiteSkull.png';
+import redSkull from '../assets/redSkull.png';
 
 const characterStatusImages = {
   inProtectedZone,
@@ -36,6 +38,8 @@ const characterStatusImages = {
   drowning,
   logoutBlock,
   protectionZoneBlock,
+  whiteSkull,
+  redSkull,
 };
 
 export default characterStatusImages;
