@@ -11,7 +11,7 @@ const initialState = [
     manaTriggerCondition: '<=',
     manaTriggerPercentage: '80',
     priority: '0',
-    delay: '1000',
+    delay: '2000',
     category: 'Potion',
     conditions: [
       {
@@ -89,7 +89,7 @@ const healingSlice = createSlice({
         manaSyncRule.hpTriggerPercentage = '0';
         manaSyncRule.manaTriggerCondition = '<=';
         manaSyncRule.priority = '0';
-        manaSyncRule.delay = '1000';
+        manaSyncRule.delay = '2000';
         manaSyncRule.conditions = [];
         manaSyncRule.name = 'manaSync';
       }

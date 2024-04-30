@@ -34,16 +34,20 @@ let lastCategoriesExecitionTimes = {};
 let iterationCounter = 0;
 let totalExecutionTime = 0;
 
-// options for rule processing
 let options = {
   globalDelay: 1,
   categoryDelays: {
-    Healing: 1000,
-    Potion: 1000,
-    Support: 1000,
+    Healing: 250,
+    Potion: 250,
+    Support: 250,
     Attack: 1000,
     Equip: 100,
-    Others: 0,
+    Others: 25,
+  },
+  cooldownStateMapping: {
+    Healing: 'healingCdActive',
+    Support: 'supportCdActive',
+    Attack: 'attackCdActive',
   },
   logsEnabled: false,
 };
@@ -121,14 +125,13 @@ const filterRulesNotOnDelay = (rules, now) =>
  * @returns {Object[]} - The filtered list of rules not affected by active cooldowns.
  */
 const filterRulesByActiveCooldowns = (rules, gameState) =>
-  rules.filter(
-    (rule) =>
-      !(
-        (rule.category === 'Healing' && gameState.healingCdActive) ||
-        (rule.category === 'Support' && gameState.supportCdActive) ||
-        (rule.category === 'Attack' && gameState.attackCdActive)
-      ),
-  );
+  rules.filter((rule) => {
+    const cooldownStateKey = options.cooldownStateMapping[rule.category];
+    if (!cooldownStateKey) {
+      return true;
+    }
+    return !gameState[cooldownStateKey];
+  });
 
 /**
  * Filter rules by conditions.
