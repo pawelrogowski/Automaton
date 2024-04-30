@@ -69,13 +69,13 @@ export const Healing = () => {
             manaTriggerPercentage: value,
           }),
         );
-      }, 500); // Adjust the delay as needed
+      }, 100);
     }
   };
 
   const handleRefreshRateChange = (event) => {
     const value = event.target.value;
-    dispatch(setRefreshRate(value));
+    dispatch(setRefreshRate(Math.max(25, value)));
   };
 
   const { saveRules, loadRules } = window.electron;
@@ -123,7 +123,7 @@ export const Healing = () => {
               value={refreshRate}
               onChange={handleRefreshRateChange}
               placeholder="25"
-              min="5"
+              min="25"
               max="20000"
             />
             <h5>ms</h5>

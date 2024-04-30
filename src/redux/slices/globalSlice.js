@@ -6,7 +6,7 @@ const initialState = {
   windowId: null,
   windowPos: { x: 0, y: 0 },
   botEnabled: false,
-  refreshRate: 5,
+  refreshRate: 25,
   autoLootEnabled: false,
 };
 
