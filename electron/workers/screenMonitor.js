@@ -10,6 +10,7 @@ import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
 import { keyPress } from '../keyboardControll/keyPress.js';
 import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
+import { antiIdle } from '../keyboardControll/antiIdle.js';
 
 let state = null;
 let global = null;
@@ -191,6 +192,20 @@ const processRules = async (rules, gameState, global) => {
 
 async function main() {
   if (global.windowId) {
+    // const antiIdleInterval = setInterval(
+    //   () => {
+    //     if (global.antiIdleEnabled) {
+    //       antiIdle(global.windowId);
+    //     }
+    //   },
+    //   1000 * 60 * 14,
+    // );
+
+    // // Ensure the interval is cleared when the worker is terminated or when needed
+    // parentPort.on('close', () => {
+    //   clearInterval(antiIdleInterval);
+    // });
+
     const { width } = await getViewport(global.windowId);
     const imageData = await grabScreen(global.windowId);
     const startRegions = await findSequences(imageData, regionColorSequences, width);

@@ -8,11 +8,11 @@ import eRing from '../assets/eRing.gif';
 import freezing from '../assets/freezing.gif';
 import hasted from '../assets/hasted.gif';
 import hungry from '../assets/hungry.png';
-import logoutBlock from '../assets/logoutBlock.gif';
+import battleSign from '../assets/battleSign.gif';
 import magicShield from '../assets/magicShield.gif';
 import paralyzed from '../assets/paralyzed.gif';
 import poisoned from '../assets/poisoned.gif';
-import protectionZoneBlock from '../assets/protectionZoneBlock.gif';
+import redBattleSign from '../assets/redBattleSign.gif';
 import strengthened from '../assets/strengthened.gif';
 import inProtectedZone from '../assets/inProtectionZone.gif';
 import inRestingArea from '../assets/inRestingArea.png';
@@ -36,8 +36,8 @@ const characterStatusImages = {
   cursed,
   freezing,
   drowning,
-  logoutBlock,
-  protectionZoneBlock,
+  battleSign,
+  redBattleSign,
   whiteSkull,
   redSkull,
 };

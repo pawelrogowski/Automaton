@@ -8,6 +8,7 @@ const initialState = {
   botEnabled: false,
   refreshRate: 25,
   autoLootEnabled: false,
+  antiIdleEnabled: true,
 };
 
 const globalSlice = createSlice({
