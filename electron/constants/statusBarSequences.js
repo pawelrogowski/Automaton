@@ -44,7 +44,7 @@ const statusBarSequences = {
     sequence: [
       [151, 151, 156],
       [182, 182, 185],
-      [124, 124, 128],
+      [124, 124, 128],battleListSequences
     ],
   },
   redBattleSign: {

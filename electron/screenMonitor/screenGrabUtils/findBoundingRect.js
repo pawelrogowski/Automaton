@@ -1,49 +1,45 @@
-import findSequence from './findSequence.js'; // Adjust the import path as necessary
+// findBoundingRect.js
 
-async function findBoundingRect(imageData, startSequence, endSequence, imageWidth) {
-  const length = imageData.length / 4;
-  const packedImageData = new Uint32Array(length);
-  for (let i = 0; i < length; i++) {
-    const index = i * 4;
-    packedImageData[i] =
-      (imageData[index + 2] << 16) | (imageData[index + 1] << 8) | imageData[index];
+// Import the findSequence function
+import findSequence from './findSequence.js';
+
+/**
+ * Finds the bounding rectangle between two sequences in an image.
+ * @param {Uint8ClampedArray} imageData - The image data to search within.
+ * @param {Object} sequence1 - The first sequence to find.
+ * @param {Object} sequence2 - The second sequence to find.
+ * @param {number} imageWidth - The width of the image.
+ * @returns {Object} - The bounding rectangle's dimensions and position.
+ */
+function findBoundingRect(imageData, sequence1, sequence2, imageWidth) {
+  // Find the starting point of sequence1.
+  const startPoint = findSequence(imageData, sequence1, imageWidth);
+  if (!startPoint.x || !startPoint.y) {
+    // If sequence1 is not found, return an empty object.
+    return {};
   }
 
-  const startRegion = await findSequence(packedImageData, startSequence, imageWidth);
-  if (!startRegion || startRegion.y === undefined) {
-    console.error('Start region not found');
-    return { x: 0, y: 0, width: 0, height: 0 };
+  // Find the ending point of sequence2 starting from the coordinates of sequence1.
+  const endPoint = findSequence(imageData, sequence2, imageWidth, {
+    x: startPoint.x,
+    y: startPoint.y,
+  });
+  if (!endPoint.x || !endPoint.y) {
+    // If sequence2 is not found, return an empty object.
+    return {};
   }
 
-  const startIndex = startRegion.x * imageWidth + startRegion.y;
-  const endSearchArea = {
-    startIndex,
-    endIndex: length - 1,
+  // Calculate the rectangle's dimensions.
+  const rect = {
+    x: startPoint.x,
+    y: startPoint.y,
+    width: endPoint.x - startPoint.x,
+    height: endPoint.y - startPoint.y,
   };
 
-  const endRegion = await findSequence(packedImageData, endSequence, imageWidth, endSearchArea, -1);
-  if (!endRegion || endRegion.x === undefined) {
-    console.error('End region not found');
-    return { x: 0, y: 0, width: 0, height: 0 };
-  }
-
-  // Ensure the top-left corner is correctly identified
-  const topLeftX = Math.min(startRegion.x, endRegion.x);
-  const topLeftY = Math.min(startRegion.y, endRegion.y);
-
-  const rectWidth = Math.abs(endRegion.x - startRegion.x);
-  const rectHeight = Math.abs(endRegion.y - startRegion.y);
-
-  console.log('Start Region:', startRegion);
-  console.log('End Region:', endRegion);
-  console.log('Bounding Rectangle:', {
-    x: topLeftX,
-    y: topLeftY,
-    width: rectWidth,
-    height: rectHeight,
-  });
-
-  return { x: topLeftX, y: topLeftY, width: rectWidth, height: rectHeight };
+  // Return the rectangle's dimensions.
+  return rect;
 }
 
+// Export the findBoundingRect function.
 export default findBoundingRect;

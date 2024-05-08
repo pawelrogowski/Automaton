@@ -1,3 +1,4 @@
+//regionColorSequences.js
 const regionColorSequences = {
   healthBar: {
     direction: 'horizontal',
@@ -98,7 +99,7 @@ const regionColorSequences = {
   },
   battleListStart: {
     direction: 'horizontal',
-    offset: { x: 14, y: 19 },
+    offset: { x: 12, y: 17 },
     sequence: [
       [49, 49, 49],
       [129, 79, 41],

@@ -11,6 +11,7 @@ import { keyPress } from '../keyboardControll/keyPress.js';
 import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import { antiIdle } from '../keyboardControll/antiIdle.js';
+import findSequence from '../screenMonitor/screenGrabUtils/findSequence.js';
 
 let state = null;
 let global = null;
@@ -212,22 +213,17 @@ async function main() {
     const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, battleListEnd } =
       startRegions;
 
-    console.log(battleListStart, battleListEnd);
-    // const actionBarRegionBottom = await findBoundingRect(
-    //   imageData,
-    //   regionColorSequences.hotkeyBarBottomStart,
-    //   regionColorSequences.hotkeyBarBottomEnd,
-    //   width,
-    // );
+    console.log(startRegions);
 
-    const battleListRegion = await findBoundingRect(
-      imageData,
-      regionColorSequences.battleListStart,
-      regionColorSequences.battleListEnd,
-      width,
+    console.log(await findSequence(imageData, regionColorSequences.battleListStart, width));
+    console.log(
+      await findBoundingRect(
+        imageData,
+        regionColorSequences.battleListStart,
+        regionColorSequences.battleListEnd,
+        width,
+      ),
     );
-
-    console.log(battleListRegion);
 
     let hpManaRegion = {
       x: healthBar.x,
