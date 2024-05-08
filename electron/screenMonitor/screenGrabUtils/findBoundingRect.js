@@ -1,4 +1,4 @@
-import findSequence from './findSequence.js';
+import findSequence from './findSequence.js'; // Adjust the import path as necessary
 
 async function findBoundingRect(imageData, startSequence, endSequence, imageWidth) {
   const length = imageData.length / 4;
@@ -9,15 +9,9 @@ async function findBoundingRect(imageData, startSequence, endSequence, imageWidt
       (imageData[index + 2] << 16) | (imageData[index + 1] << 8) | imageData[index];
   }
 
-  const packedStartSequence = startSequence.sequence
-    ? startSequence.sequence.map(([r, g, b]) => (r << 16) | (g << 8) | b)
-    : undefined;
-  const packedEndSequence = endSequence.sequence
-    ? endSequence.sequence.map(([r, g, b]) => (r << 16) | (g << 8) | b)
-    : undefined;
-
   const startRegion = await findSequence(packedImageData, startSequence, imageWidth);
   if (!startRegion || startRegion.y === undefined) {
+    console.error('Start region not found');
     return { x: 0, y: 0, width: 0, height: 0 };
   }
 
@@ -29,12 +23,27 @@ async function findBoundingRect(imageData, startSequence, endSequence, imageWidt
 
   const endRegion = await findSequence(packedImageData, endSequence, imageWidth, endSearchArea, -1);
   if (!endRegion || endRegion.x === undefined) {
+    console.error('End region not found');
     return { x: 0, y: 0, width: 0, height: 0 };
   }
 
+  // Ensure the top-left corner is correctly identified
+  const topLeftX = Math.min(startRegion.x, endRegion.x);
+  const topLeftY = Math.min(startRegion.y, endRegion.y);
+
   const rectWidth = Math.abs(endRegion.x - startRegion.x);
   const rectHeight = Math.abs(endRegion.y - startRegion.y);
-  return { x: startRegion.x, y: startRegion.y, width: rectWidth, height: rectHeight };
+
+  console.log('Start Region:', startRegion);
+  console.log('End Region:', endRegion);
+  console.log('Bounding Rectangle:', {
+    x: topLeftX,
+    y: topLeftY,
+    width: rectWidth,
+    height: rectHeight,
+  });
+
+  return { x: topLeftX, y: topLeftY, width: rectWidth, height: rectHeight };
 }
 
 export default findBoundingRect;

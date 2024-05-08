@@ -209,14 +209,25 @@ async function main() {
     const { width } = await getViewport(global.windowId);
     const imageData = await grabScreen(global.windowId);
     const startRegions = await findSequences(imageData, regionColorSequences, width);
-    const { healthBar, manaBar, cooldownBar, statusBar } = startRegions;
+    const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, battleListEnd } =
+      startRegions;
 
+    console.log(battleListStart, battleListEnd);
     // const actionBarRegionBottom = await findBoundingRect(
     //   imageData,
     //   regionColorSequences.hotkeyBarBottomStart,
     //   regionColorSequences.hotkeyBarBottomEnd,
     //   width,
     // );
+
+    const battleListRegion = await findBoundingRect(
+      imageData,
+      regionColorSequences.battleListStart,
+      regionColorSequences.battleListEnd,
+      width,
+    );
+
+    console.log(battleListRegion);
 
     let hpManaRegion = {
       x: healthBar.x,

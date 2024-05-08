@@ -96,6 +96,25 @@ const regionColorSequences = {
       [41, 41, 41],
     ],
   },
+  battleListStart: {
+    direction: 'horizontal',
+    offset: { x: 14, y: 19 },
+    sequence: [
+      [49, 49, 49],
+      [129, 79, 41],
+      [113, 91, 70],
+      [56, 56, 56],
+    ],
+  },
+  battleListEnd: {
+    direction: 'horizontal',
+    offset: { x: 1, y: 1 },
+    sequence: [
+      [113, 113, 113],
+      [113, 113, 114],
+      [117, 118, 118],
+    ],
+  },
 };
 
 export default regionColorSequences;

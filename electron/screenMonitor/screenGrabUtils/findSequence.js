@@ -1,3 +1,27 @@
+class TrieNode {
+  constructor() {
+    this.children = {};
+    this.sequence = null; // This will hold the found sequence coordinates
+  }
+}
+
+function buildTrie(packedTargetSequence, direction, offset) {
+  const root = new TrieNode();
+  for (let i = 0; i < packedTargetSequence.length; i++) {
+    let node = root;
+    const color = packedTargetSequence[i];
+    if (!(color in node.children)) {
+      node.children[color] = new TrieNode();
+    }
+    node = node.children[color];
+    if (i === packedTargetSequence.length - 1) {
+      // Store the found sequence coordinates in the last node
+      node.sequence = { foundX: offset.x, foundY: offset.y };
+    }
+  }
+  return root;
+}
+
 function findSequence(imageData, targetSequence, width, searchArea = null, occurrence = 0) {
   return new Promise((resolve) => {
     const length = imageData.length / 4;
@@ -56,46 +80,6 @@ function findSequence(imageData, targetSequence, width, searchArea = null, occur
   });
 }
 
-class TrieNode {
-  constructor() {
-    this.children = {};
-    this.sequence = null;
-  }
-}
-
-function buildTrie(packedTargetSequence, direction, offset) {
-  const root = new TrieNode();
-  let node = root;
-  for (let i = 0; i < packedTargetSequence.length; i++) {
-    const color = packedTargetSequence[i];
-    if (!(color in node.children)) {
-      node.children[color] = new TrieNode();
-    }
-    node = node.children[color];
-    if (i === packedTargetSequence.length - 1) {
-      let foundX, foundY;
-      if (direction === 'horizontal') {
-        foundX = offset.x + 1 - packedTargetSequence.length;
-        foundY = offset.y;
-      } else {
-        foundX = -offset.x;
-        foundY = offset.y + 1 - packedTargetSequence.length;
-      }
-      node.sequence = { foundX, foundY };
-    }
-  }
-  return root;
-}
-
-function clearTrie(node) {
-  if (!node) {
-    return;
-  }
-  for (const childNode of Object.values(node.children)) {
-    clearTrie(childNode);
-  }
-  node.children = null;
-  node.sequence = null;
-}
+// Assuming buildTrie, clearTrie, and other necessary functions are defined here
 
 export default findSequence;
