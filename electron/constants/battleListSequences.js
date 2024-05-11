@@ -1,5 +1,6 @@
 const battleListSequences = {
   battleEntry: {
+    offset: { x: 0, y: 0 },
     direction: 'vertical',
     sequence: [
       [0, 0, 0],
@@ -9,3 +10,5 @@ const battleListSequences = {
     ],
   },
 };
+
+export default battleListSequences;

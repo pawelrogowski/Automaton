@@ -12,6 +12,7 @@ const initialState = {
   healingCdActive: false,
   supportCdActive: false,
   attackCdActive: false,
+  monsterNum: 0,
   characterStatus: {
     bleeding: false,
     burning: false,
@@ -125,10 +126,19 @@ const gameStateSlice = createSlice({
         }
       }
     },
+    setMonsterNum: (state, action) => {
+      const newMonsterNum = action.payload.monsterNum;
+      state.monsterNum = newMonsterNum;
+    },
   },
 });
 
-export const { setHealthPercent, setManaPercent, setHealingCdActive, setCharacterStatus } =
-  gameStateSlice.actions;
+export const {
+  setHealthPercent,
+  setManaPercent,
+  setHealingCdActive,
+  setCharacterStatus,
+  setMonsterNum,
+} = gameStateSlice.actions;
 
 export default gameStateSlice;

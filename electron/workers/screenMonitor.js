@@ -4,6 +4,7 @@ import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
 import regionColorSequences from '../constants/regionColorSequeces.js';
 import cooldownColorSequences from '../constants/cooldownColorSequences.js';
+import battleListSequences from '../constants/battleListSequences.js';
 import statusBarSequences from '../constants/statusBarSequences.js';
 import parseMathCondition from '../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
@@ -11,7 +12,8 @@ import { keyPress } from '../keyboardControll/keyPress.js';
 import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import { antiIdle } from '../keyboardControll/antiIdle.js';
-import findSequence from '../screenMonitor/screenGrabUtils/findSequence.js';
+import cropImageData from '../screenMonitor/utils/cropImageData.js';
+import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 
 let state = null;
 let global = null;
@@ -28,11 +30,13 @@ let wholeWindowData;
 let hpManaImageData;
 let cooldownBarImageData;
 let statusBarImageData;
+let battleListImageData;
 let cooldownBarRegions;
 let statusBarRegions;
 // variables to keep track of rule execution times
 let lastRuleExecitionTimes = {};
 let lastCategoriesExecitionTimes = {};
+let lastMonsterNumber;
 let iterationCounter = 0;
 let totalExecutionTime = 0;
 
@@ -193,37 +197,19 @@ const processRules = async (rules, gameState, global) => {
 
 async function main() {
   if (global.windowId) {
-    // const antiIdleInterval = setInterval(
-    //   () => {
-    //     if (global.antiIdleEnabled) {
-    //       antiIdle(global.windowId);
-    //     }
-    //   },
-    //   1000 * 60 * 14,
-    // );
-
-    // // Ensure the interval is cleared when the worker is terminated or when needed
-    // parentPort.on('close', () => {
-    //   clearInterval(antiIdleInterval);
-    // });
-
     const { width } = await getViewport(global.windowId);
+
     const imageData = await grabScreen(global.windowId);
-    const startRegions = await findSequences(imageData, regionColorSequences, width);
-    const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, battleListEnd } =
-      startRegions;
 
-    console.log(startRegions);
+    const startRegions = findSequences(imageData, regionColorSequences, width);
+    const { healthBar, manaBar, cooldownBar, statusBar, battleListStart } = startRegions;
 
-    console.log(await findSequence(imageData, regionColorSequences.battleListStart, width));
-    console.log(
-      await findBoundingRect(
-        imageData,
-        regionColorSequences.battleListStart,
-        regionColorSequences.battleListEnd,
-        width,
-      ),
-    );
+    let battleListRegion = {
+      x: battleListStart.x,
+      y: battleListStart.y,
+      width: 4,
+      height: 215,
+    };
 
     let hpManaRegion = {
       x: healthBar.x,
@@ -247,12 +233,14 @@ async function main() {
     };
 
     async function loop() {
-      // wholeWindowData = await grabScreen(global.windowId);
-      [hpManaImageData, cooldownBarImageData, statusBarImageData] = await Promise.all([
-        grabScreen(global.windowId, hpManaRegion),
-        grabScreen(global.windowId, cooldownsRegion),
-        grabScreen(global.windowId, statusBarRegion),
-      ]);
+      [hpManaImageData, cooldownBarImageData, statusBarImageData, battleListImageData] =
+        await Promise.all([
+          grabScreen(global.windowId, hpManaRegion),
+          grabScreen(global.windowId, cooldownsRegion),
+          grabScreen(global.windowId, statusBarRegion),
+          grabScreen(global.windowId, battleListRegion),
+        ]);
+
       const { percentage: newHealthPercentage } = await calculatePercentages(
         healthBar,
         hpManaRegion,
@@ -299,7 +287,7 @@ async function main() {
       }
       lastManaPercentage = newManaPercentage;
 
-      cooldownBarRegions = await findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
+      cooldownBarRegions = findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
 
       for (const [key, value] of Object.entries(cooldownBarRegions)) {
         const isCooldownActive = value.x !== undefined;
@@ -322,7 +310,7 @@ async function main() {
         }
       }
 
-      statusBarRegions = await findSequences(statusBarImageData, statusBarSequences, 106);
+      statusBarRegions = findSequences(statusBarImageData, statusBarSequences, 106);
 
       const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(
         (acc, key) => {
@@ -350,7 +338,18 @@ async function main() {
 
         lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
       }
-
+      let monsterNumber = findAllOccurrences(
+        battleListImageData,
+        battleListSequences.battleEntry,
+        4,
+      );
+      if (lastMonsterNumber !== monsterNumber) {
+        lastMonsterNumber = monsterNumber;
+        parentPort.postMessage({
+          type: 'setMonsterNum',
+          payload: { monsterNum: monsterNumber },
+        });
+      }
       if (global.botEnabled) {
         await processRules(healing, gameState, global);
       }
@@ -358,9 +357,9 @@ async function main() {
       hpManaImageData = null;
       cooldownBarImageData = null;
       statusBarImageData = null;
-
-      setTimeout(loop, Math.max(global.refreshRate, 5));
+      setTimeout(loop, Math.max(global.refreshRate, 25));
     }
+
     loop();
   }
 }

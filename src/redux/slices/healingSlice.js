@@ -84,6 +84,7 @@ const healingSlice = createSlice({
       if (manaSyncRule) {
         manaSyncRule.key = key;
         manaSyncRule.manaTriggerPercentage = manaTriggerPercentage;
+        manaSyncRule.delay = 2000;
       }
     },
     loadRules: (state, action) => {
