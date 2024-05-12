@@ -34,6 +34,8 @@ const healingSlice = createSlice({
         hpTriggerCondition: action.payload.hpTriggerCondition || '<=',
         manaTriggerCondition: action.payload.manaTriggerCondition || '>=',
         conditions: action.payload.conditions || [],
+        monsterNum: action.payload.monsterNum || 0,
+        monsterNumCondition: action.payload.monsterNumCondition || '>=',
       };
       state.push(newRule);
     },
@@ -41,13 +43,20 @@ const healingSlice = createSlice({
       return state.filter((rule) => rule.id !== action.payload);
     },
     updateRule: (state, action) => {
-      const index = state.findIndex((rule) => rule.id === action.payload.id);
-      if (index !== -1) {
-        // Merge the existing rule with the payload, preserving the conditions array
-        state[index] = {
-          ...state[index],
-          ...action.payload,
-          conditions: state[index].conditions, // Preserve the existing conditions
+      const { id, ...updatedFields } = action.payload;
+      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        const updatedFieldsWithValidation = {
+          ...updatedFields,
+          monsterNum: Math.max(0, Math.min(10, updatedFields.monsterNum)),
+          hpTriggerPercentage: Math.max(0, Math.min(100, updatedFields.hpTriggerPercentage)),
+          manaTriggerPercentage: Math.max(0, Math.min(100, updatedFields.manaTriggerPercentage)),
+          delay: Math.max(25, Math.min(360000, updatedFields.delay)),
+          priority: Math.max(-99, Math.min(99, updatedFields.priority)),
+        };
+        state[ruleIndex] = {
+          ...state[ruleIndex],
+          ...updatedFieldsWithValidation,
         };
       }
     },
@@ -89,9 +98,16 @@ const healingSlice = createSlice({
         manaSyncRule.delay = 2000;
       }
     },
+    updateManaSyncTriggerPercentage: (state, action) => {
+      const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
+      if (manaSyncRule) {
+        manaSyncRule.manaTriggerPercentage = action.payload;
+      }
+    },
     loadRules: (state, action) => {
       return action.payload;
     },
+    // In healingSlice.js
     toggleManaSyncEnabled: (state) => {
       const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
       if (manaSyncRule) {
@@ -102,7 +118,8 @@ const healingSlice = createSlice({
       const { id, monsterNum, monsterNumCondition } = action.payload;
       const ruleIndex = state.findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        state[ruleIndex].monsterNum = monsterNum;
+        const validMonsterNum = Math.max(0, Math.min(10, monsterNum));
+        state[ruleIndex].monsterNum = validMonsterNum;
         state[ruleIndex].monsterNumCondition = monsterNumCondition;
       }
     },
@@ -119,6 +136,7 @@ export const {
   updateManaSync,
   toggleManaSyncEnabled,
   updateMonsterNum,
+  updateManaSyncTriggerPercentage,
 } = healingSlice.actions;
 
 export default healingSlice;

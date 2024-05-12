@@ -10,7 +10,6 @@ module.exports = {
   },
   devtool: 'source-map',
   target: 'electron-renderer',
-  externals: ['iohook2'],
   resolve: {
     extensions: ['.js', '.jsx', '.mjs'],
     fallback: {
@@ -86,10 +85,7 @@ module.exports = {
       template: './src/index.html',
     }),
     new CopyWebpackPlugin({
-      patterns: [
-        { from: 'node_modules/robotjs/build/Release', to: 'build/Release' },
-        { from: 'src/assets', to: 'dist/assets' },
-      ],
+      patterns: [{ from: 'src/assets', to: 'dist/assets' }],
     }),
   ],
 };

@@ -1,7 +1,7 @@
 {
   "name": "Automaton",
   "productName": "Automaton",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -25,7 +25,6 @@
     "electron-color-picker": "^0.2.0",
     "electron-squirrel-startup": "^1.0.0",
     "electron-store": "^8.1.0",
-    "iohook2": "^1.0.6",
     "lodash": "^4.17.21",
     "modern-normalize": "^2.0.0",
     "node-loader": "^2.0.0",
@@ -40,7 +39,6 @@
     "react-redux": "^9.0.4",
     "react-router-dom": "^6.21.1",
     "redux-logger": "^3.0.6",
-    "robotjs": "^0.6.0",
     "styled-components": "^6.1.6",
     "webpack-node-externals": "^3.0.0",
     "x11": "^2.3.0"

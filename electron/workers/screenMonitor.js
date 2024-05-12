@@ -159,6 +159,11 @@ const filterRulesByConditions = (rules, gameState) =>
         gameState.manaPercentage,
       ) &&
       areCharStatusConditionsMet(rule, gameState) &&
+      parseMathCondition(
+        rule.monsterNumCondition,
+        parseInt(rule.monsterNum, 10),
+        gameState.monsterNum,
+      ) &&
       (rule.id !== 'manaSync' || gameState.attackCdActive), // Special case for "manaSync" rule
   );
 

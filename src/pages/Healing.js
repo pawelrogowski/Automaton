@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Heart, Zap } from 'react-feather';
 import HealingRule from '../components/HealingRule/HealingRule.js';
-import { addRule, updateManaSync } from '../redux/slices/healingSlice.js';
+import { addRule, updateManaSync, toggleManaSyncEnabled } from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
 import StatBar from '../components/StatBar/StatBar.jsx';
 import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
@@ -24,15 +24,6 @@ export const Healing = () => {
   const manaSyncRule = useSelector((state) =>
     state.healing.find((rule) => rule.id === 'manaSync'),
   ) || { manaTriggerPercentage: '80' };
-  const [inputValue, setInputValue] = useState(manaSyncRule.manaTriggerPercentage || '80');
-
-  const debounceTimeout = useRef(null);
-
-  useEffect(() => {
-    return () => {
-      clearTimeout(debounceTimeout.current);
-    };
-  }, []);
 
   const handleAddRule = () => {
     const newRule = {
@@ -58,24 +49,16 @@ export const Healing = () => {
 
   const handleManaSyncPercentageChange = (event) => {
     const value = event.target.value;
-    if (value !== undefined) {
-      setInputValue(value); // Update the local state immediately
-
-      clearTimeout(debounceTimeout.current);
-      debounceTimeout.current = setTimeout(() => {
-        dispatch(
-          updateManaSync({
-            key: manaSyncRule.key,
-            manaTriggerPercentage: value,
-          }),
-        );
-      }, 100);
-    }
+    dispatch(updateManaSyncTriggerPercentage(value));
   };
 
   const handleRefreshRateChange = (event) => {
     const value = event.target.value;
     dispatch(setRefreshRate(Math.max(25, value)));
+  };
+
+  const handleManaSyncToggle = () => {
+    dispatch(toggleManaSyncEnabled());
   };
 
   const { saveRules, loadRules } = window.electron;
@@ -133,15 +116,7 @@ export const Healing = () => {
               <div className="mana-sync-row">
                 <CustomCheckbox
                   checked={manaSyncRule.enabled}
-                  onChange={() =>
-                    dispatch(
-                      updateManaSync({
-                        key: manaSyncRule.key,
-                        manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
-                        enabled: !manaSyncRule.enabled,
-                      }),
-                    )
-                  }
+                  onChange={handleManaSyncToggle}
                   size={18}
                 />
                 <h5 className="mana-sync-row-text mana-sync-checkbox-text">
@@ -178,7 +153,7 @@ export const Healing = () => {
                   type="number"
                   className="input-percent input-field"
                   id="manaSyncPercentage"
-                  value={inputValue} // Use the local state for the input's value
+                  value={manaSyncRule.manaTriggerPercentage}
                   onChange={handleManaSyncPercentageChange}
                   placeholder="80"
                   min="1"
@@ -204,7 +179,7 @@ export const Healing = () => {
           </div>
           <RuleListWrapper>
             {rules
-              .filter((rule) => rule.id !== 'manaSync') // Exclude the manaSync rule
+              .filter((rule) => rule.id !== 'manaSync')
               .map((rule, index) => (
                 <HealingRule key={rule.id} rule={rule} />
               ))}
