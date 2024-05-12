@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
@@ -10,19 +10,12 @@ import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
 import ListSelect from '../ListSelect/ListSelect.js';
 
-const { api } = window;
-
 const HealingRule = ({ rule, className }) => {
   const dispatch = useDispatch();
   const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
-  const [localHealing, setLocalHealing] = useState(healing);
   const [isOpen, setIsOpen] = useState(false);
 
   const [statusConditions, setStatusConditions] = useState({});
-
-  useEffect(() => {
-    dispatch(updateRule(localHealing));
-  }, [localHealing]);
 
   const handleStatusConditionChange = (status, value) => {
     setStatusConditions((prevState) => ({
@@ -34,6 +27,10 @@ const HealingRule = ({ rule, className }) => {
 
   const handleRemoveRule = () => {
     dispatch(removeRule(healing.id));
+  };
+
+  const handleUpdateRule = (updatedFields) => {
+    dispatch(updateRule({ ...healing, ...updatedFields }));
   };
 
   const requiredFieldsFilled =
@@ -50,46 +47,29 @@ const HealingRule = ({ rule, className }) => {
     <StyledDiv className={className} $running={healing.enabled}>
       <details open={isOpen} onToggle={() => setIsOpen(!isOpen)}>
         <CharacterStatusConditions
-          ruleId={rule.id} // Pass the ruleId to the CharacterStatusConditions component
-          onStatusConditionChange={handleStatusConditionChange} // Define the callback if needed
+          ruleId={rule.id}
+          onStatusConditionChange={handleStatusConditionChange}
         />
         <summary>
           <CustomCheckbox
             checked={healing.enabled}
-            onChange={() =>
-              setLocalHealing((prevLocalHealing) => ({
-                ...prevLocalHealing,
-                enabled: !prevLocalHealing.enabled,
-                conditions: prevLocalHealing.conditions,
-              }))
-            }
+            onChange={() => handleUpdateRule({ enabled: !healing.enabled })}
             disabled={!requiredFieldsFilled}
             size={22}
           />
           <ListInput
             className="input"
             id="name"
-            value={localHealing.name}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                name: event.target.value,
-              })
-            }
+            value={healing.name}
+            onChange={(event) => handleUpdateRule({ name: event.target.value })}
             placeholder="Rule Name"
             disabled={healing.enabled}
           />
-
           <ListSelect
             className="input input-category select-with-arrow"
             id="category"
-            value={localHealing.category}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                category: event.target.value,
-              })
-            }
+            value={healing.category}
+            onChange={(event) => handleUpdateRule({ category: event.target.value })}
             disabled={healing.enabled}
           >
             <option value="Healing">Healing</option>
@@ -102,13 +82,8 @@ const HealingRule = ({ rule, className }) => {
           <ListSelect
             className="input input-hotkey"
             id="key"
-            value={localHealing.key}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                key: event.target.value,
-              })
-            }
+            value={healing.key}
+            onChange={(event) => handleUpdateRule({ key: event.target.value })}
             placeholder="F1"
             disabled={healing.enabled}
           >
@@ -121,13 +96,8 @@ const HealingRule = ({ rule, className }) => {
           <ListSelect
             className="input input-percent-select"
             id="hpTriggerCondition"
-            value={localHealing.hpTriggerCondition}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                hpTriggerCondition: event.target.value,
-              })
-            }
+            value={healing.hpTriggerCondition}
+            onChange={(event) => handleUpdateRule({ hpTriggerCondition: event.target.value })}
             disabled={healing.enabled}
           >
             <option value="<=">{'≤'}</option>
@@ -144,26 +114,16 @@ const HealingRule = ({ rule, className }) => {
             max="100"
             step="1"
             id="hpTriggerPercentage"
-            value={localHealing.hpTriggerPercentage}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                hpTriggerPercentage: event.target.value,
-              })
-            }
+            value={healing.hpTriggerPercentage}
+            onChange={(event) => handleUpdateRule({ hpTriggerPercentage: event.target.value })}
             placeholder="0"
             disabled={healing.enabled}
           />
           <select
             className="input input-percent-select"
             id="manaTriggerCondition"
-            value={localHealing.manaTriggerCondition}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                manaTriggerCondition: event.target.value,
-              })
-            }
+            value={healing.manaTriggerCondition}
+            onChange={(event) => handleUpdateRule({ manaTriggerCondition: event.target.value })}
             disabled={healing.enabled}
           >
             <option value="<=">{'≤'}</option>
@@ -180,15 +140,32 @@ const HealingRule = ({ rule, className }) => {
             step="1"
             className="input input-percent"
             id="manaTriggerPercentage"
-            value={localHealing.manaTriggerPercentage}
-            onChange={(event) => {
-              if (event.target.value !== undefined) {
-                setLocalHealing({
-                  ...localHealing,
-                  manaTriggerPercentage: event.target.value,
-                });
-              }
-            }}
+            value={healing.manaTriggerPercentage}
+            onChange={(event) => handleUpdateRule({ manaTriggerPercentage: event.target.value })}
+            placeholder="0"
+            disabled={healing.enabled}
+          />{' '}
+          <ListSelect
+            className="input input-monster-num-condition"
+            id="monsterNumCondition"
+            value={healing.monsterNumCondition}
+            onChange={(event) => handleUpdateRule({ monsterNumCondition: event.target.value })}
+            disabled={healing.enabled}
+          >
+            <option value="<">{'<'}</option>
+            <option value="<=">{'≤'}</option>
+            <option value="=">{'='}</option>
+            <option value=">">{'>'}</option>
+            <option value=">=">{'≥'}</option>
+          </ListSelect>
+          <ListInput
+            type="number"
+            className="input input-monster-num"
+            id="monsterNum"
+            value={healing.monsterNum}
+            onChange={(event) => handleUpdateRule({ monsterNum: event.target.value })}
+            min="0"
+            max="10"
             placeholder="0"
             disabled={healing.enabled}
           />
@@ -196,13 +173,8 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input input-priority"
             id="priority"
-            value={localHealing.priority}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                priority: event.target.value,
-              })
-            }
+            value={healing.priority}
+            onChange={(event) => handleUpdateRule({ priority: event.target.value })}
             min="0"
             max="99"
             placeholder="Priority"
@@ -212,13 +184,8 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input-delay"
             id="delay"
-            value={localHealing.delay}
-            onChange={(event) =>
-              setLocalHealing({
-                ...localHealing,
-                delay: event.target.value,
-              })
-            }
+            value={healing.delay}
+            onChange={(event) => handleUpdateRule({ delay: event.target.value })}
             placeholder="25"
             min="25"
             step="25"

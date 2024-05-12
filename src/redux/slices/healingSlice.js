@@ -10,6 +10,8 @@ const initialState = [
     hpTriggerPercentage: '1',
     manaTriggerCondition: '<=',
     manaTriggerPercentage: '80',
+    monsterNum: 0,
+    monsterNumCondition: '>=',
     priority: '0',
     delay: '2000',
     category: 'Potion',
@@ -31,7 +33,7 @@ const healingSlice = createSlice({
         ...action.payload,
         hpTriggerCondition: action.payload.hpTriggerCondition || '<=',
         manaTriggerCondition: action.payload.manaTriggerCondition || '>=',
-        conditions: action.payload.conditions || [], // Add this line
+        conditions: action.payload.conditions || [],
       };
       state.push(newRule);
     },
@@ -96,6 +98,14 @@ const healingSlice = createSlice({
         manaSyncRule.enabled = !manaSyncRule.enabled;
       }
     },
+    updateMonsterNum: (state, action) => {
+      const { id, monsterNum, monsterNumCondition } = action.payload;
+      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state[ruleIndex].monsterNum = monsterNum;
+        state[ruleIndex].monsterNumCondition = monsterNumCondition;
+      }
+    },
   },
 });
 
@@ -108,6 +118,7 @@ export const {
   removeCondition,
   updateManaSync,
   toggleManaSyncEnabled,
+  updateMonsterNum,
 } = healingSlice.actions;
 
 export default healingSlice;

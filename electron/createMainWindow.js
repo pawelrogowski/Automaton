@@ -13,7 +13,7 @@ const dirname = path.dirname(filename);
 
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 700,
+    width: 790,
     height: 333,
     minWidth: 700,
     minHeight: 42,
@@ -33,7 +33,7 @@ export const createMainWindow = () => {
   });
 
   // Open the developer tools for debugging
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 
   mainWindow.loadURL(
     url.format({

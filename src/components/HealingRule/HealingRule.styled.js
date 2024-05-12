@@ -112,7 +112,8 @@ const StyledDiv = styled.div`
     border-right: 1px solid #470909;
   }
 
-  .input-percent {
+  .input-percent,
+  .input-monster-num {
     width: 52px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
@@ -124,7 +125,8 @@ const StyledDiv = styled.div`
     -webkit-appearance: none;
     -moz-appearance: none;
   }
-  .input-percent-select {
+  .input-percent-select,
+  .input-monster-num-condition {
     padding: 0;
     width: 42px;
     appearance: none;

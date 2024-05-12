@@ -25,27 +25,38 @@ export const StyledDiv = styled.div`
     }
     .header-item_1 {
       width: 22px;
+      min-width: 22px;
     }
     .header-item_2 {
       width: 100px;
+      min-width: 100px;
     }
     .header-item_3 {
       width: 90px;
+      min-width: 90px;
     }
     .header-item_4 {
       width: 60px;
+      min-width: 60px;
     }
     .header-item_5 {
       width: 94px;
+      min-width: 94px;
     }
     .header-item_6 {
       width: 94px;
+      min-width: 94px;
     }
     .header-item_7 {
       width: 90px;
+      min-width: 90px;
     }
     .header-item_8 {
       width: 85px;
+      min-width: 85px;
+    }
+    .header-placeholder {
+      width: 100%;
     }
   }
 `;

@@ -7,12 +7,14 @@ const RuleListWrapper = ({ children }) => {
       <div className="header">
         <div className="header-item header-item_1">•</div>
         <div className="header-item header-item_2">Name</div>
-        <div className="header-item header-item_3">Category</div>
-        <div className="header-item header-item_4">Hotkey</div>
+        <div className="header-item header-item_3">CD Group</div>
+        <div className="header-item header-item_4">HK</div>
         <div className="header-item header-item_5">Health %</div>
         <div className="header-item header-item_6">Mana %</div>
+        <div className="header-item header-item_6">Monster#</div>
         <div className="header-item header-item_7">Priority</div>
-        <div className="header-item header-item_8">Interval</div>
+        <div className="header-item header-item_8">CustomCD</div>
+        <div className="header-item header-placeholder">-</div>
       </div>
       {children}
     </StyledDiv>
