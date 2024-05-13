@@ -17,7 +17,6 @@ export const createMainWindow = () => {
     height: 333,
     minWidth: 700,
     minHeight: 42,
-    maxHeight: 333,
     x: 0,
     y: 0,
     icon: path.join(dirname, './skull.png'),
@@ -33,7 +32,7 @@ export const createMainWindow = () => {
   });
 
   // Open the developer tools for debugging
-  // mainWindow.webContents.openDevTools();
+  mainWindow.webContents.openDevTools();
 
   mainWindow.loadURL(
     url.format({
