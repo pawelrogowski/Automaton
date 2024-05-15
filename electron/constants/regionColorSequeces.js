@@ -3,13 +3,7 @@ const regionColorSequences = {
   healthBar: {
     direction: 'horizontal',
     offset: { x: 1, y: 0 },
-    sequence: [
-      [241, 97, 97],
-      [219, 91, 91],
-      [103, 55, 55],
-      [73, 74, 74],
-      [77, 78, 78],
-    ],
+    sequence: [[241, 97, 97], [219, 91, 91], 'any', [73, 74, 74], [77, 78, 78]],
   },
   manaBar: {
     direction: 'horizontal',
