@@ -54,7 +54,6 @@ function findSequence(
       if (!(color in node.children)) {
         break;
       }
-
       node = node.children[color];
       sequenceLength++;
 
