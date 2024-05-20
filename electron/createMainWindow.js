@@ -26,9 +26,9 @@ export const createMainWindow = () => {
       preload: path.join(dirname, '/preload.js'),
     },
     autoHideMenuBar: true,
+    alwaysOnTop: true,
     transparent: false,
     frame: false,
-    alwaysOnTop: true,
   });
 
   // Open the developer tools for debugging

@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron';
+import { app, ipcMain, dialog, BrowserWindow } from 'electron';
 import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
@@ -25,6 +25,7 @@ let ScreenMonitor = null;
 let HealingWorker = null;
 let prevWindowId = null;
 let mainWindow = getMainWindow;
+let loginWindow;
 
 const userDataPath = app.getPath('userData');
 const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
@@ -78,16 +79,16 @@ export const resetWorkers = () => {
 
 ipcMain.on('save-rules', async (event) => {
   const mainWindow = getMainWindow();
-  mainWindow.minimize(); // Minimize the window
+  mainWindow.minimize();
   await saveRulesToFile(() => {
-    mainWindow.restore(); // Restore the window after saving
+    mainWindow.restore();
   });
 });
 ipcMain.handle('load-rules', async (event) => {
   const mainWindow = getMainWindow();
-  mainWindow.minimize(); // Minimize the window
+  mainWindow.minimize();
   await loadRulesFromFile(() => {
-    mainWindow.restore(); // Restore the window after loading
+    mainWindow.restore();
   });
 });
 
@@ -97,9 +98,32 @@ ipcMain.on('renderer-ready', (event) => {
 });
 
 app.whenReady().then(() => {
-  mainWindow = createMainWindow();
-  setupAppMenu(null);
-  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+  try {
+    loginWindow = new BrowserWindow({
+      width: 400,
+      height: 300,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(cwd, '/preload.js'),
+      },
+    });
+    // Assuming cwd is defined and holds the path to your application's root directory
+    const loginHtmlPath = path.join(cwd, 'loginWindow', 'loginWindow.html');
+    loginWindow.loadFile(loginHtmlPath);
+
+    loginWindow.on('close', () => {
+      if (!mainWindow) app.quit();
+    });
+
+    // Listen for the login success event
+    ipcMain.on('login-success', () => {
+      loginWindow.close();
+      createMainWindow();
+    });
+  } catch (error) {
+    console.error('Error initializing login window:', error);
+  }
 });
 
 app.on('before-quit', () => {

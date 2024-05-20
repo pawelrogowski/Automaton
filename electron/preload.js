@@ -9,5 +9,4 @@ contextBridge.exposeInMainWorld('electron', {
   },
   saveRules: () => ipcRenderer.send('save-rules'),
   loadRules: () => ipcRenderer.invoke('load-rules'),
-  onRulesLoaded: (callback) => ipcRenderer.on('load-rules-reply', callback),
 });
