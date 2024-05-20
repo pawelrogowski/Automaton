@@ -6,17 +6,8 @@ contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
     send: (channel, data) => ipcRenderer.send(channel, data),
     on: (channel, func) => ipcRenderer.on(channel, func),
-    removeListener: (channel, func) => ipcRenderer.removeListener(channel, func),
   },
   saveRules: () => ipcRenderer.send('save-rules'),
   loadRules: () => ipcRenderer.invoke('load-rules'),
   onRulesLoaded: (callback) => ipcRenderer.on('load-rules-reply', callback),
-});
-
-contextBridge.exposeInMainWorld('api', {
-  registerListener: (eventName, id) => ipcRenderer.invoke('registerListener', eventName, id),
-  unregisterListener: (eventName, id) => ipcRenderer.invoke('unregisterListener', eventName, id),
-  pickColor: () => ipcRenderer.invoke('pick-color'),
-  startMonitoring: (rule) => ipcRenderer.invoke('startMonitoring', rule),
-  stopMonitoring: (ruleId) => ipcRenderer.invoke('stopMonitoring', ruleId),
 });
