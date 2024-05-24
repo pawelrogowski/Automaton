@@ -2,17 +2,32 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Login</title>
+    <title>Automaton - Login</title>
     <link rel="stylesheet" href="./loginWindow.css" />
   </head>
   <body>
     <div class="container">
-      <h2>Login</h2>
+      <h2>Automaton</h2>
       <form id="login-form">
-        <label for="username">Username:</label>
-        <input type="text" id="username" name="username" required />
-        <label for="password">Password:</label>
-        <input type="password" id="password" name="password" required />
+        <label for="username" data-label="Email:"></label>
+        <input
+          type="email"
+          id="username"
+          name="username"
+          placeholder="Email"
+          required
+          pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+          title="Please enter a valid email address."
+        />
+
+        <label for="password" data-label="Password:"></label>
+        <input type="password" id="password" name="password" placeholder="Password" required />
+
+        <div class="remember-me">
+          <input type="checkbox" id="remember-me" name="remember-me" />
+          <label for="remember-me">Remember Login Data</label>
+        </div>
+
         <button type="submit">Login</button>
       </form>
       <p id="message"></p>

@@ -1,19 +1,39 @@
 {
   "name": "Automaton",
   "productName": "Automaton",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
   "extraResources": [
     "src/preload.js"
   ],
+  "build": {
+    "appId": "automaton",
+    "linux": {
+      "target": [
+        "deb",
+        "rpm"
+      ],
+      "deb": {
+        "depends": [
+          "xdotool"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "xdotool"
+        ]
+      }
+    }
+  },
   "scripts": {
     "start": "webpack --mode development && electron .",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint . --ext .js,.jsx,.mjs"
+    "lint": "eslint . --ext .js,.jsx,.mjs",
+    "postinstall": "./post-install.sh"
   },
   "keywords": [],
   "author": "feiron <pawel.rogowski.praca@gmail.com>",

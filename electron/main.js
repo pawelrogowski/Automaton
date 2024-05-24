@@ -100,8 +100,9 @@ ipcMain.on('renderer-ready', (event) => {
 app.whenReady().then(() => {
   try {
     loginWindow = new BrowserWindow({
-      width: 400,
-      height: 300,
+      width: 360,
+      height: 400,
+      autoHideMenuBar: true,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

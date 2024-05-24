@@ -1,23 +1,95 @@
-/* loginWindow/css/login.css */
+/* General styles */
+body {
+  font-family: 'Roboto Mono', sans-serif; /* Monospace font for sleek look */
+  background-color: #070829; /* Dark background */
+  color: #ffffff; /* White text for contrast */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh; /* Full viewport height */
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
 
 .container {
-    width: 300px;
-    margin: 0 auto;
-    padding: 20px;
-    background-color: #fff;
-    border-radius: 5px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  width: 100vw;
+  height: 100vh; /* Fixed width for consistency */
+  padding: 20px;
+  background-color: #0c0325; /* Slightly lighter background for the form */
+  border-radius: 8px; /* Rounded corners */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Soft shadow */
 }
 
+h2 {
+  text-align: center;
+  color: #ffffff; /* White heading */
+  margin-bottom: 30px; /* Space below heading */
+}
+
+/* Form styling */
 form {
-    display: flex;
-    flex-direction: column;
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* Space between form elements */
 }
 
-label, input {
-    margin-bottom: 10px;
+/* Inputs */
+input[type='text'],
+input[type='password'],
+input[type='email'] {
+  padding: 12px 20px;
+  border: 1px solid #1d2742; /* Subtle border */
+  border-radius: 4px;
+  background-color: #121829; /* Background matching form */
+  color: #ffffff;
+  font-size: 16px;
+  transition: border-color 0.3s ease;
 }
 
+input[type='text']:focus,
+input[type='password']:focus,
+input[type='email']:focus {
+  border-color: #007bff; /* Accent color on focus */
+}
+
+/* Button */
 button {
-    align-self: flex-end;
+  width: 100%; /* Full width */
+  padding: 12px 20px;
+  background-color: #2143b9; /* Accent color */
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #1433ff; /* Darker accent color on hover */
+}
+
+/* Message styling */
+#message {
+  color: #ff0000;
+  margin-top: 20px;
+  text-align: center;
+}
+
+/* Remember Me styling */
+.remember-me {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.remember-me input[type='checkbox'] {
+  margin-right: 10px;
+}
+
+.remember-me label {
+  color: #ffffff;
 }

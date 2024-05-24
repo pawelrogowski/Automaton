@@ -167,13 +167,13 @@ export const Healing = () => {
       <StyledSection>
         <SunkenWrapper className="list-wrapper">
           <div className="button-container">
-            <button className="add-button button-page" type="button" onClick={handleAddRule}>
+            <button className="add-button button-page" type="button" onMouseDown={handleAddRule}>
               ADD NEW RULE
             </button>
-            <button className="save-button button-page" type="button" onClick={handleLoadRules}>
+            <button className="save-button button-page" type="button" onMouseDown={handleLoadRules}>
               LOAD
             </button>
-            <button className="load-button button-page" type="button" onClick={handleSaveRules}>
+            <button className="load-button button-page" type="button" onMouseDown={handleSaveRules}>
               SAVE
             </button>
           </div>

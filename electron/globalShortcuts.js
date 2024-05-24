@@ -12,6 +12,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
+import autoLoot from './autoLoot/autoLoot.js';
 const { debounce } = pkg;
 const debounceTime = 75;
 
@@ -163,6 +164,9 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
+    globalShortcut.register('j', () => {
+      autoLoot();
+    });
     registerResizeShortcut();
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);

@@ -42,7 +42,7 @@ const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
         const condition = statusConditions.find((c) => c.name === status);
         const checked = condition ? condition.value : null;
         return (
-          <StyledListItem key={status} checked={checked} onClick={() => handleClick(status)}>
+          <StyledListItem key={status} checked={checked} onMouseDown={() => handleClick(status)}>
             <StyledImageContainer>
               <StyledCheckboxImage src={characterStatusImages[status]} alt={status} />
             </StyledImageContainer>

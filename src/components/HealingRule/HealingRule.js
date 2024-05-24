@@ -192,7 +192,7 @@ const HealingRule = ({ rule, className }) => {
           <button
             className="remove-rule-button rule-button"
             type="button"
-            onClick={handleRemoveRule}
+            onMouseDown={handleRemoveRule}
             aria-label="remove-rule"
           >
             ×
