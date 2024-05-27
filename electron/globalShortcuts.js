@@ -13,6 +13,8 @@ import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
 import autoLoot from './autoLoot/autoLoot.js';
+import { getMouseLocation } from './screenMonitor/utils/getMouseLocation.js';
+import { setSquareBottomRight, setSquareTopLeft } from '../src/redux/slices/globalSlice.js';
 const { debounce } = pkg;
 const debounceTime = 75;
 
@@ -69,6 +71,28 @@ const playSound = (filePath) => {
     });
   }
 };
+
+const debouncedUpdateSquareTopLeft = debounce(async () => {
+  try {
+    const { x: mouseX, y: mouseY, windowId } = await getMouseLocation();
+    if (windowId === store.getState().global.windowId) {
+      store.dispatch(setSquareTopLeft({ x: mouseX, y: mouseY }));
+    }
+  } catch (error) {
+    console.error('Failed to update top left square with mouse position:', error);
+  }
+}, debounceTime);
+
+const debouncedUpdateSquareBottomRight = debounce(async () => {
+  try {
+    const { x: mouseX, y: mouseY, windowId } = await getMouseLocation();
+    if (windowId === store.getState().global.windowId) {
+      store.dispatch(setSquareBottomRight({ x: mouseX, y: mouseY }));
+    }
+  } catch (error) {
+    console.error('Failed to update top right square with mouse position:', error);
+  }
+}, debounceTime);
 
 const debouncedSelectActiveWindow = debounce(() => {
   console.log('Alt+0 shortcut clicked');
@@ -164,9 +188,11 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
-    globalShortcut.register('j', () => {
+    globalShortcut.register('F8', () => {
       autoLoot();
     });
+    globalShortcut.register('Alt+Q', debouncedUpdateSquareTopLeft);
+    globalShortcut.register('Alt+C', debouncedUpdateSquareBottomRight);
     registerResizeShortcut();
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);

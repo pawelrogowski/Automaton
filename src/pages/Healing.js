@@ -1,10 +1,8 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Heart, Zap } from 'react-feather';
 import HealingRule from '../components/HealingRule/HealingRule.js';
 import { addRule, updateManaSync, toggleManaSyncEnabled } from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
-import StatBar from '../components/StatBar/StatBar.jsx';
 import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
 import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
@@ -13,6 +11,8 @@ import SunkenWrapper from '../components/SunkenWrapper/SunkenWrapper.js';
 import ListInput from '../components/ListInput/ListInput.js';
 import ListSelect from '../components/ListSelect/ListSelect.js';
 import keyboardKeys from '../constants/keyboardKeys.js';
+import { StatBars } from '../components/StatBars.js/StatBars.js';
+import SquareGrid from '../components/SquareGrid/SquareGrid.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -74,18 +74,10 @@ export const Healing = () => {
   return (
     <StyledMain>
       <StyledSection className="setting-section">
-        <div className="bar-container">
-          <div className="health-bar">
-            <StatBar value={hpPercentage} fill={`#d10000`} />
-            <Heart size={16} className="hp-icon" />
-          </div>
-
-          <div className="mana-bar">
-            <StatBar value={manaPercentage} fill={`#3800a1`} />
-            <Zap size={16} className="mp-icon" />
-          </div>
+        <div className="top-bar">
+          <div className="square"></div>
+          <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
         </div>
-
         <div className="settings-row">
           <div className="enable-wrapper">
             <CustomCheckbox
@@ -165,6 +157,9 @@ export const Healing = () => {
         </div>
       </StyledSection>
       <StyledSection>
+        <SunkenWrapper className="settings-wrapper">
+          <SquareGrid />
+        </SunkenWrapper>
         <SunkenWrapper className="list-wrapper">
           <div className="button-container">
             <button className="add-button button-page" type="button" onMouseDown={handleAddRule}>

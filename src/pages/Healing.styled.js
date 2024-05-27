@@ -5,11 +5,7 @@ const StyledMain = styled.main`
   display: flex;
   flex-direction: column;
   /* gap: 6px; */
-  .bar-container {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+
   .button-container {
     display: flex;
     width: 100%;
@@ -110,32 +106,6 @@ const StyledMain = styled.main`
   .main-switch {
   }
 
-  .health-bar,
-  .mana-bar {
-    display: flex;
-    gap: 6px;
-
-    > svg {
-      margin-left: auto;
-      width: 16px;
-      height: 16px;
-    }
-  }
-
-  .hp-icon {
-    stroke: none;
-    fill: #ff1c1c;
-    margin-left: auto;
-    filter: drop-shadow(0px 1px 1px #000000);
-    rotate: 4deg;
-  }
-  .mp-icon {
-    stroke: none;
-    fill: #0066ff;
-    filter: drop-shadow(0px 1px 1px #000000);
-    rotate: 18deg;
-    margin-left: auto;
-  }
   .mana-sync-row {
     display: flex;
     align-items: center;
@@ -170,6 +140,12 @@ const StyledMain = styled.main`
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+  .settings-wrapper {
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+    padding: 4px;
   }
   .input-field {
     width: 56px;
@@ -220,6 +196,16 @@ const StyledMain = styled.main`
         max-height: 18px;
       }
     }
+  }
+  .top-bar {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+  }
+  .square {
+    aspect-ratio: 1;
+    width: 40px;
+    background: black;
   }
 `;
 export default StyledMain;
