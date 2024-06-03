@@ -1,5 +1,4 @@
 import { exec } from 'child_process';
-import setGlobalState from '../../setGlobalState.js';
 
 export const getMouseLocation = async () => {
   return new Promise((resolve, reject) => {

@@ -362,7 +362,7 @@ async function main() {
       hpManaImageData = null;
       cooldownBarImageData = null;
       statusBarImageData = null;
-      setTimeout(loop, Math.max(global.refreshRate, 25));
+      setTimeout(loop, Math.max(global.refreshRate, 5));
     }
 
     loop();

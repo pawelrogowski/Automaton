@@ -73,7 +73,7 @@ export const Healing = () => {
 
   return (
     <StyledMain>
-      <StyledSection className="setting-section">
+      <StyledSection>
         <div className="top-bar">
           <div className="square"></div>
           <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
@@ -155,11 +155,6 @@ export const Healing = () => {
             </div>
           )}
         </div>
-      </StyledSection>
-      <StyledSection>
-        <SunkenWrapper className="settings-wrapper">
-          <SquareGrid />
-        </SunkenWrapper>
         <SunkenWrapper className="list-wrapper">
           <div className="button-container">
             <button className="add-button button-page" type="button" onMouseDown={handleAddRule}>

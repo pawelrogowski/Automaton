@@ -39,8 +39,6 @@ const App = () => (
           <Route path="/" element={<Layout />}>
             <Route index element={<Healing />} />
             <Route path="healing" element={<Healing />} />
-            <Route path="actions" element={<Actions />} />
-            <Route path="console" element={<Console />} />
           </Route>
         </Routes>
       </Router>

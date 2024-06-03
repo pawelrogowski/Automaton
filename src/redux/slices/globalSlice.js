@@ -6,7 +6,7 @@ const initialState = {
   windowId: null,
   windowPos: { x: 0, y: 0 },
   botEnabled: false,
-  refreshRate: 25,
+  refreshRate: 5,
   autoLootEnabled: false,
   antiIdleEnabled: true,
   squareTopLeft: { x: 0, y: 0 },
@@ -26,7 +26,6 @@ function calculateCenterSquare(state) {
   state.centerSquare = { x: centerX, y: centerY };
   console.log({ x: centerX, y: centerY });
 }
-wad;
 
 const globalSlice = createSlice({
   name: 'global',

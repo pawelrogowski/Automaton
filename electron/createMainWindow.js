@@ -13,8 +13,8 @@ const dirname = path.dirname(filename);
 
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 790,
-    height: 333,
+    // width: 790,
+    // height: 333,
     minWidth: 700,
     minHeight: 42,
     x: 0,
@@ -28,7 +28,7 @@ export const createMainWindow = () => {
     autoHideMenuBar: true,
     alwaysOnTop: true,
     transparent: false,
-    frame: false,
+    // frame: false,
   });
 
   // Open the developer tools for debugging

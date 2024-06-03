@@ -182,12 +182,12 @@ const HealingRule = ({ rule, className }) => {
             value={healing.delay}
             onChange={(event) => {
               const value = parseInt(event.target.value, 10);
-              const validValue = Math.max(25, Math.min(360000, value));
+              const validValue = Math.max(5, Math.min(360000, value));
               handleUpdateRule({ delay: validValue });
             }}
-            placeholder="25"
-            min="25"
-            step="25"
+            placeholder="5"
+            min="5"
+            step="5"
           />
           <button
             className="remove-rule-button rule-button"
