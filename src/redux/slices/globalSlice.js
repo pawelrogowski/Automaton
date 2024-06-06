@@ -67,7 +67,11 @@ const globalSlice = createSlice({
         calculateCenterSquare(state);
       }
     },
+    toggleAntiIdleEnabled: (state) => {
+      state.antiIdleEnabled = !state.antiIdleEnabled;
+    },
   },
+
   setWindowPos: (state) => {
     state.windowPos = action.payload;
   },
@@ -82,6 +86,7 @@ export const {
   setWindowPos,
   setSquareTopLeft,
   setSquareBottomRight,
+  toggleAntiIdleEnabled,
 } = globalSlice.actions;
 
 export default globalSlice;

@@ -15,19 +15,22 @@ import { exec } from 'child_process';
 import autoLoot from './autoLoot/autoLoot.js';
 import { getMouseLocation } from './screenMonitor/utils/getMouseLocation.js';
 import { setSquareBottomRight, setSquareTopLeft } from '../src/redux/slices/globalSlice.js';
+
 const { debounce } = pkg;
 const debounceTime = 75;
 
 let windId = '';
 let windTitle = '';
 let isEnabled = false;
+let antiIdleOn = false;
 
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
-  const { windowId, botEnabled } = global;
+  const { windowId, botEnabled, antiIdleEnabled } = global;
   windId = windowId;
   isEnabled = botEnabled;
+  antiIdleOn = antiIdleEnabled;
 });
 
 const soundCache = new Map();
@@ -188,8 +191,10 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
-    globalShortcut.register('F8', () => {
-      autoLoot();
+    globalShortcut.register('F8',autoLoot())
+    globalShortcut.register('Alt+i', () => {
+      store.dispatch(toggleAntiIdleEnabled());
+
     });
     globalShortcut.register('Alt+Q', debouncedUpdateSquareTopLeft);
     globalShortcut.register('Alt+C', debouncedUpdateSquareBottomRight);

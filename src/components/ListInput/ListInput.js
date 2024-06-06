@@ -11,10 +11,10 @@ const ListInput = styled.input`
   background: #414141;
   outline: none;
   position: relative;
-  border-top: 1px solid #2b2b2b;
+  border-top: 1px solid #16181d;
   border-left: 1px solid #79797930;
   border-bottom: 1px solid #79797930;
-  border-right: 1px solid #2b2b2b;
+  border-right: 1px solid #16181d;
 `;
 
 export default ListInput;

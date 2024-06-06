@@ -22,7 +22,7 @@ export const TibiaCheckbox = styled.div`
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
     border-bottom: 1px solid #79797930;
-    border-right: 1px solid #2b2b2b;
+    border-right: 1px solid #16181d;
     cursor: pointer;
     position: relative;
   }

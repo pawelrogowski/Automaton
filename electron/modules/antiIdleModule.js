@@ -1,17 +1,19 @@
+// antiIdleModule.js
 import { Worker } from 'worker_threads';
-import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
-import { join, resolve, dirname } from 'path';
+import { resolve, dirname } from 'path';
 
-let antiIdleInstance = null;
+let worker = null;
 
 function createAntiIdle(windowId) {
-  // Dynamically construct the path to the worker script
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   const workerPath = resolve(__dirname, './antiIdleWorker.js');
 
-  const worker = new Worker(workerPath, { name: 'antiIdleWorker' });
+  if (worker) {
+    worker.terminate();
+  }
+  worker = new Worker(workerPath, { name: 'antiIdleWorker' });
   worker.on('message', (message) => {
     console.log(message);
   });
@@ -26,19 +28,19 @@ function createAntiIdle(windowId) {
 
   function terminate() {
     worker.terminate();
-    antiIdleInstance = null;
+    worker = null;
   }
 
   return { startAntiIdle, stopAntiIdle, terminate };
 }
 
 function getOrCreateAntiIdle(windowId) {
-  if (!antiIdleInstance) {
-    antiIdleInstance = createAntiIdle(windowId);
+  if (!worker) {
+    worker = createAntiIdle(windowId);
   } else {
-    antiIdleInstance.startAntiIdle();
+    worker.startAntiIdle();
   }
-  return antiIdleInstance;
+  return worker;
 }
 
 export default getOrCreateAntiIdle;

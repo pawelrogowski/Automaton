@@ -11,7 +11,6 @@ import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
 import { keyPress } from '../keyboardControll/keyPress.js';
 import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
-import { antiIdle } from '../keyboardControll/antiIdle.js';
 import cropImageData from '../screenMonitor/utils/cropImageData.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 

@@ -164,7 +164,7 @@ const StyledMain = styled.main`
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
     border-bottom: 1px solid #79797930;
-    border-right: 1px solid #2b2b2b;
+    border-right: 1px solid #16181d;
     * {
       font-size: 12px;
       color: rgb(175, 175, 175);

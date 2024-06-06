@@ -22,7 +22,8 @@ const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 
 let ScreenMonitor = null;
-let HealingWorker = null;
+let AntiIdleWorker = null;
+let antiIdleWorker = null;
 let prevWindowId = null;
 let mainWindow = getMainWindow;
 let loginWindow;
@@ -35,20 +36,21 @@ store.subscribe(() => {
   const { global } = state;
   const { windowId } = global;
 
-  // forward state to healing worker
   if (ScreenMonitor) {
     ScreenMonitor.postMessage(state);
   }
 
-  // reset all workers on windowId change
   if (windowId !== prevWindowId) {
     if (ScreenMonitor) {
       ScreenMonitor.terminate();
       ScreenMonitor = null;
     }
+    if (AntiIdleWorker) {
+      AntiIdleWorker.terminate();
+      AntiIdleWorker = null;
+    }
   }
 
-  // Start a new worker with the updated state.
   if (!ScreenMonitor && windowId) {
     const screenMonitorWorkerPath = resolve(cwd, './workers', 'screenMonitor.js');
     ScreenMonitor = new Worker(screenMonitorWorkerPath, { name: 'screeenMonitor.js' });
@@ -65,6 +67,18 @@ store.subscribe(() => {
       resetWorkers();
     });
     ScreenMonitor.postMessage(state);
+  }
+
+  if (!antiIdleWorker && windowId) {
+    const antiIdleWorkerPath = resolve(cwd, './workers', 'antiIdleWorker.js');
+    antiIdleWorker = new Worker(antiIdleWorkerPath, { name: 'antiIdleWorker.js' });
+    console.log('antiIdle module started');
+
+    antiIdleWorker.on('error', (error) => {
+      console.error('An error occurred in the antiIdle worker:', error);
+      resetWorkers();
+    });
+    antiIdleWorker.postMessage(state);
   }
 
   prevWindowId = windowId;
