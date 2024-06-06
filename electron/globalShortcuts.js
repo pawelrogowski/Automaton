@@ -191,10 +191,9 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
-    globalShortcut.register('F8',autoLoot())
+    globalShortcut.register('F8', () => autoLoot());
     globalShortcut.register('Alt+i', () => {
       store.dispatch(toggleAntiIdleEnabled());
-
     });
     globalShortcut.register('Alt+Q', debouncedUpdateSquareTopLeft);
     globalShortcut.register('Alt+C', debouncedUpdateSquareBottomRight);

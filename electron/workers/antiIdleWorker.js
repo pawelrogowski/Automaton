@@ -20,7 +20,7 @@ parentPort.on('message', (state) => {
 
   // Only execute the anti-idle command if the flag is set and the global setting allows it
   if (shouldExecute && global.antiIdleEnabled) {
-    executeAntiIdle();
+    // executeAntiIdle();
   }
 });
 
@@ -34,7 +34,7 @@ function executeAntiIdle() {
   const delay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
   setTimeout(() => {
     if (global.antiIdleEnabled) {
-      executeAntiIdle();
+      // executeAntiIdle();
     }
   }, delay * 1000); // Convert seconds to milliseconds
 }
