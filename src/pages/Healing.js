@@ -54,7 +54,7 @@ export const Healing = () => {
 
   const handleRefreshRateChange = (event) => {
     const value = event.target.value;
-    dispatch(setRefreshRate(Math.max(25, value)));
+    dispatch(setRefreshRate(Math.max(0, value)));
   };
 
   const handleManaSyncToggle = () => {
@@ -97,8 +97,8 @@ export const Healing = () => {
               id="refreshRate"
               value={refreshRate}
               onChange={handleRefreshRateChange}
-              placeholder="25"
-              min="25"
+              placeholder="0"
+              min="0"
               max="20000"
             />
             <h5>ms</h5>

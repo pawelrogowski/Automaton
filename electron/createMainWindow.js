@@ -90,7 +90,7 @@ export const createMainWindow = () => {
   let shouldClose = false;
   mainWindow.on('close', (event) => {
     if (!shouldClose) {
-      event.preventDefault(); // Prevent the window from closing immediately
+      event.preventDefault();
       const options = {
         type: 'question',
         buttons: ['Yes', 'No'],
@@ -102,7 +102,6 @@ export const createMainWindow = () => {
 
       dialog.showMessageBox(mainWindow, options).then((response) => {
         if (response.response === 0) {
-          // If the user clicks 'Yes', allow the window to close
           shouldClose = true;
           app.quit();
         }

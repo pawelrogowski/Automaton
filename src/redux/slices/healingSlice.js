@@ -31,10 +31,13 @@ const healingSlice = createSlice({
     addRule: (state, action) => {
       const newRule = {
         ...action.payload,
+        delay: Math.max(Math.min(36000, action.payload), 25),
+        hpTriggerPercentage: Math.max(Math.min(100, action.payload), 0),
+        manaTriggerPercentage: Math.max(Math.min(100, action.payload), 0),
         hpTriggerCondition: action.payload.hpTriggerCondition || '<=',
         manaTriggerCondition: action.payload.manaTriggerCondition || '>=',
         conditions: action.payload.conditions || [],
-        monsterNum: action.payload.monsterNum || 0,
+        monsterNum: Math.max(action.payload.monsterNum, 0),
         monsterNumCondition: action.payload.monsterNumCondition || '>=',
       };
       state.push(newRule);

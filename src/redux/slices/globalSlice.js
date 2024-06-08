@@ -6,7 +6,7 @@ const initialState = {
   windowId: null,
   windowPos: { x: 0, y: 0 },
   botEnabled: false,
-  refreshRate: 5,
+  refreshRate: 0,
   autoLootEnabled: false,
   antiIdleEnabled: true,
   squareTopLeft: { x: 0, y: 0 },
@@ -41,7 +41,7 @@ const globalSlice = createSlice({
       state.botEnabled = action.payload;
     },
     setRefreshRate: (state, action) => {
-      state.refreshRate = action.payload;
+      state.refreshRate = Math.max(action.payload, 0);
     },
     toggleBotEnabled: (state) => {
       if (state.windowId !== null) {

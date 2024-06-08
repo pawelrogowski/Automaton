@@ -45,10 +45,6 @@ store.subscribe(() => {
       ScreenMonitor.terminate();
       ScreenMonitor = null;
     }
-    if (AntiIdleWorker) {
-      AntiIdleWorker.terminate();
-      AntiIdleWorker = null;
-    }
   }
 
   if (!ScreenMonitor && windowId) {
@@ -67,18 +63,6 @@ store.subscribe(() => {
       resetWorkers();
     });
     ScreenMonitor.postMessage(state);
-  }
-
-  if (!antiIdleWorker && windowId) {
-    const antiIdleWorkerPath = resolve(cwd, './workers', 'antiIdleWorker.js');
-    antiIdleWorker = new Worker(antiIdleWorkerPath, { name: 'antiIdleWorker.js' });
-    console.log('antiIdle module started');
-
-    antiIdleWorker.on('error', (error) => {
-      console.error('An error occurred in the antiIdle worker:', error);
-      resetWorkers();
-    });
-    antiIdleWorker.postMessage(state);
   }
 
   prevWindowId = windowId;
@@ -123,7 +107,7 @@ app.whenReady().then(() => {
         preload: path.join(cwd, '/preload.js'),
       },
     });
-    // Assuming cwd is defined and holds the path to your application's root directory
+
     const loginHtmlPath = path.join(cwd, 'loginWindow', 'loginWindow.html');
     loginWindow.loadFile(loginHtmlPath);
 
@@ -131,7 +115,6 @@ app.whenReady().then(() => {
       if (!mainWindow) app.quit();
     });
 
-    // Listen for the login success event
     ipcMain.on('login-success', () => {
       loginWindow.close();
       createMainWindow();
@@ -145,10 +128,6 @@ app.on('before-quit', () => {
   if (ScreenMonitor) {
     ScreenMonitor.terminate();
     ScreenMonitor = null;
-  }
-  if (HealingWorker) {
-    HealingWorker.terminate();
-    HealingWorker = null;
   }
   autoSaveRules();
 });
