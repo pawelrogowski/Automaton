@@ -13,8 +13,7 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",
-    "lint": "eslint . --ext .js,.jsx,.mjs",
-    "postinstall": "./post-install.sh"
+    "lint": "eslint . --ext .js,.jsx,.mjs"
   },
   "keywords": [],
   "author": "feiron <pawel.rogowski.praca@gmail.com>",
