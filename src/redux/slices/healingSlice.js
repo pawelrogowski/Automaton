@@ -28,17 +28,22 @@ const healingSlice = createSlice({
   name: 'healing',
   initialState,
   reducers: {
-    addRule: (state, action) => {
+    addRule: (state) => {
       const newRule = {
-        ...action.payload,
-        delay: Math.max(Math.min(36000, action.payload), 25),
-        hpTriggerPercentage: Math.max(Math.min(100, action.payload), 0),
-        manaTriggerPercentage: Math.max(Math.min(100, action.payload), 0),
-        hpTriggerCondition: action.payload.hpTriggerCondition || '<=',
-        manaTriggerCondition: action.payload.manaTriggerCondition || '>=',
-        conditions: action.payload.conditions || [],
-        monsterNum: Math.max(action.payload.monsterNum, 0),
-        monsterNumCondition: action.payload.monsterNumCondition || '>=',
+        name: 'New Rule',
+        id: Date.now().toString(),
+        category: 'Healing',
+        key: 'F1',
+        priority: 0,
+        enabled: false,
+        delay: 25,
+        hpTriggerPercentage: 80,
+        manaTriggerPercentage: 20,
+        hpTriggerCondition: '<=',
+        manaTriggerCondition: '>=',
+        conditions: [],
+        monsterNum: 0,
+        monsterNumCondition: '>=',
       };
       state.push(newRule);
     },
@@ -48,20 +53,19 @@ const healingSlice = createSlice({
     updateRule: (state, action) => {
       const { id, ...updatedFields } = action.payload;
       const ruleIndex = state.findIndex((rule) => rule.id === id);
-      if (ruleIndex !== -1) {
-        const updatedFieldsWithValidation = {
-          ...updatedFields,
-          monsterNum: Math.max(0, Math.min(10, updatedFields.monsterNum)),
-          hpTriggerPercentage: Math.max(0, Math.min(100, updatedFields.hpTriggerPercentage)),
-          manaTriggerPercentage: Math.max(0, Math.min(100, updatedFields.manaTriggerPercentage)),
-          delay: Math.max(25, Math.min(360000, updatedFields.delay)),
-          priority: Math.max(-99, Math.min(99, updatedFields.priority)),
-        };
-        state[ruleIndex] = {
-          ...state[ruleIndex],
-          ...updatedFieldsWithValidation,
-        };
-      }
+
+      const updatedFieldsWithValidation = {
+        ...updatedFields,
+        monsterNum: Math.max(0, Math.min(10, updatedFields.monsterNum)),
+        hpTriggerPercentage: Math.max(0, Math.min(100, updatedFields.hpTriggerPercentage)),
+        manaTriggerPercentage: Math.max(0, Math.min(100, updatedFields.manaTriggerPercentage)),
+        delay: Math.max(25, Math.min(840000, updatedFields.delay)),
+        priority: Math.max(-99, Math.min(99, updatedFields.priority)),
+      };
+      state[ruleIndex] = {
+        ...state[ruleIndex],
+        ...updatedFieldsWithValidation,
+      };
     },
     updateCondition: (state, action) => {
       const { id, condition, value } = action.payload;

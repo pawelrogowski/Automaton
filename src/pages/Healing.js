@@ -26,21 +26,7 @@ export const Healing = () => {
   ) || { manaTriggerPercentage: '80' };
 
   const handleAddRule = () => {
-    const newRule = {
-      name: 'New Rule',
-      enabled: false,
-      key: 'F6',
-      colors: [],
-      id: Date.now().toString(),
-      hpTriggerCondition: '<=',
-      hpTriggerPercentage: '80',
-      manaTriggerCondition: '>=',
-      manaTriggerPercentage: '5',
-      priority: '1',
-      delay: '100',
-      category: 'Healing',
-    };
-    dispatch(addRule(newRule));
+    dispatch(addRule());
   };
 
   const handleHealingToggle = () => {
