@@ -8,9 +8,9 @@ const areCharStatusConditionsMet = (rule, gameState) => {
   // Check each condition in the rule's conditions array
   return rule.conditions.every((condition) => {
     const charStatusValue = gameState.characterStatus[condition.name];
-    // If the condition's value is undefined or null, consider it met
+    // If the condition's value is undefined or null, consider it unmet
     if (charStatusValue === undefined || charStatusValue === null) {
-      return true;
+      return false;
     }
     return charStatusValue === condition.value;
   });

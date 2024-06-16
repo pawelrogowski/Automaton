@@ -18,6 +18,11 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
   }
 });
 
+function toggleCheckbox() {
+  const checkbox = document.getElementById('remember-me');
+  checkbox.checked = !checkbox.checked;
+}
+
 // Pre-populate fields if "Remember Me" was selected previously
 const credentials = JSON.parse(localStorage.getItem('credentials'));
 if (credentials) {

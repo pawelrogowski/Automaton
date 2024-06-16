@@ -20,16 +20,19 @@ import {
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
+const preloadPath = path.join(cwd, '/preload.js');
 
 let ScreenMonitor = null;
-let AntiIdleWorker = null;
-let antiIdleWorker = null;
 let prevWindowId = null;
 let mainWindow = getMainWindow;
 let loginWindow;
 
-const userDataPath = app.getPath('userData');
-const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
+export const resetWorkers = () => {
+  if (ScreenMonitor) {
+    ScreenMonitor.terminate();
+    ScreenMonitor = null;
+  }
+};
 
 store.subscribe(() => {
   const state = store.getState();
@@ -41,16 +44,14 @@ store.subscribe(() => {
   }
 
   if (windowId !== prevWindowId) {
-    if (ScreenMonitor) {
-      ScreenMonitor.terminate();
-      ScreenMonitor = null;
-    }
+    resetWorkers();
   }
 
   if (!ScreenMonitor && windowId) {
     const screenMonitorWorkerPath = resolve(cwd, './workers', 'screenMonitor.js');
+
     ScreenMonitor = new Worker(screenMonitorWorkerPath, { name: 'screeenMonitor.js' });
-    console.log('screen monitor started from main.js');
+
     ScreenMonitor.on('message', (message) => {
       if (message.type) {
         setGlobalState(`gameState/${message.type}`, message.payload);
@@ -58,6 +59,7 @@ store.subscribe(() => {
         setGlobalState('gameState/setCharacterStatus', message.payload);
       }
     });
+
     ScreenMonitor.on('error', (error) => {
       console.error('An error occurred in the worker:', error);
       resetWorkers();
@@ -68,13 +70,6 @@ store.subscribe(() => {
   prevWindowId = windowId;
 });
 
-export const resetWorkers = () => {
-  if (ScreenMonitor) {
-    ScreenMonitor.terminate();
-    ScreenMonitor = null;
-  }
-};
-
 ipcMain.on('save-rules', async (event) => {
   const mainWindow = getMainWindow();
   mainWindow.minimize();
@@ -82,6 +77,7 @@ ipcMain.on('save-rules', async (event) => {
     mainWindow.restore();
   });
 });
+
 ipcMain.handle('load-rules', async (event) => {
   const mainWindow = getMainWindow();
   mainWindow.minimize();
@@ -104,7 +100,7 @@ app.whenReady().then(() => {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: path.join(cwd, '/preload.js'),
+        preload: preloadPath,
       },
     });
 

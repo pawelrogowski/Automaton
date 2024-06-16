@@ -23,7 +23,7 @@
         <label for="password" data-label="Password:"></label>
         <input type="password" id="password" name="password" placeholder="Password" required />
 
-        <div class="remember-me">
+        <div class="remember-me" onclick="toggleCheckbox()">
           <input type="checkbox" id="remember-me" name="remember-me" />
           <label for="remember-me">Remember Login Data</label>
         </div>
@@ -33,5 +33,10 @@
       <p id="message"></p>
     </div>
     <script src="./loginWindow.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('username').focus();
+      });
+    </script>
   </body>
 </html>

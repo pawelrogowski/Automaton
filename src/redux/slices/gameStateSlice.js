@@ -130,6 +130,9 @@ const gameStateSlice = createSlice({
       const newMonsterNum = action.payload.monsterNum;
       state.monsterNum = newMonsterNum;
     },
+    setState: (state, action) => {
+      return action.payload;
+    },
   },
 });
 
@@ -139,6 +142,7 @@ export const {
   setHealingCdActive,
   setCharacterStatus,
   setMonsterNum,
+  setState,
 } = gameStateSlice.actions;
 
 export default gameStateSlice;

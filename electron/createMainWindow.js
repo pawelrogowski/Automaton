@@ -4,17 +4,25 @@ import url, { fileURLToPath } from 'url';
 import { resetWorkers } from './main.js';
 import { selectWindow } from './menus/windowSelection.js';
 import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
+import { toggleNotifications } from '../src/redux/slices/globalSlice.js';
+import store from './store.js';
 
 let mainWindow;
 let tray;
+let notiEnabled = false;
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
+store.subscribe(() => {
+  const state = store.getState();
+  const { global } = state;
+  const { notificationsEnabled } = global;
+  notiEnabled = notificationsEnabled;
+});
+
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    // width: 790,
-    // height: 333,
     minWidth: 700,
     minHeight: 42,
     x: 0,
@@ -55,6 +63,7 @@ export const createMainWindow = () => {
         }
       },
     },
+
     { type: 'separator' },
     { label: 'Select Window', click: () => selectWindow() },
     { label: 'Reset Engine', click: () => resetWorkers() },
@@ -62,13 +71,17 @@ export const createMainWindow = () => {
     { label: 'Load Settings', click: () => loadRulesFromFile() },
     { label: 'Save Settings', click: () => saveRulesToFile() },
     { type: 'separator', label: 'save/load' },
+    {
+      label: 'Notifications',
+      type: 'checkbox',
+      checked: notiEnabled,
+      click: () => store.dispatch(toggleNotifications()),
+    },
     { label: 'Close', click: () => app.quit() },
   ]);
 
-  // Assign the context menu to the tray icon
   tray.setContextMenu(trayContextMenu);
 
-  // Handle the window close event
   mainWindow.on('closed', () => {
     mainWindow = null;
     if (process.platform !== 'darwin') {
@@ -76,17 +89,14 @@ export const createMainWindow = () => {
     }
   });
 
-  // Show the window when it's ready
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
   });
 
-  // Prevent the window from being minimized
   mainWindow.on('show', () => {
     mainWindow.setMinimizable(false);
   });
 
-  // Handle the window close event to prompt the user for confirmation
   let shouldClose = false;
   mainWindow.on('close', (event) => {
     if (!shouldClose) {
@@ -108,16 +118,6 @@ export const createMainWindow = () => {
       });
     }
   });
-  // win.webContents.on('zoom-changed', (event, zoomDirection) => {
-  //   let currentZoomFactor = win.webContents.getZoomFactor();
-  //   if (zoomDirection === 'in') {
-  //     currentZoomFactor += 0.1;
-  //   } else if (zoomDirection === 'out') {
-  //     currentZoomFactor -= 0.1;
-  //   }
-
-  //   win.webContents.setZoomFactor(currentZoomFactor);
-  // });
 };
 
 export const toggleMainWindowVisibility = () => {
@@ -128,8 +128,4 @@ export const toggleMainWindowVisibility = () => {
   }
 };
 
-/**
- * Retrieves the main application window.
- * @returns {BrowserWindow} The main application window.
- */
 export const getMainWindow = () => mainWindow;

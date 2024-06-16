@@ -130,6 +130,10 @@ const healingSlice = createSlice({
         state[ruleIndex].monsterNumCondition = monsterNumCondition;
       }
     },
+    setState: (state, action) => {
+      console.log(action.payload);
+      return action.payload;
+    },
   },
 });
 
@@ -144,6 +148,7 @@ export const {
   toggleManaSyncEnabled,
   updateMonsterNum,
   updateManaSyncTriggerPercentage,
+  setState,
 } = healingSlice.actions;
 
 export default healingSlice;

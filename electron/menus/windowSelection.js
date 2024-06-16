@@ -44,20 +44,14 @@ export const selectWindow = async () => {
     if (geometry.includes('1x1')) {
       console.error('Error: Please select a valid tibia window.');
       getMainWindow().setTitle('Automaton - No Window Selected');
-      setGlobalState(
-        'global/setWindowTitle',
-        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
-      );
+      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
     }
     const windowTitle = await getWindowName(windowId);
     if (!windowTitle.includes('Tibia')) {
       console.error('Error: Please select a valid tibia window.');
       getMainWindow().setTitle('Automaton - No Window Selected');
-      setGlobalState(
-        'global/setWindowTitle',
-        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
-      );
+      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
     }
     getMainWindow().setTitle(`Automaton - ${windowId}`);
@@ -80,26 +74,18 @@ const getActiveWindowId = () =>
 export const selectActiveWindow = async () => {
   try {
     const windowId = await getActiveWindowId();
-    console.log(`Active window ID: ${windowId}`);
     const geometry = await getGeometry(windowId);
-    console.log(geometry);
     if (geometry.includes('1x1')) {
       console.error('Error: Please select a valid tibia window.');
       getMainWindow().setTitle('Automaton - No Window Selected');
-      setGlobalState(
-        'global/setWindowTitle',
-        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
-      );
+      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
     }
     const windowTitle = await getWindowName(windowId);
     if (!windowTitle.includes('Tibia')) {
       console.error('Error: Please select a valid tibia window.');
-      getMainWindow().setTitle('Automaton - No Window Selected');
-      setGlobalState(
-        'global/setWindowTitle',
-        `Error: Please select a valid tibia window. (Alt+Shift+0)`,
-      );
+      getMainWindow().setTitle('Automaton - No Window');
+      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
     }
 
@@ -108,7 +94,6 @@ export const selectActiveWindow = async () => {
     if (positionMatch) {
       const [x, y] = positionMatch.slice(1).map(Number);
       // Update windowPos using setGlobalState
-      console.log(x, y);
       setGlobalState('global/setWindowPos', { x, y });
     }
 

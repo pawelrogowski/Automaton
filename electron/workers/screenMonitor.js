@@ -9,9 +9,7 @@ import statusBarSequences from '../constants/statusBarSequences.js';
 import parseMathCondition from '../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
 import { keyPress } from '../keyboardControll/keyPress.js';
-import findBoundingRect from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
-import cropImageData from '../screenMonitor/utils/cropImageData.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 
 let state = null;
@@ -40,13 +38,13 @@ let iterationCounter = 0;
 let totalExecutionTime = 0;
 
 let options = {
-  globalDelay: 1,
+  globalDelay: 0,
   categoryDelays: {
-    Healing: 250,
-    Potion: 250,
-    Support: 250,
+    Healing: 500,
+    Potion: 1000,
+    Support: 500,
     Attack: 1000,
-    Equip: 100,
+    Equip: 250,
     Others: 25,
   },
   cooldownStateMapping: {
@@ -77,14 +75,6 @@ const waitForWindowId = new Promise((resolve) => {
   parentPort.on('message', messageHandler);
 });
 
-/**
- * Execute a click based on the rule's details.
- * @param {string} key - The key to press.
- * @param {string} category - The category of the rule.
- * @param {number} ruleDelay - The delay specified by the rule.
- * @param {Object} rule - The rule object.
- * @returns {Promise<void>} - A Promise that resolves after the click is executed.
- */
 const executeClick = async (key, category, ruleDelay, rule) => {
   const now = Date.now();
   if (options.logsEnabled) {
@@ -97,24 +87,13 @@ const executeClick = async (key, category, ruleDelay, rule) => {
   lastCategoriesExecitionTimes[rule.category] = now;
 };
 
-/**
- * Filter rules by enabled status.
- * @param {Object[]} rules - The list of rules.
- * @returns {Object[]} - The filtered list of enabled rules.
- */
 const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
 
-/**
- * Filter rules by delay.
- * @param {Object[]} rules - The list of rules.
- * @param {number} now - The current time.
- * @returns {Object[]} - The filtered list of rules not on delay.
- */
-const filterRulesNotOnDelay = (rules, now) =>
+const filterRulesNotOnDelay = (rules) =>
   rules.filter(
     (rule) =>
-      now - (lastRuleExecitionTimes[rule.id] || 0) >= (rule.delay || 0) &&
-      now -
+      Date.now() - (lastRuleExecitionTimes[rule.id] || 0) >= (rule.delay || 0) &&
+      Date.now() -
         Math.max(
           ...rules
             .filter((r) => r.category === rule.category)
@@ -123,12 +102,6 @@ const filterRulesNotOnDelay = (rules, now) =>
         options.categoryDelays[rule.category],
   );
 
-/**
- * Filter rules by active cooldowns.
- * @param {Object[]} rules - The list of rules.
- * @param {Object} gameState - The game state object.
- * @returns {Object[]} - The filtered list of rules not affected by active cooldowns.
- */
 const filterRulesByActiveCooldowns = (rules, gameState) =>
   rules.filter((rule) => {
     const cooldownStateKey = options.cooldownStateMapping[rule.category];
@@ -138,12 +111,6 @@ const filterRulesByActiveCooldowns = (rules, gameState) =>
     return !gameState[cooldownStateKey];
   });
 
-/**
- * Filter rules by conditions.
- * @param {Object[]} rules - The list of rules.
- * @param {Object} gameState - The game state object.
- * @returns {Object[]} - The filtered list of rules that meet the conditions.
- */
 const filterRulesByConditions = (rules, gameState) =>
   rules.filter(
     (rule) =>
@@ -166,26 +133,13 @@ const filterRulesByConditions = (rules, gameState) =>
       (rule.id !== 'manaSync' || gameState.attackCdActive), // Special case for "manaSync" rule
   );
 
-/**
- * Get the highest priority rule from a list of rules.
- * @param {Object[]} rules - The list of rules.
- * @returns {Object|null} - The highest priority rule or null if no rules are provided.
- */
 const getHighestPriorityRule = (rules) =>
   rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
 
-/**
- * Process all rules.
- * @param {Object[]} rules - The list of rules.
- * @param {Object} gameState - The game state object.
- * @param {Object} global - The global object.
- * @returns {Promise<void>} - A Promise that resolves after all rules are processed.
- */
 const processRules = async (rules, gameState, global) => {
-  const now = Date.now();
   const enabledRules = filterEnabledRules(rules);
   const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, gameState);
-  const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns, now);
+  const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns);
   const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, gameState);
   const highestPriorityRule = getHighestPriorityRule(rulesWithConditionsMet);
 
@@ -361,7 +315,8 @@ async function main() {
       hpManaImageData = null;
       cooldownBarImageData = null;
       statusBarImageData = null;
-      setTimeout(loop, global.refreshRate, 0);
+      const additionalRandomDelay = Math.floor(Math.random() * (30 - 10 + 1)) + 10;
+      setTimeout(loop, global.refreshRate, options.globalDelay + additionalRandomDelay);
     }
 
     loop();

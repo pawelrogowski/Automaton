@@ -17,26 +17,24 @@ import autoLoot from './autoLoot/autoLoot.js';
 const { debounce } = pkg;
 const debounceTime = 75;
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 let windId = '';
 let windTitle = '';
 let isEnabled = false;
-let antiIdleOn = false;
 
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
-  const { windowId, botEnabled, antiIdleEnabled } = global;
+  const { windowId, botEnabled } = global;
   windId = windowId;
   isEnabled = botEnabled;
-  antiIdleOn = antiIdleEnabled;
 });
 
 const soundCache = new Map();
 
 const playSound = (filePath) => {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-
   const asarPath = path.join(__dirname, 'sounds', filePath);
 
   if (!fs.existsSync(asarPath)) {
@@ -73,80 +71,48 @@ const playSound = (filePath) => {
   }
 };
 
-const debouncedUpdateSquareTopLeft = debounce(async () => {
-  try {
-    const { x: mouseX, y: mouseY, windowId } = await getMouseLocation();
-    if (windowId === store.getState().global.windowId) {
-      store.dispatch(setSquareTopLeft({ x: mouseX, y: mouseY }));
-    }
-  } catch (error) {
-    console.error('Failed to update top left square with mouse position:', error);
-  }
-}, debounceTime);
-
-const debouncedUpdateSquareBottomRight = debounce(async () => {
-  try {
-    const { x: mouseX, y: mouseY, windowId } = await getMouseLocation();
-    if (windowId === store.getState().global.windowId) {
-      store.dispatch(setSquareBottomRight({ x: mouseX, y: mouseY }));
-    }
-  } catch (error) {
-    console.error('Failed to update top right square with mouse position:', error);
-  }
-}, debounceTime);
-
 const debouncedSelectActiveWindow = debounce(() => {
   console.log('Alt+0 shortcut clicked');
   resetWorkers();
   selectActiveWindow();
   setTimeout(() => {
-    showNotification('Automaton', `🔐 Window Selected - ${windId}`);
+    showNotification(`🔐 Window Selected - ${windId}`);
   }, 100);
 }, debounceTime);
 
 const debouncedSelectWindow = debounce(() => {
-  console.log('Alt+Shift+0 shortcut clicked');
   selectWindow();
   setTimeout(() => {
-    showNotification('Automaton', `🔐 Window Selected - ${windId}`);
+    showNotification(`🔐 Window Selected - ${windId}`);
   }, 100);
 }, debounceTime);
 
 const debouncedToggleBotEnabled = debounce(() => {
-  console.log('Alt+1 shortcut clicked');
   setGlobalState('global/toggleBotEnabled');
-  console.log(isEnabled);
   if (isEnabled) {
-    showNotification('Automaton', '🟢 Bot Enabled');
-
-    playSound('enable.wav'); // Play the enable sound
+    showNotification('🟢 Bot Enabled');
+    playSound('enable.wav');
   } else {
-    showNotification('Automaton', '🔴 Bot Disabled');
-
-    playSound('disable.wav'); // Play the disable sound
+    showNotification('🔴 Bot Disabled');
+    playSound('disable.wav');
   }
 }, debounceTime);
 
 const debouncedToggleManaSync = debounce(() => {
-  console.log('Alt+3 shortcut clicked');
   setGlobalState('healing/toggleManaSyncEnabled');
-  // Access the current state to determine the manaSync rule's status
   const currentState = store.getState();
   const manaSyncRule = currentState.healing.find((rule) => rule.id === 'manaSync');
   const isManaSyncEnabled = manaSyncRule ? manaSyncRule.enabled : false;
   if (isManaSyncEnabled) {
-    showNotification('Automaton', '🟢 Attack Sync Enabled');
-
-    playSound('manaSyncEnable.wav'); // Play the enable sound
+    showNotification('🟢 Attack Sync Enabled');
+    playSound('manaSyncEnable.wav');
   } else {
-    showNotification('Automaton', '🔴 Attack Sync Disabled');
-
-    playSound('manaSyncDisable.wav'); // Play the disable sound
+    showNotification('🔴 Attack Sync Disabled');
+    playSound('manaSyncDisable.wav');
   }
 }, debounceTime);
 
 const debouncedToggleMainWindowVisibility = debounce(() => {
-  console.log('Alt+2 shortcut clicked');
   const mainWindow = getMainWindow();
   if (mainWindow) {
     if (mainWindow.isVisible()) {
@@ -158,30 +124,6 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
   }
 }, debounceTime);
 
-let currentSizeIndex = 0;
-const sizes = [
-  { width: 700, height: 333 },
-  { width: 700, height: 72 },
-  { width: 700, height: 41 },
-  { width: 700, height: 72 },
-];
-
-const registerResizeShortcut = () => {
-  try {
-    globalShortcut.register('Alt+5', () => {
-      const mainWindow = getMainWindow();
-      if (mainWindow) {
-        // Cycle through the sizes
-        currentSizeIndex = (currentSizeIndex + 1) % sizes.length;
-        const newSize = sizes[currentSizeIndex];
-        mainWindow.setSize(newSize.width, newSize.height);
-      }
-    });
-  } catch (error) {
-    console.error('Failed to register resize shortcut:', error);
-  }
-};
-
 export const registerGlobalShortcuts = () => {
   try {
     globalShortcut.register('Alt+0', debouncedSelectActiveWindow);
@@ -190,9 +132,6 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
     globalShortcut.register('F8', () => autoLoot());
-    globalShortcut.register('Alt+Q', debouncedUpdateSquareTopLeft);
-    globalShortcut.register('Alt+C', debouncedUpdateSquareBottomRight);
-    registerResizeShortcut();
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

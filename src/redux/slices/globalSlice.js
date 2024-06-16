@@ -7,6 +7,7 @@ const initialState = {
   windowPos: { x: 0, y: 0 },
   botEnabled: false,
   refreshRate: 0,
+  notificationsEnabled: false,
 };
 
 const globalSlice = createSlice({
@@ -25,6 +26,23 @@ const globalSlice = createSlice({
     setRefreshRate: (state, action) => {
       state.refreshRate = Math.max(action.payload, 0);
     },
+    toggleNotifications: (state) => {
+      state.notificationsEnabled = !state.notificationsEnabled;
+    },
+    toggleBotEnabled: (state) => {
+      state.botEnabled = !state.botEnabled;
+    },
+    setState: (state, action) => {
+      const newState = { ...state };
+
+      Object.keys(newState).forEach((key) => {
+        if (!['windowId', 'windowPos', 'botEnabled'].includes(key)) {
+          newState[key] = action.payload[key];
+        }
+      });
+
+      return newState;
+    },
   },
 
   setWindowPos: (state) => {
@@ -32,7 +50,15 @@ const globalSlice = createSlice({
   },
 });
 
-export const { setWindowTitle, setWindowId, setIsBotEnabled, setRefreshRate, setWindowPos } =
-  globalSlice.actions;
+export const {
+  setWindowTitle,
+  setWindowId,
+  setIsBotEnabled,
+  setRefreshRate,
+  setWindowPos,
+  toggleNotifications,
+  toggleBotEnabled,
+  setState,
+} = globalSlice.actions;
 
 export default globalSlice;

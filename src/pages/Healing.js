@@ -1,7 +1,12 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import HealingRule from '../components/HealingRule/HealingRule.js';
-import { addRule, updateManaSync, toggleManaSyncEnabled } from '../redux/slices/healingSlice.js';
+import {
+  addRule,
+  updateManaSync,
+  updateManaSyncTriggerPercentage,
+  toggleManaSyncEnabled,
+} from '../redux/slices/healingSlice.js';
 import StyledMain from './Healing.styled.js';
 import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
@@ -19,7 +24,6 @@ export const Healing = () => {
   const rules = useSelector((state) => state.healing);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const { windowId, botEnabled, refreshRate } = useSelector((state) => state.global);
-  const isAnyRuleEnabled = rules.some((rule) => rule.enabled);
 
   const manaSyncRule = useSelector((state) =>
     state.healing.find((rule) => rule.id === 'manaSync'),
@@ -34,13 +38,11 @@ export const Healing = () => {
   };
 
   const handleManaSyncPercentageChange = (event) => {
-    const value = event.target.value;
-    dispatch(updateManaSyncTriggerPercentage(value));
+    dispatch(updateManaSyncTriggerPercentage(event.target.value));
   };
 
   const handleRefreshRateChange = (event) => {
-    const value = event.target.value;
-    dispatch(setRefreshRate(Math.max(0, value)));
+    dispatch(setRefreshRate(Math.max(0, event.target.value)));
   };
 
   const handleManaSyncToggle = () => {
