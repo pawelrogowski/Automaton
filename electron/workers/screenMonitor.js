@@ -40,12 +40,12 @@ let totalExecutionTime = 0;
 let options = {
   globalDelay: 0,
   categoryDelays: {
-    Healing: 500,
+    Healing: 150,
     Potion: 1000,
-    Support: 500,
-    Attack: 1000,
-    Equip: 250,
-    Others: 25,
+    Support: 150,
+    Attack: 150,
+    Equip: 150,
+    Others: 0,
   },
   cooldownStateMapping: {
     Healing: 'healingCdActive',
