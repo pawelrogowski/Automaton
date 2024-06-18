@@ -316,7 +316,7 @@ async function main() {
       cooldownBarImageData = null;
       statusBarImageData = null;
       const additionalRandomDelay = Math.floor(Math.random() * (30 - 10 + 1)) + 10;
-      setTimeout(loop, global.refreshRate, options.globalDelay + additionalRandomDelay);
+      setTimeout(loop, global.refreshRate, options.globalDelay);
     }
 
     loop();
