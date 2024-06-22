@@ -30,10 +30,10 @@ let statusBarImageData;
 let battleListImageData;
 let cooldownBarRegions;
 let statusBarRegions;
-// variables to keep track of rule execution times
 let lastRuleExecitionTimes = {};
 let lastCategoriesExecitionTimes = {};
 let lastMonsterNumber;
+let lastPartyNumber;
 let iterationCounter = 0;
 let totalExecutionTime = 0;
 
@@ -160,11 +160,19 @@ async function main() {
     const imageData = await grabScreen(global.windowId);
 
     const startRegions = findSequences(imageData, regionColorSequences, width);
-    const { healthBar, manaBar, cooldownBar, statusBar, battleListStart } = startRegions;
+    const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
+      startRegions;
 
     let battleListRegion = {
       x: battleListStart.x,
       y: battleListStart.y,
+      width: 4,
+      height: 215,
+    };
+
+    let partyListRegion = {
+      x: partyListStart.x,
+      y: partyListStart.y,
       width: 4,
       height: 215,
     };
@@ -197,6 +205,7 @@ async function main() {
           grabScreen(global.windowId, cooldownsRegion),
           grabScreen(global.windowId, statusBarRegion),
           grabScreen(global.windowId, battleListRegion),
+          grabScreen(global.windowId, partyListRegion),
         ]);
 
       const { percentage: newHealthPercentage } = await calculatePercentages(
@@ -301,11 +310,19 @@ async function main() {
         battleListSequences.battleEntry,
         4,
       );
+      let partyNumber = findAllOccurrences(partyListImageData, partyListSequences.partyEntry, 4);
       if (lastMonsterNumber !== monsterNumber) {
         lastMonsterNumber = monsterNumber;
         parentPort.postMessage({
           type: 'setMonsterNum',
           payload: { monsterNum: monsterNumber },
+        });
+      }
+      if (lastPartyNumber !== partyNumber) {
+        lastPartyNumber = partyNumber;
+        parentPort.postMessage({
+          type: 'setPartyNum',
+          payload: { partyNum: partyNumber },
         });
       }
       if (global.botEnabled) {

@@ -13,6 +13,7 @@ const initialState = {
   supportCdActive: false,
   attackCdActive: false,
   monsterNum: 0,
+  partyNum: 0,
   characterStatus: {
     bleeding: false,
     burning: false,
@@ -119,7 +120,6 @@ const gameStateSlice = createSlice({
     },
     setCharacterStatus: (state, action) => {
       const { characterStatus } = action.payload || {};
-      // eslint-disable-next-line no-restricted-syntax
       for (const key in characterStatus) {
         if (characterStatus.hasOwnProperty(key)) {
           state.characterStatus[key] = characterStatus[key];
@@ -129,6 +129,10 @@ const gameStateSlice = createSlice({
     setMonsterNum: (state, action) => {
       const newMonsterNum = action.payload.monsterNum;
       state.monsterNum = newMonsterNum;
+    },
+    setPartyNum: (state, action) => {
+      const newPartyNum = action.payload.partyNum;
+      state.partyNum = newPartyNum;
     },
     setState: (state, action) => {
       return action.payload;
@@ -142,6 +146,7 @@ export const {
   setHealingCdActive,
   setCharacterStatus,
   setMonsterNum,
+  setPartyNum,
   setState,
 } = gameStateSlice.actions;
 
