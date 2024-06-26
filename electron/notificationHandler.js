@@ -27,8 +27,7 @@ const createIconImage = () => {
 };
 
 export const showNotification = (title, body) => {
-  console.log(notiEnabled);
-  if (notiEnabled) return;
+  if (!notiEnabled) return;
 
   try {
     new Notification({

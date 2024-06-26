@@ -66,83 +66,82 @@ export const Healing = () => {
           <div className="square"></div>
           <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
         </div>
-        <div className="settings-row">
-          <div className="enable-wrapper">
-            <CustomCheckbox
-              checked={botEnabled}
-              onChange={handleHealingToggle}
-              disabled={windowId === null}
-              size={16}
-            />
-            <h2 className="enable-text">Enabled</h2>
-          </div>
-
-          <div className="refresh-rate-row">
-            <h5>refresh</h5>
-            <ListInput
-              type="number"
-              className="input-percent input-field input-long"
-              id="refreshRate"
-              value={refreshRate}
-              onChange={handleRefreshRateChange}
-              placeholder="0"
-              min="0"
-              max="20000"
-            />
-            <h5>ms</h5>
-          </div>
-          {manaSyncRule && (
-            <div className="mana-sync-column margin-left">
-              <div className="mana-sync-row">
-                <CustomCheckbox
-                  checked={manaSyncRule.enabled}
-                  onChange={handleManaSyncToggle}
-                  size={18}
-                />
-                <h5 className="mana-sync-row-text mana-sync-checkbox-text">
-                  Sync HK with Attack CD:
-                </h5>
-              </div>
-
-              <div className="mana-sync-row mana-sync-hotkey">
-                <h5>HK:</h5>
-                <ListSelect
-                  className="input-hotkey input-field"
-                  id="manaSyncKey"
-                  value={manaSyncRule.key || 'F1'}
-                  onChange={(event) =>
-                    dispatch(
-                      updateManaSync({
-                        key: event.target.value,
-                        manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
-                      }),
-                    )
-                  }
-                  placeholder="F1"
-                >
-                  {keyboardKeys.map((key) => (
-                    <option key={key.value} value={key.value}>
-                      {key.label}
-                    </option>
-                  ))}
-                </ListSelect>
-              </div>
-              <div className="mana-sync-row">
-                <h5>Mana%:</h5>
-                <ListInput
-                  type="number"
-                  className="input-percent input-field"
-                  id="manaSyncPercentage"
-                  value={manaSyncRule.manaTriggerPercentage}
-                  onChange={handleManaSyncPercentageChange}
-                  placeholder="80"
-                  min="1"
-                  max="100"
-                />
-              </div>
+        <SunkenWrapper className="settings-wrapper">
+          <div className="settings-row">
+            <div className="enable-wrapper">
+              <CustomCheckbox
+                checked={botEnabled}
+                onChange={handleHealingToggle}
+                disabled={windowId === null}
+                size={16}
+              />
+              <h2 className="enable-text">On</h2>
             </div>
-          )}
-        </div>
+
+            <div className="refresh-rate-row">
+              <h5>refresh</h5>
+              <ListInput
+                type="number"
+                className="input-percent input-field input-long"
+                id="refreshRate"
+                value={refreshRate}
+                onChange={handleRefreshRateChange}
+                placeholder="0"
+                min="0"
+                max="20000"
+              />
+              <h5>ms</h5>
+            </div>
+            {manaSyncRule && (
+              <div className="mana-sync-column margin-left">
+                <div className="mana-sync-row">
+                  <CustomCheckbox
+                    checked={manaSyncRule.enabled}
+                    onChange={handleManaSyncToggle}
+                    size={18}
+                  />
+                  <h5 className="mana-sync-row-text mana-sync-checkbox-text">ManaSync:</h5>
+                </div>
+
+                <div className="mana-sync-row mana-sync-hotkey">
+                  <ListSelect
+                    className="input-hotkey input-field"
+                    id="manaSyncKey"
+                    value={manaSyncRule.key || 'F1'}
+                    onChange={(event) =>
+                      dispatch(
+                        updateManaSync({
+                          key: event.target.value,
+                          manaTriggerPercentage: manaSyncRule.manaTriggerPercentage,
+                        }),
+                      )
+                    }
+                    placeholder="F1"
+                  >
+                    {keyboardKeys.map((key) => (
+                      <option key={key.value} value={key.value}>
+                        {key.label}
+                      </option>
+                    ))}
+                  </ListSelect>
+                </div>
+                <div className="mana-sync-row">
+                  <h5>Mana%:</h5>
+                  <ListInput
+                    type="number"
+                    className="input-percent input-field"
+                    id="manaSyncPercentage"
+                    value={manaSyncRule.manaTriggerPercentage}
+                    onChange={handleManaSyncPercentageChange}
+                    placeholder="80"
+                    min="1"
+                    max="100"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </SunkenWrapper>
         <SunkenWrapper className="list-wrapper">
           <div className="button-container">
             <button className="add-button button-page" type="button" onMouseDown={handleAddRule}>
@@ -159,7 +158,11 @@ export const Healing = () => {
             {rules
               .filter((rule) => rule.id !== 'manaSync')
               .map((rule, index) => (
-                <HealingRule key={rule.id} rule={rule} />
+                <HealingRule
+                  key={rule.id}
+                  rule={rule}
+                  className={index % 2 === 0 ? 'list-bg' : ''}
+                />
               ))}
           </RuleListWrapper>
         </SunkenWrapper>

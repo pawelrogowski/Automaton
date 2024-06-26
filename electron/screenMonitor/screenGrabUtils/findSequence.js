@@ -36,9 +36,6 @@ function findSequence(
     ? searchLimit.y
     : Math.floor((endIndex - startIndex) / width) + 1;
 
-  // Log the search area dimensions.
-  console.log(`Searching area: ${searchAreaWidth} pixels wide, ${searchAreaHeight} pixels high`);
-
   // Iterate over the image data to find the sequence.
   for (let i = startIndex; i < endIndex; i++) {
     let x = i % width;

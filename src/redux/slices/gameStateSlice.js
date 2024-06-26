@@ -72,8 +72,8 @@ const gameStateSlice = createSlice({
         }
 
         // Log the updated average HP% drop per second and the biggest drop
-        console.log(`Updated average HP% drop per second: ${state.averageHpDropPerSecond}`);
-        console.log(`Biggest HP% drop: ${state.biggestHpDrop}`);
+        // console.log(`Updated average HP% drop per second: ${state.averageHpDropPerSecond}`);
+        // console.log(`Biggest HP% drop: ${state.biggestHpDrop}`);
       }
 
       // Update the HP%

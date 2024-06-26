@@ -131,7 +131,7 @@ const healingSlice = createSlice({
       }
     },
     setState: (state, action) => {
-      console.log(action.payload);
+      // console.log(action.payload);
       return action.payload;
     },
   },

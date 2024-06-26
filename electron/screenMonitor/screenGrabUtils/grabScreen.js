@@ -47,16 +47,13 @@ async function getImageFromWindow(X, windowId, captureRegion, region) {
       (error, image) => {
         if (error) {
           if (error.message.includes('Bad match')) {
-            console.log('Window is minimized, waiting for it to be maximized...');
             setTimeout(() => {
               getImageFromWindow(X, windowId, region, windowId, region).then(resolve).catch(reject);
             }, 25);
           } else {
-            console.log('error GrabScreen Callback');
             reject(new Error(`X.GetImage failed: ${error.message}`));
           }
         } else if (!image) {
-          console.log('Image is undefined');
           resolve([]);
         } else {
           const imageDataArray = new Uint32Array(image.data);

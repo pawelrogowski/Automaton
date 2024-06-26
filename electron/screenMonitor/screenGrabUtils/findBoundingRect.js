@@ -25,23 +25,16 @@ function findBoundingRect(
   const limiter = { x: 150, y: Infinity };
   const endPoint = findSequence(imageData, sequence2, imageWidth, startPoint, limiter);
   if (!endPoint.x || !endPoint.y) {
-    // If sequence2 is not found, return an empty object.
     return {};
   }
-  console.log('startPoint:', startPoint);
-  console.log(`Found sequence2 at coordinates: x=${endPoint.x}, y=${endPoint.y}`); // Log the coordinates of sequence2
 
-  // Calculate the rectangle's dimensions.
   const rect = {
     x: startPoint.x,
     y: startPoint.y,
     width: endPoint.x - startPoint.x,
     height: endPoint.y - startPoint.y,
   };
-  console.log(rect);
-  // Return the rectangle's dimensions.
   return rect;
 }
 
-// Export the findBoundingRect function.
 export default findBoundingRect;

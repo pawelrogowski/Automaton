@@ -36,7 +36,6 @@ export const getSquareCenters = () => {
         }
       }
     }
-    console.log(allSquares.length, middleSquares.length);
     return { allSquareCenters: allSquares, middleSquareCenters: middleSquares };
   } catch (error) {
     console.error(`Error calculating square centers: ${error.message}`);

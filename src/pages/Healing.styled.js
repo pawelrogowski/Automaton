@@ -39,7 +39,6 @@ const StyledMain = styled.main`
     width: 100%;
     input,
     select {
-      max-width: 46px;
     }
   }
   .enable-wrapper {
@@ -204,6 +203,7 @@ const StyledMain = styled.main`
       input,
       select {
         max-height: 18px;
+        width: 48px;
       }
     }
   }
@@ -216,6 +216,29 @@ const StyledMain = styled.main`
     aspect-ratio: 1;
     width: 40px;
     background: black;
+  }
+  .input-percent,
+  #manaSyncPercentage {
+    width: 48px;
+  }
+  .settings-wrapper {
+    padding: 0 0 6px 0;
+    margin: 6px 0;
+  }
+  .list-bg {
+    details,
+    select,
+    input,
+    summary {
+      filter: brightness(1.05);
+    }
+    summary,
+    details {
+      background: #414141;
+      ul {
+        background: #414141;
+      }
+    }
   }
 `;
 export default StyledMain;
