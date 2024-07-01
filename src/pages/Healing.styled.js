@@ -222,7 +222,7 @@ const StyledMain = styled.main`
     width: 48px;
   }
   .settings-wrapper {
-    padding: 0 0 6px 0;
+    padding: 0 4px 6px 4px;
     margin: 6px 0;
   }
   .list-bg {

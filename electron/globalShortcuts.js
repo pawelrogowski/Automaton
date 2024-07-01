@@ -12,7 +12,6 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
-import autoLoot from './autoLoot/autoLoot.js';
 
 const { debounce } = pkg;
 const debounceTime = 75;
@@ -49,7 +48,6 @@ const playSound = (filePath) => {
         console.error(`exec error: ${error}`);
         return;
       }
-      console.log(`stdout: ${stdout}`);
       console.error(`stderr: ${stderr}`);
     });
   } else {
@@ -65,14 +63,12 @@ const playSound = (filePath) => {
         console.error(`exec error: ${error}`);
         return;
       }
-      console.log(`stdout: ${stdout}`);
       console.error(`stderr: ${stderr}`);
     });
   }
 };
 
 const debouncedSelectActiveWindow = debounce(() => {
-  console.log('Alt+0 shortcut clicked');
   resetWorkers();
   selectActiveWindow();
   setTimeout(() => {
@@ -131,7 +127,6 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
-    globalShortcut.register('F8', () => autoLoot());
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

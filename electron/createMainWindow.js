@@ -1,33 +1,89 @@
 import { BrowserWindow, app, Tray, Menu, dialog } from 'electron';
 import path from 'path';
-import url, { fileURLToPath } from 'url';
+import { fileURLToPath } from 'url';
 import { resetWorkers } from './main.js';
 import { selectWindow } from './menus/windowSelection.js';
 import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 import { toggleNotifications } from '../src/redux/slices/globalSlice.js';
 import store from './store.js';
 
+const MIN_WIDTH = 700;
+const MIN_HEIGHT = 42;
+const ICON_PATH = './icons/skull.png';
+const HTML_PATH = '../dist/index.html';
+
 let mainWindow;
 let tray;
-let notiEnabled = false;
+let isNotificationEnabled = false;
+let shouldClose = false;
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-store.subscribe(() => {
-  const state = store.getState();
-  const { global } = state;
-  const { notificationsEnabled } = global;
-  notiEnabled = notificationsEnabled;
-});
+/**
+ * Builds the tray context menu dynamically.
+ * @returns {Electron.Menu} The built menu
+ */
+const buildTrayContextMenu = () =>
+  Menu.buildFromTemplate([
+    {
+      label: 'Show/Hide',
+      click: toggleMainWindowVisibility,
+    },
+    { type: 'separator' },
+    { label: 'Select Window', click: selectWindow },
+    { label: 'Reset Engine', click: resetWorkers },
+    { type: 'separator' },
+    { label: 'Load Settings', click: loadRulesFromFile },
+    { label: 'Save Settings', click: saveRulesToFile },
+    { type: 'separator' },
+    {
+      label: 'Notifications',
+      type: 'checkbox',
+      checked: isNotificationEnabled,
+      click: () => store.dispatch(toggleNotifications()),
+    },
+    { label: 'Close', click: () => app.quit() },
+  ]);
 
+/**
+ * Creates and sets up the system tray.
+ */
+const createTray = () => {
+  tray = new Tray(path.join(dirname, ICON_PATH));
+  tray.setContextMenu(buildTrayContextMenu());
+};
+
+/**
+ * Handles the window close event.
+ * @param {Electron.Event} event - The close event
+ */
+const handleWindowClose = async (event) => {
+  if (!shouldClose) {
+    event.preventDefault();
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Yes', 'No'],
+      defaultId: 1,
+      title: 'Confirm',
+      message: 'Are you sure you want to quit the application?',
+      cancelId: 1,
+    });
+    if (response === 0) {
+      shouldClose = true;
+      app.quit();
+    }
+  }
+};
+
+/**
+ * Creates the main application window.
+ */
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    minWidth: 700,
-    minHeight: 42,
-    x: 0,
-    y: 0,
-    icon: path.join(dirname, './skull.png'),
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
+    icon: path.join(dirname, ICON_PATH),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -36,51 +92,15 @@ export const createMainWindow = () => {
     autoHideMenuBar: true,
     alwaysOnTop: true,
     transparent: false,
-    // frame: false,
   });
 
-  // Open the developer tools for debugging
   mainWindow.webContents.openDevTools();
 
-  mainWindow.loadURL(
-    url.format({
-      pathname: path.join(dirname, '../dist/index.html'),
-      protocol: 'file:',
-      slashes: true,
-    }),
-  );
+  mainWindow
+    .loadURL(`file://${path.join(dirname, HTML_PATH)}`)
+    .catch((err) => console.error('Failed to load URL:', err));
 
-  tray = new Tray(path.join(dirname, './icons/skull.png'));
-
-  const trayContextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show/Hide',
-      click: () => {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-        }
-      },
-    },
-
-    { type: 'separator' },
-    { label: 'Select Window', click: () => selectWindow() },
-    { label: 'Reset Engine', click: () => resetWorkers() },
-    { type: 'separator' },
-    { label: 'Load Settings', click: () => loadRulesFromFile() },
-    { label: 'Save Settings', click: () => saveRulesToFile() },
-    { type: 'separator', label: 'save/load' },
-    {
-      label: 'Notifications',
-      type: 'checkbox',
-      checked: notiEnabled,
-      click: () => store.dispatch(toggleNotifications()),
-    },
-    { label: 'Close', click: () => app.quit() },
-  ]);
-
-  tray.setContextMenu(trayContextMenu);
+  createTray();
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -97,29 +117,12 @@ export const createMainWindow = () => {
     mainWindow.setMinimizable(false);
   });
 
-  let shouldClose = false;
-  mainWindow.on('close', (event) => {
-    if (!shouldClose) {
-      event.preventDefault();
-      const options = {
-        type: 'question',
-        buttons: ['Yes', 'No'],
-        defaultId: 1,
-        title: 'Confirm',
-        message: 'Are you sure you want to quit the application?',
-        cancelId: 1,
-      };
-
-      dialog.showMessageBox(mainWindow, options).then((response) => {
-        if (response.response === 0) {
-          shouldClose = true;
-          app.quit();
-        }
-      });
-    }
-  });
+  mainWindow.on('close', handleWindowClose);
 };
 
+/**
+ * Toggles the visibility of the main window.
+ */
 export const toggleMainWindowVisibility = () => {
   if (mainWindow.isVisible()) {
     mainWindow.hide();
@@ -128,4 +131,16 @@ export const toggleMainWindowVisibility = () => {
   }
 };
 
+/**
+ * Returns the main window instance.
+ * @returns {Electron.BrowserWindow|null} The main window instance
+ */
 export const getMainWindow = () => mainWindow;
+
+// Subscribe to store changes
+store.subscribe(() => {
+  const { notificationsEnabled } = store.getState().global;
+  isNotificationEnabled = notificationsEnabled;
+
+  tray.setContextMenu(buildTrayContextMenu());
+});

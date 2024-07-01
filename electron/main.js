@@ -1,12 +1,10 @@
-import { app, ipcMain, dialog, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow } from 'electron';
 import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
-import fs from 'fs';
 import path from 'path';
-import { createMainWindow, getMainWindow, toggleMainWindowVisibility } from './createMainWindow.js';
+import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
-import { showNotification } from './notificationHandler.js';
 import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
@@ -18,15 +16,17 @@ import {
   autoLoadRules,
 } from './rulesManager.js';
 
+// Set up some basic path stuff
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
+// Initialize some variables we'll need later
 let ScreenMonitor = null;
 let prevWindowId = null;
-let mainWindow = getMainWindow;
 let loginWindow;
 
+// Function to reset our worker threads
 export const resetWorkers = () => {
   if (ScreenMonitor) {
     ScreenMonitor.terminate();
@@ -34,24 +34,27 @@ export const resetWorkers = () => {
   }
 };
 
+// Keep an eye on our store for changes
 store.subscribe(() => {
   const state = store.getState();
-  const { global } = state;
-  const { windowId } = global;
+  const { windowId } = state.global;
 
+  // If we have a ScreenMonitor, let's keep it up to date
   if (ScreenMonitor) {
     ScreenMonitor.postMessage(state);
   }
 
+  // If the window ID changed, we need to reset our workers
   if (windowId !== prevWindowId) {
     resetWorkers();
   }
 
+  // If we don't have a ScreenMonitor but we do have a window ID, let's set one up
   if (!ScreenMonitor && windowId) {
     const screenMonitorWorkerPath = resolve(cwd, './workers', 'screenMonitor.js');
+    ScreenMonitor = new Worker(screenMonitorWorkerPath, { name: 'screenMonitor.js' });
 
-    ScreenMonitor = new Worker(screenMonitorWorkerPath, { name: 'screeenMonitor.js' });
-
+    // Handle messages from our ScreenMonitor
     ScreenMonitor.on('message', (message) => {
       if (message.type) {
         setGlobalState(`gameState/${message.type}`, message.payload);
@@ -60,17 +63,20 @@ store.subscribe(() => {
       }
     });
 
+    // Uh oh, something went wrong with our ScreenMonitor
     ScreenMonitor.on('error', (error) => {
-      console.error('An error occurred in the worker:', error);
+      console.error('Oops! Something went wrong with our ScreenMonitor:', error);
       resetWorkers();
     });
+
     ScreenMonitor.postMessage(state);
   }
 
   prevWindowId = windowId;
 });
 
-ipcMain.on('save-rules', async (event) => {
+// Handle saving rules
+ipcMain.on('save-rules', async () => {
   const mainWindow = getMainWindow();
   mainWindow.minimize();
   await saveRulesToFile(() => {
@@ -78,7 +84,8 @@ ipcMain.on('save-rules', async (event) => {
   });
 });
 
-ipcMain.handle('load-rules', async (event) => {
+// Handle loading rules
+ipcMain.handle('load-rules', async () => {
   const mainWindow = getMainWindow();
   mainWindow.minimize();
   await loadRulesFromFile(() => {
@@ -86,13 +93,16 @@ ipcMain.handle('load-rules', async (event) => {
   });
 });
 
-ipcMain.on('renderer-ready', (event) => {
+// The renderer is ready, let's set some things up
+ipcMain.on('renderer-ready', () => {
   autoLoadRules();
   registerGlobalShortcuts();
 });
 
+// When the app is ready, let's get this party started
 app.whenReady().then(() => {
   try {
+    // Create our login window
     loginWindow = new BrowserWindow({
       width: 360,
       height: 400,
@@ -107,19 +117,22 @@ app.whenReady().then(() => {
     const loginHtmlPath = path.join(cwd, 'loginWindow', 'loginWindow.html');
     loginWindow.loadFile(loginHtmlPath);
 
+    // If the login window is closed and we don't have a main window, quit the app
     loginWindow.on('close', () => {
-      if (!mainWindow) app.quit();
+      if (!getMainWindow()) app.quit();
     });
 
+    // When login is successful, close the login window and create the main window
     ipcMain.on('login-success', () => {
       loginWindow.close();
       createMainWindow();
     });
   } catch (error) {
-    console.error('Error initializing login window:', error);
+    console.error("Well, this is embarrassing. We couldn't start the login window:", error);
   }
 });
 
+// Clean up before we quit
 app.on('before-quit', () => {
   if (ScreenMonitor) {
     ScreenMonitor.terminate();
@@ -128,10 +141,12 @@ app.on('before-quit', () => {
   autoSaveRules();
 });
 
+// Unregister our shortcuts before we go
 app.on('will-quit', () => {
   unregisterGlobalShortcuts();
 });
 
+// If all windows are closed, quit the app (except on macOS)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

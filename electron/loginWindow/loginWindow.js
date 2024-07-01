@@ -23,7 +23,6 @@ function toggleCheckbox() {
   checkbox.checked = !checkbox.checked;
 }
 
-// Pre-populate fields if "Remember Me" was selected previously
 const credentials = JSON.parse(localStorage.getItem('credentials'));
 if (credentials) {
   document.getElementById('username').value = credentials.username;

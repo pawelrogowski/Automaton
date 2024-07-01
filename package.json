@@ -1,7 +1,7 @@
 {
   "name": "Automaton",
   "productName": "Automaton",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",

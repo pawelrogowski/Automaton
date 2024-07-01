@@ -39,7 +39,6 @@ export const selectWindow = async () => {
       return;
     }
     const windowId = stdout.trim();
-    console.log(`Selected window ID: ${windowId}`);
     const geometry = await getGeometry(windowId);
     if (geometry.includes('1x1')) {
       console.error('Error: Please select a valid tibia window.');

@@ -64,7 +64,6 @@ const autoSaveRules = async () => {
   try {
     const rules = store.getState();
     fs.writeFileSync(autoLoadFilePath, JSON.stringify(rules, null, 2));
-    console.log('Rules saved successfully');
   } catch (error) {
     console.error('Failed to save rules:', error);
   }

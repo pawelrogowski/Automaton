@@ -17,7 +17,6 @@ import ListInput from '../components/ListInput/ListInput.js';
 import ListSelect from '../components/ListSelect/ListSelect.js';
 import keyboardKeys from '../constants/keyboardKeys.js';
 import { StatBars } from '../components/StatBars.js/StatBars.js';
-import SquareGrid from '../components/SquareGrid/SquareGrid.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -63,7 +62,6 @@ export const Healing = () => {
     <StyledMain>
       <StyledSection>
         <div className="top-bar">
-          <div className="square"></div>
           <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
         </div>
         <SunkenWrapper className="settings-wrapper">
@@ -100,7 +98,7 @@ export const Healing = () => {
                     onChange={handleManaSyncToggle}
                     size={18}
                   />
-                  <h5 className="mana-sync-row-text mana-sync-checkbox-text">ManaSync:</h5>
+                  <h5 className="mana-sync-row-text mana-sync-checkbox-text"> ManaSync: </h5>
                 </div>
 
                 <div className="mana-sync-row mana-sync-hotkey">
