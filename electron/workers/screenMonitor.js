@@ -310,21 +310,21 @@ async function main() {
         battleListSequences.battleEntry,
         4,
       );
-      let partyNumber = findAllOccurrences(partyListImageData, partyListSequences.partyEntry, 4);
-      if (lastMonsterNumber !== monsterNumber) {
-        lastMonsterNumber = monsterNumber;
-        parentPort.postMessage({
-          type: 'setMonsterNum',
-          payload: { monsterNum: monsterNumber },
-        });
-      }
-      if (lastPartyNumber !== partyNumber) {
-        lastPartyNumber = partyNumber;
-        parentPort.postMessage({
-          type: 'setPartyNum',
-          payload: { partyNum: partyNumber },
-        });
-      }
+      // let partyNumber = findAllOccurrences(partyListImageData, partyListSequences.partyEntry, 4);
+      // if (lastMonsterNumber !== monsterNumber) {
+      //   lastMonsterNumber = monsterNumber;
+      //   parentPort.postMessage({
+      //     type: 'setMonsterNum',
+      //     payload: { monsterNum: monsterNumber },
+      //   });
+      // }
+      // if (lastPartyNumber !== partyNumber) {
+      //   lastPartyNumber = partyNumber;
+      //   parentPort.postMessage({
+      //     type: 'setPartyNum',
+      //     payload: { partyNum: partyNumber },
+      //   });
+      // }
       if (global.botEnabled) {
         await processRules(healing, gameState, global);
       }
