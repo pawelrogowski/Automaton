@@ -40,11 +40,11 @@ let totalExecutionTime = 0;
 let options = {
   globalDelay: 0,
   categoryDelays: {
-    Healing: 150,
+    Healing: 250,
     Potion: 1000,
-    Support: 150,
-    Attack: 150,
-    Equip: 150,
+    Support: 250,
+    Attack: 500,
+    Equip: 250,
     Others: 0,
   },
   cooldownStateMapping: {
@@ -205,7 +205,7 @@ async function main() {
           grabScreen(global.windowId, cooldownsRegion),
           grabScreen(global.windowId, statusBarRegion),
           grabScreen(global.windowId, battleListRegion),
-          grabScreen(global.windowId, partyListRegion),
+          // grabScreen(global.windowId, partyListRegion),
         ]);
 
       const { percentage: newHealthPercentage } = await calculatePercentages(
@@ -311,13 +311,13 @@ async function main() {
         4,
       );
       // let partyNumber = findAllOccurrences(partyListImageData, partyListSequences.partyEntry, 4);
-      // if (lastMonsterNumber !== monsterNumber) {
-      //   lastMonsterNumber = monsterNumber;
-      //   parentPort.postMessage({
-      //     type: 'setMonsterNum',
-      //     payload: { monsterNum: monsterNumber },
-      //   });
-      // }
+      if (lastMonsterNumber !== monsterNumber) {
+        lastMonsterNumber = monsterNumber;
+        parentPort.postMessage({
+          type: 'setMonsterNum',
+          payload: { monsterNum: monsterNumber },
+        });
+      }
       // if (lastPartyNumber !== partyNumber) {
       //   lastPartyNumber = partyNumber;
       //   parentPort.postMessage({
