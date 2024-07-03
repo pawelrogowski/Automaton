@@ -1,6 +1,7 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const WebpackObfuscator = require('webpack-obfuscator');
 
 module.exports = {
   entry: './src/index.js',
@@ -87,5 +88,17 @@ module.exports = {
     new CopyWebpackPlugin({
       patterns: [{ from: 'src/assets', to: 'dist/assets' }],
     }),
+    new WebpackObfuscator(
+      {
+        rotateStringArray: true,
+        stringArray: true,
+        stringArrayEncoding: ['base64'],
+        deadCodeInjection: true,
+        identifierNamesGenerator: 'hexadecimal',
+        selfDefending: true,
+        transformObjectKeys: true,
+      },
+      ['electron/main.js'],
+    ), // Exclude main.js from obfuscation
   ],
 };
