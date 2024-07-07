@@ -11,10 +11,35 @@
   "scripts": {
     "start": "webpack --mode development && electron .",
     "build": "webpack --mode production",
-    "package": "npm run build && electron-forge package",
-    "make": "npm run build && electron-forge make",
-    "publish": "npm run build && electron-forge publish",
+    "package": "npm run build && electron-builder --linux AppImage",
+    "make": "npm run build && electron-builder --linux AppImage",
+    "publish": "npm run build && electron-builder --linux AppImage -p always",
     "lint": "eslint . --ext .js,.jsx,.mjs"
+  },
+  "build": {
+    "appId": "com.yourcompany.automaton",
+    "productName": "Automaton",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      "src/preload.js"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon":
+      "category": "Utility"
+    },
+    "asar": true
   },
   "keywords": [],
   "author": "feiron <pawel.rogowski.praca@gmail.com>",
@@ -22,7 +47,6 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.0.1",
     "copy-webpack-plugin": "^11.0.0",
-    "electron": "^29.1.5",
     "lodash": "^4.17.21",
     "modern-normalize": "^2.0.0",
     "node-loader": "^2.0.0",
