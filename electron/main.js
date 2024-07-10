@@ -5,7 +5,6 @@ import { dirname, resolve } from 'path';
 import path from 'path';
 import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
-import setupAppMenu from './menus/setupAppMenu.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from './globalShortcuts.js';
@@ -133,12 +132,12 @@ app.whenReady().then(() => {
 });
 
 // Clean up before we quit
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   if (ScreenMonitor) {
     ScreenMonitor.terminate();
     ScreenMonitor = null;
   }
-  autoSaveRules();
+  await autoSaveRules();
 });
 
 // Unregister our shortcuts before we go
@@ -148,7 +147,5 @@ app.on('will-quit', () => {
 
 // If all windows are closed, quit the app (except on macOS)
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });

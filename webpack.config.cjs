@@ -1,8 +1,7 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const WebpackObfuscator = require('webpack-obfuscator');
-
+const CompressionPlugin = require('compression-webpack-plugin');
 module.exports = {
   entry: './src/index.js',
   output: {
@@ -85,20 +84,12 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './src/index.html',
     }),
-    new CopyWebpackPlugin({
-      patterns: [{ from: 'src/assets', to: 'dist/assets' }],
+    new CompressionPlugin({
+      // Add the CompressionPlugin configuration
+      algorithm: 'gzip',
+      test: /\.js$|\.css$|\.html$/,
+      threshold: 10240,
+      minRatio: 0.8,
     }),
-    new WebpackObfuscator(
-      {
-        rotateStringArray: true,
-        stringArray: true,
-        stringArrayEncoding: ['base64'],
-        deadCodeInjection: true,
-        identifierNamesGenerator: 'hexadecimal',
-        selfDefending: true,
-        transformObjectKeys: true,
-      },
-      ['electron/main.js'],
-    ), // Exclude main.js from obfuscation
   ],
 };

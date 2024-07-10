@@ -36,16 +36,17 @@ let lastMonsterNumber;
 let lastPartyNumber;
 let iterationCounter = 0;
 let totalExecutionTime = 0;
-
+let directGameState;
+let lastDirectGameState;
 let options = {
   globalDelay: 0,
   categoryDelays: {
-    Healing: 250,
+    Healing: 200,
     Potion: 1000,
-    Support: 250,
-    Attack: 500,
+    Support: 500,
+    Attack: 1000,
     Equip: 250,
-    Others: 0,
+    Others: 25,
   },
   cooldownStateMapping: {
     Healing: 'healingCdActive',
@@ -102,54 +103,50 @@ const filterRulesNotOnDelay = (rules) =>
         options.categoryDelays[rule.category],
   );
 
-const filterRulesByActiveCooldowns = (rules, gameState) =>
+const filterRulesByActiveCooldowns = (rules, directGameState) =>
   rules.filter((rule) => {
     const cooldownStateKey = options.cooldownStateMapping[rule.category];
     if (!cooldownStateKey) {
       return true;
     }
-    return !gameState[cooldownStateKey];
+    return !directGameState[cooldownStateKey];
   });
 
-const filterRulesByConditions = (rules, gameState) =>
+const filterRulesByConditions = (rules, directGameState) =>
   rules.filter(
     (rule) =>
       parseMathCondition(
         rule.hpTriggerCondition,
         parseInt(rule.hpTriggerPercentage, 10),
-        gameState.hpPercentage,
+        directGameState.hpPercentage,
       ) &&
       parseMathCondition(
         rule.manaTriggerCondition,
         parseInt(rule.manaTriggerPercentage, 10),
-        gameState.manaPercentage,
+        directGameState.manaPercentage,
       ) &&
-      areCharStatusConditionsMet(rule, gameState) &&
+      areCharStatusConditionsMet(rule, directGameState) &&
       parseMathCondition(
         rule.monsterNumCondition,
         parseInt(rule.monsterNum, 10),
-        gameState.monsterNum,
+        directGameState.monsterNum,
       ) &&
-      (rule.id !== 'manaSync' || gameState.attackCdActive), // Special case for "manaSync" rule
+      (rule.id !== 'manaSync' || directGameState.attackCdActive),
   );
 
 const getHighestPriorityRule = (rules) =>
   rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
 
-const processRules = async (rules, gameState, global) => {
+const processRules = async (rules, directGameState, global) => {
   const enabledRules = filterEnabledRules(rules);
-  const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, gameState);
+  const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
   const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns);
-  const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, gameState);
+  const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, directGameState);
   const highestPriorityRule = getHighestPriorityRule(rulesWithConditionsMet);
 
   if (highestPriorityRule) {
-    await executeClick(
-      highestPriorityRule.key,
-      highestPriorityRule.category,
-      highestPriorityRule.delay,
-      highestPriorityRule,
-    );
+    const { key, category, delay } = highestPriorityRule;
+    await executeClick(key, category, delay, highestPriorityRule);
   }
 };
 
@@ -205,7 +202,6 @@ async function main() {
           grabScreen(global.windowId, cooldownsRegion),
           grabScreen(global.windowId, statusBarRegion),
           grabScreen(global.windowId, battleListRegion),
-          // grabScreen(global.windowId, partyListRegion),
         ]);
 
       const { percentage: newHealthPercentage } = await calculatePercentages(
@@ -222,15 +218,6 @@ async function main() {
         hpManaRegion.width,
       );
 
-      if (newHealthPercentage !== lastDispatchedHealthPercentage) {
-        parentPort.postMessage({
-          type: 'setHealthPercent',
-          payload: { hpPercentage: newHealthPercentage },
-        });
-        lastDispatchedHealthPercentage = newHealthPercentage;
-      }
-      lastHealthPercentage = newHealthPercentage;
-
       const { percentage: newManaPercentage } = await calculatePercentages(
         manaBar,
         hpManaRegion,
@@ -245,6 +232,41 @@ async function main() {
         hpManaRegion.width,
       );
 
+      cooldownBarRegions = findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
+
+      statusBarRegions = findSequences(statusBarImageData, statusBarSequences, 106);
+
+      const characterStatusUpdates = {};
+      for (const [key, value] of Object.entries(statusBarSequences)) {
+        characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
+      }
+
+      let monsterNumber = findAllOccurrences(
+        battleListImageData,
+        battleListSequences.battleEntry,
+        4,
+      );
+
+      directGameState = {
+        hpPercentage: newHealthPercentage,
+        manaPercentage: newManaPercentage,
+        healingCdActive: cooldownBarRegions.healing?.x !== undefined,
+        supportCdActive: cooldownBarRegions.support?.x !== undefined,
+        attackCdActive: cooldownBarRegions.attack?.x !== undefined,
+        characterStatus: characterStatusUpdates,
+        monsterNum: monsterNumber,
+      };
+
+      if (global.botEnabled) {
+        await processRules(healing, directGameState, global);
+      }
+      if (newHealthPercentage !== lastDispatchedHealthPercentage) {
+        parentPort.postMessage({
+          type: 'setHealthPercent',
+          payload: { hpPercentage: newHealthPercentage },
+        });
+        lastDispatchedHealthPercentage = newHealthPercentage;
+      }
       if (newManaPercentage !== lastDispatchedManaPercentage) {
         parentPort.postMessage({
           type: 'setManaPercent',
@@ -252,88 +274,12 @@ async function main() {
         });
         lastDispatchedManaPercentage = newManaPercentage;
       }
-      lastManaPercentage = newManaPercentage;
-
-      cooldownBarRegions = findSequences(cooldownBarImageData, cooldownColorSequences, 1000);
-
-      for (const [key, value] of Object.entries(cooldownBarRegions)) {
-        const isCooldownActive = value.x !== undefined;
-
-        if (isCooldownActive !== lastCooldownStates[key]) {
-          let type;
-          let payload;
-          if (key === 'healing') {
-            type = 'setHealingCdActive';
-            payload = { HealingCdActive: isCooldownActive };
-          } else if (key === 'support') {
-            type = 'setSupportCdActive';
-            payload = { supportCdActive: isCooldownActive };
-          } else if (key === 'attack') {
-            type = 'setAttackCdActive';
-            payload = { attackCdActive: isCooldownActive };
-          }
-          parentPort.postMessage({ type, payload });
-          lastCooldownStates[key] = isCooldownActive;
-        }
-      }
-
-      statusBarRegions = findSequences(statusBarImageData, statusBarSequences, 106);
-
-      const characterStatusUpdates = Object.keys(lastDispatchedCharacterStatuses).reduce(
-        (acc, key) => {
-          acc[key] = false;
-          return acc;
-        },
-        {},
-      );
-
-      for (const [key, value] of Object.entries(statusBarRegions)) {
-        if (value.x !== undefined) {
-          characterStatusUpdates[key] = true;
-        }
-      }
-
-      const hasStatusChanged = Object.keys(characterStatusUpdates).some(
-        (key) => lastDispatchedCharacterStatuses[key] !== characterStatusUpdates[key],
-      );
-
-      if (hasStatusChanged) {
-        parentPort.postMessage({
-          type: 'setCharacterStatus',
-          payload: { characterStatus: characterStatusUpdates },
-        });
-
-        lastDispatchedCharacterStatuses = { ...characterStatusUpdates };
-      }
-      let monsterNumber = findAllOccurrences(
-        battleListImageData,
-        battleListSequences.battleEntry,
-        4,
-      );
-      // let partyNumber = findAllOccurrences(partyListImageData, partyListSequences.partyEntry, 4);
-      if (lastMonsterNumber !== monsterNumber) {
-        lastMonsterNumber = monsterNumber;
-        parentPort.postMessage({
-          type: 'setMonsterNum',
-          payload: { monsterNum: monsterNumber },
-        });
-      }
-      // if (lastPartyNumber !== partyNumber) {
-      //   lastPartyNumber = partyNumber;
-      //   parentPort.postMessage({
-      //     type: 'setPartyNum',
-      //     payload: { partyNum: partyNumber },
-      //   });
-      // }
-      if (global.botEnabled) {
-        await processRules(healing, gameState, global);
-      }
 
       hpManaImageData = null;
       cooldownBarImageData = null;
       statusBarImageData = null;
       const additionalRandomDelay = Math.floor(Math.random() * (30 - 10 + 1)) + 10;
-      setTimeout(loop, global.refreshRate, options.globalDelay);
+      setTimeout(loop, global.refreshRate);
     }
 
     loop();

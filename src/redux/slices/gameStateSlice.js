@@ -137,6 +137,12 @@ const gameStateSlice = createSlice({
     setState: (state, action) => {
       return action.payload;
     },
+    setBatchUpdate: (state, action) => {
+      return {
+        ...state,
+        ...action.payload,
+      };
+    },
   },
 });
 
@@ -148,6 +154,7 @@ export const {
   setMonsterNum,
   setPartyNum,
   setState,
+  setBatchUpdate,
 } = gameStateSlice.actions;
 
 export default gameStateSlice;

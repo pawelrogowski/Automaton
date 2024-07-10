@@ -1,7 +1,7 @@
 {
-  "name": "Automaton",
+  "name": "automaton",
   "productName": "Automaton",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -36,16 +36,16 @@
       "target": [
         "AppImage"
       ],
-      "icon":
       "category": "Utility"
     },
     "asar": true
   },
   "keywords": [],
   "author": "feiron <pawel.rogowski.praca@gmail.com>",
-  "license": "MIT",
+  "license": "CC-BY-ND-4.0",
   "dependencies": {
     "@reduxjs/toolkit": "^2.0.1",
+    "compression-webpack-plugin": "^11.1.0",
     "copy-webpack-plugin": "^11.0.0",
     "lodash": "^4.17.21",
     "modern-normalize": "^2.0.0",
