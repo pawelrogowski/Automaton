@@ -92,9 +92,12 @@ export const createMainWindow = () => {
     autoHideMenuBar: true,
     alwaysOnTop: true,
     transparent: false,
+    devTools: process.env.NODE_ENV !== 'production',
   });
 
-  mainWindow.webContents.openDevTools();
+  if (process.env.NODE_ENV !== 'production') {
+    mainWindow.webContents.openDevTools();
+  }
 
   mainWindow
     .loadURL(`file://${path.join(dirname, HTML_PATH)}`)

@@ -1,7 +1,9 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
 const CompressionPlugin = require('compression-webpack-plugin');
+
 module.exports = {
   entry: './src/index.js',
   output: {
@@ -92,4 +94,20 @@ module.exports = {
       minRatio: 0.8,
     }),
   ],
+  optimization: {
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          compress: {
+            drop_console: true,
+          },
+          mangle: true,
+          output: {
+            comments: false,
+          },
+        },
+      }),
+    ],
+  },
 };

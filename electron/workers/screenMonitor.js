@@ -134,19 +134,46 @@ const filterRulesByConditions = (rules, directGameState) =>
       (rule.id !== 'manaSync' || directGameState.attackCdActive),
   );
 
-const getHighestPriorityRule = (rules) =>
-  rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
-
-const processRules = async (rules, directGameState, global) => {
+const getAllValidRules = (rules, directGameState) => {
   const enabledRules = filterEnabledRules(rules);
   const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
   const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns);
   const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, directGameState);
-  const highestPriorityRule = getHighestPriorityRule(rulesWithConditionsMet);
+  return rulesWithConditionsMet.sort((a, b) => b.priority - a.priority);
+};
+const getHighestPriorityRulesByCategory = (rules) => {
+  const categoryMap = new Map();
+  for (const rule of rules) {
+    if (
+      !categoryMap.has(rule.category) ||
+      rule.priority > categoryMap.get(rule.category).priority
+    ) {
+      categoryMap.set(rule.category, rule);
+    }
+  }
+  return Array.from(categoryMap.values());
+};
+const getHighestPriorityRule = (rules) =>
+  rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
 
-  if (highestPriorityRule) {
-    const { key, category, delay } = highestPriorityRule;
-    await executeClick(key, category, delay, highestPriorityRule);
+const processRules = async (rules, directGameState, global) => {
+  const validRules = getAllValidRules(rules, directGameState);
+  const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
+
+  if (highestPriorityRules.length > 0) {
+    const keys = highestPriorityRules.map((rule) => rule.key);
+    await keyPress(global.windowId, keys);
+
+    // Update execution times
+    const now = Date.now();
+    highestPriorityRules.forEach((rule) => {
+      lastRuleExecitionTimes[rule.id] = now;
+      lastCategoriesExecitionTimes[rule.category] = now;
+    });
+
+    if (options.logsEnabled) {
+      console.log(`Executing chained command for keys: ${keys.join(', ')}, current time: ${now}`);
+    }
   }
 };
 
