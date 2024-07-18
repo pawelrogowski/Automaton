@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
+import debounce from 'lodash/debounce.js';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
@@ -17,6 +18,24 @@ const HealingRule = ({ rule, className }) => {
 
   const [statusConditions, setStatusConditions] = useState({});
 
+  // Local state for numeric inputs
+  const [localInputs, setLocalInputs] = useState({
+    hpTriggerPercentage: healing.hpTriggerPercentage,
+    manaTriggerPercentage: healing.manaTriggerPercentage,
+    monsterNum: healing.monsterNum,
+    priority: healing.priority,
+    delay: healing.delay,
+  });
+
+  // Debounced function to update Redux
+  const debouncedUpdate = useCallback(
+    debounce((field, value) => {
+      const updatedField = { [field]: value };
+      dispatch(updateRule({ id: healing.id, ...updatedField }));
+    }, 1000),
+    [dispatch, healing.id],
+  );
+
   const handleStatusConditionChange = (status, value) => {
     setStatusConditions((prevState) => ({
       ...prevState,
@@ -30,8 +49,36 @@ const HealingRule = ({ rule, className }) => {
   };
 
   const handleUpdateRule = (updatedFields) => {
-    dispatch(updateRule({ ...healing, ...updatedFields }));
+    dispatch(updateRule({ id: healing.id, ...updatedFields }));
   };
+
+  // Generic handler for numeric inputs
+  const handleNumericInputChange = (field, min, max) => (event) => {
+    const value = parseInt(event.target.value, 10);
+    setLocalInputs((prev) => ({ ...prev, [field]: value }));
+    debouncedUpdate(field, Math.max(min, Math.min(max, value)));
+  };
+
+  // Generic handler for numeric input blur events
+  const handleNumericInputBlur = (field, min, max) => () => {
+    const value = localInputs[field];
+    const validValue = Math.max(min, Math.min(max, value));
+    setLocalInputs((prev) => ({ ...prev, [field]: validValue }));
+    if (validValue !== healing[field]) {
+      dispatch(updateRule({ id: healing.id, [field]: validValue }));
+    }
+  };
+
+  // Sync local state with Redux state
+  useEffect(() => {
+    setLocalInputs({
+      hpTriggerPercentage: healing.hpTriggerPercentage,
+      manaTriggerPercentage: healing.manaTriggerPercentage,
+      monsterNum: healing.monsterNum,
+      priority: healing.priority,
+      delay: healing.delay,
+    });
+  }, [healing]);
 
   return (
     <StyledDiv className={className} $running={healing.enabled}>
@@ -99,12 +146,9 @@ const HealingRule = ({ rule, className }) => {
             max="100"
             step="1"
             id="hpTriggerPercentage"
-            value={healing.hpTriggerPercentage}
-            onChange={(event) => {
-              const value = parseInt(event.target.value, 10);
-              const validValue = Math.max(0, Math.min(100, value));
-              handleUpdateRule({ hpTriggerPercentage: validValue });
-            }}
+            value={localInputs.hpTriggerPercentage}
+            onChange={handleNumericInputChange('hpTriggerPercentage', 0, 100)}
+            onBlur={handleNumericInputBlur('hpTriggerPercentage', 0, 100)}
             placeholder="0"
           />
           <select
@@ -127,14 +171,11 @@ const HealingRule = ({ rule, className }) => {
             step="1"
             className="input input-percent"
             id="manaTriggerPercentage"
-            value={healing.manaTriggerPercentage}
-            onChange={(event) => {
-              const value = parseInt(event.target.value, 10);
-              const validValue = Math.max(0, Math.min(100, value));
-              handleUpdateRule({ manaTriggerPercentage: validValue });
-            }}
+            value={localInputs.manaTriggerPercentage}
+            onChange={handleNumericInputChange('manaTriggerPercentage', 0, 100)}
+            onBlur={handleNumericInputBlur('manaTriggerPercentage', 0, 100)}
             placeholder="0"
-          />{' '}
+          />
           <ListSelect
             className="input input-monster-num-condition"
             id="monsterNumCondition"
@@ -151,12 +192,9 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input input-monster-num"
             id="monsterNum"
-            value={healing.monsterNum}
-            onChange={(event) => {
-              const value = parseInt(event.target.value, 10);
-              const validValue = Math.max(0, Math.min(10, value));
-              handleUpdateRule({ monsterNum: validValue });
-            }}
+            value={localInputs.monsterNum}
+            onChange={handleNumericInputChange('monsterNum', 0, 10)}
+            onBlur={handleNumericInputBlur('monsterNum', 0, 10)}
             min="0"
             max="10"
             placeholder="0"
@@ -165,12 +203,9 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input input-priority"
             id="priority"
-            value={healing.priority}
-            onChange={(event) => {
-              const value = parseInt(event.target.value, 10);
-              const validValue = Math.max(-99, Math.min(99, value));
-              handleUpdateRule({ priority: validValue });
-            }}
+            value={localInputs.priority}
+            onChange={handleNumericInputChange('priority', -99, 99)}
+            onBlur={handleNumericInputBlur('priority', -99, 99)}
             min="-99"
             max="99"
             placeholder="Priority"
@@ -179,11 +214,9 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input-delay"
             id="delay"
-            value={healing.delay}
-            onChange={(event) => {
-              const value = parseInt(event.target.value, 10);
-              handleUpdateRule({ delay: value });
-            }}
+            value={localInputs.delay}
+            onChange={handleNumericInputChange('delay', 25, 840000)}
+            onBlur={handleNumericInputBlur('delay', 25, 840000)}
             placeholder="5"
             min="25"
             step="25"
@@ -215,10 +248,9 @@ HealingRule.propTypes = {
     name: PropTypes.string,
     enabled: PropTypes.bool,
     key: PropTypes.string,
-
-    // eslint-disable-next-line react/forbid-prop-types
     conditions: PropTypes.arrayOf(PropTypes.object),
   }).isRequired,
+  className: PropTypes.string,
 };
 
 export default HealingRule;

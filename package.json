@@ -1,7 +1,7 @@
 {
   "name": "automaton",
   "productName": "Automaton",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -11,13 +11,13 @@
   "scripts": {
     "start": "webpack --mode development && electron .",
     "build": "cross-env NODE_ENV=production webpack --mode production",
-    "package": "npm run build && electron-builder --linux AppImage",
-    "make": "npm run build && electron-builder --linux AppImage",
-    "publish": "npm run build && electron-builder --linux AppImage -p always",
+    "package": "npm run build && electron-builder ",
+    "make": "npm run build && electron-builder ",
+    "publish": "npm run build && electron-builder -p always",
     "lint": "eslint . --ext .js,.jsx,.mjs"
   },
   "build": {
-    "appId": "com.yourcompany.automaton",
+    "appId": "com.feiron.automaton",
     "productName": "Automaton",
     "directories": {
       "output": "dist",
@@ -38,7 +38,8 @@
       ],
       "category": "Utility"
     },
-    "asar": true
+    "asar": true,
+    "publish": null
   },
   "keywords": [],
   "author": "feiron <pawel.rogowski.praca@gmail.com>",

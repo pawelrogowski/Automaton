@@ -53,19 +53,33 @@ const healingSlice = createSlice({
     updateRule: (state, action) => {
       const { id, ...updatedFields } = action.payload;
       const ruleIndex = state.findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        const currentRule = state[ruleIndex];
+        const updatedRule = { ...currentRule };
 
-      const updatedFieldsWithValidation = {
-        ...updatedFields,
-        monsterNum: Math.max(0, Math.min(10, updatedFields.monsterNum)),
-        hpTriggerPercentage: Math.max(0, Math.min(100, updatedFields.hpTriggerPercentage)),
-        manaTriggerPercentage: Math.max(0, Math.min(100, updatedFields.manaTriggerPercentage)),
-        delay: Math.max(25, Math.min(840000, updatedFields.delay)),
-        priority: Math.max(-99, Math.min(99, updatedFields.priority)),
-      };
-      state[ruleIndex] = {
-        ...state[ruleIndex],
-        ...updatedFieldsWithValidation,
-      };
+        // Only update and validate the fields that are present in updatedFields
+        Object.keys(updatedFields).forEach((field) => {
+          switch (field) {
+            case 'monsterNum':
+              updatedRule[field] = Math.max(0, Math.min(10, updatedFields[field]));
+              break;
+            case 'hpTriggerPercentage':
+            case 'manaTriggerPercentage':
+              updatedRule[field] = Math.max(0, Math.min(100, updatedFields[field]));
+              break;
+            case 'delay':
+              updatedRule[field] = Math.max(25, Math.min(840000, updatedFields[field]));
+              break;
+            case 'priority':
+              updatedRule[field] = Math.max(-99, Math.min(99, updatedFields[field]));
+              break;
+            default:
+              updatedRule[field] = updatedFields[field];
+          }
+        });
+
+        state[ruleIndex] = updatedRule;
+      }
     },
     updateCondition: (state, action) => {
       const { id, condition, value } = action.payload;
