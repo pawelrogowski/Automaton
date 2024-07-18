@@ -38,6 +38,8 @@ let iterationCounter = 0;
 let totalExecutionTime = 0;
 let directGameState;
 let lastDirectGameState;
+let manaSyncTimeoutId = null;
+let lastManaSyncScheduleTime = 0;
 let options = {
   globalDelay: 0,
   categoryDelays: {
@@ -161,18 +163,58 @@ const processRules = async (rules, directGameState, global) => {
   const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
 
   if (highestPriorityRules.length > 0) {
-    const keys = highestPriorityRules.map((rule) => rule.key);
-    await keyPress(global.windowId, keys);
+    // Separate manaSyncRule from other rules
+    const manaSyncRule = highestPriorityRules.find((rule) => rule.id === 'manaSync');
+    const otherRules = highestPriorityRules.filter((rule) => rule.id !== 'manaSync');
 
-    // Update execution times
-    const now = Date.now();
-    highestPriorityRules.forEach((rule) => {
-      lastRuleExecitionTimes[rule.id] = now;
-      lastCategoriesExecitionTimes[rule.category] = now;
-    });
+    // Execute other rules immediately
+    if (otherRules.length > 0) {
+      const otherKeys = otherRules.map((rule) => rule.key);
+      await keyPress(global.windowId, otherKeys);
 
-    if (options.logsEnabled) {
-      console.log(`Executing chained command for keys: ${keys.join(', ')}, current time: ${now}`);
+      // Update execution times for other rules
+      const now = Date.now();
+      otherRules.forEach((rule) => {
+        lastRuleExecitionTimes[rule.id] = now;
+        lastCategoriesExecitionTimes[rule.category] = now;
+      });
+
+      if (options.logsEnabled) {
+        console.log(
+          `Executing chained command for keys: ${otherKeys.join(', ')}, current time: ${now}`,
+        );
+      }
+    }
+
+    // Handle manaSync rule
+    if (manaSyncRule) {
+      const now = Date.now();
+      const timeSinceLastSchedule = now - lastManaSyncScheduleTime;
+
+      if (timeSinceLastSchedule >= 1100 && !manaSyncTimeoutId) {
+        manaSyncTimeoutId = setTimeout(async () => {
+          await keyPress(global.windowId, [manaSyncRule.key]);
+
+          const executionTime = Date.now();
+          lastRuleExecitionTimes[manaSyncRule.id] = executionTime;
+          lastCategoriesExecitionTimes[manaSyncRule.category] = executionTime;
+
+          if (options.logsEnabled) {
+            console.log(
+              `Executing delayed manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}`,
+            );
+          }
+
+          manaSyncTimeoutId = null;
+          lastManaSyncScheduleTime = executionTime;
+        }, 910);
+
+        lastManaSyncScheduleTime = now;
+
+        if (options.logsEnabled) {
+          console.log(`Scheduled manaSync execution at ${now}`);
+        }
+      }
     }
   }
 };
