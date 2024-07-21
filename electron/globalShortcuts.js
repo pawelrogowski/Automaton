@@ -2,7 +2,7 @@ import { globalShortcut } from 'electron';
 import { selectWindow } from './menus/windowSelection.js';
 import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
-import { getMainWindow } from './createMainWindow.js';
+import { getMainWindow, toggleTrayVisibility } from './createMainWindow.js';
 import { resetWorkers } from './main.js';
 import { showNotification } from './notificationHandler.js';
 import pkg from 'lodash';
@@ -68,6 +68,18 @@ const playSound = (filePath) => {
   }
 };
 
+const debouncedToggleTrayVisibility = debounce(() => {
+  toggleTrayVisibility();
+  const isTrayVisible = store.getState().global.isTrayVisible; // Assuming you store this in your global state
+  if (isTrayVisible) {
+    showNotification('👁️ Tray Icon Visible');
+    playSound('trayShow.wav'); // You'll need to add this sound file
+  } else {
+    showNotification('🙈 Tray Icon Hidden');
+    playSound('trayHide.wav'); // You'll need to add this sound file
+  }
+}, debounceTime);
+
 const debouncedSelectActiveWindow = debounce(() => {
   resetWorkers();
   selectActiveWindow();
@@ -127,6 +139,7 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
     globalShortcut.register('Alt+3', debouncedToggleManaSync);
+    globalShortcut.register('Alt+T', debouncedToggleTrayVisibility);
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

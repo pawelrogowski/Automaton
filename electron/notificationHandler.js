@@ -8,7 +8,7 @@ let notiEnabled = false;
 const __filenamePath = fileURLToPath(import.meta.url);
 const __dirnamePath = path.dirname(__filenamePath);
 
-const iconPath = path.join(__dirnamePath, 'icons', 'skull.png');
+const iconPath = path.join(__dirnamePath, 'icons', 'greenSkull.png');
 
 store.subscribe(() => {
   const state = store.getState();

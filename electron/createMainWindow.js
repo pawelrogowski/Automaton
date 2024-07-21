@@ -1,4 +1,4 @@
-import { BrowserWindow, app, Tray, Menu, dialog } from 'electron';
+import { BrowserWindow, app, Tray, Menu, dialog, nativeImage } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { resetWorkers } from './main.js';
@@ -9,16 +9,54 @@ import store from './store.js';
 
 const MIN_WIDTH = 700;
 const MIN_HEIGHT = 42;
-const ICON_PATH = './icons/skull.png';
 const HTML_PATH = '../dist/index.html';
 
 let mainWindow;
 let tray;
 let isNotificationEnabled = false;
 let shouldClose = false;
+let isTrayVisible = true;
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
+
+const ICON_PATHS = {
+  white: path.join(dirname, './icons/whiteSkull.png'),
+  green: path.join(dirname, './icons/greenSkull.png'),
+  red: path.join(dirname, './icons/redSkull.png'),
+};
+
+/**
+ * Updates the tray icon based on the current state
+ */
+const updateTrayIcon = () => {
+  if (!tray) return;
+
+  const state = store.getState().global;
+  let iconPath;
+
+  if (!state.windowId) {
+    iconPath = ICON_PATHS.white;
+  } else {
+    iconPath = state.botEnabled ? ICON_PATHS.green : ICON_PATHS.red;
+  }
+
+  const icon = nativeImage.createFromPath(iconPath);
+  tray.setImage(icon);
+};
+
+/**
+ * Toggles the visibility of the tray icon.
+ */
+export const toggleTrayVisibility = () => {
+  isTrayVisible = !isTrayVisible;
+  if (isTrayVisible) {
+    createTray();
+  } else {
+    tray.destroy();
+    tray = null;
+  }
+};
 
 /**
  * Builds the tray context menu dynamically.
@@ -43,6 +81,11 @@ const buildTrayContextMenu = () =>
       checked: isNotificationEnabled,
       click: () => store.dispatch(toggleNotifications()),
     },
+    {
+      label: isTrayVisible ? 'Hide Tray' : 'Show Tray',
+      click: toggleTrayVisibility,
+    },
+    { type: 'separator' },
     { label: 'Close', click: () => app.quit() },
   ]);
 
@@ -50,8 +93,18 @@ const buildTrayContextMenu = () =>
  * Creates and sets up the system tray.
  */
 const createTray = () => {
-  tray = new Tray(path.join(dirname, ICON_PATH));
+  const state = store.getState().global;
+  let initialIconPath = ICON_PATHS.white;
+  if (state.windowId) {
+    initialIconPath = state.botEnabled ? ICON_PATHS.green : ICON_PATHS.red;
+  }
+
+  tray = new Tray(initialIconPath);
+  tray.setToolTip('Click to show/hide the bot');
   tray.setContextMenu(buildTrayContextMenu());
+
+  // Add left-click event handler
+  tray.on('click', toggleMainWindowVisibility);
 };
 
 /**
@@ -83,7 +136,7 @@ export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    icon: path.join(dirname, ICON_PATH),
+    icon: ICON_PATHS.white,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -142,8 +195,11 @@ export const getMainWindow = () => mainWindow;
 
 // Subscribe to store changes
 store.subscribe(() => {
-  const { notificationsEnabled } = store.getState().global;
+  const { notificationsEnabled, windowId, botEnabled } = store.getState().global;
   isNotificationEnabled = notificationsEnabled;
 
-  tray.setContextMenu(buildTrayContextMenu());
+  if (tray) {
+    tray.setContextMenu(buildTrayContextMenu());
+    updateTrayIcon();
+  }
 });
