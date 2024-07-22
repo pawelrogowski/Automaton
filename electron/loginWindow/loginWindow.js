@@ -1,6 +1,14 @@
 document.getElementById('login-form').addEventListener('submit', (e) => {
   e.preventDefault();
+  attemptLogin();
+});
 
+function toggleCheckbox() {
+  const checkbox = document.getElementById('remember-me');
+  checkbox.checked = !checkbox.checked;
+}
+
+function attemptLogin() {
   const username = document.getElementById('username').value;
   const password = document.getElementById('password').value;
   const rememberMe = document.getElementById('remember-me').checked;
@@ -16,16 +24,15 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
   } else {
     document.getElementById('message').textContent = 'Invalid credentials.';
   }
-});
-
-function toggleCheckbox() {
-  const checkbox = document.getElementById('remember-me');
-  checkbox.checked = !checkbox.checked;
 }
 
+// Load saved credentials and attempt auto-login
 const credentials = JSON.parse(localStorage.getItem('credentials'));
 if (credentials) {
   document.getElementById('username').value = credentials.username;
   document.getElementById('password').value = credentials.password;
   document.getElementById('remember-me').checked = true;
+
+  // Attempt auto-login
+  attemptLogin();
 }

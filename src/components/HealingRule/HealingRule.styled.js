@@ -114,7 +114,7 @@ const StyledDiv = styled.div`
 
   .input-percent,
   .input-monster-num {
-    width: 52px;
+    width: 48px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
     text-align: center;
@@ -128,7 +128,7 @@ const StyledDiv = styled.div`
   .input-percent-select,
   .input-monster-num-condition {
     padding: 0;
-    width: 42px;
+    width: 46px;
     appearance: none;
     text-align: center;
     -webkit-appearance: none;

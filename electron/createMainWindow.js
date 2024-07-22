@@ -7,7 +7,7 @@ import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 import { toggleNotifications } from '../src/redux/slices/globalSlice.js';
 import store from './store.js';
 
-const MIN_WIDTH = 700;
+const MIN_WIDTH = 790;
 const MIN_HEIGHT = 42;
 const HTML_PATH = '../dist/index.html';
 
@@ -24,6 +24,7 @@ const ICON_PATHS = {
   white: path.join(dirname, './icons/whiteSkull.png'),
   green: path.join(dirname, './icons/greenSkull.png'),
   red: path.join(dirname, './icons/redSkull.png'),
+  app: path.join(dirname, './icons/automaton.png'),
 };
 
 /**
@@ -86,7 +87,7 @@ const buildTrayContextMenu = () =>
       click: toggleTrayVisibility,
     },
     { type: 'separator' },
-    { label: 'Close', click: () => app.quit() },
+    { label: 'Close', click: closeAppFromTray },
   ]);
 
 /**
@@ -112,8 +113,8 @@ const createTray = () => {
  * @param {Electron.Event} event - The close event
  */
 const handleWindowClose = async (event) => {
+  if (event) event.preventDefault();
   if (!shouldClose) {
-    event.preventDefault();
     const { response } = await dialog.showMessageBox(mainWindow, {
       type: 'question',
       buttons: ['Yes', 'No'],
@@ -124,8 +125,22 @@ const handleWindowClose = async (event) => {
     });
     if (response === 0) {
       shouldClose = true;
-      app.quit();
+      app.exit(0);
     }
+  }
+};
+
+const closeAppFromTray = async () => {
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['Yes', 'No'],
+    defaultId: 1,
+    title: 'Confirm',
+    message: 'Are you sure you want to quit the application?',
+    cancelId: 1,
+  });
+  if (response === 0) {
+    app.exit(0);
   }
 };
 
@@ -136,7 +151,7 @@ export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
-    icon: ICON_PATHS.white,
+    icon: ICON_PATHS.app,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -174,6 +189,12 @@ export const createMainWindow = () => {
   });
 
   mainWindow.on('close', handleWindowClose);
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.exit();
+    }
+  });
 };
 
 /**

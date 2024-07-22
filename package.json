@@ -1,7 +1,7 @@
 {
   "name": "automaton",
   "productName": "Automaton",
-  "version": "1.4.9",
+  "version": "1.5.0",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -34,7 +34,8 @@
     ],
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "rpm"
       ],
       "category": "Utility"
     },

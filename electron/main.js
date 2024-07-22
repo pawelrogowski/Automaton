@@ -142,10 +142,18 @@ app.on('before-quit', async () => {
 
 // Unregister our shortcuts before we go
 app.on('will-quit', () => {
+  if (ScreenMonitor) {
+    ScreenMonitor.terminate();
+    ScreenMonitor = null;
+  }
   unregisterGlobalShortcuts();
 });
 
 // If all windows are closed, quit the app (except on macOS)
 app.on('window-all-closed', () => {
+  if (ScreenMonitor) {
+    ScreenMonitor.terminate();
+    ScreenMonitor = null;
+  }
   app.quit();
 });
