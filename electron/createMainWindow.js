@@ -57,6 +57,7 @@ export const toggleTrayVisibility = () => {
     tray.destroy();
     tray = null;
   }
+  Menu.setApplicationMenu(buildAppMenu());
 };
 
 /**
@@ -89,6 +90,53 @@ const buildTrayContextMenu = () =>
     { type: 'separator' },
     { label: 'Close', click: closeAppFromTray },
   ]);
+
+/**
+ * Builds the application menu.
+ * @returns {Electron.Menu} The built menu
+ */
+const buildAppMenu = () => {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        { label: 'Show/Hide', click: toggleMainWindowVisibility },
+        { type: 'separator' },
+        { label: 'Select Window', click: selectWindow },
+        { label: 'Reset Engine', click: resetWorkers },
+        { type: 'separator' },
+        { label: 'Load Settings', click: loadRulesFromFile },
+        { label: 'Save Settings', click: saveRulesToFile },
+        { type: 'separator' },
+        { label: 'Close', click: closeAppFromTray },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Notifications',
+          type: 'checkbox',
+          checked: isNotificationEnabled,
+          click: () => store.dispatch(toggleNotifications()),
+        },
+        {
+          label: isTrayVisible ? 'Hide Tray' : 'Show Tray',
+          click: toggleTrayVisibility,
+        },
+      ],
+    },
+  ];
+
+  if (process.env.NODE_ENV !== 'production') {
+    template.push({
+      label: 'Developer',
+      submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
+    });
+  }
+
+  return Menu.buildFromTemplate(template);
+};
 
 /**
  * Creates and sets up the system tray.
@@ -172,6 +220,7 @@ export const createMainWindow = () => {
     .catch((err) => console.error('Failed to load URL:', err));
 
   createTray();
+  Menu.setApplicationMenu(buildAppMenu());
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -223,4 +272,7 @@ store.subscribe(() => {
     tray.setContextMenu(buildTrayContextMenu());
     updateTrayIcon();
   }
+
+  // Update the application menu
+  Menu.setApplicationMenu(buildAppMenu());
 });

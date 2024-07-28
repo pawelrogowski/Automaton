@@ -34,6 +34,12 @@ async function grabScreen(windowId, region, measureTime) {
   }
 }
 
+async function grabMultipleRegions(windowId, regions) {
+  const { X } = await createX11Client();
+
+  return Promise.all(regions.map((region) => getImageFromWindow(X, windowId, region)));
+}
+
 async function getImageFromWindow(X, windowId, captureRegion, region) {
   return new Promise((resolve, reject) => {
     X.GetImage(
@@ -64,4 +70,4 @@ async function getImageFromWindow(X, windowId, captureRegion, region) {
   });
 }
 
-export default grabScreen;
+export { grabScreen, grabMultipleRegions };

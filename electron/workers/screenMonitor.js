@@ -1,5 +1,6 @@
 import { parentPort } from 'worker_threads';
-import grabScreen from '../screenMonitor/screenGrabUtils/grabScreen.js';
+import { performance } from 'perf_hooks';
+import { grabScreen, grabMultipleRegions } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
 import regionColorSequences from '../constants/regionColorSequeces.js';
@@ -8,7 +9,7 @@ import battleListSequences from '../constants/battleListSequences.js';
 import statusBarSequences from '../constants/statusBarSequences.js';
 import parseMathCondition from '../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
-import { keyPress } from '../keyboardControll/keyPress.js';
+import { keyPress, keyPressManaSync } from '../keyboardControll/keyPress.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 
@@ -40,6 +41,24 @@ let directGameState;
 let lastDirectGameState;
 let manaSyncTimeoutId = null;
 let lastManaSyncScheduleTime = 0;
+
+// New variables for timing and cooldown logging
+let screenGrabStartTime,
+  screenGrabEndTime,
+  processingStartTime,
+  processingEndTime,
+  keypressStartTime,
+  keypressEndTime;
+let cooldownStartTimes = { healing: 0, attack: 0, support: 0 };
+
+// New variables for FPS and iteration timing
+let frameCount = 0;
+let lastFpsUpdate = performance.now();
+let fps = 0;
+let fastestIteration = Infinity;
+let slowestIteration = 0;
+let iterationStartTime;
+
 let options = {
   globalDelay: 0,
   categoryDelays: {
@@ -78,18 +97,6 @@ const waitForWindowId = new Promise((resolve) => {
   parentPort.on('message', messageHandler);
 });
 
-const executeClick = async (key, category, ruleDelay, rule) => {
-  const now = Date.now();
-  if (options.logsEnabled) {
-    console.log(
-      `Executing click for key: ${key}, category: ${category}, delay: ${ruleDelay}, current time: ${now}`,
-    );
-  }
-  await keyPress(global.windowId, key);
-  lastRuleExecitionTimes[rule.id] = now;
-  lastCategoriesExecitionTimes[rule.category] = now;
-};
-
 const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
 
 const filterRulesNotOnDelay = (rules) =>
@@ -108,6 +115,7 @@ const filterRulesNotOnDelay = (rules) =>
 const filterRulesByActiveCooldowns = (rules, directGameState) =>
   rules.filter((rule) => {
     const cooldownStateKey = options.cooldownStateMapping[rule.category];
+
     if (!cooldownStateKey) {
       return true;
     }
@@ -143,6 +151,7 @@ const getAllValidRules = (rules, directGameState) => {
   const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, directGameState);
   return rulesWithConditionsMet.sort((a, b) => b.priority - a.priority);
 };
+
 const getHighestPriorityRulesByCategory = (rules) => {
   const categoryMap = new Map();
   for (const rule of rules) {
@@ -155,6 +164,7 @@ const getHighestPriorityRulesByCategory = (rules) => {
   }
   return Array.from(categoryMap.values());
 };
+
 const getHighestPriorityRule = (rules) =>
   rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
 
@@ -170,7 +180,9 @@ const processRules = async (rules, directGameState, global) => {
     // Execute other rules immediately
     if (otherRules.length > 0) {
       const otherKeys = otherRules.map((rule) => rule.key);
+      const keypressStartTime = performance.now();
       await keyPress(global.windowId, otherKeys);
+      const keypressDuration = performance.now() - keypressStartTime;
 
       // Update execution times for other rules
       const now = Date.now();
@@ -181,7 +193,7 @@ const processRules = async (rules, directGameState, global) => {
 
       if (options.logsEnabled) {
         console.log(
-          `Executing chained command for keys: ${otherKeys.join(', ')}, current time: ${now}`,
+          `Executing chained command for keys: ${otherKeys.join(', ')}, current time: ${now}, keypress duration: ${keypressDuration.toFixed(2)} ms`,
         );
       }
     }
@@ -191,23 +203,24 @@ const processRules = async (rules, directGameState, global) => {
       const now = Date.now();
       const timeSinceLastSchedule = now - lastManaSyncScheduleTime;
 
-      if (timeSinceLastSchedule >= 1100 && !manaSyncTimeoutId) {
+      if (timeSinceLastSchedule >= 2000 && !manaSyncTimeoutId) {
         manaSyncTimeoutId = setTimeout(async () => {
-          await keyPress(global.windowId, [manaSyncRule.key]);
-
           const executionTime = Date.now();
           lastRuleExecitionTimes[manaSyncRule.id] = executionTime;
           lastCategoriesExecitionTimes[manaSyncRule.category] = executionTime;
+          manaSyncTimeoutId = null;
+          lastManaSyncScheduleTime = executionTime;
+
+          const manaSyncStartTime = performance.now();
+          await keyPressManaSync(global.windowId, [manaSyncRule.key], null, 7);
+          const manaSyncDuration = performance.now() - manaSyncStartTime;
 
           if (options.logsEnabled) {
             console.log(
-              `Executing delayed manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}`,
+              `Executing delayed manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
             );
           }
-
-          manaSyncTimeoutId = null;
-          lastManaSyncScheduleTime = executionTime;
-        }, 910);
+        }, 200);
 
         lastManaSyncScheduleTime = now;
 
@@ -265,13 +278,27 @@ async function main() {
     };
 
     async function loop() {
+      iterationStartTime = performance.now();
+      frameCount++;
+
+      // Calculate FPS every second
+      if (performance.now() - lastFpsUpdate >= 1000) {
+        fps = Math.round((frameCount * 1000) / (performance.now() - lastFpsUpdate));
+        frameCount = 0;
+        lastFpsUpdate = performance.now();
+      }
+
+      screenGrabStartTime = performance.now();
       [hpManaImageData, cooldownBarImageData, statusBarImageData, battleListImageData] =
-        await Promise.all([
-          grabScreen(global.windowId, hpManaRegion),
-          grabScreen(global.windowId, cooldownsRegion),
-          grabScreen(global.windowId, statusBarRegion),
-          grabScreen(global.windowId, battleListRegion),
+        await grabMultipleRegions(global.windowId, [
+          hpManaRegion,
+          cooldownsRegion,
+          statusBarRegion,
+          battleListRegion,
         ]);
+      screenGrabEndTime = performance.now();
+
+      processingStartTime = performance.now();
 
       const { percentage: newHealthPercentage } = await calculatePercentages(
         healthBar,
@@ -326,9 +353,44 @@ async function main() {
         monsterNum: monsterNumber,
       };
 
+      // Log cooldown durations
+      ['healing', 'attack', 'support'].forEach((cdType) => {
+        if (directGameState[`${cdType}CdActive`]) {
+          if (cooldownStartTimes[cdType] === 0) {
+            cooldownStartTimes[cdType] = performance.now();
+          }
+        } else if (cooldownStartTimes[cdType] !== 0) {
+          const duration = performance.now() - cooldownStartTimes[cdType];
+          console.log(`${cdType} CD was active for ${duration.toFixed(2)} milliseconds`);
+          cooldownStartTimes[cdType] = 0;
+        }
+      });
+
+      processingEndTime = performance.now();
+
       if (global.botEnabled) {
+        keypressStartTime = performance.now();
         await processRules(healing, directGameState, global);
+        keypressEndTime = performance.now();
       }
+
+      const iterationEndTime = performance.now();
+      const iterationDuration = iterationEndTime - iterationStartTime;
+
+      // Update fastest and slowest iteration times
+      fastestIteration = Math.min(fastestIteration, iterationDuration);
+      slowestIteration = Math.max(slowestIteration, iterationDuration);
+
+      // Log timing information
+      console.log(`Iteration timing:
+        FPS: ${fps}
+        Screen grab: ${(screenGrabEndTime - screenGrabStartTime).toFixed(2)} ms
+        Processing: ${(processingEndTime - processingStartTime).toFixed(2)} ms
+        Key press (if applicable): ${global.botEnabled ? (keypressEndTime - keypressStartTime).toFixed(2) : 'N/A'} ms
+        Total iteration time: ${iterationDuration.toFixed(2)} ms
+        Fastest iteration: ${fastestIteration.toFixed(2)} ms
+        Slowest iteration: ${slowestIteration.toFixed(2)} ms`);
+
       if (newHealthPercentage !== lastDispatchedHealthPercentage) {
         parentPort.postMessage({
           type: 'setHealthPercent',
@@ -347,7 +409,6 @@ async function main() {
       hpManaImageData = null;
       cooldownBarImageData = null;
       statusBarImageData = null;
-      const additionalRandomDelay = Math.floor(Math.random() * (30 - 10 + 1)) + 10;
       setTimeout(loop, global.refreshRate);
     }
 
