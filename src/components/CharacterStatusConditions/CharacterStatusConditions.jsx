@@ -11,8 +11,10 @@ import characterStatusImages from '../../constants/characterStatusImages.js';
 
 const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
   const dispatch = useDispatch();
+  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
   const statusConditions = useSelector(
-    (state) => state.healing.find((r) => r.id === ruleId)?.conditions || [],
+    (state) =>
+      state.healing.presets[activePresetIndex].find((r) => r.id === ruleId)?.conditions || [],
   );
 
   const handleClick = (status) => {

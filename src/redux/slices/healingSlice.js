@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-const initialState = [
+const initialPreset = [
   {
     name: 'manaSync',
     enabled: false,
@@ -24,11 +24,16 @@ const initialState = [
   },
 ];
 
+const initialState = {
+  presets: [initialPreset, [], [], [], []],
+  activePresetIndex: 0,
+};
+
 const healingSlice = createSlice({
   name: 'healing',
   initialState,
   reducers: {
-    addRule: (state) => {
+    addRule: (state, action) => {
       const newRule = {
         name: 'New Rule',
         id: Date.now().toString(),
@@ -45,19 +50,20 @@ const healingSlice = createSlice({
         monsterNum: 0,
         monsterNumCondition: '>=',
       };
-      state.push(newRule);
+      state.presets[state.activePresetIndex].push(newRule);
     },
     removeRule: (state, action) => {
-      return state.filter((rule) => rule.id !== action.payload);
+      state.presets[state.activePresetIndex] = state.presets[state.activePresetIndex].filter(
+        (rule) => rule.id !== action.payload,
+      );
     },
     updateRule: (state, action) => {
       const { id, ...updatedFields } = action.payload;
-      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        const currentRule = state[ruleIndex];
+        const currentRule = state.presets[state.activePresetIndex][ruleIndex];
         const updatedRule = { ...currentRule };
 
-        // Only update and validate the fields that are present in updatedFields
         Object.keys(updatedFields).forEach((field) => {
           switch (field) {
             case 'monsterNum':
@@ -78,41 +84,45 @@ const healingSlice = createSlice({
           }
         });
 
-        state[ruleIndex] = updatedRule;
+        state.presets[state.activePresetIndex][ruleIndex] = updatedRule;
       }
     },
     updateCondition: (state, action) => {
       const { id, condition, value } = action.payload;
-      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        const conditionIndex = state[ruleIndex].conditions.findIndex((c) => c.name === condition);
+        const conditionIndex = state.presets[state.activePresetIndex][
+          ruleIndex
+        ].conditions.findIndex((c) => c.name === condition);
         if (conditionIndex !== -1) {
           if (value === undefined) {
-            // Remove the condition object if the value is undefined
-            state[ruleIndex].conditions.splice(conditionIndex, 1);
+            state.presets[state.activePresetIndex][ruleIndex].conditions.splice(conditionIndex, 1);
           } else {
-            // Update the condition value if it's not undefined
-            state[ruleIndex].conditions[conditionIndex].value = value;
+            state.presets[state.activePresetIndex][ruleIndex].conditions[conditionIndex].value =
+              value;
           }
         } else {
-          // Push a new condition object if it doesn't exist
-          state[ruleIndex].conditions.push({ name: condition, value });
+          state.presets[state.activePresetIndex][ruleIndex].conditions.push({
+            name: condition,
+            value,
+          });
         }
       }
     },
     removeCondition: (state, action) => {
       const { id, condition } = action.payload;
-      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        state[ruleIndex].conditions = state[ruleIndex].conditions.filter(
-          (c) => c.name !== condition,
-        );
+        state.presets[state.activePresetIndex][ruleIndex].conditions = state.presets[
+          state.activePresetIndex
+        ][ruleIndex].conditions.filter((c) => c.name !== condition);
       }
     },
-
     updateManaSync: (state, action) => {
       const { key, manaTriggerPercentage } = action.payload;
-      const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
+      const manaSyncRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'manaSync',
+      );
       if (manaSyncRule) {
         manaSyncRule.key = key;
         manaSyncRule.manaTriggerPercentage = manaTriggerPercentage;
@@ -120,33 +130,45 @@ const healingSlice = createSlice({
       }
     },
     updateManaSyncTriggerPercentage: (state, action) => {
-      const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
+      const manaSyncRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'manaSync',
+      );
       if (manaSyncRule) {
         manaSyncRule.manaTriggerPercentage = action.payload;
       }
     },
     loadRules: (state, action) => {
-      return action.payload;
+      state.presets[state.activePresetIndex] = action.payload;
     },
-    // In healingSlice.js
     toggleManaSyncEnabled: (state) => {
-      const manaSyncRule = state.find((rule) => rule.id === 'manaSync');
+      const manaSyncRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'manaSync',
+      );
       if (manaSyncRule) {
         manaSyncRule.enabled = !manaSyncRule.enabled;
       }
     },
     updateMonsterNum: (state, action) => {
       const { id, monsterNum, monsterNumCondition } = action.payload;
-      const ruleIndex = state.findIndex((rule) => rule.id === id);
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
         const validMonsterNum = Math.max(0, Math.min(10, monsterNum));
-        state[ruleIndex].monsterNum = validMonsterNum;
-        state[ruleIndex].monsterNumCondition = monsterNumCondition;
+        state.presets[state.activePresetIndex][ruleIndex].monsterNum = validMonsterNum;
+        state.presets[state.activePresetIndex][ruleIndex].monsterNumCondition = monsterNumCondition;
       }
     },
+    setActivePresetIndex: (state, action) => {
+      state.activePresetIndex = action.payload;
+    },
     setState: (state, action) => {
-      // console.log(action.payload);
-      return action.payload;
+      // Handle backward compatibility
+      if (!Array.isArray(action.payload.presets)) {
+        state.presets = [action.payload];
+        state.activePresetIndex = 0;
+      } else {
+        state.presets = action.payload.presets;
+        state.activePresetIndex = action.payload.activePresetIndex;
+      }
     },
   },
 });
@@ -162,6 +184,7 @@ export const {
   toggleManaSyncEnabled,
   updateMonsterNum,
   updateManaSyncTriggerPercentage,
+  setActivePresetIndex,
   setState,
 } = healingSlice.actions;
 

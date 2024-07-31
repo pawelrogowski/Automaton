@@ -169,7 +169,8 @@ const getHighestPriorityRule = (rules) =>
   rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
 
 const processRules = async (rules, directGameState, global) => {
-  const validRules = getAllValidRules(rules, directGameState);
+  const activePreset = healing.presets[healing.activePresetIndex];
+  const validRules = getAllValidRules(activePreset, directGameState);
   const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
 
   if (highestPriorityRules.length > 0) {

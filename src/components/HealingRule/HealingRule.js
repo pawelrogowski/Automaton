@@ -13,7 +13,11 @@ import ListSelect from '../ListSelect/ListSelect.js';
 
 const HealingRule = ({ rule, className }) => {
   const dispatch = useDispatch();
-  const healing = useSelector((state) => state.healing.find((r) => r.id === rule.id)) || {};
+  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const healing =
+    useSelector((state) =>
+      state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
+    ) || {};
   const [isOpen, setIsOpen] = useState(false);
 
   const [statusConditions, setStatusConditions] = useState({});

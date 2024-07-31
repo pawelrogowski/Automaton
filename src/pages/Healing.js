@@ -20,12 +20,14 @@ import { StatBars } from '../components/StatBars.js/StatBars.js';
 
 export const Healing = () => {
   const dispatch = useDispatch();
-  const rules = useSelector((state) => state.healing);
+  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const rules = useSelector((state) => state.healing.presets[activePresetIndex]);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const { windowId, botEnabled, refreshRate } = useSelector((state) => state.global);
+  const { saveRules, loadRules } = window.electron;
 
   const manaSyncRule = useSelector((state) =>
-    state.healing.find((rule) => rule.id === 'manaSync'),
+    state.healing.presets[state.healing.activePresetIndex].find((rule) => rule.id === 'manaSync'),
   ) || { manaTriggerPercentage: '80' };
 
   const handleAddRule = () => {
@@ -47,8 +49,6 @@ export const Healing = () => {
   const handleManaSyncToggle = () => {
     dispatch(toggleManaSyncEnabled());
   };
-
-  const { saveRules, loadRules } = window.electron;
 
   const handleSaveRules = () => {
     saveRules();

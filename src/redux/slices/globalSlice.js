@@ -8,6 +8,7 @@ const initialState = {
   botEnabled: false,
   refreshRate: 0,
   notificationsEnabled: false,
+  activePresetIndex: 0,
 };
 
 const globalSlice = createSlice({
@@ -31,6 +32,9 @@ const globalSlice = createSlice({
     },
     toggleBotEnabled: (state) => {
       state.botEnabled = !state.botEnabled;
+    },
+    setActivePresetIndex: (state, action) => {
+      state.activePresetIndex = action.payload;
     },
     setState: (state, action) => {
       const newState = { ...state };
@@ -59,6 +63,7 @@ export const {
   toggleNotifications,
   toggleBotEnabled,
   setState,
+  setActivePresetIndex,
 } = globalSlice.actions;
 
 export default globalSlice;

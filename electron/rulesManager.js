@@ -43,10 +43,16 @@ export const loadRulesFromFile = async (callback) => {
       const content = await fs.readFile(result.filePaths[0], 'utf8');
       const loadedState = JSON.parse(content);
 
+      // Handle backward compatibility
+      if (!Array.isArray(loadedState.healing.presets)) {
+        loadedState.healing = {
+          presets: [loadedState.healing],
+          activePresetIndex: 0,
+        };
+      }
+
       setGlobalState('healing/setState', loadedState.healing);
       setGlobalState('global/setState', loadedState.global);
-      // Uncomment the following line if you want to load gameState as well
-      // setGlobalState('gameState/setState', loadedState.gameState);
 
       showNotification(`📤 Loaded | ${path.basename(result.filePaths[0])}`);
     }
@@ -61,7 +67,6 @@ export const loadRulesFromFile = async (callback) => {
 export const autoSaveRules = debounce(async () => {
   try {
     const state = store.getState();
-    // Only save if the state is not empty
     if (Object.keys(state).length > 0) {
       await fs.writeFile(autoLoadFilePath, JSON.stringify(state, null, 2));
       console.log('Auto-saved rules successfully to:', autoLoadFilePath);
@@ -80,10 +85,16 @@ export const autoLoadRules = async () => {
     const loadedState = JSON.parse(content);
 
     if (Object.keys(loadedState).length > 0) {
+      // Handle backward compatibility
+      if (!Array.isArray(loadedState.healing.presets)) {
+        loadedState.healing = {
+          presets: [loadedState.healing],
+          activePresetIndex: 0,
+        };
+      }
+
       setGlobalState('healing/setState', loadedState.healing);
       setGlobalState('global/setState', loadedState.global);
-      // Uncomment the following line if you want to load gameState as well
-      // setGlobalState('gameState/setState', loadedState.gameState);
 
       console.log('Auto-loaded rules successfully from:', autoLoadFilePath);
     } else {
