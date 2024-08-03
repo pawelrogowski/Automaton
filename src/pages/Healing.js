@@ -17,6 +17,7 @@ import ListInput from '../components/ListInput/ListInput.js';
 import ListSelect from '../components/ListSelect/ListSelect.js';
 import keyboardKeys from '../constants/keyboardKeys.js';
 import { StatBars } from '../components/StatBars.js/StatBars.js';
+import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -145,6 +146,7 @@ export const Healing = () => {
             <button className="add-button button-page" type="button" onMouseDown={handleAddRule}>
               ADD NEW RULE
             </button>
+            <PresetSelector />
             <button className="save-button button-page" type="button" onMouseDown={handleLoadRules}>
               LOAD
             </button>

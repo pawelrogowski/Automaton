@@ -21,7 +21,7 @@ const StyledMain = styled.main`
     width: 100%;
     align-items: center;
     gap: 8px;
-    padding: 0 2px;
+    padding: 5px;
   }
   .header-wrapper {
     display: flex;
@@ -70,7 +70,6 @@ const StyledMain = styled.main`
     background-image: url(${tibiaBg});
     background-repeat: repeat;
     font-size: 12px;
-    margin-top: 2px;
     &:active {
       border-top: 2px solid #2c2c2c;
       border-left: 2px solid #2c2c2c;
