@@ -86,7 +86,7 @@ export const Healing = () => {
                 value={refreshRate}
                 onChange={handleRefreshRateChange}
                 placeholder="25"
-                min="25"
+                min="0"
                 max="20000"
               />
               <h5>ms</h5>
