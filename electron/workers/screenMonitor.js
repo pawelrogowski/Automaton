@@ -36,8 +36,7 @@ let iterationCounter = 0;
 let totalExecutionTime = 0;
 let directGameState;
 let lastDirectGameState;
-let manaSyncTimeoutId = null;
-let lastManaSyncScheduleTime = 0;
+
 let screenGrabStartTime,
   screenGrabEndTime,
   processingStartTime,

@@ -5,6 +5,8 @@ import options from './options.js';
 
 let lastRuleExecutionTimes = {};
 let lastCategoriesExecutionTimes = {};
+let manaSyncTimeoutId = null;
+let lastManaSyncScheduleTime = 0;
 
 const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
 
