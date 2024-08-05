@@ -84,6 +84,7 @@ export const Healing = () => {
                 className="input-percent input-field input-long"
                 id="refreshRate"
                 value={refreshRate}
+                defaultValue="25"
                 onChange={handleRefreshRateChange}
                 placeholder="25"
                 min="0"
