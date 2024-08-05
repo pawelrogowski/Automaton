@@ -12,7 +12,7 @@ import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
 import { keyPress, keyPressManaSync } from '../keyboardControll/keyPress.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
-
+import options from './screenMonitor/options.js';
 let state = null;
 let global = null;
 let healing = null;
@@ -58,24 +58,6 @@ let fps = 0;
 let fastestIteration = Infinity;
 let slowestIteration = 0;
 let iterationStartTime;
-
-let options = {
-  globalDelay: 0,
-  categoryDelays: {
-    Healing: 200,
-    Potion: 1000,
-    Support: 500,
-    Attack: 1000,
-    Equip: 250,
-    Others: 25,
-  },
-  cooldownStateMapping: {
-    Healing: 'healingCdActive',
-    Support: 'supportCdActive',
-    Attack: 'attackCdActive',
-  },
-  logsEnabled: false,
-};
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
