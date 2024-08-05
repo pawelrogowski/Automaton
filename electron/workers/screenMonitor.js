@@ -7,12 +7,10 @@ import regionColorSequences from '../constants/regionColorSequeces.js';
 import cooldownColorSequences from '../constants/cooldownColorSequences.js';
 import battleListSequences from '../constants/battleListSequences.js';
 import statusBarSequences from '../constants/statusBarSequences.js';
-import parseMathCondition from '../utils/parseMathCondition.js';
-import areCharStatusConditionsMet from '../utils/areStatusConditionsMet.js';
-import { keyPress, keyPressManaSync } from '../keyboardControll/keyPress.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
-import options from './screenMonitor/options.js';
+import { processRules } from './screenMonitor/ruleProcessor.js';
+
 let state = null;
 let global = null;
 let healing = null;
@@ -31,8 +29,7 @@ let statusBarImageData;
 let battleListImageData;
 let cooldownBarRegions;
 let statusBarRegions;
-let lastRuleExecitionTimes = {};
-let lastCategoriesExecitionTimes = {};
+
 let lastMonsterNumber;
 let lastPartyNumber;
 let iterationCounter = 0;
@@ -41,8 +38,6 @@ let directGameState;
 let lastDirectGameState;
 let manaSyncTimeoutId = null;
 let lastManaSyncScheduleTime = 0;
-
-// New variables for timing and cooldown logging
 let screenGrabStartTime,
   screenGrabEndTime,
   processingStartTime,
@@ -50,14 +45,20 @@ let screenGrabStartTime,
   keypressStartTime,
   keypressEndTime;
 let cooldownStartTimes = { healing: 0, attack: 0, support: 0 };
-
-// New variables for FPS and iteration timing
 let frameCount = 0;
 let lastFpsUpdate = performance.now();
 let fps = 0;
 let fastestIteration = Infinity;
 let slowestIteration = 0;
 let iterationStartTime;
+
+export const getLastRuleExecutionTimes = () => {
+  return lastRuleExecutionTimes;
+};
+
+export const getLastCategoriesExecutionTimes = () => {
+  return lastCategoriesExecutionTimes;
+};
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
@@ -78,142 +79,6 @@ const waitForWindowId = new Promise((resolve) => {
 
   parentPort.on('message', messageHandler);
 });
-
-const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
-
-const filterRulesNotOnDelay = (rules) =>
-  rules.filter(
-    (rule) =>
-      Date.now() - (lastRuleExecitionTimes[rule.id] || 0) >= (rule.delay || 0) &&
-      Date.now() -
-        Math.max(
-          ...rules
-            .filter((r) => r.category === rule.category)
-            .map((r) => lastRuleExecitionTimes[r.id] || 0),
-        ) >=
-        options.categoryDelays[rule.category],
-  );
-
-const filterRulesByActiveCooldowns = (rules, directGameState) =>
-  rules.filter((rule) => {
-    const cooldownStateKey = options.cooldownStateMapping[rule.category];
-
-    if (!cooldownStateKey) {
-      return true;
-    }
-    return !directGameState[cooldownStateKey];
-  });
-
-const filterRulesByConditions = (rules, directGameState) =>
-  rules.filter(
-    (rule) =>
-      parseMathCondition(
-        rule.hpTriggerCondition,
-        parseInt(rule.hpTriggerPercentage, 10),
-        directGameState.hpPercentage,
-      ) &&
-      parseMathCondition(
-        rule.manaTriggerCondition,
-        parseInt(rule.manaTriggerPercentage, 10),
-        directGameState.manaPercentage,
-      ) &&
-      areCharStatusConditionsMet(rule, directGameState) &&
-      parseMathCondition(
-        rule.monsterNumCondition,
-        parseInt(rule.monsterNum, 10),
-        directGameState.monsterNum,
-      ) &&
-      (rule.id !== 'manaSync' || directGameState.attackCdActive),
-  );
-
-const getAllValidRules = (rules, directGameState) => {
-  const enabledRules = filterEnabledRules(rules);
-  const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
-  const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns);
-  const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, directGameState);
-  return rulesWithConditionsMet.sort((a, b) => b.priority - a.priority);
-};
-
-const getHighestPriorityRulesByCategory = (rules) => {
-  const categoryMap = new Map();
-  for (const rule of rules) {
-    if (
-      !categoryMap.has(rule.category) ||
-      rule.priority > categoryMap.get(rule.category).priority
-    ) {
-      categoryMap.set(rule.category, rule);
-    }
-  }
-  return Array.from(categoryMap.values());
-};
-
-const getHighestPriorityRule = (rules) =>
-  rules.length > 0 ? rules.reduce((a, b) => (a.priority > b.priority ? a : b)) : null;
-
-const processRules = async (rules, directGameState, global) => {
-  const activePreset = healing.presets[healing.activePresetIndex];
-  const validRules = getAllValidRules(activePreset, directGameState);
-  const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
-
-  if (highestPriorityRules.length > 0) {
-    // Separate manaSyncRule from other rules
-    const manaSyncRule = highestPriorityRules.find((rule) => rule.id === 'manaSync');
-    const otherRules = highestPriorityRules.filter((rule) => rule.id !== 'manaSync');
-
-    // Execute other rules immediately
-    if (otherRules.length > 0) {
-      const otherKeys = otherRules.map((rule) => rule.key);
-      const keypressStartTime = performance.now();
-      await keyPress(global.windowId, otherKeys);
-      const keypressDuration = performance.now() - keypressStartTime;
-
-      // Update execution times for other rules
-      const now = Date.now();
-      otherRules.forEach((rule) => {
-        lastRuleExecitionTimes[rule.id] = now;
-        lastCategoriesExecitionTimes[rule.category] = now;
-      });
-
-      if (options.logsEnabled) {
-        console.log(
-          `Executing chained command for keys: ${otherKeys.join(', ')}, current time: ${now}, keypress duration: ${keypressDuration.toFixed(2)} ms`,
-        );
-      }
-    }
-
-    // Handle manaSync rule
-    if (manaSyncRule) {
-      const now = Date.now();
-      const timeSinceLastSchedule = now - lastManaSyncScheduleTime;
-
-      if (timeSinceLastSchedule >= 2000 && !manaSyncTimeoutId) {
-        manaSyncTimeoutId = setTimeout(async () => {
-          const executionTime = Date.now();
-          lastRuleExecitionTimes[manaSyncRule.id] = executionTime;
-          lastCategoriesExecitionTimes[manaSyncRule.category] = executionTime;
-          manaSyncTimeoutId = null;
-          lastManaSyncScheduleTime = executionTime;
-
-          const manaSyncStartTime = performance.now();
-          await keyPressManaSync(global.windowId, [manaSyncRule.key], null, 7);
-          const manaSyncDuration = performance.now() - manaSyncStartTime;
-
-          if (options.logsEnabled) {
-            console.log(
-              `Executing delayed manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
-            );
-          }
-        }, 200);
-
-        lastManaSyncScheduleTime = now;
-
-        if (options.logsEnabled) {
-          console.log(`Scheduled manaSync execution at ${now}`);
-        }
-      }
-    }
-  }
-};
 
 async function main() {
   if (global.windowId) {
@@ -353,7 +218,13 @@ async function main() {
 
       if (global.botEnabled) {
         keypressStartTime = performance.now();
-        await processRules(healing, directGameState, global);
+
+        await processRules(
+          healing.presets[healing.activePresetIndex],
+          healing,
+          directGameState,
+          global,
+        );
         keypressEndTime = performance.now();
       }
 
