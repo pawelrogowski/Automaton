@@ -13,7 +13,7 @@ const initialPreset = [
     monsterNum: 0,
     monsterNumCondition: '>=',
     priority: '0',
-    delay: '2000',
+    delay: '1000',
     category: 'Potion',
     conditions: [
       {
@@ -126,7 +126,7 @@ const healingSlice = createSlice({
       if (manaSyncRule) {
         manaSyncRule.key = key;
         manaSyncRule.manaTriggerPercentage = manaTriggerPercentage;
-        manaSyncRule.delay = 2000;
+        manaSyncRule.delay = 1000;
       }
     },
     updateManaSyncTriggerPercentage: (state, action) => {
