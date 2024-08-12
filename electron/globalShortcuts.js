@@ -14,7 +14,7 @@ import os from 'os';
 import { exec } from 'child_process';
 
 const { debounce } = pkg;
-const debounceTime = 75;
+const debounceTime = 25;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -108,16 +108,6 @@ const debouncedToggleBotEnabled = debounce(() => {
 
 const debouncedToggleManaSync = debounce(() => {
   setGlobalState('healing/toggleManaSyncEnabled');
-  const currentState = store.getState();
-  const manaSyncRule = currentState.healing.find((rule) => rule.id === 'manaSync');
-  const isManaSyncEnabled = manaSyncRule ? manaSyncRule.enabled : false;
-  if (isManaSyncEnabled) {
-    showNotification('🟢 Attack Sync Enabled');
-    playSound('manaSyncEnable.wav');
-  } else {
-    showNotification('🔴 Attack Sync Disabled');
-    playSound('manaSyncDisable.wav');
-  }
 }, debounceTime);
 
 const debouncedToggleMainWindowVisibility = debounce(() => {
@@ -125,21 +115,46 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
   if (mainWindow) {
     if (mainWindow.isVisible()) {
       mainWindow.hide();
-      showNotification('Automaton', '🙈 Hidden');
+      a;
     } else {
       mainWindow.show();
     }
   }
 }, debounceTime);
 
+const debouncedCyclePresetsNext = debounce(() => {
+  setGlobalState('healing/cyclePresets', 'next');
+}, debounceTime);
+
+const debouncedCyclePresetsPrevious = debounce(() => {
+  setGlobalState('healing/cyclePresets', 'previous');
+}, debounceTime);
+
+const switchToPreset = debounce((presetIndex) => {
+  setGlobalState('healing/setActivePresetIndex', presetIndex);
+}, debounceTime);
+
+const debouncedSwitchToPreset1 = debounce(() => switchToPreset(0), debounceTime);
+const debouncedSwitchToPreset2 = debounce(() => switchToPreset(1), debounceTime);
+const debouncedSwitchToPreset3 = debounce(() => switchToPreset(2), debounceTime);
+const debouncedSwitchToPreset4 = debounce(() => switchToPreset(3), debounceTime);
+const debouncedSwitchToPreset5 = debounce(() => switchToPreset(4), debounceTime);
+
 export const registerGlobalShortcuts = () => {
   try {
-    globalShortcut.register('Alt+0', debouncedSelectActiveWindow);
-    globalShortcut.register('Alt+Shift+0', debouncedSelectWindow);
-    globalShortcut.register('Alt+1', debouncedToggleBotEnabled);
-    globalShortcut.register('Alt+2', debouncedToggleMainWindowVisibility);
-    globalShortcut.register('Alt+3', debouncedToggleManaSync);
+    globalShortcut.register('Alt+W', debouncedSelectActiveWindow);
+    globalShortcut.register('Alt+Shift+W', debouncedSelectWindow);
+    globalShortcut.register('Alt+E', debouncedToggleBotEnabled);
+    globalShortcut.register('Alt+V', debouncedToggleMainWindowVisibility);
+    globalShortcut.register('Alt+M', debouncedToggleManaSync);
     globalShortcut.register('Alt+T', debouncedToggleTrayVisibility);
+    globalShortcut.register('Alt+,', debouncedCyclePresetsPrevious);
+    globalShortcut.register('Alt+.', debouncedCyclePresetsNext);
+    globalShortcut.register('Alt+F1', debouncedSwitchToPreset1);
+    globalShortcut.register('Alt+F2', debouncedSwitchToPreset2);
+    globalShortcut.register('Alt+F3', debouncedSwitchToPreset3);
+    globalShortcut.register('Alt+F4', debouncedSwitchToPreset4);
+    globalShortcut.register('Alt+F5', debouncedSwitchToPreset5);
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

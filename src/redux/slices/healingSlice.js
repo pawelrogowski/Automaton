@@ -22,10 +22,32 @@ const initialPreset = [
       },
     ],
   },
+  {
+    name: 'healFriend',
+    enabled: false,
+    key: 'T',
+    id: 'healFriend',
+    hpTriggerCondition: '>',
+    hpTriggerPercentage: '0',
+    manaTriggerCondition: '>',
+    manaTriggerPercentage: '0',
+    friendHpTriggerPercentage: '95',
+    monsterNum: 0,
+    monsterNumCondition: '>=',
+    priority: '1',
+    delay: '2000',
+    category: 'Healing',
+    conditions: [
+      {
+        name: 'magicShield',
+        value: true,
+      },
+    ],
+  },
 ];
 
 const initialState = {
-  presets: [initialPreset, [], [], [], []],
+  presets: [initialPreset, initialPreset, initialPreset, initialPreset, initialPreset],
   activePresetIndex: 0,
 };
 
@@ -170,6 +192,33 @@ const healingSlice = createSlice({
         state.activePresetIndex = action.payload.activePresetIndex;
       }
     },
+    cyclePresets: (state, action) => {
+      const direction = action.payload;
+      const currentIndex = state.activePresetIndex;
+
+      if (direction === 'next') {
+        state.activePresetIndex = (currentIndex + 1) % state.presets.length;
+      } else if (direction === 'previous') {
+        state.activePresetIndex = (currentIndex - 1 + state.presets.length) % state.presets.length;
+      }
+    },
+    updateHealFriend: (state, action) => {
+      const { id, ...updatedFields } = action.payload;
+      const healFriendRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'healFriend',
+      );
+      if (healFriendRule) {
+        Object.assign(healFriendRule, updatedFields);
+      }
+    },
+    toggleHealFriendEnabled: (state) => {
+      const healFriendRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'healFriend',
+      );
+      if (healFriendRule) {
+        healFriendRule.enabled = !healFriendRule.enabled;
+      }
+    },
   },
 });
 
@@ -186,6 +235,8 @@ export const {
   updateManaSyncTriggerPercentage,
   setActivePresetIndex,
   setState,
+  updateHealFriend,
+  toggleHealFriendEnabled,
 } = healingSlice.actions;
 
 export default healingSlice;

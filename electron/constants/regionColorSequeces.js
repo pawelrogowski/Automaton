@@ -1,4 +1,3 @@
-//regionColorSequences.js
 const regionColorSequences = {
   healthBar: {
     direction: 'horizontal',
@@ -8,13 +7,7 @@ const regionColorSequences = {
   manaBar: {
     direction: 'horizontal',
     offset: { x: 5, y: 0 },
-    sequence: [
-      [99, 96, 248],
-      [95, 92, 219],
-      [80, 79, 140],
-      [68, 68, 69],
-      [69, 70, 70],
-    ],
+    sequence: [[99, 96, 248], [95, 92, 219], 'any', [68, 68, 69], [69, 70, 70]],
   },
   cooldownBar: {
     direction: 'horizontal',
@@ -93,7 +86,7 @@ const regionColorSequences = {
   },
   battleListStart: {
     direction: 'horizontal',
-    offset: { x: 12, y: 17 },
+    offset: { x: 10, y: 17 },
     sequence: [
       [49, 49, 49],
       [129, 79, 41],
@@ -103,7 +96,7 @@ const regionColorSequences = {
   },
   partyListStart: {
     direction: 'horizontal',
-    offset: { x: 12, y: 17 },
+    offset: { x: 10, y: 17 },
     sequence: [
       [30, 115, 255],
       [55, 55, 55],

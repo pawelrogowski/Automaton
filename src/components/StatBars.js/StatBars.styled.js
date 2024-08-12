@@ -5,7 +5,7 @@ export const StyledDiv = styled.div`
   flex-direction: column;
   gap: 4px;
   width: 100%;
-
+  margin-top: 2px;
   .health-bar,
   .mana-bar {
     display: flex;

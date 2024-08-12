@@ -3,7 +3,7 @@ import { buildTrie, clearTrieNodes } from '../utils/trieUtils.js';
 
 function findSequences(imageData, targetSequences, width, searchArea = null, occurrence = 'first') {
   const length = imageData.length >> 2;
-  const packedImageData = packColors(imageData);
+  const packedImageData = new Uint32Array(packColors(imageData));
   const foundSequences = Object.fromEntries(Object.keys(targetSequences).map((name) => [name, []]));
 
   const trie = buildTrie(targetSequences);
@@ -56,12 +56,14 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
             }
           }
           sequenceLength = 0;
+          node = trie;
         }
       } else {
         sequenceLength = 0;
+        node = trie;
       }
 
-      x = (x + 1) % width;
+      x = (j + 1) % width;
       y = x === 0 ? y + 1 : y;
     }
   }

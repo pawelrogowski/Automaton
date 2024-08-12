@@ -65,7 +65,7 @@ function findAllOccurrences(imageData, targetSequence, width) {
 
   packedImageData = null;
   clearTrieNodes(trie);
-  return occurrences.length;
+  return occurrences;
 }
 
 export default findAllOccurrences;

@@ -1,10 +1,11 @@
 import { createGlobalStyle } from 'styled-components';
-import tibiaBgDark from './assets/tibiaBgDark.webp';
+import tibiaBg from './assets/tibiaBg.webp';
 
 const GlobalStyles = createGlobalStyle`
   body {
-    background-image: url(${tibiaBgDark});
+    background-image: url(${tibiaBg});
     background-repeat: repeat;
+
   }
 `;
 

@@ -16,7 +16,7 @@ const RuleListWrapper = ({ children }) => {
         <div className="header-item header-item_8">CustomCD</div>
         <div className="header-item header-placeholder">-</div>
       </div>
-      {children}
+      <div className="rules">{children}</div>
     </StyledDiv>
   );
 };

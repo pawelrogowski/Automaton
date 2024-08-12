@@ -8,8 +8,7 @@ export const StyledDiv = styled.div`
   border-left: 1px solid #181818;
   border-right: 1px solid #7d7d7d;
   border-bottom: 1px solid #7d7d7d;
-  min-height: 221px;
-  overflow-y: scroll;
+  min-height: 260.5px;
   min-width: 681px;
   .header {
     background: #363636;
@@ -57,5 +56,9 @@ export const StyledDiv = styled.div`
     .header-placeholder {
       width: 100%;
     }
+  }
+
+  .rules {
+    overflow-y: visible;
   }
 `;

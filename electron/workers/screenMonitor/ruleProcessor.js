@@ -2,6 +2,7 @@ import parseMathCondition from '../../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../../utils/areStatusConditionsMet.js';
 import { keyPress, keyPressManaSync } from '../../keyboardControll/keyPress.js';
 import options from './options.js';
+import useUHonParty from '../../mouseControll/useUHonParty.js';
 
 let lastRuleExecutionTimes = {};
 let lastCategoriesExecutionTimes = {};
@@ -54,9 +55,16 @@ const filterRulesByConditions = (rules, directGameState) =>
         rule.monsterNumCondition,
         parseInt(rule.monsterNum, 10),
         directGameState.monsterNum,
-      ),
+      ) &&
+      (rule.id !== 'healFriend' ||
+        (directGameState.attackCdActive &&
+          directGameState.partyNum > 0 &&
+          parseMathCondition(
+            '<=',
+            parseInt(rule.friendHpTriggerPercentage, 10),
+            directGameState.firstPartyMemberHpPercentage,
+          ))),
   );
-
 const getAllValidRules = (rules, directGameState) => {
   const enabledRules = filterEnabledRules(rules);
   const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
@@ -114,7 +122,28 @@ export const processRules = async (activePreset, rules, directGameState, global)
 
   if (highestPriorityRules.length > 0) {
     const manaSyncRule = highestPriorityRules.find((rule) => rule.id === 'manaSync');
+    const healFriendRule = highestPriorityRules.find((rule) => rule.id === 'healFriend');
     const regularRules = highestPriorityRules.filter((rule) => rule.id !== 'manaSync');
+
+    if (healFriendRule) {
+      const healFriendStartTime = performance.now();
+      useUHonParty(
+        global.windowId,
+        directGameState.uhCoordinates.x,
+        directGameState.uhCoordinates.y,
+        healFriendRule.key,
+      );
+      const healFriendDuration = performance.now() - healFriendStartTime;
+
+      lastRuleExecutionTimes[healFriendRule.id] = Date.now();
+      lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
+
+      if (options.logsEnabled) {
+        console.log(
+          `Executing healFriend command for key: ${healFriendRule.key}, current time: ${Date.now()}, duration: ${healFriendDuration.toFixed(2)} ms`,
+        );
+      }
+    }
 
     if (regularRules.length > 0) {
       const regularRuleKeys = regularRules.map((rule) => rule.key);

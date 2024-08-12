@@ -2,11 +2,10 @@ import styled from 'styled-components';
 import tibiaBgDark from '../../assets/tibiaBgDark.webp';
 
 export const StyledDiv = styled.div`
-  border-top: 2px solid #2c2c2c;
-  border-left: 2px solid #2c2c2c;
-  border-bottom: 2px solid #757676;
-  border-right: 2px solid #757676;
-  padding: 1px;
+  border-top: 2px solid #757676;
+  border-left: 2px solid #757676;
+  border-bottom: 2px solid #2c2c2c;
+  border-right: 2px solid #2c2c2c;
   display: flex;
   flex-direction: column;
   .title {
@@ -22,6 +21,7 @@ export const StyledDiv = styled.div`
     border-bottom: 1px solid black;
   }
   .wrapped-content {
+    padding: 4px;
     display: flex;
   }
 `;

@@ -1,8 +1,13 @@
 import React from 'react';
 import { StyledDiv } from './SunkenWrapper.styled.js';
 
-const SunkenWrapper = ({ children, className }) => {
-  return <StyledDiv className={className}>{children}</StyledDiv>;
+const SunkenWrapper = ({ children, title }) => {
+  return (
+    <StyledDiv>
+      {title && <h2 className="title">{title}</h2>}
+      {children}
+    </StyledDiv>
+  );
 };
 
 export default SunkenWrapper;

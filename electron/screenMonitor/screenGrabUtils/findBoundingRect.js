@@ -1,6 +1,3 @@
-// findBoundingRect.js
-
-// Import the findSequence function
 import findSequence from './findSequence.js';
 
 /**

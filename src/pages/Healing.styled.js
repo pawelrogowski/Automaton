@@ -4,17 +4,14 @@ import tibiaBg from '../assets/tibiaBg.webp';
 const StyledMain = styled.main`
   display: flex;
   flex-direction: column;
-  padding: 2px 2px;
-  border-top: 2px solid #757676;
-  border-left: 2px solid #757676;
-  border-bottom: 3px solid #2c2c2c;
-  border-right: 3px solid #2c2c2c;
   background-image: url(${tibiaBg});
   background-repeat: repeat;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  height: 100vh;
+
+  display: flex;
+  flex-direction: column;
 
   .button-container {
     display: flex;
@@ -35,7 +32,6 @@ const StyledMain = styled.main`
     display: flex;
     flex-direction: row;
     gap: 4px;
-    margin-top: 2px;
     width: 100%;
     input,
     select {
@@ -44,7 +40,6 @@ const StyledMain = styled.main`
   .enable-wrapper {
     font-size: 8px;
     color: rgb(175, 175, 175);
-    margin-top: 2px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -118,7 +113,6 @@ const StyledMain = styled.main`
     display: flex;
     align-items: center;
     gap: 2px;
-    margin-top: 2px;
   }
   .mana-sync-hotkey {
     margin-left: auto;
@@ -130,7 +124,6 @@ const StyledMain = styled.main`
   .refresh-rate-row {
     font-size: 8px;
     color: rgb(175, 175, 175);
-    margin-top: 2px;
     display: flex;
     align-items: center;
     gap: 2px;
@@ -177,7 +170,6 @@ const StyledMain = styled.main`
   .settings-row {
     display: flex;
     flex-direction: row;
-    margin-top: 2px;
     > div:not(:first-child) {
       padding-left: 5px;
       border-left: 1px solid rgba(175, 175, 175, 0.9);
@@ -238,6 +230,11 @@ const StyledMain = styled.main`
         background: #414141;
       }
     }
+  }
+  .controllers-wrapper {
+    display: flex;
+    gap: 8px;
+    padding: 4px;
   }
 `;
 export default StyledMain;
