@@ -27,7 +27,7 @@ function useUHonParty(targetWindowId, x, y, key) {
 
     // Step 2: Execute the main command sequence
     const chainedCommands = [
-      `mousemove --window ${targetWindowId} ${x} ${y}`,
+      `mousemove --sync --window ${targetWindowId} ${x} ${y}`,
       `key --window ${targetWindowId} ${key}`,
       `click --window ${targetWindowId} 1`,
       // Step 3: Move mouse back to original position

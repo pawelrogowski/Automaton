@@ -38,8 +38,41 @@ const filterRulesByActiveCooldowns = (rules, directGameState) =>
   });
 
 const filterRulesByConditions = (rules, directGameState) =>
-  rules.filter(
-    (rule) =>
+  rules.filter((rule) => {
+    if (rule.name === 'healFriend') {
+      const basicConditionsMet =
+        parseMathCondition(
+          rule.hpTriggerCondition,
+          parseInt(rule.hpTriggerPercentage, 10),
+          directGameState.hpPercentage,
+        ) &&
+        parseMathCondition(
+          rule.manaTriggerCondition,
+          parseInt(rule.manaTriggerPercentage, 10),
+          directGameState.manaPercentage,
+        ) &&
+        parseMathCondition(
+          rule.monsterNumCondition,
+          parseInt(rule.monsterNum, 10),
+          directGameState.monsterNum,
+        ) &&
+        directGameState.attackCdActive &&
+        directGameState.partyNum > 0 &&
+        parseMathCondition(
+          '<=',
+          parseInt(rule.friendHpTriggerPercentage, 10),
+          directGameState.firstPartyMemberHpPercentage,
+        );
+      if (!basicConditionsMet) return false;
+
+      if (rule.requireManaShield) {
+        return rule.conditions.some((condition) => directGameState.characterStatus[condition.name]);
+      } else {
+        return true; // If requireManaShield is false, no additional conditions need to be met
+      }
+    }
+
+    return (
       parseMathCondition(
         rule.hpTriggerCondition,
         parseInt(rule.hpTriggerPercentage, 10),
@@ -55,16 +88,10 @@ const filterRulesByConditions = (rules, directGameState) =>
         rule.monsterNumCondition,
         parseInt(rule.monsterNum, 10),
         directGameState.monsterNum,
-      ) &&
-      (rule.id !== 'healFriend' ||
-        (directGameState.attackCdActive &&
-          directGameState.partyNum > 0 &&
-          parseMathCondition(
-            '<=',
-            parseInt(rule.friendHpTriggerPercentage, 10),
-            directGameState.firstPartyMemberHpPercentage,
-          ))),
-  );
+      )
+    );
+  });
+
 const getAllValidRules = (rules, directGameState) => {
   const enabledRules = filterEnabledRules(rules);
   const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
@@ -108,7 +135,7 @@ const scheduleManaSyncExecution = (manaSyncRule, global) => {
         `Executing manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
       );
     }
-  }, 825);
+  }, 900);
 
   if (options.logsEnabled) {
     console.log(`Scheduled manaSync execution at ${Date.now() + 850}`);
@@ -123,16 +150,25 @@ export const processRules = async (activePreset, rules, directGameState, global)
   if (highestPriorityRules.length > 0) {
     const manaSyncRule = highestPriorityRules.find((rule) => rule.id === 'manaSync');
     const healFriendRule = highestPriorityRules.find((rule) => rule.id === 'healFriend');
-    const regularRules = highestPriorityRules.filter((rule) => rule.id !== 'manaSync');
+    const regularRules = highestPriorityRules.filter(
+      (rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend',
+    );
+
+    let executeManaSyncThisRotation = true;
 
     if (healFriendRule) {
       const healFriendStartTime = performance.now();
-      useUHonParty(
-        global.windowId,
-        directGameState.uhCoordinates.x,
-        directGameState.uhCoordinates.y,
-        healFriendRule.key,
-      );
+      if (healFriendRule.useRune) {
+        useUHonParty(
+          global.windowId,
+          directGameState.uhCoordinates.x,
+          directGameState.uhCoordinates.y,
+          healFriendRule.key,
+        );
+        executeManaSyncThisRotation = false; // Disable manaSync for this rotation
+      } else {
+        keyPress(global.windowId, [healFriendRule.key]);
+      }
       const healFriendDuration = performance.now() - healFriendStartTime;
 
       lastRuleExecutionTimes[healFriendRule.id] = Date.now();
@@ -140,7 +176,7 @@ export const processRules = async (activePreset, rules, directGameState, global)
 
       if (options.logsEnabled) {
         console.log(
-          `Executing healFriend command for key: ${healFriendRule.key}, current time: ${Date.now()}, duration: ${healFriendDuration.toFixed(2)} ms`,
+          `Executing healFriend command for key: ${healFriendRule.key}, useRune: ${healFriendRule.useRune}, current time: ${Date.now()}, duration: ${healFriendDuration.toFixed(2)} ms`,
         );
       }
     }
@@ -167,7 +203,7 @@ export const processRules = async (activePreset, rules, directGameState, global)
     if (directGameState.attackCdActive !== lastAttackCooldownState) {
       if (directGameState.attackCdActive) {
         attackCooldownStartTime = Date.now();
-        if (manaSyncRule && !manaSyncScheduled) {
+        if (manaSyncRule && !manaSyncScheduled && executeManaSyncThisRotation) {
           scheduleManaSyncExecution(manaSyncRule, global);
         }
       } else {

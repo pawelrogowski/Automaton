@@ -59,6 +59,9 @@ export const StyledDiv = styled.div`
   }
 
   .rules {
-    overflow-y: visible;
+    height: 264px;
+    min-height: 264px;
+    max-height: 264px;
+    overflow-y: scroll;
   }
 `;

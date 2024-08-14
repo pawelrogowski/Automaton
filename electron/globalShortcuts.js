@@ -115,7 +115,6 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
   if (mainWindow) {
     if (mainWindow.isVisible()) {
       mainWindow.hide();
-      a;
     } else {
       mainWindow.show();
     }

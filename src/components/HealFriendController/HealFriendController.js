@@ -1,6 +1,11 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { updateHealFriend, toggleHealFriendEnabled } from '../../redux/slices/healingSlice.js';
+import {
+  updateHealFriend,
+  toggleHealFriendEnabled,
+  toggleManaShieldRequired,
+  toggleUseRune,
+} from '../../redux/slices/healingSlice.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
 import ListSelect from '../ListSelect/ListSelect.js';
@@ -19,20 +24,19 @@ const HealFriendControls = () => {
     dispatch(toggleHealFriendEnabled());
   };
 
+  const handleManaShieldToggle = () => {
+    dispatch(toggleManaShieldRequired());
+  };
+
+  const handleUseRuneToggle = () => {
+    dispatch(toggleUseRune());
+  };
+
   const handleHealFriendKeyChange = (event) => {
     dispatch(
       updateHealFriend({
         ...healFriendRule,
         key: event.target.value,
-      }),
-    );
-  };
-
-  const handleManaTriggerPercentageChange = (event) => {
-    dispatch(
-      updateHealFriend({
-        ...healFriendRule,
-        manaTriggerPercentage: Number(event.target.value),
       }),
     );
   };
@@ -58,13 +62,20 @@ const HealFriendControls = () => {
         </div>
         <div className="heal-friend-header">
           <CustomCheckbox
-            checked={healFriendRule.enabled}
-            onChange={handleHealFriendToggle}
+            checked={healFriendRule.useRune}
+            onChange={handleUseRuneToggle}
             size={18}
           />
           <h5 className="">use UH</h5>
         </div>
-
+        <div className="heal-friend-header">
+          <CustomCheckbox
+            checked={healFriendRule.requireManaShield}
+            onChange={handleManaShieldToggle}
+            size={18}
+          />
+          <h5 className="">MShield</h5>
+        </div>
         <div className="">
           <SunkenWrapper title="Hotkey">
             <ListSelect

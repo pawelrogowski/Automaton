@@ -13,7 +13,7 @@ const initialPreset = [
     monsterNum: 0,
     monsterNumCondition: '>=',
     priority: '0',
-    delay: '1000',
+    delay: '975',
     category: 'Potion',
     conditions: [
       {
@@ -34,12 +34,18 @@ const initialPreset = [
     friendHpTriggerPercentage: '95',
     monsterNum: 0,
     monsterNumCondition: '>=',
-    priority: '1',
-    delay: '2000',
+    priority: '0',
+    requireManaShield: true,
+    useRune: true,
+    delay: '975',
     category: 'Healing',
     conditions: [
       {
         name: 'magicShield',
+        value: true,
+      },
+      {
+        name: 'eRing',
         value: true,
       },
     ],
@@ -57,20 +63,20 @@ const healingSlice = createSlice({
   reducers: {
     addRule: (state, action) => {
       const newRule = {
-        name: 'New Rule',
         id: Date.now().toString(),
+        enabled: false,
+        name: 'New Rule',
         category: 'Healing',
         key: 'F1',
-        priority: 0,
-        enabled: false,
-        delay: 25,
-        hpTriggerPercentage: 80,
-        manaTriggerPercentage: 20,
         hpTriggerCondition: '<=',
+        hpTriggerPercentage: 80,
         manaTriggerCondition: '>=',
-        conditions: [],
-        monsterNum: 0,
+        manaTriggerPercentage: 20,
         monsterNumCondition: '>=',
+        monsterNum: 0,
+        priority: 0,
+        delay: 250,
+        conditions: [],
       };
       state.presets[state.activePresetIndex].push(newRule);
     },
@@ -83,30 +89,10 @@ const healingSlice = createSlice({
       const { id, ...updatedFields } = action.payload;
       const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        const currentRule = state.presets[state.activePresetIndex][ruleIndex];
-        const updatedRule = { ...currentRule };
-
-        Object.keys(updatedFields).forEach((field) => {
-          switch (field) {
-            case 'monsterNum':
-              updatedRule[field] = Math.max(0, Math.min(10, updatedFields[field]));
-              break;
-            case 'hpTriggerPercentage':
-            case 'manaTriggerPercentage':
-              updatedRule[field] = Math.max(0, Math.min(100, updatedFields[field]));
-              break;
-            case 'delay':
-              updatedRule[field] = Math.max(25, Math.min(840000, updatedFields[field]));
-              break;
-            case 'priority':
-              updatedRule[field] = Math.max(-99, Math.min(99, updatedFields[field]));
-              break;
-            default:
-              updatedRule[field] = updatedFields[field];
-          }
-        });
-
-        state.presets[state.activePresetIndex][ruleIndex] = updatedRule;
+        state.presets[state.activePresetIndex][ruleIndex] = {
+          ...state.presets[state.activePresetIndex][ruleIndex],
+          ...updatedFields,
+        };
       }
     },
     updateCondition: (state, action) => {
@@ -148,7 +134,7 @@ const healingSlice = createSlice({
       if (manaSyncRule) {
         manaSyncRule.key = key;
         manaSyncRule.manaTriggerPercentage = manaTriggerPercentage;
-        manaSyncRule.delay = 1000;
+        manaSyncRule.delay = 975;
       }
     },
     updateManaSyncTriggerPercentage: (state, action) => {
@@ -219,6 +205,22 @@ const healingSlice = createSlice({
         healFriendRule.enabled = !healFriendRule.enabled;
       }
     },
+    toggleManaShieldRequired: (state) => {
+      const healFriendRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'healFriend',
+      );
+      if (healFriendRule) {
+        healFriendRule.requireManaShield = !healFriendRule.requireManaShield;
+      }
+    },
+    toggleUseRune: (state) => {
+      const healFriendRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'healFriend',
+      );
+      if (healFriendRule) {
+        healFriendRule.useRune = !healFriendRule.useRune;
+      }
+    },
   },
 });
 
@@ -237,6 +239,8 @@ export const {
   setState,
   updateHealFriend,
   toggleHealFriendEnabled,
+  toggleManaShieldRequired,
+  toggleUseRune,
 } = healingSlice.actions;
 
 export default healingSlice;

@@ -268,7 +268,6 @@ async function main() {
         firstPartyMemberHpPercentage: firstPartyEntryHealthPercentage,
         uhCoordinates: { x: partyListStart.x + 5, y: partyListStart.y + 4 },
       };
-      console.log('partyNum', directGameState.partyNum);
 
       processingEndTime = performance.now();
 

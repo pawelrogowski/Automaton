@@ -53,7 +53,11 @@ const HealingRule = ({ rule, className }) => {
   };
 
   const handleUpdateRule = (updatedFields) => {
-    dispatch(updateRule({ id: healing.id, ...updatedFields }));
+    const fieldsToUpdate = { ...updatedFields };
+    if (!('category' in fieldsToUpdate)) {
+      fieldsToUpdate.category = healing.category;
+    }
+    dispatch(updateRule({ id: healing.id, ...fieldsToUpdate }));
   };
 
   // Generic handler for numeric inputs

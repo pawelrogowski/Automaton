@@ -53,7 +53,7 @@ export const selectWindow = async () => {
       setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
     }
-    getMainWindow().setTitle(`Automaton - ${windowId}`);
+    getMainWindow().setTitle(`Automaton - ${getWindowName(windowId)}`);
     setGlobalState('global/setWindowTitle', `Automaton - (${windowId})`);
     setGlobalState('global/setWindowId', windowId);
   });

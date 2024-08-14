@@ -7,8 +7,6 @@ import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 import { toggleNotifications } from '../src/redux/slices/globalSlice.js';
 import store from './store.js';
 
-const MIN_WIDTH = 796;
-const MIN_HEIGHT = 624;
 const HTML_PATH = '../dist/index.html';
 
 let mainWindow;
@@ -197,11 +195,12 @@ const closeAppFromTray = async () => {
  */
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    height: 624,
-    width: 796,
-    maxWidth: 796,
-    minWidth: MIN_WIDTH,
-    minHeight: MIN_HEIGHT,
+    height: 643,
+    width: 780,
+    maxWidth: 780,
+    maxHeight: 643,
+    minWidth: 780,
+    minHeight: 643,
     icon: ICON_PATHS.app,
     webPreferences: {
       nodeIntegration: false,
