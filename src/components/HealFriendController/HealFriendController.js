@@ -5,6 +5,7 @@ import {
   toggleHealFriendEnabled,
   toggleManaShieldRequired,
   toggleUseRune,
+  toggleAttackCooldownRequired,
 } from '../../redux/slices/healingSlice.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -26,6 +27,10 @@ const HealFriendControls = () => {
 
   const handleManaShieldToggle = () => {
     dispatch(toggleManaShieldRequired());
+  };
+
+  const handleAttackCdToggle = () => {
+    dispatch(toggleAttackCooldownRequired());
   };
 
   const handleUseRuneToggle = () => {
@@ -75,6 +80,14 @@ const HealFriendControls = () => {
             size={18}
           />
           <h5 className="">MShield</h5>
+        </div>
+        <div className="heal-friend-header">
+          <CustomCheckbox
+            checked={healFriendRule.requireAttackCooldown}
+            onChange={handleAttackCdToggle}
+            size={18}
+          />
+          <h5 className="">AttackCD</h5>
         </div>
         <div className="">
           <SunkenWrapper title="Hotkey">

@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { resetWorkers } from './main.js';
 import { selectWindow } from './menus/windowSelection.js';
-import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
+import { autoSaveRules, loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 import { toggleNotifications } from '../src/redux/slices/globalSlice.js';
 import store from './store.js';
 
@@ -224,11 +224,10 @@ export const createMainWindow = () => {
   createTray();
   Menu.setApplicationMenu(buildAppMenu());
 
-  mainWindow.on('closed', () => {
+  mainWindow.on('closed', async () => {
     mainWindow = null;
-    if (process.platform !== 'darwin') {
-      app.quit();
-    }
+    await autoSaveRules();
+    app.exit();
   });
 
   mainWindow.on('ready-to-show', () => {
@@ -241,10 +240,9 @@ export const createMainWindow = () => {
 
   mainWindow.on('close', handleWindowClose);
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      app.exit();
-    }
+  app.on('window-all-closed', async () => {
+    await autoSaveRules();
+    app.exit();
   });
 };
 

@@ -8,6 +8,7 @@ export const HealFriend = styled.div`
   .heal-friend-header {
     display: flex;
     gap: 8px;
+    padding: 1px;
   }
   .heal-friend-wrapper {
     display: flex;

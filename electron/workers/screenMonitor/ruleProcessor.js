@@ -56,7 +56,7 @@ const filterRulesByConditions = (rules, directGameState) =>
           parseInt(rule.monsterNum, 10),
           directGameState.monsterNum,
         ) &&
-        directGameState.attackCdActive &&
+        (rule.requireAttackCooldown ? directGameState.attackCdActive : true) &&
         directGameState.partyNum > 0 &&
         parseMathCondition(
           '<=',
@@ -135,7 +135,7 @@ const scheduleManaSyncExecution = (manaSyncRule, global) => {
         `Executing manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
       );
     }
-  }, 900);
+  }, 825);
 
   if (options.logsEnabled) {
     console.log(`Scheduled manaSync execution at ${Date.now() + 850}`);

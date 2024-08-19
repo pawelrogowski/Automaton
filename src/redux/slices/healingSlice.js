@@ -36,8 +36,9 @@ const initialPreset = [
     monsterNumCondition: '>=',
     priority: '0',
     requireManaShield: true,
+    requireAttackCooldown: true,
     useRune: true,
-    delay: '975',
+    delay: '1000',
     category: 'Healing',
     conditions: [
       {
@@ -221,6 +222,14 @@ const healingSlice = createSlice({
         healFriendRule.useRune = !healFriendRule.useRune;
       }
     },
+    toggleAttackCooldownRequired: (state) => {
+      const healFriendRule = state.presets[state.activePresetIndex].find(
+        (rule) => rule.id === 'healFriend',
+      );
+      if (healFriendRule) {
+        healFriendRule.requireAttackCooldown = !healFriendRule.requireAttackCooldown;
+      }
+    },
   },
 });
 
@@ -241,6 +250,7 @@ export const {
   toggleHealFriendEnabled,
   toggleManaShieldRequired,
   toggleUseRune,
+  toggleAttackCooldownRequired,
 } = healingSlice.actions;
 
 export default healingSlice;

@@ -73,6 +73,7 @@ let wholeWindowData,
   battleListImageData,
   partyListImageData,
   firstPartyEntryImageData,
+  firstPartyNameImageData,
   cooldownBarRegions,
   statusBarRegions,
   lastMonsterNumber,
@@ -149,6 +150,13 @@ async function main() {
       height: 1,
     };
 
+    const firstPartyEntryNameRegion = {
+      x: partyListStart.x + 2,
+      y: partyListStart.y - 9,
+      width: 22,
+      height: 10,
+    };
+
     const hpManaRegion = {
       x: healthBar.x,
       y: healthBar.y,
@@ -188,6 +196,7 @@ async function main() {
         battleListImageData,
         partyListImageData,
         firstPartyEntryImageData,
+        firstPartyNameImageData,
       ] = await grabMultipleRegions(global.windowId, [
         hpManaRegion,
         cooldownsRegion,
@@ -195,6 +204,7 @@ async function main() {
         battleListRegion,
         partyListRegion,
         firstPartyEntryBarRegion,
+        firstPartyEntryNameRegion,
       ]);
 
       screenGrabEndTime = performance.now();
@@ -227,7 +237,7 @@ async function main() {
       cooldownBarRegions = findSequences(
         cooldownBarImageData,
         CONSTANTS.cooldownColorSequences,
-        1000,
+        240,
       );
 
       statusBarRegions = findSequences(statusBarImageData, CONSTANTS.statusBarSequences, 106);
@@ -306,6 +316,11 @@ async function main() {
       hpManaImageData = null;
       cooldownBarImageData = null;
       statusBarImageData = null;
+      battleListImageData = null;
+      partyListImageData = null;
+      firstPartyEntryImageData = null;
+      firstPartyNameImageData = null;
+      battleListImageData = null;
       setTimeout(loop, global.refreshRate);
     }
 
