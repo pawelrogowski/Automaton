@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import store from './store.js';
 
-ipcMain.on('state-change', (event, serializedAction) => {
+ipcMain.on('state-change', (_, serializedAction) => {
   try {
     const action = JSON.parse(serializedAction);
     if (action.origin === 'renderer') {

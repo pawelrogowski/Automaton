@@ -2,7 +2,7 @@ import parseMathCondition from '../../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../../utils/areStatusConditionsMet.js';
 import { keyPress, keyPressManaSync } from '../../keyboardControll/keyPress.js';
 import options from './options.js';
-import useUHonParty from '../../mouseControll/useUHonParty.js';
+import useItemOnCoordinates from '../../mouseControll/useItemOnCoordinates.js';
 
 let lastRuleExecutionTimes = {};
 let lastCategoriesExecutionTimes = {};
@@ -57,11 +57,11 @@ const filterRulesByConditions = (rules, directGameState) =>
           directGameState.monsterNum,
         ) &&
         (rule.requireAttackCooldown ? directGameState.attackCdActive : true) &&
-        directGameState.partyNum > 0 &&
+        directGameState.partyMembers[0].isActive &&
         parseMathCondition(
           '<=',
           parseInt(rule.friendHpTriggerPercentage, 10),
-          directGameState.firstPartyMemberHpPercentage,
+          directGameState.partyMembers[0].hpPercentage,
         );
       if (!basicConditionsMet) return false;
 
@@ -159,13 +159,13 @@ export const processRules = async (activePreset, rules, directGameState, global)
     if (healFriendRule) {
       const healFriendStartTime = performance.now();
       if (healFriendRule.useRune) {
-        useUHonParty(
+        useItemOnCoordinates(
           global.windowId,
-          directGameState.uhCoordinates.x,
-          directGameState.uhCoordinates.y,
+          directGameState.partyMembers[0].uhCoordinates.x,
+          directGameState.partyMembers[0].uhCoordinates.y,
           healFriendRule.key,
         );
-        executeManaSyncThisRotation = false; // Disable manaSync for this rotation
+        executeManaSyncThisRotation = false;
       } else {
         keyPress(global.windowId, [healFriendRule.key]);
       }

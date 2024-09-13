@@ -5,11 +5,12 @@ import healingSlice from '../src/redux/slices/healingSlice.js';
 import gameStateSlice from '../src/redux/slices/gameStateSlice.js';
 import lastActionSlice, { setLastAction } from '../src/redux/slices/lastAction.js';
 
-const logger = () => (next) => (action) => {
-  // if (action.type !== setLastAction.type) {
-  //   console.table(action);
+const logger = (store) => (next) => (action) => {
+  let result = next(action);
+  // if (action.type.startsWith('healing')) {
+  //   console.log('Healing slice changed:', store.getState().healing);
   // }
-  return next(action);
+  return result;
 };
 
 // const lastActionMiddleware = (store) => (next) => (action) => {

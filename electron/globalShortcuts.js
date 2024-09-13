@@ -5,7 +5,7 @@ import setGlobalState from './setGlobalState.js';
 import { getMainWindow, toggleTrayVisibility } from './createMainWindow.js';
 import { resetWorkers } from './main.js';
 import { showNotification } from './notificationHandler.js';
-import pkg from 'lodash';
+import debounce from 'lodash/debounce.js';
 import store from './store.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -13,7 +13,7 @@ import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
 
-const { debounce } = pkg;
+import convertGold from './mouseControll/convertGold.js';
 const debounceTime = 25;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -149,11 +149,16 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+T', debouncedToggleTrayVisibility);
     globalShortcut.register('Alt+,', debouncedCyclePresetsPrevious);
     globalShortcut.register('Alt+.', debouncedCyclePresetsNext);
-    globalShortcut.register('Alt+F1', debouncedSwitchToPreset1);
-    globalShortcut.register('Alt+F2', debouncedSwitchToPreset2);
-    globalShortcut.register('Alt+F3', debouncedSwitchToPreset3);
-    globalShortcut.register('Alt+F4', debouncedSwitchToPreset4);
-    globalShortcut.register('Alt+F5', debouncedSwitchToPreset5);
+    globalShortcut.register('Alt+1', debouncedSwitchToPreset1);
+    globalShortcut.register('Alt+2', debouncedSwitchToPreset2);
+    globalShortcut.register('Alt+3', debouncedSwitchToPreset3);
+    globalShortcut.register('Alt+4', debouncedSwitchToPreset4);
+    globalShortcut.register('Alt+5', debouncedSwitchToPreset5);
+    // globalShortcut.register('1', () =>
+    //   exec(
+    //     'sleep 0.15 && xdotool mousemove --sync 1850 785 key --clearmodifiers --delay 25 l click --clearmodifiers --delay 0 1 mousemove restore',
+    //   ),
+    // );
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

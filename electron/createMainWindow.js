@@ -171,6 +171,7 @@ const handleWindowClose = async (event) => {
     });
     if (response === 0) {
       shouldClose = true;
+      await autoSaveRules();
       app.exit(0);
     }
   }
@@ -186,6 +187,7 @@ const closeAppFromTray = async () => {
     cancelId: 1,
   });
   if (response === 0) {
+    await autoSaveRules();
     app.exit(0);
   }
 };
@@ -195,12 +197,11 @@ const closeAppFromTray = async () => {
  */
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    height: 643,
+    height: 687,
     width: 780,
     maxWidth: 780,
-    maxHeight: 643,
     minWidth: 780,
-    minHeight: 643,
+    minHeight: 687,
     icon: ICON_PATHS.app,
     webPreferences: {
       nodeIntegration: false,
@@ -210,7 +211,7 @@ export const createMainWindow = () => {
     autoHideMenuBar: true,
     alwaysOnTop: true,
     transparent: false,
-    devTools: process.env.NODE_ENV !== 'production',
+    devTools: false,
   });
 
   if (process.env.NODE_ENV !== 'production') {

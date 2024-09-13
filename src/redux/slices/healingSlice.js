@@ -58,15 +58,44 @@ const initialState = {
   activePresetIndex: 0,
 };
 
+const validateRule = (rule) => {
+  return {
+    ...rule,
+    hpTriggerPercentage: Math.max(0, Math.min(100, parseInt(rule.hpTriggerPercentage, 10) || 0)),
+    manaTriggerPercentage: Math.max(
+      0,
+      Math.min(100, parseInt(rule.manaTriggerPercentage, 10) || 0),
+    ),
+    monsterNum: Math.max(0, Math.min(10, parseInt(rule.monsterNum, 10) || 0)),
+    priority: Math.max(-99, Math.min(99, parseInt(rule.priority, 10) || 0)),
+    delay: Math.max(0, Math.min(86400000, parseInt(rule.delay, 10) || 0)),
+  };
+};
+const validateField = (field, value) => {
+  switch (field) {
+    case 'hpTriggerPercentage':
+    case 'manaTriggerPercentage':
+      return Math.max(0, Math.min(100, parseInt(value, 10) || 0));
+    case 'monsterNum':
+      return Math.max(0, Math.min(10, parseInt(value, 10) || 0));
+    case 'priority':
+      return Math.max(-999, Math.min(999, parseInt(value, 10) || 0));
+    case 'delay':
+      return Math.max(0, Math.min(86400000, parseInt(value, 10) || 0));
+    default:
+      return value;
+  }
+};
 const healingSlice = createSlice({
   name: 'healing',
   initialState,
   reducers: {
-    addRule: (state, action) => {
-      const newRule = {
+    addRule: (state) => {
+      const newRuleName = `Rule ${state.presets[state.activePresetIndex].length + 1}`;
+      const newRule = validateRule({
         id: Date.now().toString(),
         enabled: false,
-        name: 'New Rule',
+        name: newRuleName,
         category: 'Healing',
         key: 'F1',
         hpTriggerCondition: '<=',
@@ -78,24 +107,106 @@ const healingSlice = createSlice({
         priority: 0,
         delay: 250,
         conditions: [],
-      };
+      });
       state.presets[state.activePresetIndex].push(newRule);
     },
+
     removeRule: (state, action) => {
       state.presets[state.activePresetIndex] = state.presets[state.activePresetIndex].filter(
         (rule) => rule.id !== action.payload,
       );
     },
+
+    updateRuleName: (state, action) => {
+      const { id, name } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].name = name;
+      }
+    },
+    updateRuleEnabled: (state, action) => {
+      const { id, enabled } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].enabled = enabled;
+      }
+    },
+    updateRuleCategory: (state, action) => {
+      const { id, category } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].category = category;
+      }
+    },
+    updateRuleKey: (state, action) => {
+      const { id, key } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].key = key;
+      }
+    },
+    updateRuleHpTrigger: (state, action) => {
+      const { id, condition, percentage } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].hpTriggerCondition = condition;
+        state.presets[state.activePresetIndex][ruleIndex].hpTriggerPercentage = validateField(
+          'hpTriggerPercentage',
+          percentage,
+        );
+      }
+    },
+    updateRuleManaTrigger: (state, action) => {
+      const { id, condition, percentage } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].manaTriggerCondition = condition;
+        state.presets[state.activePresetIndex][ruleIndex].manaTriggerPercentage = validateField(
+          'manaTriggerPercentage',
+          percentage,
+        );
+      }
+    },
+    updateRuleMonsterNum: (state, action) => {
+      const { id, condition, num } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].monsterNumCondition = condition;
+        state.presets[state.activePresetIndex][ruleIndex].monsterNum = validateField(
+          'monsterNum',
+          num,
+        );
+      }
+    },
+    updateRulePriority: (state, action) => {
+      const { id, priority } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].priority = validateField(
+          'priority',
+          priority,
+        );
+      }
+    },
+    updateRuleDelay: (state, action) => {
+      const { id, delay } = action.payload;
+      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      if (ruleIndex !== -1) {
+        state.presets[state.activePresetIndex][ruleIndex].delay = validateField('delay', delay);
+      }
+    },
+
     updateRule: (state, action) => {
       const { id, ...updatedFields } = action.payload;
       const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
       if (ruleIndex !== -1) {
-        state.presets[state.activePresetIndex][ruleIndex] = {
+        state.presets[state.activePresetIndex][ruleIndex] = validateRule({
           ...state.presets[state.activePresetIndex][ruleIndex],
           ...updatedFields,
-        };
+        });
       }
     },
+
     updateCondition: (state, action) => {
       const { id, condition, value } = action.payload;
       const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
@@ -118,6 +229,7 @@ const healingSlice = createSlice({
         }
       }
     },
+
     removeCondition: (state, action) => {
       const { id, condition } = action.payload;
       const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
@@ -127,6 +239,7 @@ const healingSlice = createSlice({
         ][ruleIndex].conditions.filter((c) => c.name !== condition);
       }
     },
+
     updateManaSync: (state, action) => {
       const { key, manaTriggerPercentage } = action.payload;
       const manaSyncRule = state.presets[state.activePresetIndex].find(
@@ -138,6 +251,7 @@ const healingSlice = createSlice({
         manaSyncRule.delay = 975;
       }
     },
+
     updateManaSyncTriggerPercentage: (state, action) => {
       const manaSyncRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'manaSync',
@@ -146,9 +260,11 @@ const healingSlice = createSlice({
         manaSyncRule.manaTriggerPercentage = action.payload;
       }
     },
+
     loadRules: (state, action) => {
-      state.presets[state.activePresetIndex] = action.payload;
+      state.presets[state.activePresetIndex] = action.payload.map(validateRule);
     },
+
     toggleManaSyncEnabled: (state) => {
       const manaSyncRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'manaSync',
@@ -157,6 +273,7 @@ const healingSlice = createSlice({
         manaSyncRule.enabled = !manaSyncRule.enabled;
       }
     },
+
     updateMonsterNum: (state, action) => {
       const { id, monsterNum, monsterNumCondition } = action.payload;
       const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
@@ -166,19 +283,22 @@ const healingSlice = createSlice({
         state.presets[state.activePresetIndex][ruleIndex].monsterNumCondition = monsterNumCondition;
       }
     },
+
     setActivePresetIndex: (state, action) => {
       state.activePresetIndex = action.payload;
     },
+
     setState: (state, action) => {
       // Handle backward compatibility
       if (!Array.isArray(action.payload.presets)) {
-        state.presets = [action.payload];
+        state.presets = [action.payload.map(validateRule)];
         state.activePresetIndex = 0;
       } else {
-        state.presets = action.payload.presets;
+        state.presets = action.payload.presets.map((preset) => preset.map(validateRule));
         state.activePresetIndex = action.payload.activePresetIndex;
       }
     },
+
     cyclePresets: (state, action) => {
       const direction = action.payload;
       const currentIndex = state.activePresetIndex;
@@ -189,15 +309,17 @@ const healingSlice = createSlice({
         state.activePresetIndex = (currentIndex - 1 + state.presets.length) % state.presets.length;
       }
     },
+
     updateHealFriend: (state, action) => {
       const { id, ...updatedFields } = action.payload;
       const healFriendRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'healFriend',
       );
       if (healFriendRule) {
-        Object.assign(healFriendRule, updatedFields);
+        Object.assign(healFriendRule, validateRule({ ...healFriendRule, ...updatedFields }));
       }
     },
+
     toggleHealFriendEnabled: (state) => {
       const healFriendRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'healFriend',
@@ -206,6 +328,7 @@ const healingSlice = createSlice({
         healFriendRule.enabled = !healFriendRule.enabled;
       }
     },
+
     toggleManaShieldRequired: (state) => {
       const healFriendRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'healFriend',
@@ -214,6 +337,7 @@ const healingSlice = createSlice({
         healFriendRule.requireManaShield = !healFriendRule.requireManaShield;
       }
     },
+
     toggleUseRune: (state) => {
       const healFriendRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'healFriend',
@@ -222,6 +346,7 @@ const healingSlice = createSlice({
         healFriendRule.useRune = !healFriendRule.useRune;
       }
     },
+
     toggleAttackCooldownRequired: (state) => {
       const healFriendRule = state.presets[state.activePresetIndex].find(
         (rule) => rule.id === 'healFriend',
@@ -236,6 +361,15 @@ const healingSlice = createSlice({
 export const {
   addRule,
   removeRule,
+  updateRuleName,
+  updateRuleEnabled,
+  updateRuleCategory,
+  updateRuleKey,
+  updateRuleHpTrigger,
+  updateRuleManaTrigger,
+  updateRuleMonsterNum,
+  updateRulePriority,
+  updateRuleDelay,
   updateRule,
   loadRules,
   updateCondition,
@@ -251,6 +385,7 @@ export const {
   toggleManaShieldRequired,
   toggleUseRune,
   toggleAttackCooldownRequired,
+  cyclePresets,
 } = healingSlice.actions;
 
 export default healingSlice;

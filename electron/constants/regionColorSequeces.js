@@ -96,7 +96,7 @@ const regionColorSequences = {
   },
   partyListStart: {
     direction: 'horizontal',
-    offset: { x: 10, y: 17 },
+    offset: { x: 10, y: 13 },
     sequence: [
       [30, 115, 255],
       [55, 55, 55],
@@ -106,7 +106,7 @@ const regionColorSequences = {
   },
   battleListEnd: {
     direction: 'horizontal',
-    offset: { x: 1, y: 1 },
+    offset: { x: 0, y: 0 },
     sequence: [
       [114, 114, 114],
       [116, 116, 116],

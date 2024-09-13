@@ -3,7 +3,7 @@
  *
  * @param {Object} barPosition - The position of the bar {x, y}
  * @param {Object} combinedRegion - The region of the combined image {x, y, width}
- * @param {Uint8ClampedArray} combinedPixels - The pixel data of the combined image
+ * @param {Uint32Array} combinedPixels - The pixel data of the combined image
  * @param {Array<Array<number>>} colors - Array of RGB color arrays to match against
  * @param {number} barWidth - The width of the bar to analyze
  * @returns {Object} An object containing the calculated percentage

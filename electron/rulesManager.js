@@ -76,7 +76,7 @@ export const autoSaveRules = debounce(async () => {
   } catch (error) {
     console.error('Failed to auto-save rules:', error);
   }
-}, 5000);
+}, 1000);
 
 export const autoLoadRules = async () => {
   try {
