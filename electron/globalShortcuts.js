@@ -13,7 +13,6 @@ import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
 
-import convertGold from './mouseControll/convertGold.js';
 const debounceTime = 25;
 
 const __filename = fileURLToPath(import.meta.url);
