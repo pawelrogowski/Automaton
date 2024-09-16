@@ -62,9 +62,9 @@ const keyboardKeys = [
   'y',
   'z',
 
-  'Return',
-  'Tab',
-  'Space',
+  'return',
+  'tab',
+  'space',
   'BackSpace',
   'Escape',
   'Insert',
@@ -73,22 +73,6 @@ const keyboardKeys = [
   'End',
   'PageUp',
   'PageDown',
-
-  'NumpadMultiply',
-  'NumpadAdd',
-  'NumpadSubtract',
-  'NumpadDecimal',
-  'NumpadDivide',
-  'Numpad0',
-  'Numpad1',
-  'Numpad2',
-  'Numpad3',
-  'Numpad4',
-  'Numpad5',
-  'Numpad6',
-  'Numpad7',
-  'Numpad8',
-  'Numpad9',
 ].map((key) => ({ value: key, label: key }));
 
 export default keyboardKeys;
