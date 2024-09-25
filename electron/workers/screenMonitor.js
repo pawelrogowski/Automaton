@@ -328,7 +328,7 @@ async function main() {
         partyMembers: partyData,
       };
 
-      // console.log(partyData[0]);
+      console.log(partyData);
       processingEndTime = performance.now();
 
       if (global.botEnabled) {

@@ -6,6 +6,9 @@ function useItemOnCoordinates(targetWindowId, x, y, key) {
     `mousemove --sync ${x} ${y}`,
     `click --clearmodifiers 1`,
     `mousemove restore`,
+    `keyup ctrl`,
+    `keyup shift`,
+    `keyup alt`,
   ].join(' ');
 
   const fullCommand = `xdotool ${chainedCommands}`;

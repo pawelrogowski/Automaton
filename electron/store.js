@@ -3,8 +3,6 @@ import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import globalSlice from '../src/redux/slices/globalSlice.js';
 import healingSlice from '../src/redux/slices/healingSlice.js';
 import gameStateSlice from '../src/redux/slices/gameStateSlice.js';
-import lastActionSlice, { setLastAction } from '../src/redux/slices/lastAction.js';
-
 const logger = (store) => (next) => (action) => {
   let result = next(action);
   // if (action.type.startsWith('healing')) {
@@ -27,7 +25,6 @@ const rootReducer = combineReducers({
   global: globalSlice.reducer,
   gameState: gameStateSlice.reducer,
   healing: healingSlice.reducer,
-  lastAction: lastActionSlice.reducer,
 });
 const store = configureStore({
   reducer: rootReducer,

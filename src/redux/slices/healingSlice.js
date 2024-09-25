@@ -56,6 +56,45 @@ const initialPreset = [
 const initialState = {
   presets: [initialPreset, initialPreset, initialPreset, initialPreset, initialPreset],
   activePresetIndex: 0,
+  sortOrder: {},
+};
+
+const sortRules = (state, sortBy) => {
+  const compareValues = (a, b, type, isAscending) => {
+    let comparison;
+    if (type === 'number') {
+      comparison = a - b;
+    } else if (type === 'string') {
+      comparison = a.localeCompare(b);
+    } else if (type === 'boolean') {
+      comparison = a === b ? 0 : a ? -1 : 1;
+    } else {
+      return 0;
+    }
+    return isAscending ? comparison : -comparison;
+  };
+
+  const sortingCriteria = {
+    enabled: { key: 'enabled', type: 'boolean' },
+    name: { key: 'name', type: 'string' },
+    category: { key: 'category', type: 'string' },
+    key: { key: 'key', type: 'string' },
+    priority: { key: 'priority', type: 'number' },
+    delay: { key: 'delay', type: 'number' },
+    monsterNum: { key: 'monsterNum', type: 'number' },
+    hpTriggerPercentage: { key: 'hpTriggerPercentage', type: 'number' },
+    manaTriggerPercentage: { key: 'manaTriggerPercentage', type: 'number' },
+  };
+
+  state.presets[state.activePresetIndex].sort((a, b) => {
+    for (const criterion of sortBy) {
+      const { key, type } = sortingCriteria[criterion];
+      const isAscending = state.sortOrder[criterion] !== 'desc';
+      const comparison = compareValues(a[key], b[key], type, isAscending);
+      if (comparison !== 0) return comparison;
+    }
+    return 0;
+  });
 };
 
 const validateRule = (rule) => {
@@ -355,6 +394,24 @@ const healingSlice = createSlice({
         healFriendRule.requireAttackCooldown = !healFriendRule.requireAttackCooldown;
       }
     },
+    sortRulesBy: (state, action) => {
+      const sortBy = action.payload; // An array of sorting criteria
+
+      // Toggle sort order for the first criterion
+      const primaryCriterion = sortBy[0];
+      if (state.sortOrder[primaryCriterion] === 'desc') {
+        state.sortOrder[primaryCriterion] = 'asc';
+      } else {
+        state.sortOrder[primaryCriterion] = 'desc';
+      }
+
+      // Reset sort order for other criteria
+      sortBy.slice(1).forEach((criterion) => {
+        state.sortOrder[criterion] = 'asc';
+      });
+
+      sortRules(state, sortBy);
+    },
   },
 });
 
@@ -386,6 +443,7 @@ export const {
   toggleUseRune,
   toggleAttackCooldownRequired,
   cyclePresets,
+  sortRulesBy,
 } = healingSlice.actions;
 
 export default healingSlice;
