@@ -20,6 +20,13 @@ const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
+let xdotoolPath;
+if (app.isPackaged) {
+  xdotoolPath = path.join(app.getAppPath(), '..', 'resources', 'xdotool', 'xdotool');
+} else {
+  xdotoolPath = path.join(cwd, 'resources', 'xdotool', 'xdotool');
+}
+
 // Initialize some variables we'll need later
 let ScreenMonitor = null;
 let prevWindowId = null;
@@ -51,7 +58,10 @@ store.subscribe(() => {
   // If we don't have a ScreenMonitor but we do have a window ID, let's set one up
   if (!ScreenMonitor && windowId) {
     const screenMonitorWorkerPath = resolve(cwd, './workers', 'screenMonitor.js');
-    ScreenMonitor = new Worker(screenMonitorWorkerPath, { name: 'screenMonitor.js' });
+    ScreenMonitor = new Worker(screenMonitorWorkerPath, {
+      name: 'screenMonitor.js',
+      workerData: { xdotoolPath },
+    });
 
     // Handle messages from our ScreenMonitor
     ScreenMonitor.on('message', (message) => {

@@ -1,8 +1,21 @@
 import { exec } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { app } from 'electron';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let xdotool;
+
+if (app.isPackaged) {
+  xdotool = path.join(app.getAppPath(), '..', 'resources', 'xdotool', 'xdotool');
+} else {
+  xdotool = path.join(__dirname, '..', '..', 'resources', 'xdotool', 'xdotool');
+}
 export const getMouseLocation = async () => {
   return new Promise((resolve, reject) => {
-    exec('xdotool getmouselocation --shell', (error, stdout, stderr) => {
+    exec(`${xdotool} getmouselocation --shell`, (error, stdout, stderr) => {
       if (error) {
         console.error(`Error executing xdotool: ${error.message}`);
         reject(error);

@@ -1,4 +1,7 @@
 import { exec } from 'child_process';
+import { workerData } from 'worker_threads';
+
+const xdotool = workerData.xdotoolPath;
 
 function useItemOnCoordinates(targetWindowId, x, y, key) {
   const chainedCommands = [
@@ -11,7 +14,7 @@ function useItemOnCoordinates(targetWindowId, x, y, key) {
     `keyup alt`,
   ].join(' ');
 
-  const fullCommand = `xdotool ${chainedCommands}`;
+  const fullCommand = `${xdotool} ${chainedCommands}`;
   exec(fullCommand);
 }
 

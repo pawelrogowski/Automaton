@@ -6,12 +6,25 @@ import { setWindowTitle, setWindowId } from '../../src/redux/slices/globalSlice.
 import setGlobalState from '../setGlobalState.js';
 import { resetWorkers } from '../main.js';
 import getWindowGeometry from '../screenMonitor/windowUtils/getWindowGeometry.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { app } from 'electron';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let xdotool;
+
+if (app.isPackaged) {
+  xdotool = path.join(app.getAppPath(), '..', 'resources', 'xdotool', 'xdotool');
+} else {
+  xdotool = path.join(__dirname, '..', '..', 'resources', 'xdotool', 'xdotool');
+}
 let selectedWindowId = null;
 
 const getGeometry = (id) =>
   new Promise((resolve, reject) => {
-    exec(`xdotool getwindowgeometry ${id}`, (error, stdout) => {
+    exec(`${xdotool} getwindowgeometry ${id}`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {
@@ -22,7 +35,7 @@ const getGeometry = (id) =>
 
 const getWindowName = (id) =>
   new Promise((resolve, reject) => {
-    exec(`xdotool getwindowname ${id}`, (error, stdout) => {
+    exec(`${xdotool} getwindowname ${id}`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {
@@ -33,7 +46,7 @@ const getWindowName = (id) =>
 
 export const selectWindow = async () => {
   resetWorkers();
-  exec('xdotool selectwindow', async (error, stdout) => {
+  exec(`${xdotool} selectwindow`, async (error, stdout) => {
     if (error) {
       console.error(`exec error: ${error}`);
       return;
@@ -61,7 +74,7 @@ export const selectWindow = async () => {
 
 const getActiveWindowId = () =>
   new Promise((resolve, reject) => {
-    exec('xdotool getactivewindow', (error, stdout) => {
+    exec(`${xdotool} getactivewindow`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {

@@ -412,6 +412,12 @@ const healingSlice = createSlice({
 
       sortRules(state, sortBy);
     },
+    copyPreset: (state, action) => {
+      const { sourceIndex, targetIndex } = action.payload;
+      if (sourceIndex !== targetIndex && sourceIndex >= 0 && sourceIndex < state.presets.length) {
+        state.presets[targetIndex] = JSON.parse(JSON.stringify(state.presets[sourceIndex]));
+      }
+    },
   },
 });
 
@@ -444,6 +450,7 @@ export const {
   toggleAttackCooldownRequired,
   cyclePresets,
   sortRulesBy,
+  copyPreset,
 } = healingSlice.actions;
 
 export default healingSlice;

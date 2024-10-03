@@ -153,11 +153,6 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+3', debouncedSwitchToPreset3);
     globalShortcut.register('Alt+4', debouncedSwitchToPreset4);
     globalShortcut.register('Alt+5', debouncedSwitchToPreset5);
-    // globalShortcut.register('1', () =>
-    //   exec(
-    //     'sleep 0.15 && xdotool mousemove --sync 1850 785 key --clearmodifiers --delay 25 l click --clearmodifiers --delay 0 1 mousemove restore',
-    //   ),
-    // );
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

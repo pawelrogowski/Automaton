@@ -1,12 +1,12 @@
 const regionColorSequences = {
   healthBar: {
     direction: 'horizontal',
-    offset: { x: 1, y: 0 },
+    offset: { x: 0, y: 0 },
     sequence: [[241, 97, 97], [219, 91, 91], [103, 55, 55], 'any', 'any', [120, 61, 64]],
   },
   manaBar: {
     direction: 'horizontal',
-    offset: { x: 5, y: 0 },
+    offset: { x: 0, y: 0 },
     sequence: [
       [99, 96, 248],
       [95, 92, 219],
@@ -22,7 +22,7 @@ const regionColorSequences = {
   },
   minimap: {
     direction: 'horizontal',
-    offset: { x: -117, y: -20 },
+    offset: { x: -72, y: -64 },
     sequence: [
       [113, 113, 113],
       [199, 199, 199],
@@ -43,16 +43,15 @@ const regionColorSequences = {
   },
   statusBar: {
     direction: 'horizontal',
-    offset: { x: 2, y: 1 },
+    offset: { x: -110, y: 1 },
     sequence: [
-      [116, 116, 117],
-      [71, 72, 72],
-      [74, 74, 75],
-      [69, 70, 70],
-      [74, 74, 75],
-      [78, 78, 79],
-      [70, 70, 71],
+      [41, 42, 42],
       [28, 28, 29],
+      [44, 45, 45],
+      [40, 40, 41],
+      [44, 44, 44],
+      [46, 46, 46],
+      [112, 112, 113],
     ],
   },
   hotkeyBarBottomStart: {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setActivePresetIndex } from '../../redux/slices/healingSlice';
+import { setActivePresetIndex, copyPreset } from '../../redux/slices/healingSlice';
 import styled from 'styled-components';
 import { PresetButton } from '../PresetButton/PresetButton';
 
@@ -14,8 +14,14 @@ const PresetSelector = () => {
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
   const presets = useSelector((state) => state.healing.presets);
 
-  const handlePresetChange = (index) => {
-    dispatch(setActivePresetIndex(index));
+  const handlePresetAction = (index, event) => {
+    if (event.shiftKey) {
+      // Shift+left click: copy preset
+      dispatch(copyPreset({ sourceIndex: index, targetIndex: activePresetIndex }));
+    } else {
+      // Normal click: switch to preset
+      dispatch(setActivePresetIndex(index));
+    }
   };
 
   return (
@@ -24,7 +30,7 @@ const PresetSelector = () => {
         <PresetButton
           key={index}
           active={index === activePresetIndex}
-          onMouseDown={() => handlePresetChange(index)}
+          onMouseDown={(event) => handlePresetAction(index, event)}
         >
           {index + 1}
         </PresetButton>

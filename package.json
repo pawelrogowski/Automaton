@@ -30,11 +30,21 @@
       "package.json"
     ],
     "extraResources": [
-      "src/preload.js"
+      "src/preload.js",
+      {
+        "from": "resources/xdotool",
+        "to": "resources/xdotool",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "linux": {
       "target": [
         "AppImage"
+      ],
+      "asarUnpack": [
+        "resources/xdotool/**/*"
       ],
       "category": "Utility"
     },

@@ -21,19 +21,19 @@ function calculatePartyHpPercentage(imageData, colors, startIndex, barWidth) {
   // Create a Set of color strings for faster lookup
   const colorSet = new Set(colors.map((color) => color.join(',')));
 
-  console.log('Color set:', Array.from(colorSet));
+  // console.log('Color set:', Array.from(colorSet));
 
   let matchingPixelsCount = 0;
   const endIndex = startIndex + barWidth * 4;
 
   // Log the first 3 pixels
-  console.log('First 3 pixels:');
-  for (let i = startIndex; i < startIndex + 12; i += 4) {
-    const b = imageData[i];
-    const g = imageData[i + 1];
-    const r = imageData[i + 2];
-    console.log(`Pixel ${(i - startIndex) / 4}: R:${r}, G:${g}, B:${b}`);
-  }
+  // console.log('First 3 pixels:');
+  // for (let i = startIndex; i < startIndex + 12; i += 4) {
+  //   const b = imageData[i];
+  //   const g = imageData[i + 1];
+  //   const r = imageData[i + 2];
+  //   console.log(`Pixel ${(i - startIndex) / 4}: R:${r}, G:${g}, B:${b}`);
+  // }
 
   for (let i = startIndex; i < endIndex; i += 4) {
     const b = imageData[i];

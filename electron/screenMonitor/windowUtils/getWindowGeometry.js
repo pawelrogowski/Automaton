@@ -1,8 +1,15 @@
 import { exec } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const xdotool = path.join(__dirname, '..', '..', '..', 'resources', 'xdotool', 'xdotool');
 
 const getWindowGeometry = async (windowId) => {
   return new Promise((resolve, reject) => {
-    exec(`xdotool getwindowgeometry ${windowId}`, (error, stdout) => {
+    exec(`${xdotool} getwindowgeometry ${windowId}`, (error, stdout) => {
       if (error) {
         reject(error);
         return;

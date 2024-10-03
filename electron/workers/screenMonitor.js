@@ -147,227 +147,244 @@ function getRandomNumber(min, max) {
 }
 
 async function main() {
-  if (global.windowId) {
-    const imageData = await grabScreen(global.windowId);
-    const { width } = await getViewport(global.windowId);
-    const startRegions = findSequences(imageData, CONSTANTS.regionColorSequences, width);
-    const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
-      startRegions;
-
-    const battleListRegion = {
-      x: battleListStart.x,
-      y: battleListStart.y,
-      width: 4,
-      height: 215,
-    };
-
-    const partyListRegion = {
-      x: partyListStart.x,
-      y: partyListStart.y,
-      width: 131,
-      height: 81,
-    };
-
-    const hpManaRegion = {
-      x: healthBar.x,
-      y: healthBar.y,
-      width: 94,
-      height: 14,
-    };
-
-    const cooldownsRegion = {
-      x: cooldownBar.x,
-      y: cooldownBar.y,
-      width: 260,
-      height: 1,
-    };
-
-    const statusBarRegion = {
-      x: statusBar.x,
-      y: statusBar.y,
-      width: 104,
-      height: 9,
-    };
-
-    async function loop() {
-      iterationStartTime = performance.now();
-      frameCount++;
-
-      if (performance.now() - lastFpsUpdate >= 1000) {
-        fps = Math.round((frameCount * 1000) / (performance.now() - lastFpsUpdate));
-        frameCount = 0;
-        lastFpsUpdate = performance.now();
+  while (true) {
+    // Outer loop to allow for full restarts
+    try {
+      if (!global.windowId) {
+        console.log('Waiting for window...');
+        await waitForWindowId;
       }
 
-      screenGrabStartTime = performance.now();
+      console.log('Initializing screen monitoring...');
+      const imageData = await grabScreen(global.windowId);
+      const { width } = await getViewport(global.windowId);
+      const startRegions = findSequences(imageData, CONSTANTS.regionColorSequences, width);
+      const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
+        startRegions;
 
-      const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 1);
+      const battleListRegion = {
+        x: battleListStart.x,
+        y: battleListStart.y,
+        width: 4,
+        height: 215,
+      };
 
-      const regionsToGrab = [
-        hpManaRegion,
-        cooldownsRegion,
-        statusBarRegion,
-        battleListRegion,
-        partyListRegion,
-      ];
+      const partyListRegion = {
+        x: partyListStart.x,
+        y: partyListStart.y,
+        width: 131,
+        height: 81,
+      };
 
-      partyEntryRegions.forEach((entry) => {
-        regionsToGrab.push(entry.bar);
-        regionsToGrab.push(entry.name);
-      });
+      const hpManaRegion = {
+        x: healthBar.x,
+        y: healthBar.y,
+        width: 94,
+        height: 14,
+      };
 
-      const grabResults = await grabMultipleRegions(global.windowId, regionsToGrab);
+      const cooldownsRegion = {
+        x: cooldownBar.x,
+        y: cooldownBar.y,
+        width: 260,
+        height: 1,
+      };
 
-      const [
-        hpManaImageData,
-        cooldownBarImageData,
-        statusBarImageData,
-        battleListImageData,
-        partyListImageData,
-        ...partyEntryImageData
-      ] = grabResults;
+      const statusBarRegion = {
+        x: statusBar.x,
+        y: statusBar.y,
+        width: 104,
+        height: 9,
+      };
 
-      screenGrabEndTime = performance.now();
+      async function loop() {
+        while (true) {
+          // Inner loop for normal operation
+          iterationStartTime = performance.now();
+          frameCount++;
 
-      processingStartTime = performance.now();
+          if (performance.now() - lastFpsUpdate >= 1000) {
+            fps = Math.round((frameCount * 1000) / (performance.now() - lastFpsUpdate));
+            frameCount = 0;
+            lastFpsUpdate = performance.now();
+          }
 
-      const newHealthPercentage = await calculatePercentages(
-        healthBar,
-        hpManaRegion,
-        hpManaImageData,
-        CONSTANTS.resourceBars.healthBar,
-        hpManaRegion.width,
-      );
+          screenGrabStartTime = performance.now();
 
-      const newManaPercentage = await calculatePercentages(
-        manaBar,
-        hpManaRegion,
-        hpManaImageData,
-        CONSTANTS.resourceBars.manaBar,
-        hpManaRegion.width,
-      );
+          const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 3);
 
-      cooldownBarRegions = findSequences(
-        cooldownBarImageData,
-        CONSTANTS.cooldownColorSequences,
-        240,
-      );
+          const regionsToGrab = [
+            hpManaRegion,
+            cooldownsRegion,
+            statusBarRegion,
+            battleListRegion,
+            partyListRegion,
+          ];
 
-      statusBarRegions = findSequences(statusBarImageData, CONSTANTS.statusBarSequences, 106);
-
-      const characterStatusUpdates = {};
-      for (const [key, value] of Object.entries(CONSTANTS.statusBarSequences)) {
-        characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
-      }
-
-      let battleListEntries = findAllOccurrences(
-        battleListImageData,
-        CONSTANTS.battleListSequences.battleEntry,
-        4,
-      );
-
-      const partyData = [];
-      for (let i = 0; i < partyEntryRegions.length; i++) {
-        const barRegion = partyEntryRegions[i].bar;
-        const nameRegion = partyEntryRegions[i].name;
-
-        const barStartIndex =
-          (barRegion.y - partyListRegion.y) * partyListRegion.width +
-          (barRegion.x - partyListRegion.x);
-
-        const hpPercentage = calculatePartyHpPercentage(
-          partyListImageData,
-          CONSTANTS.resourceBars.partyEntryHpBar,
-          barStartIndex * 4,
-          130,
-        );
-
-        // Check for active/inactive status
-        const nameStartIndex =
-          (nameRegion.y - partyListRegion.y) * partyListRegion.width +
-          (nameRegion.x - partyListRegion.x);
-        const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
-
-        const statusSequences = findSequences(
-          partyListImageData.subarray(nameStartIndex * 4, nameEndIndex * 4),
-          PARTY_MEMBER_STATUS,
-          nameRegion.width,
-          null,
-          'first',
-        );
-
-        const isActive = Object.keys(statusSequences.active).length > 0;
-
-        if (hpPercentage >= 0) {
-          // Only add valid entries
-          partyData.push({
-            hpPercentage,
-            uhCoordinates: partyEntryRegions[i].uhCoordinates,
-            isActive,
+          partyEntryRegions.forEach((entry) => {
+            regionsToGrab.push(entry.bar);
+            regionsToGrab.push(entry.name);
           });
+
+          const grabResults = await grabMultipleRegions(global.windowId, regionsToGrab);
+
+          const [
+            hpManaImageData,
+            cooldownBarImageData,
+            statusBarImageData,
+            battleListImageData,
+            partyListImageData,
+            ...partyEntryImageData
+          ] = grabResults;
+
+          screenGrabEndTime = performance.now();
+
+          processingStartTime = performance.now();
+
+          const newHealthPercentage = await calculatePercentages(
+            healthBar,
+            hpManaRegion,
+            hpManaImageData,
+            CONSTANTS.resourceBars.healthBar,
+            hpManaRegion.width,
+          );
+
+          if (newHealthPercentage === 0) {
+            return;
+          }
+
+          const newManaPercentage = await calculatePercentages(
+            manaBar,
+            hpManaRegion,
+            hpManaImageData,
+            CONSTANTS.resourceBars.manaBar,
+            hpManaRegion.width,
+          );
+
+          cooldownBarRegions = findSequences(
+            cooldownBarImageData,
+            CONSTANTS.cooldownColorSequences,
+            240,
+          );
+
+          statusBarRegions = findSequences(statusBarImageData, CONSTANTS.statusBarSequences, 106);
+
+          const characterStatusUpdates = {};
+          for (const [key, value] of Object.entries(CONSTANTS.statusBarSequences)) {
+            characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
+          }
+
+          let battleListEntries = findAllOccurrences(
+            battleListImageData,
+            CONSTANTS.battleListSequences.battleEntry,
+            4,
+          );
+
+          const partyData = [];
+          for (let i = 0; i < partyEntryRegions.length; i++) {
+            const barRegion = partyEntryRegions[i].bar;
+            const nameRegion = partyEntryRegions[i].name;
+
+            const barStartIndex =
+              (barRegion.y - partyListRegion.y) * partyListRegion.width +
+              (barRegion.x - partyListRegion.x);
+
+            const hpPercentage = calculatePartyHpPercentage(
+              partyListImageData,
+              CONSTANTS.resourceBars.partyEntryHpBar,
+              barStartIndex * 4,
+              130,
+            );
+
+            // Check for active/inactive status
+            const nameStartIndex =
+              (nameRegion.y - partyListRegion.y) * partyListRegion.width +
+              (nameRegion.x - partyListRegion.x);
+            const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
+
+            const statusSequences = findSequences(
+              partyListImageData.subarray(nameStartIndex * 4, nameEndIndex * 4),
+              PARTY_MEMBER_STATUS,
+              nameRegion.width,
+              null,
+              'first',
+            );
+
+            const isActive = Object.keys(statusSequences.active).length > 0;
+
+            if (hpPercentage >= 0) {
+              partyData.push({
+                hpPercentage,
+                uhCoordinates: partyEntryRegions[i].uhCoordinates,
+                isActive,
+              });
+            }
+          }
+
+          directGameState = {
+            hpPercentage: newHealthPercentage,
+            manaPercentage: newManaPercentage,
+            healingCdActive: cooldownManager.updateCooldown(
+              'healing',
+              cooldownBarRegions.healing?.x !== undefined,
+            ),
+            supportCdActive: cooldownManager.updateCooldown(
+              'support',
+              cooldownBarRegions.support?.x !== undefined,
+            ),
+            attackCdActive: cooldownManager.updateCooldown(
+              'attack',
+              cooldownBarRegions.attack?.x !== undefined,
+            ),
+            characterStatus: characterStatusUpdates,
+            monsterNum: battleListEntries.length,
+            partyMembers: partyData,
+          };
+
+          // console.log(partyData);
+          processingEndTime = performance.now();
+
+          if (global.botEnabled) {
+            keypressStartTime = performance.now();
+
+            await processRules(
+              healing.presets[healing.activePresetIndex],
+              healing,
+              directGameState,
+              global,
+            );
+            keypressEndTime = performance.now();
+          }
+
+          const iterationEndTime = performance.now();
+          const iterationDuration = iterationEndTime - iterationStartTime;
+
+          fastestIteration = Math.min(fastestIteration, iterationDuration);
+          slowestIteration = Math.max(slowestIteration, iterationDuration);
+
+          if (newHealthPercentage !== lastDispatchedHealthPercentage) {
+            parentPort.postMessage({
+              type: 'setHealthPercent',
+              payload: { hpPercentage: newHealthPercentage },
+            });
+            lastDispatchedHealthPercentage = newHealthPercentage;
+          }
+          if (newManaPercentage !== lastDispatchedManaPercentage) {
+            parentPort.postMessage({
+              type: 'setManaPercent',
+              payload: { manaPercentage: newManaPercentage },
+            });
+            lastDispatchedManaPercentage = newManaPercentage;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, global.refreshRate));
         }
       }
 
-      directGameState = {
-        hpPercentage: newHealthPercentage,
-        manaPercentage: newManaPercentage,
-        healingCdActive: cooldownManager.updateCooldown(
-          'healing',
-          cooldownBarRegions.healing?.x !== undefined,
-        ),
-        supportCdActive: cooldownManager.updateCooldown(
-          'support',
-          cooldownBarRegions.support?.x !== undefined,
-        ),
-        attackCdActive: cooldownManager.updateCooldown(
-          'attack',
-          cooldownBarRegions.attack?.x !== undefined,
-        ),
-        characterStatus: characterStatusUpdates,
-        monsterNum: battleListEntries.length,
-        partyMembers: partyData,
-      };
-
-      console.log(partyData);
-      processingEndTime = performance.now();
-
-      if (global.botEnabled) {
-        keypressStartTime = performance.now();
-
-        await processRules(
-          healing.presets[healing.activePresetIndex],
-          healing,
-          directGameState,
-          global,
-        );
-        keypressEndTime = performance.now();
-      }
-
-      const iterationEndTime = performance.now();
-      const iterationDuration = iterationEndTime - iterationStartTime;
-
-      fastestIteration = Math.min(fastestIteration, iterationDuration);
-      slowestIteration = Math.max(slowestIteration, iterationDuration);
-
-      if (newHealthPercentage !== lastDispatchedHealthPercentage) {
-        parentPort.postMessage({
-          type: 'setHealthPercent',
-          payload: { hpPercentage: newHealthPercentage },
-        });
-        lastDispatchedHealthPercentage = newHealthPercentage;
-      }
-      if (newManaPercentage !== lastDispatchedManaPercentage) {
-        parentPort.postMessage({
-          type: 'setManaPercent',
-          payload: { manaPercentage: newManaPercentage },
-        });
-        lastDispatchedManaPercentage = newManaPercentage;
-      }
-
-      setTimeout(loop, global.refreshRate);
+      await loop();
+    } catch (error) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
-
-    loop();
   }
 }
 
