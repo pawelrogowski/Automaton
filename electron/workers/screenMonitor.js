@@ -1,7 +1,7 @@
 import * as CONSTANTS from '../constants/index.js';
 import { parentPort } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import { grabScreen, grabMultipleRegions } from '../screenMonitor/screenGrabUtils/grabScreen.js';
+import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
@@ -157,8 +157,7 @@ async function main() {
 
       console.log('Initializing screen monitoring...');
       const imageData = await grabScreen(global.windowId);
-      const { width } = await getViewport(global.windowId);
-      const startRegions = findSequences(imageData, CONSTANTS.regionColorSequences, width);
+      const startRegions = findSequences(imageData, CONSTANTS.regionColorSequences);
       const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
         startRegions;
 
@@ -225,9 +224,11 @@ async function main() {
             regionsToGrab.push(entry.bar);
             regionsToGrab.push(entry.name);
           });
-
-          const grabResults = await grabMultipleRegions(global.windowId, regionsToGrab);
-
+          console.time('screenGrab');
+          const grabResults = await Promise.all(
+            regionsToGrab.map((region) => grabScreen(global.windowId, region)),
+          );
+          console.timeEnd('screenGrab');
           const [
             hpManaImageData,
             cooldownBarImageData,
@@ -241,7 +242,7 @@ async function main() {
 
           processingStartTime = performance.now();
 
-          const newHealthPercentage = await calculatePercentages(
+          const newHealthPercentage = calculatePercentages(
             healthBar,
             hpManaRegion,
             hpManaImageData,
@@ -253,7 +254,7 @@ async function main() {
             return;
           }
 
-          const newManaPercentage = await calculatePercentages(
+          const newManaPercentage = calculatePercentages(
             manaBar,
             hpManaRegion,
             hpManaImageData,
@@ -264,13 +265,12 @@ async function main() {
           cooldownBarRegions = findSequences(
             cooldownBarImageData,
             CONSTANTS.cooldownColorSequences,
-            240,
           );
 
-          statusBarRegions = findSequences(statusBarImageData, CONSTANTS.statusBarSequences, 106);
+          statusBarRegions = findSequences(statusBarImageData, CONSTANTS.statusBarSequences);
 
           const characterStatusUpdates = {};
-          for (const [key, value] of Object.entries(CONSTANTS.statusBarSequences)) {
+          for (const [key, _] of Object.entries(CONSTANTS.statusBarSequences)) {
             characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
           }
 
@@ -305,7 +305,6 @@ async function main() {
             const statusSequences = findSequences(
               partyListImageData.subarray(nameStartIndex * 4, nameEndIndex * 4),
               PARTY_MEMBER_STATUS,
-              nameRegion.width,
               null,
               'first',
             );

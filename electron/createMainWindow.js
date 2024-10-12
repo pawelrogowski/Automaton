@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { resetWorkers } from './main.js';
 import { selectWindow } from './menus/windowSelection.js';
 import { autoSaveRules, loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
-import { toggleNotifications } from '../src/redux/slices/globalSlice.js';
+import { toggleNotifications } from '../frontend/redux/slices/globalSlice.js';
 import store from './store.js';
 
 const HTML_PATH = '../dist/index.html';
@@ -203,20 +203,25 @@ export const createMainWindow = () => {
     minWidth: 780,
     minHeight: 687,
     icon: ICON_PATHS.app,
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    devTools: false,
+    frame: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(dirname, '/preload.js'),
     },
-    autoHideMenuBar: true,
     alwaysOnTop: true,
     transparent: false,
-    devTools: false,
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    mainWindow.webContents.openDevTools();
-  }
+  // if (process.env.NODE_ENV !== 'production') {
+  //   mainWindow.webContents.openDevTools();
+  // }
 
   mainWindow
     .loadURL(`file://${path.join(dirname, HTML_PATH)}`)

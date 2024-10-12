@@ -1,8 +1,8 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
 
-import globalSlice from '../src/redux/slices/globalSlice.js';
-import healingSlice from '../src/redux/slices/healingSlice.js';
-import gameStateSlice from '../src/redux/slices/gameStateSlice.js';
+import globalSlice from '../frontend/redux/slices/globalSlice.js';
+import healingSlice from '../frontend/redux/slices/healingSlice.js';
+import gameStateSlice from '../frontend/redux/slices/gameStateSlice.js';
 const logger = (store) => (next) => (action) => {
   let result = next(action);
   // if (action.type.startsWith('healing')) {

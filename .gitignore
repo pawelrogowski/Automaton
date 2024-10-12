@@ -54,6 +54,7 @@ dist/
 # Vscode
 .vscode
 
-
+x11window/
 
 node_modules
+electron/screenMonitor/x11window/createX11Window.js

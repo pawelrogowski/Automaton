@@ -2,7 +2,7 @@ import { dialog } from 'electron';
 import { exec, fork } from 'child_process';
 import { getMainWindow } from '../createMainWindow.js';
 import store from '../store.js';
-import { setWindowTitle, setWindowId } from '../../src/redux/slices/globalSlice.js';
+import { setWindowTitle, setWindowId } from '../../frontend/redux/slices/globalSlice.js';
 import setGlobalState from '../setGlobalState.js';
 import { resetWorkers } from '../main.js';
 import getWindowGeometry from '../screenMonitor/windowUtils/getWindowGeometry.js';
@@ -54,7 +54,7 @@ export const selectWindow = async () => {
     const windowId = stdout.trim();
     const geometry = await getGeometry(windowId);
     if (geometry.includes('1x1')) {
-      console.error('Error: Please select a valid tibia window.');
+      console.error('Error: Please select a valid tibia window.z');
       getMainWindow().setTitle('Automaton - No Window Selected');
       setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
@@ -74,7 +74,7 @@ export const selectWindow = async () => {
 
 const getActiveWindowId = () =>
   new Promise((resolve, reject) => {
-    exec(`${xdotool} getactivewindow`, (error, stdout) => {
+    exec(`${xdotool} getwindowfocus`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {

@@ -1,23 +1,31 @@
-import packColors from '../utils/packColors.js';
 import { buildTrie, clearTrieNodes } from '../utils/trieUtils.js';
 
-function findSequences(imageData, targetSequences, width, searchArea = null, occurrence = 'first') {
-  const length = imageData.length >> 2;
-  const packedImageData = new Uint32Array(packColors(imageData));
+function findSequences(imageData, targetSequences, searchArea = null, occurrence = 'first') {
+  // Extract dimensions from the buffer
+  const bufferWidth = imageData.readUInt32LE(0);
+  const bufferHeight = imageData.readUInt32LE(4);
+  const rgbData = imageData.subarray(8);
+
+  const length = rgbData.length / 3;
   const foundSequences = Object.fromEntries(Object.keys(targetSequences).map((name) => [name, []]));
 
   const trie = buildTrie(targetSequences);
   const startIndex = searchArea ? searchArea.startIndex : 0;
   const endIndex = searchArea ? searchArea.endIndex : length;
 
-  outer: for (let i = startIndex; i <= endIndex; i++) {
-    let x = i % width;
-    let y = Math.floor(i / width);
+  outer: for (let i = startIndex; i < endIndex; i++) {
+    let x = i % bufferWidth;
+    let y = Math.floor(i / bufferWidth);
     let node = trie;
     let sequenceLength = 0;
 
     for (let j = i; j < length; j++) {
-      const color = packedImageData[j];
+      const pixelIndex = j * 3;
+      const r = rgbData[pixelIndex];
+      const g = rgbData[pixelIndex + 1];
+      const b = rgbData[pixelIndex + 2];
+      const color = (r << 16) | (g << 8) | b;
+
       if (!(color in node.children) && node.currentSequence[sequenceLength] !== 'any') {
         break;
       }
@@ -63,7 +71,7 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
         node = trie;
       }
 
-      x = (j + 1) % width;
+      x = (j + 1) % bufferWidth;
       y = x === 0 ? y + 1 : y;
     }
   }
@@ -75,6 +83,7 @@ function findSequences(imageData, targetSequences, width, searchArea = null, occ
   }
 
   clearTrieNodes(trie);
+  // console.log(foundSequences);
   return foundSequences;
 }
 

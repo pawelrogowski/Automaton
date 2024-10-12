@@ -105,7 +105,9 @@ ipcMain.handle('load-rules', async () => {
 // The renderer is ready, let's set some things up
 ipcMain.on('renderer-ready', () => {
   autoLoadRules();
-  registerGlobalShortcuts();
+  setTimeout(() => {
+    registerGlobalShortcuts();
+  }, 500);
 });
 
 // When the app is ready, let's get this party started
@@ -116,6 +118,12 @@ app.whenReady().then(() => {
       width: 360,
       height: 400,
       autoHideMenuBar: true,
+      titleBarStyle: 'hidden',
+      resizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      devTools: false,
+      frame: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

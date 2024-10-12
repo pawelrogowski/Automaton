@@ -1,12 +1,12 @@
 {
   "name": "automaton",
   "productName": "Automaton",
-  "version": "1.6.7",
+  "version": "1.6.9",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
   "extraResources": [
-    "src/preload.js"
+    "frontend/preload.js"
   ],
   "scripts": {
     "start": "webpack --mode production && electron .",
@@ -26,11 +26,11 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "src/**/*",
+      "frontend/**/*",
       "package.json"
     ],
     "extraResources": [
-      "src/preload.js",
+      "frontend/preload.js",
       {
         "from": "resources/xdotool",
         "to": "resources/xdotool",
