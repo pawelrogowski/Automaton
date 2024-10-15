@@ -198,6 +198,7 @@ async function main() {
 
       async function loop() {
         while (true) {
+          console.time('loop');
           // Inner loop for normal operation
           iterationStartTime = performance.now();
           frameCount++;
@@ -220,10 +221,23 @@ async function main() {
             partyListRegion,
           ];
 
+          // Add regions from partyEntryRegions
           partyEntryRegions.forEach((entry) => {
             regionsToGrab.push(entry.bar);
             regionsToGrab.push(entry.name);
           });
+
+          // Generate 100 random regions
+          // for (let i = 0; i < 1000; i++) {
+          //   const randomRegion = {
+          //     x: Math.floor(Math.random() * 800), // Random x coordinate between 0 and 1920
+          //     y: Math.floor(Math.random() * 800), // Random y coordinate between 0 and 1000
+          //     width: Math.floor(Math.random() * 200) + 1, // Random width between 1 and 20
+          //     height: Math.floor(Math.random() * 100) + 1, // Random height between 1 and 20
+          //   };
+          //   regionsToGrab.push(randomRegion);
+          // }
+
           console.time('screenGrab');
           const grabResults = await Promise.all(
             regionsToGrab.map((region) => grabScreen(global.windowId, region)),
@@ -346,12 +360,14 @@ async function main() {
           if (global.botEnabled) {
             keypressStartTime = performance.now();
 
+            console.time('processData');
             await processRules(
               healing.presets[healing.activePresetIndex],
               healing,
               directGameState,
               global,
             );
+            console.timeEnd('processData');
             keypressEndTime = performance.now();
           }
 
@@ -375,8 +391,8 @@ async function main() {
             });
             lastDispatchedManaPercentage = newManaPercentage;
           }
-
-          await new Promise((resolve) => setTimeout(resolve, global.refreshRate));
+          console.timeEnd('loop');
+          await new Promise((resolve) => setTimeout(resolve, Math.max(16, global.refreshRate)));
         }
       }
 

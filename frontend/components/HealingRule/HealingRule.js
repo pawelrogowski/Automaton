@@ -22,13 +22,15 @@ import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
 import ListSelect from '../ListSelect/ListSelect.js';
 
-const HealingRule = ({ rule, className }) => {
+const HealingRule = ({ rule, className, variant }) => {
   const dispatch = useDispatch();
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
   const healing =
     useSelector((state) =>
       state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
     ) || {};
+
+  const showNameAndCategory = variant !== 'friends';
 
   const handleStatusConditionChange = useCallback(
     (status, value) => {
@@ -134,26 +136,30 @@ const HealingRule = ({ rule, className }) => {
         />
         <summary>
           <CustomCheckbox checked={healing.enabled} onChange={handleUpdateEnabled} size={22} />
-          <ListInput
-            className="input"
-            id="name"
-            value={healing.name}
-            onChange={handleUpdateName}
-            placeholder="Rule Name"
-          />
-          <ListSelect
-            className="input input-category select-with-arrow"
-            id="category"
-            value={healing.category}
-            onChange={handleUpdateCategory}
-          >
-            <option value="Healing">Healing</option>
-            <option value="Potion">Potion</option>
-            <option value="Support">Support</option>
-            <option value="Attack">Attack</option>
-            <option value="Equip">Equip</option>
-            <option value="Others">Others</option>
-          </ListSelect>
+          {showNameAndCategory && (
+            <>
+              <ListInput
+                className="input"
+                id="name"
+                value={healing.name}
+                onChange={handleUpdateName}
+                placeholder="Rule Name"
+              />
+              <ListSelect
+                className="input input-category select-with-arrow"
+                id="category"
+                value={healing.category}
+                onChange={handleUpdateCategory}
+              >
+                <option value="Healing">Healing</option>
+                <option value="Potion">Potion</option>
+                <option value="Support">Support</option>
+                <option value="Attack">Attack</option>
+                <option value="Equip">Equip</option>
+                <option value="Others">Others</option>
+              </ListSelect>
+            </>
+          )}
           <ListSelect
             className="input input-hotkey"
             id="key"
@@ -287,6 +293,7 @@ HealingRule.propTypes = {
     conditions: PropTypes.arrayOf(PropTypes.object),
   }).isRequired,
   className: PropTypes.string,
+  variant: PropTypes.string,
 };
 
 export default HealingRule;

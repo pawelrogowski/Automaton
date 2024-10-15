@@ -3,8 +3,11 @@ import { StyledDiv } from './RuleListWrapper.styled.js';
 import { sortRulesBy } from '../../redux/slices/healingSlice.js';
 import { useDispatch } from 'react-redux';
 
-const RuleListWrapper = ({ children }) => {
+const RuleListWrapper = ({ children, variant }) => {
   const dispatch = useDispatch();
+
+  const showNameAndCDGroup = variant !== 'friends';
+
   return (
     <StyledDiv>
       <div className="header">
@@ -14,18 +17,22 @@ const RuleListWrapper = ({ children }) => {
         >
           •
         </div>
-        <div
-          className="header-item header-item_2"
-          onMouseDown={() => dispatch(sortRulesBy(['name', 'priority']))}
-        >
-          Name
-        </div>
-        <div
-          className="header-item header-item_3"
-          onMouseDown={() => dispatch(sortRulesBy(['category', 'priority']))}
-        >
-          CD Group
-        </div>
+        {showNameAndCDGroup && (
+          <>
+            <div
+              className="header-item header-item_2"
+              onMouseDown={() => dispatch(sortRulesBy(['name', 'priority']))}
+            >
+              Name
+            </div>
+            <div
+              className="header-item header-item_3"
+              onMouseDown={() => dispatch(sortRulesBy(['category', 'priority']))}
+            >
+              CD Group
+            </div>
+          </>
+        )}
         <div
           className="header-item header-item_4"
           onMouseDown={() => dispatch(sortRulesBy(['key', 'priority']))}
