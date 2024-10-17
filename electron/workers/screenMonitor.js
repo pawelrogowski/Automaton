@@ -5,70 +5,10 @@ import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
-import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import { processRules } from './screenMonitor/ruleProcessor.js';
-
-const COOLDOWN_DURATIONS = {
-  healing: 930,
-  attack: 1925,
-  support: 425,
-};
-
-const PARTY_MEMBER_STATUS = {
-  active: {
-    sequence: [
-      [192, 192, 192],
-      [192, 192, 192],
-    ],
-    direction: 'horizontal',
-  },
-  inactive: {
-    sequence: [
-      [128, 128, 128],
-      [128, 128, 128],
-    ],
-    direction: 'horizontal',
-  },
-};
-
-class CooldownManager {
-  constructor() {
-    this.cooldowns = {
-      healing: { active: false, startTime: 0 },
-      attack: { active: false, startTime: 0 },
-      support: { active: false, startTime: 0 },
-    };
-  }
-
-  updateCooldown(type, isActive) {
-    const now = performance.now();
-    const cooldown = this.cooldowns[type];
-
-    if (isActive && !cooldown.active) {
-      cooldown.active = true;
-      cooldown.startTime = now;
-    } else if (!isActive && cooldown.active) {
-      const elapsedTime = now - cooldown.startTime;
-      if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
-        cooldown.active = false;
-      }
-    }
-
-    return cooldown.active;
-  }
-
-  getCooldownState(type) {
-    const cooldown = this.cooldowns[type];
-    if (cooldown.active) {
-      const elapsedTime = performance.now() - cooldown.startTime;
-      if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
-        cooldown.active = false;
-      }
-    }
-    return cooldown.active;
-  }
-}
+import CooldownManager from './screenMonitor/CooldownManager.js';
+import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 
 let state = null;
 let global = null;
@@ -227,17 +167,6 @@ async function main() {
             regionsToGrab.push(entry.name);
           });
 
-          // Generate 100 random regions
-          // for (let i = 0; i < 1000; i++) {
-          //   const randomRegion = {
-          //     x: Math.floor(Math.random() * 800), // Random x coordinate between 0 and 1920
-          //     y: Math.floor(Math.random() * 800), // Random y coordinate between 0 and 1000
-          //     width: Math.floor(Math.random() * 200) + 1, // Random width between 1 and 20
-          //     height: Math.floor(Math.random() * 100) + 1, // Random height between 1 and 20
-          //   };
-          //   regionsToGrab.push(randomRegion);
-          // }
-
           console.time('screenGrab');
           const grabResults = await Promise.all(
             regionsToGrab.map((region) => grabScreen(global.windowId, region)),
@@ -306,7 +235,7 @@ async function main() {
             const hpPercentage = calculatePartyHpPercentage(
               partyListImageData,
               CONSTANTS.resourceBars.partyEntryHpBar,
-              barStartIndex * 4,
+              barStartIndex * 3,
               130,
             );
 
@@ -354,7 +283,7 @@ async function main() {
             partyMembers: partyData,
           };
 
-          // console.log(partyData);
+          console.log(partyData);
           processingEndTime = performance.now();
 
           if (global.botEnabled) {

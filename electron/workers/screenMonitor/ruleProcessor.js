@@ -1,7 +1,7 @@
 import parseMathCondition from '../../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../../utils/areStatusConditionsMet.js';
 import { keyPress, keyPressManaSync } from '../../keyboardControll/keyPress.js';
-import options from './options.js';
+import { OPTIONS } from './constants.js';
 import useItemOnCoordinates from '../../mouseControll/useItemOnCoordinates.js';
 
 let lastRuleExecutionTimes = {};
@@ -29,7 +29,7 @@ const filterRulesNotOnDelay = (rules) =>
 
 const filterRulesByActiveCooldowns = (rules, directGameState) =>
   rules.filter((rule) => {
-    const cooldownStateKey = options.cooldownStateMapping[rule.category];
+    const cooldownStateKey = OPTIONS.cooldownStateMapping[rule.category];
 
     if (!cooldownStateKey) {
       return true;
@@ -130,14 +130,14 @@ const scheduleManaSyncExecution = (manaSyncRule, global) => {
     keyPressManaSync(global.windowId, [manaSyncRule.key], null, 1);
     const manaSyncDuration = performance.now() - manaSyncStartTime;
 
-    if (options.logsEnabled) {
+    if (OPTIONS.logsEnabled) {
       console.log(
         `Executing manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
       );
     }
   }, 825);
 
-  if (options.logsEnabled) {
+  if (OPTIONS.logsEnabled) {
     console.log(`Scheduled manaSync execution at ${Date.now() + 850}`);
   }
   manaSyncScheduled = true;
@@ -174,7 +174,7 @@ export const processRules = async (activePreset, rules, directGameState, global)
       lastRuleExecutionTimes[healFriendRule.id] = Date.now();
       lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
 
-      if (options.logsEnabled) {
+      if (OPTIONS.logsEnabled) {
         console.log(
           `Executing healFriend command for key: ${healFriendRule.key}, useRune: ${healFriendRule.useRune}, current time: ${Date.now()}, duration: ${healFriendDuration.toFixed(2)} ms`,
         );
@@ -193,7 +193,7 @@ export const processRules = async (activePreset, rules, directGameState, global)
         lastCategoriesExecutionTimes[rule.category] = now;
       });
 
-      if (options.logsEnabled) {
+      if (OPTIONS.logsEnabled) {
         console.log(
           `Executing chained command for keys: ${regularRuleKeys.join(', ')}, current time: ${now}, keypress duration: ${keypressDuration.toFixed(2)} ms`,
         );

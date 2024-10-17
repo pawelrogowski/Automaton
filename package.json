@@ -13,7 +13,6 @@
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
     "make": "npm run build && electron-builder ",
-    "publish": "npm run build && electron-builder -p always",
     "lint": "eslint . --ext .js,.jsx,.mjs"
   },
   "build": {
