@@ -15,7 +15,6 @@ import {
   autoLoadRules,
 } from './rulesManager.js';
 
-// Set up some basic path stuff
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
@@ -27,7 +26,6 @@ if (app.isPackaged) {
   xdotoolPath = path.join(cwd, 'resources', 'xdotool', 'xdotool');
 }
 
-// Initialize some variables we'll need later
 let ScreenMonitor = null;
 let prevWindowId = null;
 let loginWindow;

@@ -9,34 +9,38 @@
  * @returns {number} The calculated percentage
  */
 function calculatePercentages(barPosition, combinedRegion, imageData, colors) {
-  // Extract dimensions from the buffer
-  const barWidth = imageData.readUInt32LE(0);
-  const rgbData = imageData.subarray(8);
+  try {
+    // Extract dimensions from the buffer
+    const barWidth = imageData.readUInt32LE(0);
+    const rgbData = imageData.subarray(8);
 
-  // Create a Set of color strings for faster lookup
-  const colorSet = new Set(colors.map((color) => color.join(',')));
+    // Create a Set of color strings for faster lookup
+    const colorSet = new Set(colors.map((color) => color.join(',')));
 
-  let matchingPixelsCount = 0;
-  const startIndex =
-    ((barPosition.y - combinedRegion.y) * combinedRegion.width +
-      (barPosition.x - combinedRegion.x)) *
-    3;
-  const endIndex = startIndex + barWidth * 3;
+    let matchingPixelsCount = 0;
+    const startIndex =
+      ((barPosition.y - combinedRegion.y) * combinedRegion.width +
+        (barPosition.x - combinedRegion.x)) *
+      3;
+    const endIndex = startIndex + barWidth * 3;
 
-  for (let i = startIndex; i < endIndex; i += 3) {
-    const r = rgbData[i];
-    const g = rgbData[i + 1];
-    const b = rgbData[i + 2];
+    for (let i = startIndex; i < endIndex; i += 3) {
+      const r = rgbData[i];
+      const g = rgbData[i + 1];
+      const b = rgbData[i + 2];
 
-    // Use the Set for faster color matching
-    if (colorSet.has(`${r},${g},${b}`)) {
-      matchingPixelsCount++;
+      // Use the Set for faster color matching
+      if (colorSet.has(`${r},${g},${b}`)) {
+        matchingPixelsCount++;
+      }
     }
+
+    const percentage = Math.round((matchingPixelsCount / barWidth) * 100);
+
+    return percentage;
+  } catch (error) {
+    console.log('error in hp/mana calculator:', error);
   }
-
-  const percentage = Math.round((matchingPixelsCount / barWidth) * 100);
-
-  return percentage;
 }
 
 export default calculatePercentages;

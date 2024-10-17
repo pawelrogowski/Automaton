@@ -1,14 +1,13 @@
-// CustomCheckbox.styled.js
 import styled from 'styled-components';
 
 export const TibiaCheckbox = styled.div`
   position: relative;
   display: inline-block;
   overflow: hidden;
-  height: ${({ size }) => size}px;
-  width: ${({ size }) => size}px;
-  min-width: ${({ size }) => size}px;
-  min-height: ${({ size }) => size}px;
+  width: ${({ width }) => width}px;
+  height: ${({ height }) => height}px;
+  min-width: ${({ width }) => width}px;
+  min-height: ${({ height }) => height}px;
 
   .custom-checkbox {
     display: none;
@@ -16,8 +15,8 @@ export const TibiaCheckbox = styled.div`
 
   .custom-checkbox-label {
     display: inline-block;
-    width: ${({ size }) => size}px;
-    height: ${({ size }) => size}px;
+    width: 100%;
+    height: 100%;
     background-color: #363636;
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
@@ -39,17 +38,17 @@ export const TibiaCheckbox = styled.div`
   }
 
   .custom-checkbox:checked + .custom-checkbox-label {
-    background-color: #363636; /* Change the background color when checked */
+    background-color: #363636;
   }
 
   .custom-checkbox:checked + .custom-checkbox-label::after {
-    content: '✔'; /* Checkmark symbol */
+    content: '✔';
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     color: #d3d3d3;
-    font-size: ${({ size }) => size / 2}px;
+    font-size: ${({ width, height }) => Math.min(width, height) / 2}px;
   }
 
   .custom-checkbox-label:active {

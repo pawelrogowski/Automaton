@@ -146,6 +146,20 @@ const StyledDiv = styled.div`
     transform: translateY(-50%);
     pointer-events: none; /* Ensures clicks go through to the select */
   }
+  .checkbox-group {
+    padding: 0;
+    margin: 0;
+    height: 32px;
+    width: 175px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    > div {
+      display: flex;
+      margin: 0;
+      padding: 0;
+    }
+  }
 `;
 
 export default StyledDiv;

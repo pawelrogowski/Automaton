@@ -53,6 +53,18 @@ export const StyledDiv = styled.div`
       width: 85px;
       min-width: 85px;
     }
+    .header-item_9 {
+      width: 55px;
+      min-width: 55px;
+    }
+    .header-item_10 {
+      width: 35px;
+      min-width: 35px;
+    }
+    .header-item_11 {
+      width: 85px;
+      min-width: 85px;
+    }
     .header-placeholder {
       width: 100%;
     }

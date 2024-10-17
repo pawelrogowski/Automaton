@@ -208,7 +208,7 @@ export const createMainWindow = () => {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    devTools: false,
+    devTools: true,
     frame: false,
     webPreferences: {
       nodeIntegration: false,

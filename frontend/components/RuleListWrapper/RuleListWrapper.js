@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { StyledDiv } from './RuleListWrapper.styled.js';
 import { sortRulesBy } from '../../redux/slices/healingSlice.js';
 import { useDispatch } from 'react-redux';
@@ -7,6 +8,7 @@ const RuleListWrapper = ({ children, variant }) => {
   const dispatch = useDispatch();
 
   const showNameAndCDGroup = variant !== 'friends';
+  const showFriendOptions = variant === 'friends';
 
   return (
     <StyledDiv>
@@ -38,7 +40,29 @@ const RuleListWrapper = ({ children, variant }) => {
           onMouseDown={() => dispatch(sortRulesBy(['key', 'priority']))}
         >
           HK
-        </div>
+        </div>{' '}
+        {showFriendOptions && (
+          <>
+            <div
+              className="header-item header-item_9"
+              onMouseDown={() => dispatch(sortRulesBy(['requireManaShield', 'priority']))}
+            >
+              Utamo
+            </div>
+            <div
+              className="header-item header-item_10"
+              onMouseDown={() => dispatch(sortRulesBy(['useRune', 'priority']))}
+            >
+              UH
+            </div>
+            <div
+              className="header-item header-item_11"
+              onMouseDown={() => dispatch(sortRulesBy(['requireAttackCooldown', 'priority']))}
+            >
+              Wait ATK
+            </div>
+          </>
+        )}
         <div
           className="header-item header-item_5"
           onMouseDown={() => dispatch(sortRulesBy(['hpTriggerPercentage', 'priority']))}
@@ -74,6 +98,11 @@ const RuleListWrapper = ({ children, variant }) => {
       <div className="rules">{children}</div>
     </StyledDiv>
   );
+};
+
+RuleListWrapper.propTypes = {
+  children: PropTypes.node.isRequired,
+  variant: PropTypes.string,
 };
 
 export default RuleListWrapper;

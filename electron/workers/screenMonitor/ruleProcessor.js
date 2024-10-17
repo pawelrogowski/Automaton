@@ -24,7 +24,7 @@ const filterRulesNotOnDelay = (rules) =>
             .filter((r) => r.category === rule.category)
             .map((r) => lastRuleExecutionTimes[r.id] || 0),
         ) >=
-        options.categoryDelays[rule.category],
+        OPTIONS.categoryDelays[rule.category],
   );
 
 const filterRulesByActiveCooldowns = (rules, directGameState) =>

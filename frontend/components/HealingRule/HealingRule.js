@@ -16,6 +16,9 @@ import {
   updateRuleMonsterNum,
   updateRulePriority,
   updateRuleDelay,
+  toggleManaShieldRequired,
+  toggleUseRune,
+  toggleAttackCooldownRequired,
 } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
@@ -31,6 +34,7 @@ const HealingRule = ({ rule, className, variant }) => {
     ) || {};
 
   const showNameAndCategory = variant !== 'friends';
+  const showFriendOptions = variant === 'friends';
 
   const handleStatusConditionChange = useCallback(
     (status, value) => {
@@ -127,6 +131,18 @@ const HealingRule = ({ rule, className, variant }) => {
     [dispatch, healing.id],
   );
 
+  const handleToggleManaShieldRequired = useCallback(() => {
+    dispatch(toggleManaShieldRequired());
+  }, [dispatch]);
+
+  const handleToggleUseRune = useCallback(() => {
+    dispatch(toggleUseRune());
+  }, [dispatch]);
+
+  const handleToggleAttackCooldownRequired = useCallback(() => {
+    dispatch(toggleAttackCooldownRequired());
+  }, [dispatch]);
+
   return (
     <StyledDiv className={className} $running={healing.enabled}>
       <details>
@@ -135,7 +151,12 @@ const HealingRule = ({ rule, className, variant }) => {
           onStatusConditionChange={handleStatusConditionChange}
         />
         <summary>
-          <CustomCheckbox checked={healing.enabled} onChange={handleUpdateEnabled} size={22} />
+          <CustomCheckbox
+            checked={healing.enabled}
+            onChange={handleUpdateEnabled}
+            width={22}
+            height={22}
+          />
           {showNameAndCategory && (
             <>
               <ListInput
@@ -173,6 +194,37 @@ const HealingRule = ({ rule, className, variant }) => {
               </option>
             ))}
           </ListSelect>
+          {showFriendOptions && (
+            <div className="checkbox-group">
+              <div>
+                <CustomCheckbox
+                  checked={healing.requireManaShield}
+                  onChange={handleToggleManaShieldRequired}
+                  width={55}
+                  height={22}
+                  label="Require Mana Shield"
+                />
+              </div>
+              <div>
+                <CustomCheckbox
+                  checked={healing.useRune}
+                  onChange={handleToggleUseRune}
+                  width={35}
+                  height={22}
+                  label="Use Rune"
+                />
+              </div>
+              <div>
+                <CustomCheckbox
+                  checked={healing.requireAttackCooldown}
+                  onChange={handleToggleAttackCooldownRequired}
+                  width={85}
+                  height={22}
+                  label="Require Attack Cooldown"
+                />
+              </div>
+            </div>
+          )}
           <ListSelect
             className="input input-percent-select"
             id="hpTriggerCondition"
@@ -263,6 +315,7 @@ const HealingRule = ({ rule, className, variant }) => {
             min="0"
             step="25"
           />
+
           <button
             className="remove-rule-button rule-button"
             type="button"
@@ -291,6 +344,9 @@ HealingRule.propTypes = {
     enabled: PropTypes.bool,
     key: PropTypes.string,
     conditions: PropTypes.arrayOf(PropTypes.object),
+    requireManaShield: PropTypes.bool,
+    useRune: PropTypes.bool,
+    requireAttackCooldown: PropTypes.bool,
   }).isRequired,
   className: PropTypes.string,
   variant: PropTypes.string,

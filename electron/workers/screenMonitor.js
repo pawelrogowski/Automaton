@@ -5,10 +5,70 @@ import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
+import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import { processRules } from './screenMonitor/ruleProcessor.js';
-import CooldownManager from './screenMonitor/CooldownManager.js';
-import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
+
+const COOLDOWN_DURATIONS = {
+  healing: 930,
+  attack: 1925,
+  support: 425,
+};
+
+const PARTY_MEMBER_STATUS = {
+  active: {
+    sequence: [
+      [192, 192, 192],
+      [192, 192, 192],
+    ],
+    direction: 'horizontal',
+  },
+  inactive: {
+    sequence: [
+      [128, 128, 128],
+      [128, 128, 128],
+    ],
+    direction: 'horizontal',
+  },
+};
+
+class CooldownManager {
+  constructor() {
+    this.cooldowns = {
+      healing: { active: false, startTime: 0 },
+      attack: { active: false, startTime: 0 },
+      support: { active: false, startTime: 0 },
+    };
+  }
+
+  updateCooldown(type, isActive) {
+    const now = performance.now();
+    const cooldown = this.cooldowns[type];
+
+    if (isActive && !cooldown.active) {
+      cooldown.active = true;
+      cooldown.startTime = now;
+    } else if (!isActive && cooldown.active) {
+      const elapsedTime = now - cooldown.startTime;
+      if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
+        cooldown.active = false;
+      }
+    }
+
+    return cooldown.active;
+  }
+
+  getCooldownState(type) {
+    const cooldown = this.cooldowns[type];
+    if (cooldown.active) {
+      const elapsedTime = performance.now() - cooldown.startTime;
+      if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
+        cooldown.active = false;
+      }
+    }
+    return cooldown.active;
+  }
+}
 
 let state = null;
 let global = null;
@@ -138,7 +198,6 @@ async function main() {
 
       async function loop() {
         while (true) {
-          console.time('loop');
           // Inner loop for normal operation
           iterationStartTime = performance.now();
           frameCount++;
@@ -151,7 +210,7 @@ async function main() {
 
           screenGrabStartTime = performance.now();
 
-          const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 3);
+          const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 4);
 
           const regionsToGrab = [
             hpManaRegion,
@@ -161,17 +220,15 @@ async function main() {
             partyListRegion,
           ];
 
-          // Add regions from partyEntryRegions
           partyEntryRegions.forEach((entry) => {
             regionsToGrab.push(entry.bar);
             regionsToGrab.push(entry.name);
           });
 
-          console.time('screenGrab');
           const grabResults = await Promise.all(
             regionsToGrab.map((region) => grabScreen(global.windowId, region)),
           );
-          console.timeEnd('screenGrab');
+
           const [
             hpManaImageData,
             cooldownBarImageData,
@@ -185,7 +242,7 @@ async function main() {
 
           processingStartTime = performance.now();
 
-          const newHealthPercentage = calculatePercentages(
+          const newHealthPercentage = await calculatePercentages(
             healthBar,
             hpManaRegion,
             hpManaImageData,
@@ -246,7 +303,7 @@ async function main() {
             const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
 
             const statusSequences = findSequences(
-              partyListImageData.subarray(nameStartIndex * 4, nameEndIndex * 4),
+              partyListImageData.subarray(nameStartIndex * 3, nameEndIndex * 3),
               PARTY_MEMBER_STATUS,
               null,
               'first',
@@ -289,14 +346,12 @@ async function main() {
           if (global.botEnabled) {
             keypressStartTime = performance.now();
 
-            console.time('processData');
             await processRules(
               healing.presets[healing.activePresetIndex],
               healing,
               directGameState,
               global,
             );
-            console.timeEnd('processData');
             keypressEndTime = performance.now();
           }
 
@@ -320,13 +375,14 @@ async function main() {
             });
             lastDispatchedManaPercentage = newManaPercentage;
           }
-          console.timeEnd('loop');
-          await new Promise((resolve) => setTimeout(resolve, Math.max(16, global.refreshRate)));
+
+          await new Promise((resolve) => setTimeout(resolve, global.refreshRate));
         }
       }
 
       await loop();
     } catch (error) {
+      console.log(error);
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
