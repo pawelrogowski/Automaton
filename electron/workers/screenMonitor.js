@@ -8,6 +8,7 @@ import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
 import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import { processRules } from './screenMonitor/ruleProcessor.js';
+import commandExecutor from '../utils/commandExecutor.js';
 
 const COOLDOWN_DURATIONS = {
   healing: 930,
@@ -20,6 +21,13 @@ const PARTY_MEMBER_STATUS = {
     sequence: [
       [192, 192, 192],
       [192, 192, 192],
+    ],
+    direction: 'horizontal',
+  },
+  activeHover: {
+    sequence: [
+      [247, 247, 247],
+      [247, 247, 247],
     ],
     direction: 'horizontal',
   },
@@ -340,7 +348,7 @@ async function main() {
             partyMembers: partyData,
           };
 
-          console.log(partyData);
+          // console.log(partyData);
           processingEndTime = performance.now();
 
           if (global.botEnabled) {

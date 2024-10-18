@@ -1,21 +1,71 @@
-import { exec } from 'child_process';
-import { workerData } from 'worker_threads';
+import commandExecutor from '../utils/commandExecutor.js';
+import getMouseLocation from './getMouseLocation.js';
 
-const xdotool = workerData.xdotoolPath;
+async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
+  try {
+    const originalLocation = getMouseLocation();
+    if (!originalLocation) {
+      console.error('Failed to get mouse location.');
+      return;
+    }
+w 
+hi
 
-function useItemOnCoordinates(targetWindowId, x, y, key) {
-  const chainedCommands = [
-    `key --window ${targetWindowId} --clearmodifiers --delay 0 ${key}`,
-    `mousemove ${x} ${y}`,
-    `click --clearmodifiers 1`,
-    `mousemove restore`,
-    `keyup ctrl`,
-    `keyup shift`,
-    `keyup alt`,
-  ].join(' ');
+roshamuul
 
-  const fullCommand = `${xdotool} ${chainedCommands}`;
-  exec(fullCommand);
+yes
+
+hi
+
+thais
+
+yes
+   
+
+hi
+
+svargrond
+
+yes
+
+hi
+
+carlin
+
+yes
+
+hi
+
+hi
+
+ankrahmun
+
+ab'dendriel
+
+yes
+
+hi
+
+edron
+
+yeshi
+
+port hope
+
+yesconst chainedCommands = [
+      `key --window ${targetWindowId} ${key}`,
+      `mousemove --clearmodifiers --sync ${targetX} ${targetY}`,
+      `click --window ${targetWindowId} --clearmodifiers 1`,
+      `keyup --delay 0 --clearmodifiers --window ${targetWindowId} ctrl alt shift`,
+      `mousemove --clearmodifiers --sync ${originalLocation.x} ${originalLocation.y}`,
+    ];
+
+    for (const command of chainedCommands) {
+      await commandExecutor.addCommand(command);
+    }
+  } catch (error) {
+    console.error('Error in useItemOnCoordinates:', error);
+  }
 }
 
 export default useItemOnCoordinates;

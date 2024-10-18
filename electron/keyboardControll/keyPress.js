@@ -1,32 +1,26 @@
-import { exec } from 'child_process';
-import { workerData } from 'worker_threads';
+import commandExecutor from '../utils/commandExecutor.js';
 
-const xdotool = workerData.xdotoolPath;
-
-export const keyPress = (windowId, keys, delay = null) => {
-  const extraDelay = delay / 1000;
-  const delayCommand = `sleep ${extraDelay} && `;
+commandExecutor;
+export const keyPress = async (windowId, keys, delay = null) => {
+  const extraDelay = delay ? delay / 1000 : 0;
   const keySequence = keys.join(' ');
-  const keyCommand = `"${xdotool}" key --delay 0 --window ${windowId} ${keySequence}`;
-  let command;
+  const command = `key --delay 50  --window ${windowId} ${keySequence}`;
+
   if (delay) {
-    command = delayCommand + keyCommand;
-  } else {
-    command = keyCommand;
+    await new Promise((resolve) => setTimeout(resolve, extraDelay * 1000));
   }
-  exec(command);
+
+  await commandExecutor.addCommand(command);
 };
 
-export const keyPressManaSync = (windowId, keys, delay = null, pressNumber = 1) => {
-  const extraDelay = delay / 1000;
-  const delayCommand = `sleep ${extraDelay} && `;
+export const keyPressManaSync = async (windowId, keys, delay = null, pressNumber = 1) => {
+  const extraDelay = delay ? delay / 1000 : 0;
   const keySequence = keys.join(' ');
-  const keyCommand = `"${xdotool}" key --delay 0 --window ${windowId} --repeat ${pressNumber} ${keySequence}`;
-  let command;
+  const command = `key --window ${windowId} --repeat ${pressNumber} ${keySequence}`;
+
   if (delay) {
-    command = delayCommand + keyCommand;
-  } else {
-    command = keyCommand;
+    await new Promise((resolve) => setTimeout(resolve, extraDelay * 1000));
   }
-  exec(command);
+
+  await commandExecutor.addCommand(command);
 };

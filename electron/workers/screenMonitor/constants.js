@@ -24,6 +24,13 @@ export const PARTY_MEMBER_STATUS = {
     ],
     direction: 'horizontal',
   },
+  activeHover: {
+    sequence: [
+      [247, 247, 247],
+      [247, 247, 247],
+    ],
+    direction: 'horizontal',
+  },
   inactive: {
     sequence: [
       [128, 128, 128],
