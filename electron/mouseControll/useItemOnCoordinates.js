@@ -8,51 +8,8 @@ async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
       console.error('Failed to get mouse location.');
       return;
     }
-w 
-hi
 
-roshamuul
-
-yes
-
-hi
-
-thais
-
-yes
-   
-
-hi
-
-svargrond
-
-yes
-
-hi
-
-carlin
-
-yes
-
-hi
-
-hi
-
-ankrahmun
-
-ab'dendriel
-
-yes
-
-hi
-
-edron
-
-yeshi
-
-port hope
-
-yesconst chainedCommands = [
+    const chainedCommands = [
       `key --window ${targetWindowId} ${key}`,
       `mousemove --clearmodifiers --sync ${targetX} ${targetY}`,
       `click --window ${targetWindowId} --clearmodifiers 1`,
