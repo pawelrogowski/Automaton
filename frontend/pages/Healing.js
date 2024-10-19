@@ -114,7 +114,7 @@ export const Healing = () => {
                   />
                 ))}
             </RuleListWrapper>
-            <RuleListWrapper variant="friends">
+            {/* <RuleListWrapper variant="friends">
               {rules
                 .filter((rule) => rule.id.includes('healFriend'))
                 .map((rule, index) => (
@@ -125,7 +125,7 @@ export const Healing = () => {
                     className={index % 2 === 0 ? 'list-bg' : ''}
                   />
                 ))}
-            </RuleListWrapper>
+            </RuleListWrapper> */}
           </div>
           <div className="controllers-wrapper">
             <HealFriendControls />

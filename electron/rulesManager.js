@@ -4,7 +4,7 @@ import path from 'path';
 import { showNotification } from './notificationHandler.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
-import debounce from 'lodash/debounce.js';
+import throttle from 'lodash/throttle.js';
 
 const userDataPath = app.getPath('userData');
 const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
@@ -43,14 +43,6 @@ export const loadRulesFromFile = async (callback) => {
       const content = await fs.readFile(result.filePaths[0], 'utf8');
       const loadedState = JSON.parse(content);
 
-      // Handle backward compatibility
-      if (!Array.isArray(loadedState.healing.presets)) {
-        loadedState.healing = {
-          presets: [loadedState.healing],
-          activePresetIndex: 0,
-        };
-      }
-
       setGlobalState('healing/setState', loadedState.healing);
       setGlobalState('global/setState', loadedState.global);
 
@@ -64,19 +56,23 @@ export const loadRulesFromFile = async (callback) => {
   }
 };
 
-export const autoSaveRules = debounce(async () => {
-  try {
-    const state = store.getState();
-    if (Object.keys(state).length > 0) {
-      await fs.writeFile(autoLoadFilePath, JSON.stringify(state, null, 2));
-      console.log('Auto-saved rules successfully to:', autoLoadFilePath);
-    } else {
-      console.log('Skipped auto-save: State is empty');
+const autoSaveRules = throttle(
+  async () => {
+    try {
+      const state = store.getState();
+      if (Object.keys(state).length > 0) {
+        await fs.writeFile(autoLoadFilePath, JSON.stringify(state, null, 2));
+        // console.log('Auto-saved rules successfully to:', autoLoadFilePath);
+      } else {
+        console.log('Skipped auto-save: State is empty');
+      }
+    } catch (error) {
+      console.error('Failed to auto-save rules:', error);
     }
-  } catch (error) {
-    console.error('Failed to auto-save rules:', error);
-  }
-}, 1000);
+  },
+  1000,
+  { leading: false, trailing: true },
+);
 
 export const autoLoadRules = async () => {
   try {
@@ -85,14 +81,6 @@ export const autoLoadRules = async () => {
     const loadedState = JSON.parse(content);
 
     if (Object.keys(loadedState).length > 0) {
-      // Handle backward compatibility
-      if (!Array.isArray(loadedState.healing.presets)) {
-        loadedState.healing = {
-          presets: [loadedState.healing],
-          activePresetIndex: 0,
-        };
-      }
-
       setGlobalState('healing/setState', loadedState.healing);
       setGlobalState('global/setState', loadedState.global);
 
@@ -109,7 +97,26 @@ export const autoLoadRules = async () => {
   }
 };
 
-// Subscribe to store changes
+let previousHealingState = null;
+let previousGlobalState = null;
+
+const isObjectChanged = (newObj, prevObj) => {
+  if (prevObj === null) return true;
+  for (let key in newObj) {
+    if (newObj[key] !== prevObj[key]) return true;
+  }
+  return false;
+};
+
 store.subscribe(() => {
-  autoSaveRules();
+  const { healing, global } = store.getState();
+
+  const healingChanged = isObjectChanged(healing, previousHealingState);
+  const globalChanged = isObjectChanged(global, previousGlobalState);
+
+  if (healingChanged || globalChanged) {
+    autoSaveRules();
+    previousHealingState = healingChanged ? { ...healing } : previousHealingState;
+    previousGlobalState = globalChanged ? { ...global } : previousGlobalState;
+  }
 });

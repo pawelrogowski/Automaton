@@ -41,5 +41,3 @@ export class CooldownManager {
     return cooldown.active;
   }
 }
-
-export default CooldownManager;

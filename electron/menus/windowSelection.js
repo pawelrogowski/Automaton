@@ -1,11 +1,8 @@
-import { dialog } from 'electron';
-import { exec, fork } from 'child_process';
+import { execSync } from 'child_process';
 import { getMainWindow } from '../createMainWindow.js';
-import store from '../store.js';
-import { setWindowTitle, setWindowId } from '../../frontend/redux/slices/globalSlice.js';
 import setGlobalState from '../setGlobalState.js';
 import { resetWorkers } from '../main.js';
-import getWindowGeometry from '../screenMonitor/windowUtils/getWindowGeometry.js';
+
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
@@ -22,20 +19,9 @@ if (app.isPackaged) {
 }
 let selectedWindowId = null;
 
-const getGeometry = (id) =>
-  new Promise((resolve, reject) => {
-    exec(`${xdotool} getwindowgeometry ${id}`, (error, stdout) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve(stdout.trim());
-      }
-    });
-  });
-
 const getWindowName = (id) =>
   new Promise((resolve, reject) => {
-    exec(`${xdotool} getwindowname ${id}`, (error, stdout) => {
+    execSync(`${xdotool} getwindowname ${id}`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {
@@ -46,19 +32,12 @@ const getWindowName = (id) =>
 
 export const selectWindow = async () => {
   resetWorkers();
-  exec(`${xdotool} selectwindow`, async (error, stdout) => {
+  execSync(`${xdotool} selectwindow`, async (error, stdout) => {
     if (error) {
-      console.error(`exec error: ${error}`);
+      console.error(`execSync error: ${error}`);
       return;
     }
     const windowId = stdout.trim();
-    const geometry = await getGeometry(windowId);
-    if (geometry.includes('1x1')) {
-      console.error('Error: Please select a valid tibia window.z');
-      getMainWindow().setTitle('Automaton - No Window Selected');
-      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
-      return;
-    }
     const windowTitle = await getWindowName(windowId);
     if (!windowTitle.includes('Tibia')) {
       console.error('Error: Please select a valid tibia window.');
@@ -74,7 +53,7 @@ export const selectWindow = async () => {
 
 const getActiveWindowId = () =>
   new Promise((resolve, reject) => {
-    exec(`${xdotool} getwindowfocus`, (error, stdout) => {
+    execSync(`${xdotool} getwindowfocus`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {
@@ -86,27 +65,13 @@ const getActiveWindowId = () =>
 export const selectActiveWindow = async () => {
   try {
     const windowId = await getActiveWindowId();
-    const geometry = await getGeometry(windowId);
-    if (geometry.includes('1x1')) {
-      console.error('Error: Please select a valid tibia window.');
-      getMainWindow().setTitle('Automaton - No Window Selected');
-      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
-      return;
-    }
+
     const windowTitle = await getWindowName(windowId);
     if (!windowTitle.includes('Tibia')) {
       console.error('Error: Please select a valid tibia window.');
       getMainWindow().setTitle('Automaton - No Window');
       setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
       return;
-    }
-
-    // Extract position coordinates from geometry string
-    const positionMatch = geometry.match(/Position: (\d+),(\d+) \(screen: \d+\)/);
-    if (positionMatch) {
-      const [x, y] = positionMatch.slice(1).map(Number);
-      // Update windowPos using setGlobalState
-      setGlobalState('global/setWindowPos', { x, y });
     }
 
     getMainWindow().setTitle(`Automaton - ${windowId}`);

@@ -3,23 +3,18 @@ import getMouseLocation from './getMouseLocation.js';
 
 async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
   try {
-    const originalLocation = getMouseLocation();
-    if (!originalLocation) {
-      console.error('Failed to get mouse location.');
-      return;
-    }
-
     const chainedCommands = [
-      `key --window ${targetWindowId} ${key}`,
-      `mousemove --clearmodifiers --sync ${targetX} ${targetY}`,
+      `mousemove --clearmodifiers ${targetX} ${targetY}`,
+      `key --window ${targetWindowId} --clearmodifiers  ${key}`,
       `click --window ${targetWindowId} --clearmodifiers 1`,
-      `keyup --delay 0 --clearmodifiers --window ${targetWindowId} ctrl alt shift`,
-      `mousemove --clearmodifiers --sync ${originalLocation.x} ${originalLocation.y}`,
+      // `mousemove --clearmodifiers restore`,
+      `keyup --clearmodifiers ctrl`,
+      `keyup --clearmodifiers shift`,
+      `keyup --clearmodifiers alt`,
     ];
 
-    for (const command of chainedCommands) {
-      await commandExecutor.addCommand(command);
-    }
+    const combinedCommand = chainedCommands.join(' ');
+    await commandExecutor.addCommand(combinedCommand);
   } catch (error) {
     console.error('Error in useItemOnCoordinates:', error);
   }

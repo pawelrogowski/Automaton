@@ -9,12 +9,7 @@
  */
 function calculatePartyHpPercentage(imageData, colors, startIndex, barWidth) {
   try {
-    // Extract dimensions from the buffer
-    const bufferWidth = imageData.readUInt32LE(0);
-    const bufferHeight = imageData.readUInt32LE(4);
-    const rgbDataStart = 8; // RGB data starts after width and height (8 bytes)
-
-    // Create a Set of color strings for faster lookup
+    const rgbDataStart = 8;
     const colorSet = new Set(colors.map((color) => color.join(',')));
 
     let matchingPixelsCount = 0;
@@ -25,7 +20,6 @@ function calculatePartyHpPercentage(imageData, colors, startIndex, barWidth) {
       const g = imageData[rgbDataStart + i + 1];
       const b = imageData[rgbDataStart + i + 2];
 
-      // Use the Set for faster color matching
       if (colorSet.has(`${r},${g},${b}`)) {
         matchingPixelsCount++;
       }

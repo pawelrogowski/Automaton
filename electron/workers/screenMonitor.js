@@ -1,82 +1,14 @@
-import * as CONSTANTS from '../constants/index.js';
+import regionColorSequences from '../regionColorSequences/index.js';
 import { parentPort } from 'worker_threads';
-import { performance } from 'perf_hooks';
 import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
-import getViewport from '../screenMonitor/screenGrabUtils/getViewport.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import { processRules } from './screenMonitor/ruleProcessor.js';
-import commandExecutor from '../utils/commandExecutor.js';
-
-const COOLDOWN_DURATIONS = {
-  healing: 930,
-  attack: 1925,
-  support: 425,
-};
-
-const PARTY_MEMBER_STATUS = {
-  active: {
-    sequence: [
-      [192, 192, 192],
-      [192, 192, 192],
-    ],
-    direction: 'horizontal',
-  },
-  activeHover: {
-    sequence: [
-      [247, 247, 247],
-      [247, 247, 247],
-    ],
-    direction: 'horizontal',
-  },
-  inactive: {
-    sequence: [
-      [128, 128, 128],
-      [128, 128, 128],
-    ],
-    direction: 'horizontal',
-  },
-};
-
-class CooldownManager {
-  constructor() {
-    this.cooldowns = {
-      healing: { active: false, startTime: 0 },
-      attack: { active: false, startTime: 0 },
-      support: { active: false, startTime: 0 },
-    };
-  }
-
-  updateCooldown(type, isActive) {
-    const now = performance.now();
-    const cooldown = this.cooldowns[type];
-
-    if (isActive && !cooldown.active) {
-      cooldown.active = true;
-      cooldown.startTime = now;
-    } else if (!isActive && cooldown.active) {
-      const elapsedTime = now - cooldown.startTime;
-      if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
-        cooldown.active = false;
-      }
-    }
-
-    return cooldown.active;
-  }
-
-  getCooldownState(type) {
-    const cooldown = this.cooldowns[type];
-    if (cooldown.active) {
-      const elapsedTime = performance.now() - cooldown.startTime;
-      if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
-        cooldown.active = false;
-      }
-    }
-    return cooldown.active;
-  }
-}
+import { PARTY_MEMBER_STATUS } from './screenMonitor/regionColorSequences.js';
+import { CooldownManager } from './screenMonitor/CooldownManager.js';
+import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 
 let state = null;
 let global = null;
@@ -85,25 +17,7 @@ let gameState = null;
 let prevState;
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
-let lastDispatchedCharacterStatuses = {};
 let cooldownBarRegions, statusBarRegions;
-let directGameState;
-let lastDirectGameState;
-
-let screenGrabStartTime,
-  screenGrabEndTime,
-  processingStartTime,
-  processingEndTime,
-  keypressStartTime,
-  keypressEndTime;
-let frameCount = 0;
-let lastFpsUpdate = performance.now();
-let fps = 0;
-let fastestIteration = Infinity;
-let slowestIteration = 0;
-let iterationStartTime;
-
-const cooldownManager = new CooldownManager();
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
@@ -125,47 +39,19 @@ const waitForWindowId = new Promise((resolve) => {
   parentPort.on('message', messageHandler);
 });
 
-function calculatePartyEntryRegions(partyListStart, entryCount) {
-  const regions = [];
-  for (let i = 0; i < entryCount; i++) {
-    regions.push({
-      bar: {
-        x: partyListStart.x + 1,
-        y: partyListStart.y + 6 + i * 26,
-        width: 130,
-        height: 1,
-      },
-      name: {
-        x: partyListStart.x + 1,
-        y: partyListStart.y + i * 26,
-        width: 6,
-        height: 5,
-      },
-      uhCoordinates: {
-        x: partyListStart.x + getRandomNumber(5, 100),
-        y: partyListStart.y + getRandomNumber(24, 30) + i * 26,
-      },
-    });
-  }
-  return regions;
-}
-
-function getRandomNumber(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+const cooldownManager = new CooldownManager();
 
 async function main() {
   while (true) {
-    // Outer loop to allow for full restarts
     try {
       if (!global.windowId) {
         console.log('Waiting for window...');
         await waitForWindowId;
       }
 
-      console.log('Initializing screen monitoring...');
+      console.log('Adjusting screen position...');
       const imageData = await grabScreen(global.windowId);
-      const startRegions = findSequences(imageData, CONSTANTS.regionColorSequences);
+      const startRegions = findSequences(imageData, regionColorSequences.regionColorSequences);
       const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
         startRegions;
 
@@ -206,20 +92,6 @@ async function main() {
 
       async function loop() {
         while (true) {
-          // Inner loop for normal operation
-          iterationStartTime = performance.now();
-          frameCount++;
-
-          if (performance.now() - lastFpsUpdate >= 1000) {
-            fps = Math.round((frameCount * 1000) / (performance.now() - lastFpsUpdate));
-            frameCount = 0;
-            lastFpsUpdate = performance.now();
-          }
-
-          screenGrabStartTime = performance.now();
-
-          const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 4);
-
           const regionsToGrab = [
             hpManaRegion,
             cooldownsRegion,
@@ -228,6 +100,7 @@ async function main() {
             partyListRegion,
           ];
 
+          const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 1);
           partyEntryRegions.forEach((entry) => {
             regionsToGrab.push(entry.bar);
             regionsToGrab.push(entry.name);
@@ -246,16 +119,11 @@ async function main() {
             ...partyEntryImageData
           ] = grabResults;
 
-          screenGrabEndTime = performance.now();
-
-          processingStartTime = performance.now();
-
-          const newHealthPercentage = await calculatePercentages(
+          const newHealthPercentage = calculatePercentages(
             healthBar,
             hpManaRegion,
             hpManaImageData,
-            CONSTANTS.resourceBars.healthBar,
-            hpManaRegion.width,
+            regionColorSequences.resourceBars.healthBar,
           );
 
           if (newHealthPercentage === 0) {
@@ -266,26 +134,27 @@ async function main() {
             manaBar,
             hpManaRegion,
             hpManaImageData,
-            CONSTANTS.resourceBars.manaBar,
-            hpManaRegion.width,
+            regionColorSequences.resourceBars.manaBar,
           );
 
           cooldownBarRegions = findSequences(
             cooldownBarImageData,
-            CONSTANTS.cooldownColorSequences,
+            regionColorSequences.cooldownColorSequences,
           );
 
-          statusBarRegions = findSequences(statusBarImageData, CONSTANTS.statusBarSequences);
+          statusBarRegions = findSequences(
+            statusBarImageData,
+            regionColorSequences.statusBarSequences,
+          );
 
           const characterStatusUpdates = {};
-          for (const [key, _] of Object.entries(CONSTANTS.statusBarSequences)) {
+          for (const [key, _] of Object.entries(regionColorSequences.statusBarSequences)) {
             characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
           }
 
           let battleListEntries = findAllOccurrences(
             battleListImageData,
-            CONSTANTS.battleListSequences.battleEntry,
-            4,
+            regionColorSequences.battleListSequences.battleEntry,
           );
 
           const partyData = [];
@@ -299,7 +168,7 @@ async function main() {
 
             const hpPercentage = calculatePartyHpPercentage(
               partyListImageData,
-              CONSTANTS.resourceBars.partyEntryHpBar,
+              regionColorSequences.resourceBars.partyEntryHpBar,
               barStartIndex * 3,
               130,
             );
@@ -317,7 +186,9 @@ async function main() {
               'first',
             );
 
-            const isActive = Object.keys(statusSequences.active).length > 0;
+            const isActive =
+              Object.keys(statusSequences.active).length > 0 ||
+              Object.keys(statusSequences.activeHover).length > 0;
 
             if (hpPercentage >= 0) {
               partyData.push({
@@ -348,29 +219,18 @@ async function main() {
             partyMembers: partyData,
           };
 
-          // console.log(partyData);
-          processingEndTime = performance.now();
-
           if (global.botEnabled) {
-            keypressStartTime = performance.now();
-
             await processRules(
               healing.presets[healing.activePresetIndex],
               healing,
               directGameState,
               global,
             );
-            keypressEndTime = performance.now();
           }
-
-          const iterationEndTime = performance.now();
-          const iterationDuration = iterationEndTime - iterationStartTime;
-
-          fastestIteration = Math.min(fastestIteration, iterationDuration);
-          slowestIteration = Math.max(slowestIteration, iterationDuration);
 
           if (newHealthPercentage !== lastDispatchedHealthPercentage) {
             parentPort.postMessage({
+              storeUpdate: true,
               type: 'setHealthPercent',
               payload: { hpPercentage: newHealthPercentage },
             });
@@ -378,6 +238,7 @@ async function main() {
           }
           if (newManaPercentage !== lastDispatchedManaPercentage) {
             parentPort.postMessage({
+              storeUpdate: true,
               type: 'setManaPercent',
               payload: { manaPercentage: newManaPercentage },
             });
@@ -391,7 +252,7 @@ async function main() {
       await loop();
     } catch (error) {
       console.log(error);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
 }

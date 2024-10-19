@@ -61,18 +61,6 @@ const keyboardKeys = [
   'x',
   'y',
   'z',
-
-  'return',
-  'tab',
-  'space',
-  'BackSpace',
-  'Escape',
-  'Insert',
-  'Delete',
-  'Home',
-  'End',
-  'PageUp',
-  'PageDown',
 ].map((key) => ({ value: key, label: key }));
 
 export default keyboardKeys;

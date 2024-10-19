@@ -1,10 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
-import { createLogger } from 'redux-logger';
 import globalSlice from './slices/globalSlice.js';
 import healingSlice from './slices/healingSlice.js';
 import gameStateSlice from './slices/gameStateSlice.js';
-
-const logger = createLogger();
 
 const ipcMiddleware = () => (next) => (action) => {
   if (action.origin !== 'backend') {

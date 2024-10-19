@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { resetWorkers } from './main.js';
 import { selectWindow } from './menus/windowSelection.js';
-import { autoSaveRules, loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
+import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 import { toggleNotifications } from '../frontend/redux/slices/globalSlice.js';
 import store from './store.js';
 
@@ -171,7 +171,6 @@ const handleWindowClose = async (event) => {
     });
     if (response === 0) {
       shouldClose = true;
-      await autoSaveRules();
       app.exit(0);
     }
   }
@@ -187,7 +186,6 @@ const closeAppFromTray = async () => {
     cancelId: 1,
   });
   if (response === 0) {
-    await autoSaveRules();
     app.exit(0);
   }
 };
@@ -232,7 +230,6 @@ export const createMainWindow = () => {
 
   mainWindow.on('closed', async () => {
     mainWindow = null;
-    await autoSaveRules();
     app.exit();
   });
 
@@ -247,7 +244,6 @@ export const createMainWindow = () => {
   mainWindow.on('close', handleWindowClose);
 
   app.on('window-all-closed', async () => {
-    await autoSaveRules();
     app.exit();
   });
 };

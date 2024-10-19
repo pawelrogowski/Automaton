@@ -10,11 +10,9 @@
  */
 function calculatePercentages(barPosition, combinedRegion, imageData, colors) {
   try {
-    // Extract dimensions from the buffer
     const barWidth = imageData.readUInt32LE(0);
     const rgbData = imageData.subarray(8);
 
-    // Create a Set of color strings for faster lookup
     const colorSet = new Set(colors.map((color) => color.join(',')));
 
     let matchingPixelsCount = 0;
@@ -29,7 +27,6 @@ function calculatePercentages(barPosition, combinedRegion, imageData, colors) {
       const g = rgbData[i + 1];
       const b = rgbData[i + 2];
 
-      // Use the Set for faster color matching
       if (colorSet.has(`${r},${g},${b}`)) {
         matchingPixelsCount++;
       }

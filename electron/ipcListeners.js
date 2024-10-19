@@ -1,5 +1,8 @@
 import { ipcMain } from 'electron';
 import store from './store.js';
+import { saveRulesToFile, loadRulesFromFile, autoLoadRules } from './rulesManager.js';
+import { registerGlobalShortcuts } from './globalShortcuts.js';
+import { getMainWindow } from './createMainWindow.js';
 
 ipcMain.on('state-change', (_, serializedAction) => {
   try {
@@ -10,4 +13,25 @@ ipcMain.on('state-change', (_, serializedAction) => {
   } catch (error) {
     console.error('Error dispatching action in main process:', error);
   }
+});
+
+ipcMain.on('save-rules', async () => {
+  const mainWindow = getMainWindow();
+  mainWindow.minimize();
+  await saveRulesToFile(() => {
+    mainWindow.restore();
+  });
+});
+
+ipcMain.handle('load-rules', async () => {
+  const mainWindow = getMainWindow();
+  mainWindow.minimize();
+  await loadRulesFromFile(() => {
+    mainWindow.restore();
+  });
+});
+
+ipcMain.on('renderer-ready', () => {
+  autoLoadRules();
+  registerGlobalShortcuts();
 });
