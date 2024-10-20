@@ -1,8 +1,7 @@
 import { globalShortcut } from 'electron';
-import { selectWindow } from './menus/windowSelection.js';
 import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
-import { getMainWindow, toggleTrayVisibility } from './createMainWindow.js';
+import { getMainWindow } from './createMainWindow.js';
 import { resetWorkers } from './main.js';
 import { showNotification } from './notificationHandler.js';
 import debounce from 'lodash/debounce.js';
@@ -19,7 +18,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let windId = '';
-let windTitle = '';
 let isEnabled = false;
 
 store.subscribe(() => {
@@ -58,10 +56,10 @@ const debouncedSelectActiveWindow = debounce(() => {
 const debouncedToggleBotEnabled = debounce(() => {
   setGlobalState('global/toggleBotEnabled');
   if (isEnabled) {
-    showNotification('🟢 Bot Enabled');
+    showNotification('🟢 Enabled');
     playSound('enable.wav');
   } else {
-    showNotification('🔴 Bot Disabled');
+    showNotification('🔴 Disabled');
     playSound('disable.wav');
   }
 }, debounceTime);
@@ -87,7 +85,6 @@ export const registerGlobalShortcuts = () => {
     globalShortcut.register('Alt+E', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+V', debouncedToggleMainWindowVisibility);
 
-    // Loop to register presets from 1 to 5
     for (let i = 0; i < 5; i++) {
       const presetKey = `Alt+${i + 1}`;
       const debouncedSwitchToPreset = debounce(() => switchToPreset(i), debounceTime);

@@ -5,6 +5,9 @@ import styled from 'styled-components';
 import { PresetButton } from '../PresetButton/PresetButton';
 
 const PresetSelectorWrapper = styled.div`
+  position: absolute;
+  left: 47px;
+  top: 1px;
   display: flex;
   justify-content: center;
 `;

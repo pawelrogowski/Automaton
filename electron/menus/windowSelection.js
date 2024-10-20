@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 import { getMainWindow } from '../createMainWindow.js';
 import setGlobalState from '../setGlobalState.js';
 import { resetWorkers } from '../main.js';
@@ -21,7 +21,7 @@ let selectedWindowId = null;
 
 const getWindowName = (id) =>
   new Promise((resolve, reject) => {
-    execSync(`${xdotool} getwindowname ${id}`, (error, stdout) => {
+    exec(`${xdotool} getwindowname ${id}`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {
@@ -32,9 +32,9 @@ const getWindowName = (id) =>
 
 export const selectWindow = async () => {
   resetWorkers();
-  execSync(`${xdotool} selectwindow`, async (error, stdout) => {
+  exec(`${xdotool} selectwindow`, async (error, stdout) => {
     if (error) {
-      console.error(`execSync error: ${error}`);
+      console.error(`exec error: ${error}`);
       return;
     }
     const windowId = stdout.trim();
@@ -53,7 +53,7 @@ export const selectWindow = async () => {
 
 const getActiveWindowId = () =>
   new Promise((resolve, reject) => {
-    execSync(`${xdotool} getwindowfocus`, (error, stdout) => {
+    exec(`${xdotool} getwindowfocus`, (error, stdout) => {
       if (error) {
         reject(error);
       } else {

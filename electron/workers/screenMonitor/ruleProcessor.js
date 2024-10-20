@@ -127,7 +127,7 @@ const scheduleManaSyncExecution = (manaSyncRule, global) => {
     manaSyncScheduled = false;
 
     const manaSyncStartTime = performance.now();
-    keyPressManaSync(global.windowId, [manaSyncRule.key], null, 1);
+    keyPressManaSync(global.windowId, [manaSyncRule.key], null, 4);
     const manaSyncDuration = performance.now() - manaSyncStartTime;
 
     if (OPTIONS.logsEnabled) {
@@ -135,7 +135,7 @@ const scheduleManaSyncExecution = (manaSyncRule, global) => {
         `Executing manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
       );
     }
-  }, 825);
+  }, 800);
 
   if (OPTIONS.logsEnabled) {
     console.log(`Scheduled manaSync execution at ${Date.now() + 850}`);

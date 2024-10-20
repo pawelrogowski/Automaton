@@ -1,5 +1,3 @@
-// trieUtils.js
-
 // TrieNode class definition.
 class TrieNode {
   constructor() {

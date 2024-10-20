@@ -2,6 +2,7 @@ import styled from 'styled-components';
 import tibiaBgDark from '../../assets/tibiaBgDark.webp';
 
 export const StyledDiv = styled.div`
+  position: relative;
   border-top: 2px solid #757676;
   border-left: 2px solid #757676;
   border-bottom: 2px solid #2c2c2c;

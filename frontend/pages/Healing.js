@@ -48,36 +48,17 @@ export const Healing = () => {
         <HighWrapper className="top-bar" title="Automaton Bot">
           <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
         </HighWrapper>
-        <HighWrapper className="settings-wrapper" title="General Settings">
-          <div className="settings-row">
-            <div className="enable-wrapper">
-              <CustomCheckbox
-                checked={botEnabled}
-                onChange={handleBotEnabledToggle}
-                disabled={windowId === null}
-                size={16}
-              />
-              <h2 className="enable-text">On</h2>
-            </div>
-            <div className="refresh-rate-row">
-              <h5>refresh</h5>
-              <ListInput
-                type="number"
-                className="input-percent input-field input-long"
-                id="refreshRate"
-                value={refreshRate}
-                defaultValue="25"
-                onChange={handleRefreshRateChange}
-                placeholder="25"
-                min="0"
-                max="20000"
-              />
-              <h5>ms</h5>
-            </div>
-            <PresetSelector />
+        <HighWrapper title="Healing Presets">
+          <div className="healing-enable-checkbox">
+            <CustomCheckbox
+              checked={botEnabled}
+              onChange={handleBotEnabledToggle}
+              disabled={windowId === null}
+              width={17}
+              height={17}
+            />
           </div>
-        </HighWrapper>
-        <HighWrapper title="Healing Rules">
+          <PresetSelector />
           <div>
             <div className="button-container">
               <button
