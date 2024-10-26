@@ -203,11 +203,8 @@ export const createMainWindow = () => {
     icon: ICON_PATHS.app,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    resizable: false,
-    maximizable: false,
-    fullscreenable: false,
+
     devTools: true,
-    frame: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

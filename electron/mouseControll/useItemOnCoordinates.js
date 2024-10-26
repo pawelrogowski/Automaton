@@ -1,16 +1,15 @@
 import commandExecutor from '../utils/commandExecutor.js';
-import getMouseLocation from './getMouseLocation.js';
 
 async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
   try {
     const chainedCommands = [
-      `mousemove --clearmodifiers ${targetX} ${targetY}`,
+      `mousemove --clearmodifiers --sync ${targetX} ${targetY}`,
       `key --window ${targetWindowId} --clearmodifiers  ${key}`,
       `click --window ${targetWindowId} --clearmodifiers 1`,
-      // `mousemove --clearmodifiers restore`,
-      `keyup --clearmodifiers ctrl`,
-      `keyup --clearmodifiers shift`,
-      `keyup --clearmodifiers alt`,
+      `mousemove --clearmodifiers --sync restore`,
+      `keyup --window ${targetWindowId} --delay 0 ctrl`,
+      `keyup --window ${targetWindowId} --delay 0 shift`,
+      `keyup --window ${targetWindowId} --delay 0 alt`,
     ];
 
     const combinedCommand = chainedCommands.join(' ');
@@ -19,5 +18,6 @@ async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
     console.error('Error in useItemOnCoordinates:', error);
   }
 }
+ss;
 
 export default useItemOnCoordinates;

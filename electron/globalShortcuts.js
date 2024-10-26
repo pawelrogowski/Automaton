@@ -81,6 +81,7 @@ const switchToPreset = debounce((presetIndex) => {
 
 export const registerGlobalShortcuts = () => {
   try {
+    console.log('registering global shortucts');
     globalShortcut.register('Alt+W', debouncedSelectActiveWindow);
     globalShortcut.register('Alt+E', debouncedToggleBotEnabled);
     globalShortcut.register('Alt+V', debouncedToggleMainWindowVisibility);
@@ -90,6 +91,7 @@ export const registerGlobalShortcuts = () => {
       const debouncedSwitchToPreset = debounce(() => switchToPreset(i), debounceTime);
       globalShortcut.register(presetKey, debouncedSwitchToPreset);
     }
+    console.log('registered global shortucts');
   } catch (error) {
     console.error('Failed to register global shortcuts:', error);
   }

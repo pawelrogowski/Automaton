@@ -9,6 +9,9 @@ import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 
+process.env.XDG_SESSION_TYPE = 'x11';
+process.env.ELECTRON_OZONE_PLATFORM_HINT = 'x11';
+process.env.GDK_BACKEND = 'x11';
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
@@ -58,7 +61,7 @@ store.subscribe(() => {
     });
 
     ScreenMonitor.on('error', (error) => {
-      console.error('Oops! Something went wrong with our ScreenMonitor:', error);
+      console.error('resetting screen monitor worker due to an unexpected error...');
       resetWorkers();
     });
 
