@@ -1,6 +1,6 @@
 import { performance as perf } from 'perf_hooks';
 
-const ENABLE_COOLDOWN_LOGGING = true; // Toggle logging functionality
+const ENABLE_COOLDOWN_LOGGING = false;
 
 const COOLDOWN_DURATIONS = {
   healing: 800,
