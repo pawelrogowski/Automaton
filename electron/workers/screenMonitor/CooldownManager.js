@@ -1,3 +1,5 @@
+import { performance as perf } from 'perf_hooks';
+
 const COOLDOWN_DURATIONS = {
   healing: 930,
   attack: 1925,
@@ -14,7 +16,7 @@ export class CooldownManager {
   }
 
   updateCooldown(type, isActive) {
-    const now = performance.now();
+    const now = perf.now();
     const cooldown = this.cooldowns[type];
 
     if (isActive && !cooldown.active) {
@@ -33,7 +35,7 @@ export class CooldownManager {
   getCooldownState(type) {
     const cooldown = this.cooldowns[type];
     if (cooldown.active) {
-      const elapsedTime = performance.now() - cooldown.startTime;
+      const elapsedTime = perf.now() - cooldown.startTime;
       if (elapsedTime >= COOLDOWN_DURATIONS[type]) {
         cooldown.active = false;
       }

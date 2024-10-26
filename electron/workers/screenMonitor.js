@@ -1,4 +1,10 @@
-import regionColorSequences from '../regionColorSequences/index.js';
+import {
+  regionColorSequences,
+  resourceBars,
+  cooldownColorSequences,
+  statusBarSequences,
+  battleListSequences,
+} from '../constants/index.js';
 import { parentPort } from 'worker_threads';
 import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
@@ -6,7 +12,7 @@ import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpP
 import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import { processRules } from './screenMonitor/ruleProcessor.js';
-import { PARTY_MEMBER_STATUS } from './screenMonitor/regionColorSequences.js';
+import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 
@@ -51,7 +57,7 @@ async function main() {
 
       console.log('Adjusting screen position...');
       const imageData = await grabScreen(global.windowId);
-      const startRegions = findSequences(imageData, regionColorSequences.regionColorSequences);
+      const startRegions = findSequences(imageData, regionColorSequences);
       const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
         startRegions;
 
@@ -123,7 +129,7 @@ async function main() {
             healthBar,
             hpManaRegion,
             hpManaImageData,
-            regionColorSequences.resourceBars.healthBar,
+            resourceBars.healthBar,
           );
 
           if (newHealthPercentage === 0) {
@@ -134,27 +140,21 @@ async function main() {
             manaBar,
             hpManaRegion,
             hpManaImageData,
-            regionColorSequences.resourceBars.manaBar,
+            resourceBars.manaBar,
           );
 
-          cooldownBarRegions = findSequences(
-            cooldownBarImageData,
-            regionColorSequences.cooldownColorSequences,
-          );
+          cooldownBarRegions = findSequences(cooldownBarImageData, cooldownColorSequences);
 
-          statusBarRegions = findSequences(
-            statusBarImageData,
-            regionColorSequences.statusBarSequences,
-          );
+          statusBarRegions = findSequences(statusBarImageData, statusBarSequences);
 
           const characterStatusUpdates = {};
-          for (const [key, _] of Object.entries(regionColorSequences.statusBarSequences)) {
+          for (const [key, _] of Object.entries(statusBarSequences)) {
             characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
           }
 
           let battleListEntries = findAllOccurrences(
             battleListImageData,
-            regionColorSequences.battleListSequences.battleEntry,
+            battleListSequences.battleEntry,
           );
 
           const partyData = [];
@@ -168,7 +168,7 @@ async function main() {
 
             const hpPercentage = calculatePartyHpPercentage(
               partyListImageData,
-              regionColorSequences.resourceBars.partyEntryHpBar,
+              resourceBars.partyEntryHpBar,
               barStartIndex * 3,
               130,
             );
@@ -199,7 +199,7 @@ async function main() {
             }
           }
 
-          directGameState = {
+          const directGameState = {
             hpPercentage: newHealthPercentage,
             manaPercentage: newManaPercentage,
             healingCdActive: cooldownManager.updateCooldown(
@@ -245,7 +245,7 @@ async function main() {
             lastDispatchedManaPercentage = newManaPercentage;
           }
 
-          await new Promise((resolve) => setTimeout(resolve, global.refreshRate));
+          await new Promise((resolve) => setTimeout(resolve, 51));
         }
       }
 

@@ -1,4 +1,4 @@
-import { buildTrie, clearTrieNodes } from '../utils/trieUtils.js';
+import { buildTrie, clearTrieNodes } from './trieUtils.js';
 
 function findSequences(imageData, targetSequences, searchArea = null, occurrence = 'first') {
   // Extract dimensions from the buffer

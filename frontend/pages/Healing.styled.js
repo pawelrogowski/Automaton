@@ -12,7 +12,14 @@ const StyledMain = styled.main`
 
   display: flex;
   flex-direction: column;
-
+  .healing-enable-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    top: -1px;
+    left: 1px;
+    position: absolute;
+  }
   .button-container {
     display: flex;
     width: 100%;
@@ -51,25 +58,25 @@ const StyledMain = styled.main`
   .button-page {
     border: none;
     background: none;
-    height: 21px;
+    height: 18px;
     text-align: center;
     display: flex;
     padding: 2px 4px;
     align-items: center;
     color: #757676;
-    border-top: 2px solid #757676;
-    border-left: 2px solid #757676;
-    border-bottom: 2px solid #2c2c2c;
-    border-right: 2px solid #2c2c2c;
+    border-top: 1px solid #757676;
+    border-left: 1px solid #757676;
+    border-bottom: 1px solid #2c2c2c;
+    border-right: 1px solid #2c2c2c;
     color: rgb(175, 175, 175);
     background-image: url(${tibiaBg});
     background-repeat: repeat;
-    font-size: 12px;
+    font-size: 10px;
     &:active {
-      border-top: 2px solid #2c2c2c;
-      border-left: 2px solid #2c2c2c;
-      border-bottom: 2px solid #757676;
-      border-right: 2px solid #757676;
+      border-top: 1px solid #2c2c2c;
+      border-left: 1px solid #2c2c2c;
+      border-bottom: 1px solid #757676;
+      border-right: 1px solid #757676;
     }
 
     &:hover {
@@ -84,11 +91,11 @@ const StyledMain = styled.main`
     }
   }
   .add-button {
-    background: #008d0c4f;
-    border-top: 2px solid #486554;
-    border-left: 2px solid #486554;
-    border-bottom: 2px solid #143518;
-    border-right: 2px solid #143518;
+    background: rgba(0, 255, 0, 0.3);
+    border-top: 1px solid #486554;
+    border-left: 1px solid #486554;
+    border-bottom: 1px solid #143518;
+    border-right: 1px solid #143518;
   }
   .save-button {
     margin-left: auto;
@@ -202,6 +209,9 @@ const StyledMain = styled.main`
     -webkit-app-region: drag;
     display: flex;
     flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    padding: 0 4px;
     gap: 4px;
   }
   .square {

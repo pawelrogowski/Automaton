@@ -5,6 +5,7 @@ const StyledDiv = styled.div`
   gap: 8px;
   align-items: center;
   width: 100%;
+
   > span {
     font-size: 12px;
     line-height: 0.9;
@@ -16,10 +17,11 @@ const StyledDiv = styled.div`
     margin-top: -2px;
   }
   > div {
-    border-top: 2px solid #2c2c2c;
-    border-left: 2px solid #2c2c2c;
-    border-bottom: 2px solid #757676;
-    border-right: 2px solid #757676;
+    border-radius: 22px;
+    border-top: 1px solid #2c2c2c;
+    border-left: 1px solid #2c2c2c;
+    border-bottom: 1px solid #757676;
+    border-right: 1px solid #2c2c2c;
     height: 16px;
     width: 100%;
     position: relative;
@@ -28,8 +30,9 @@ const StyledDiv = styled.div`
     justify-content: center;
     align-items: center;
     background: #1c1c1c4f;
-    filter: drop-shadow(0px -1px 1px #000000);
+    filter: drop-shadow(0px -1px 1px rgba(0, 0, 0, 0.5));
     > div {
+      border-radius: 16px;
       position: absolute;
       top: 50%;
       left: 0;

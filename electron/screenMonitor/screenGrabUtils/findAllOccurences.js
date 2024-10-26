@@ -1,4 +1,4 @@
-import { buildTrie, clearTrieNodes } from '../utils/trieUtils.js';
+import { buildTrie, clearTrieNodes } from './trieUtils.js';
 
 function findAllOccurrences(imageData, targetSequence) {
   try {

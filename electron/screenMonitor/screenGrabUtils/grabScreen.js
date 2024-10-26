@@ -11,12 +11,8 @@ async function grabScreen(windowId, region) {
   try {
     const { X } = await createX11Client();
     const geom = await new Promise((resolve, reject) => {
-      X.GetGeometry(windowId, (err, geom) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(geom);
-        }
+      X.GetGeometry(windowId, (_, geom) => {
+        resolve(geom);
       });
     });
     const captureRegion = region || geom;
