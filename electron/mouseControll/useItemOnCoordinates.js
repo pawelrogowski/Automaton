@@ -18,6 +18,4 @@ async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
     console.error('Error in useItemOnCoordinates:', error);
   }
 }
-ss;
-
 export default useItemOnCoordinates;
