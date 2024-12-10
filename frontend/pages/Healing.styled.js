@@ -8,7 +8,6 @@ const StyledMain = styled.main`
   background-repeat: repeat;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 
   display: flex;
   flex-direction: column;
@@ -172,7 +171,7 @@ const StyledMain = styled.main`
     width: 64px;
     font-size: 11px;
     height: 16px;
-    color: #fafafa;
+    color: #909090;
   }
   .settings-row {
     display: flex;
@@ -206,7 +205,6 @@ const StyledMain = styled.main`
     }
   }
   .top-bar {
-    -webkit-app-region: drag;
     display: flex;
     flex-direction: row;
     justify-content: center;

@@ -45,7 +45,7 @@ const StyledNav = styled.nav`
     }
   }
   .character-name {
-    color: #fafafa;
+    color: #909090;
     font-size: 11px;
     line-height: 20px;
   }

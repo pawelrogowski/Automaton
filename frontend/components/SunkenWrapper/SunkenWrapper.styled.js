@@ -13,7 +13,7 @@ export const StyledDiv = styled.div`
     width: 100%;
     height: 18px;
     font-size: 12px;
-    color: #fafafa;
+    color: #909090;
     display: flex;
     justify-content: center;
     align-items: center;

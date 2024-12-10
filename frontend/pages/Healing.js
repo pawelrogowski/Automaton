@@ -45,9 +45,8 @@ export const Healing = () => {
   return (
     <StyledMain>
       <StyledSection>
-        <HighWrapper className="top-bar" title="Automaton Bot">
-          <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
-        </HighWrapper>
+        <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
+
         <HighWrapper title="Healing Presets">
           <div className="healing-enable-checkbox">
             <CustomCheckbox

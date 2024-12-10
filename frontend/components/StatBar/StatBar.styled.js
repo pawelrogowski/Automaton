@@ -15,6 +15,7 @@ const StyledDiv = styled.div`
     min-width: 42px;
     margin-left: auto;
     margin-top: -2px;
+    text-align: right;
   }
   > div {
     border-radius: 22px;

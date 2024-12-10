@@ -5,9 +5,9 @@ import './index.css';
 
 import { Provider } from 'react-redux';
 
-import { Healing } from './pages/Healing.js';
-
 import store from './redux/store.js';
+import { BrowserRouter as Router } from 'react-router-dom';
+import Layout from './pages/Layout.js';
 
 const { ipcRenderer } = window.electron;
 
@@ -29,7 +29,9 @@ const theme = {
 
 const App = () => (
   <Provider store={store}>
-    <Healing />
+    <Router>
+      <Layout />
+    </Router>
   </Provider>
 );
 

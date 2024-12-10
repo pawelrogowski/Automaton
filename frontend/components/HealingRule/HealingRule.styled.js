@@ -139,7 +139,7 @@ const StyledDiv = styled.div`
   }
   .select-with-arrow::after {
     content: ' ▾';
-    color: #fafafa;
+    color: #909090;
     position: absolute;
     right: 10px; /* Adjust as needed */
     top: 50%;
