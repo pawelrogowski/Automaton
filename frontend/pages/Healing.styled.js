@@ -245,5 +245,10 @@ const StyledMain = styled.main`
     gap: 8px;
     padding: 4px;
   }
+  .healing-rules-box {
+    height: 445px;
+    min-height: 445px;
+    max-height: 445px;
+  }
 `;
 export default StyledMain;

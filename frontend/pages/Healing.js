@@ -47,7 +47,7 @@ export const Healing = () => {
       <StyledSection>
         <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
 
-        <HighWrapper title="Healing Presets">
+        <HighWrapper title="Rules" className="healing-rules-box">
           <div className="healing-enable-checkbox">
             <CustomCheckbox
               checked={botEnabled}
@@ -107,10 +107,10 @@ export const Healing = () => {
                 ))}
             </RuleListWrapper> */}
           </div>
-          <div className="controllers-wrapper">
+          {/* <div className="controllers-wrapper">
             <HealFriendControls />
             <ManaSyncController />
-          </div>
+          </div> */}
         </HighWrapper>
       </StyledSection>
     </StyledMain>

@@ -1,4 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { v4 as uuidv4 } from 'uuid';
 
 const initialPreset = [
   {
@@ -37,7 +38,7 @@ const initialPreset = [
     priority: '0',
     requireManaShield: true,
     requireAttackCooldown: true,
-    useRune: true,
+    useRuw: true,
     delay: '1000',
     category: 'Healing',
     conditions: [
@@ -125,6 +126,7 @@ const validateField = (field, value) => {
       return value;
   }
 };
+
 const healingSlice = createSlice({
   name: 'healing',
   initialState,
@@ -132,7 +134,7 @@ const healingSlice = createSlice({
     addRule: (state) => {
       const newRuleName = `Rule ${state.presets[state.activePresetIndex].length + 1}`;
       const newRule = validateRule({
-        id: Date.now().toString(),
+        id: uuidv4(),
         enabled: false,
         name: newRuleName,
         category: 'Healing',

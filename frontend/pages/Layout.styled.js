@@ -69,6 +69,7 @@ const StyledDiv = styled.div`
   }
   .main-content {
     padding: 5px 0px 5px 0px;
+    padding-bottom: 0px;
   }
 `;
 export default StyledDiv;
