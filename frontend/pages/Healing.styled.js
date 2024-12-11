@@ -19,13 +19,6 @@ const StyledMain = styled.main`
     left: 1px;
     position: absolute;
   }
-  .button-container {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    gap: 8px;
-    padding: 5px;
-  }
   .header-wrapper {
     display: flex;
     flex-direction: column;
@@ -54,54 +47,7 @@ const StyledMain = styled.main`
     font-size: 11px;
     color: rgb(175, 175, 175);
   }
-  .button-page {
-    border: none;
-    background: none;
-    height: 18px;
-    text-align: center;
-    display: flex;
-    padding: 2px 4px;
-    align-items: center;
-    color: #757676;
-    border-top: 1px solid #757676;
-    border-left: 1px solid #757676;
-    border-bottom: 1px solid #2c2c2c;
-    border-right: 1px solid #2c2c2c;
-    color: rgb(175, 175, 175);
-    background-image: url(${tibiaBg});
-    background-repeat: repeat;
-    font-size: 10px;
-    &:active {
-      border-top: 1px solid #2c2c2c;
-      border-left: 1px solid #2c2c2c;
-      border-bottom: 1px solid #757676;
-      border-right: 1px solid #757676;
-    }
 
-    &:hover {
-      cursor: pointer;
-      > svg {
-        stroke: #0066ff;
-      }
-    }
-    > svg {
-      stroke: #fafafa;
-      transition: stroke 200ms;
-    }
-  }
-  .add-button {
-    background: rgba(0, 255, 0, 0.3);
-    border-top: 1px solid #486554;
-    border-left: 1px solid #486554;
-    border-bottom: 1px solid #143518;
-    border-right: 1px solid #143518;
-  }
-  .save-button {
-    margin-left: auto;
-  }
-  .save-button,
-  .load-button {
-  }
   .heading-wrapper {
     display: flex;
     gap: 20px;
@@ -240,11 +186,7 @@ const StyledMain = styled.main`
       }
     }
   }
-  .controllers-wrapper {
-    display: flex;
-    gap: 8px;
-    padding: 4px;
-  }
+
   .healing-rules-box {
     height: 445px;
     min-height: 445px;

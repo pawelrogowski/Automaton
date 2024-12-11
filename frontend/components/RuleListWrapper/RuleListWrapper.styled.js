@@ -71,9 +71,9 @@ export const StyledDiv = styled.div`
   }
 
   .rules {
-    height: 397px;
-    min-height: 397px;
-    max-height: 397px;
+    height: 425px;
+    min-height: 425px;
+    max-height: 425px;
     overflow-y: scroll;
   }
 `;

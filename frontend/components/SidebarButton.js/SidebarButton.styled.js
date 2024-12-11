@@ -1,37 +1,39 @@
-import { NavLink } from 'react-router-dom';
 import styled from 'styled-components';
+import tibiaBG from '../../assets/tibiaBg.webp';
+import tibiaBGDark from '../../assets/tibiaBgDark.webp';
 
-export const StyledLink = styled(NavLink)`
+export const StyledButton = styled.button`
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 0px 5px;
+  height: 22px;
   text-decoration: none;
-  color: inherit;
+  font-size: 10px;
+  color: #fafafa;
   border-top: 1px solid rgba(117, 117, 118, 0.8);
   border-left: 1px solid rgba(117, 117, 118, 0.8);
   border-bottom: 1px solid rgba(44, 44, 44, 0.8);
   border-right: 1px solid rgba(44, 44, 44, 0.8);
+  background: url(${tibiaBG});
+  background-repeat: repeat;
 
   &:active {
     border-top: 1px solid rgba(44, 44, 44, 0.8);
     border-left: 1px solid rgba(44, 44, 44, 0.8);
     border-bottom: 1px solid rgba(117, 117, 118, 0.8);
     border-right: 1px solid rgba(117, 117, 118, 0.8);
+    background: url(${tibiaBGDark});
   }
   &.active {
     border-top: 1px solid rgba(44, 44, 44, 0.8);
     border-left: 1px solid rgba(44, 44, 44, 0.8);
     border-bottom: 1px solid rgba(117, 117, 118, 0.8);
     border-right: 1px solid rgba(117, 117, 118, 0.8);
+    background: url(${tibiaBGDark});
   }
-
   img {
-  }
-
-  > span {
-    text-align: center;
-    color: #fafafa;
-    font-size: 12px;
-    padding: 0 18px;
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
   }
 `;

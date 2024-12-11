@@ -20,7 +20,6 @@ export const Healing = () => {
   const rules = useSelector((state) => state.healing.presets[activePresetIndex]);
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const { windowId, botEnabled, refreshRate } = useSelector((state) => state.global);
-  const { saveRules, loadRules } = window.electron;
 
   const handleAddHealingRule = () => {
     dispatch(addRule());
@@ -48,41 +47,7 @@ export const Healing = () => {
         <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
 
         <HighWrapper title="Rules" className="healing-rules-box">
-          <div className="healing-enable-checkbox">
-            <CustomCheckbox
-              checked={botEnabled}
-              onChange={handleBotEnabledToggle}
-              disabled={windowId === null}
-              width={17}
-              height={17}
-            />
-          </div>
-          <PresetSelector />
           <div>
-            <div className="button-container">
-              <button
-                className="add-button button-page"
-                type="button"
-                onMouseDown={handleAddHealingRule}
-              >
-                ADD NEW RULE
-              </button>
-
-              <button
-                className="save-button button-page"
-                type="button"
-                onMouseDown={handleLoadRules}
-              >
-                LOAD
-              </button>
-              <button
-                className="load-button button-page"
-                type="button"
-                onMouseDown={handleSaveRules}
-              >
-                SAVE
-              </button>
-            </div>
             <RuleListWrapper>
               {rules
                 .filter((rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend')

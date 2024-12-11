@@ -48,7 +48,7 @@ module.exports = {
             options: {
               name: '[name].[ext]',
               outputPath: 'images/',
-              publicPath: 'images/',
+              publicPath: './images/',
             },
           },
         ],
@@ -61,7 +61,7 @@ module.exports = {
             options: {
               name: '[name].[ext]',
               outputPath: 'images/',
-              publicPath: 'images/',
+              publicPath: './images/',
             },
           },
         ],
@@ -74,7 +74,7 @@ module.exports = {
             options: {
               name: '[name].[ext]',
               outputPath: 'images/',
-              publicPath: 'images/',
+              publicPath: './images/',
             },
           },
         ],
@@ -106,7 +106,7 @@ module.exports = {
       new TerserPlugin({
         terserOptions: {
           compress: {
-            drop_console: true,
+            drop_console: false,
           },
           mangle: true,
           output: {

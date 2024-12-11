@@ -44,7 +44,13 @@ const HealingRule = ({ rule, className, variant }) => {
   );
 
   const handleRemoveRule = useCallback(() => {
-    dispatch(removeRule(healing.id));
+    // Display a confirmation alert
+    const confirmDelete = window.confirm('Are you sure you want to delete this rule?');
+
+    if (confirmDelete) {
+      // If the user confirms, dispatch the action to remove the rule
+      dispatch(removeRule(healing.id));
+    }
   }, [dispatch, healing.id]);
 
   const handleUpdateName = useCallback(

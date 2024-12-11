@@ -13,6 +13,7 @@ const CustomCheckbox = ({ checked, onChange, disabled, width = 22, height = 22 }
         onChange={onChange}
         disabled={disabled}
       />
+
       <label htmlFor={uniqueId} className="custom-checkbox-label"></label>
     </TibiaCheckbox>
   );

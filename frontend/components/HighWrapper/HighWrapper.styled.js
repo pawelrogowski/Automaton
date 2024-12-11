@@ -9,6 +9,8 @@ export const StyledDiv = styled.div`
   border-right: 2px solid rgba(44, 44, 44, 0.8);
   display: flex;
   flex-direction: column;
+  padding: 5px;
+  padding-top: 20px;
 
   .blackbox {
     border-left: solid black 1px;
@@ -17,16 +19,19 @@ export const StyledDiv = styled.div`
     border-right: solid black #747474;
   }
   .title {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
-    height: 18px;
-    font-size: 12px;
+    height: 15px;
+    font-size: 10px;
     color: #909090;
     display: flex;
     justify-content: center;
     align-items: center;
     background-image: url(${tibiaBgDark});
     background-repeat: repeat;
-    border-bottom: 1px solid black;
+    border-bottom: 1px solid #292a29;
   }
   .wrapped-content {
     padding: 4px;

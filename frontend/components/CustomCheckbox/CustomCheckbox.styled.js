@@ -1,13 +1,19 @@
 import styled from 'styled-components';
 
 export const TibiaCheckbox = styled.div`
-  position: relative;
-  display: inline-block;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
   overflow: hidden;
   width: ${({ width }) => width}px;
   height: ${({ height }) => height}px;
   min-width: ${({ width }) => width}px;
   min-height: ${({ height }) => height}px;
+
+  span {
+    color: #fafafa;
+    font-size: 12px;
+  }
 
   .custom-checkbox {
     display: none;
@@ -17,7 +23,7 @@ export const TibiaCheckbox = styled.div`
     display: inline-block;
     width: 100%;
     height: 100%;
-    background-color: #363636;
+    background-color: #414141;
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
     border-bottom: 1px solid #79797930;
@@ -38,7 +44,7 @@ export const TibiaCheckbox = styled.div`
   }
 
   .custom-checkbox:checked + .custom-checkbox-label {
-    background-color: #363636;
+    background-color: #414141;
   }
 
   .custom-checkbox:checked + .custom-checkbox-label::after {

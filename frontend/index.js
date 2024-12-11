@@ -6,7 +6,7 @@ import './index.css';
 import { Provider } from 'react-redux';
 
 import store from './redux/store.js';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { HashRouter as Router } from 'react-router-dom';
 import Layout from './pages/Layout.js';
 
 const { ipcRenderer } = window.electron;
@@ -29,7 +29,7 @@ const theme = {
 
 const App = () => (
   <Provider store={store}>
-    <Router>
+    <Router basename="/">
       <Layout />
     </Router>
   </Provider>
