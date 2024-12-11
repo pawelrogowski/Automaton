@@ -5,7 +5,7 @@ import { StyledDiv } from './StatBars.styled.js';
 
 export function StatBars(props) {
   return (
-    <StyledDiv>
+    <StyledDiv tooltip="Current healt and mana levels, if showing ?? please select/refresh tibia window with ctrl+w while tibia is focused">
       <div className="health-bar">
         <Heart size={16} className="hp-icon" />
         <StatBar value={props.hpPercentage} fill={`#d10000`} />

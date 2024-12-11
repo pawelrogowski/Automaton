@@ -27,13 +27,15 @@ const theme = {
   },
 };
 
-const App = () => (
-  <Provider store={store}>
-    <Router basename="/">
-      <Layout />
-    </Router>
-  </Provider>
-);
+const App = () => {
+  return (
+    <Provider store={store}>
+      <Router>
+        <Layout />
+      </Router>
+    </Provider>
+  );
+};
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);

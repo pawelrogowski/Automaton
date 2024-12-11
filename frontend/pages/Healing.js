@@ -13,6 +13,7 @@ import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import HealFriendControls from '../components/HealFriendController/HealFriendController.js';
 import ManaSyncController from '../components/ManaSyncController/ManaSyncController.js';
 import HighWrapper from '../components/HighWrapper/HighWrapper.js';
+import { useLocation } from 'react-router-dom';
 
 export const Healing = () => {
   const dispatch = useDispatch();
@@ -21,65 +22,35 @@ export const Healing = () => {
   const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
   const { windowId, botEnabled, refreshRate } = useSelector((state) => state.global);
 
-  const handleAddHealingRule = () => {
-    dispatch(addRule());
-  };
-
-  const handleBotEnabledToggle = () => {
-    dispatch(setIsBotEnabled(!botEnabled));
-  };
-
-  const handleRefreshRateChange = (event) => {
-    dispatch(setRefreshRate(Math.max(0, event.target.value)));
-  };
-
-  const handleSaveRules = () => {
-    saveRules();
-  };
-
-  const handleLoadRules = async () => {
-    await loadRules();
-  };
+  const location = useLocation();
+  const hash = location.hash;
 
   return (
-    <StyledMain>
-      <StyledSection>
-        <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
+    <>
+      {hash === '#userrules' ? (
+        <StyledMain>
+          <StyledSection>
+            <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
 
-        <HighWrapper title="Rules" className="healing-rules-box">
-          <div>
-            <RuleListWrapper>
-              {rules
-                .filter((rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend')
-                .map((rule, index) => (
-                  <HealingRule
-                    key={rule.id}
-                    rule={rule}
-                    className={index % 2 === 0 ? 'list-bg' : ''}
-                  />
-                ))}
-            </RuleListWrapper>
-            {/* <RuleListWrapper variant="friends">
-              {rules
-                .filter((rule) => rule.id.includes('healFriend'))
-                .map((rule, index) => (
-                  <HealingRule
-                    variant="friends"
-                    key={rule.id}
-                    rule={rule}
-                    className={index % 2 === 0 ? 'list-bg' : ''}
-                  />
-                ))}
-            </RuleListWrapper> */}
-          </div>
-          {/* <div className="controllers-wrapper">
-            <HealFriendControls />
-            <ManaSyncController />
-          </div> */}
-        </HighWrapper>
-      </StyledSection>
-    </StyledMain>
+            <HighWrapper title="Rules" className="healing-rules-box">
+              <div>
+                <RuleListWrapper tooltip="Customize rules for conditional execution">
+                  {rules
+                    .filter((rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend')
+                    .map((rule, index) => (
+                      <HealingRule
+                        key={rule.id}
+                        rule={rule}
+                        className={index % 2 === 0 ? 'list-bg' : ''}
+                      />
+                    ))}
+                </RuleListWrapper>
+              </div>
+            </HighWrapper>
+          </StyledSection>
+        </StyledMain>
+      ) : null}
+    </>
   );
 };
-
 export default Healing;

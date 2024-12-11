@@ -12,20 +12,17 @@ export const StyledLink = styled(NavLink)`
   border-bottom: 1px solid rgba(44, 44, 44, 0.8);
   border-right: 1px solid rgba(44, 44, 44, 0.8);
 
-  &:active {
+  ${({ $isActive }) =>
+    $isActive &&
+    `
     border-top: 1px solid rgba(44, 44, 44, 0.8);
     border-left: 1px solid rgba(44, 44, 44, 0.8);
     border-bottom: 1px solid rgba(117, 117, 118, 0.8);
     border-right: 1px solid rgba(117, 117, 118, 0.8);
-  }
-  &.active {
-    border-top: 1px solid rgba(44, 44, 44, 0.8);
-    border-left: 1px solid rgba(44, 44, 44, 0.8);
-    border-bottom: 1px solid rgba(117, 117, 118, 0.8);
-    border-right: 1px solid rgba(117, 117, 118, 0.8);
-  }
+  `}
 
   img {
+    margin-right: 8px;
   }
 
   > span {

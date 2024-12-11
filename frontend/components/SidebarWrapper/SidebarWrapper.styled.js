@@ -14,6 +14,8 @@ export const StyledAside = styled.aside`
   padding: 5px;
   height: 510px;
   width: 195px;
+  min-width: 195px;
+  max-width: 195px;
   margin-top: 5px;
   overflow-y: scroll;
 `;

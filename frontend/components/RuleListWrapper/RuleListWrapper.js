@@ -4,14 +4,14 @@ import { StyledDiv } from './RuleListWrapper.styled.js';
 import { sortRulesBy } from '../../redux/slices/healingSlice.js';
 import { useDispatch } from 'react-redux';
 
-const RuleListWrapper = ({ children, variant }) => {
+const RuleListWrapper = ({ children, variant, tooltip }) => {
   const dispatch = useDispatch();
 
   const showNameAndCDGroup = variant !== 'friends';
   const showFriendOptions = variant === 'friends';
 
   return (
-    <StyledDiv>
+    <StyledDiv tooltip={tooltip}>
       <div className="header">
         <div
           className="header-item header-item_1"

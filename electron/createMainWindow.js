@@ -195,12 +195,12 @@ const closeAppFromTray = async () => {
  */
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    height: 596,
-    width: 1011,
-    maxWidth: 1011,
-    minWidth: 1011,
-    minHeight: 596,
-    maxHeight: 596,
+    height: 633,
+    width: 1046,
+    maxWidth: 1046,
+    minWidth: 1046,
+    minHeight: 633,
+    maxHeight: 633,
     icon: ICON_PATHS.app,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
