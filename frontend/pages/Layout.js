@@ -1,4 +1,4 @@
-import Misc from './Misc.js';
+import ManaSync from './ManaSync.js';
 import Healing from './Healing.js';
 import StyledDiv from './Layout.styled.js';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
@@ -6,17 +6,21 @@ import React, { useEffect } from 'react';
 import SidebarWrapper from '../components/SidebarWrapper/SidebarWrapper.js';
 import NavButton from '../components/NavButton/NavButton.js';
 import automaton from '../assets/cyberskull.png';
+import healParty from '../assets/Heal_Party.gif';
+import healingImg from '../assets/Light_Healing.gif';
 import hotkey from '../assets/hotkey.png';
 import anatomyBook from '../assets/Anatomy_Book.gif';
+import UMP from '../assets/Ultimate_Mana_Potion.gif';
+import SSA from '../assets/Stone_Skin_Amulet.gif';
 import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
-import SidebarButton from '../components/SidebarButton.js/SidebarButton.js';
 import { addRule } from '../redux/slices/healingSlice.js';
 const { saveRules, loadRules } = window.electron;
 import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
 import HoverInfo from '../components/HoverInfo/HoverInfo.jsx';
+import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
 
 const Layout = () => {
   const dispatch = useDispatch();
@@ -39,22 +43,6 @@ const Layout = () => {
       navigate('/healing#userrules', { replace: true });
     }
   }, [navigate, location]);
-
-  const handleAddHealingRule = () => {
-    dispatch(addRule());
-  };
-
-  const handleBotEnabledToggle = () => {
-    dispatch(setIsBotEnabled(!botEnabled));
-  };
-
-  const handleSaveRules = () => {
-    saveRules();
-  };
-
-  const handleLoadRules = async () => {
-    await loadRules();
-  };
 
   return (
     <StyledDiv>
@@ -94,7 +82,9 @@ const Layout = () => {
                     <button
                       className="add-button"
                       type="button"
-                      onMouseDown={handleAddHealingRule}
+                      onMouseDown={() => {
+                        dispatch(addRule());
+                      }}
                       tooltip="Add a new rule to selected section"
                     >
                       Add New Rule
@@ -103,7 +93,9 @@ const Layout = () => {
                       <button
                         className="save-button"
                         type="button"
-                        onMouseDown={handleLoadRules}
+                        onMouseDown={async () => {
+                          await loadRules();
+                        }}
                         tooltip="Load rules from a file - this replaces existing rules"
                       >
                         LOAD
@@ -111,7 +103,9 @@ const Layout = () => {
                       <button
                         className="load-button"
                         type="button"
-                        onMouseDown={handleSaveRules}
+                        onMouseDown={() => {
+                          saveRules();
+                        }}
                         tooltip="Save rules to a file"
                       >
                         SAVE
@@ -121,39 +115,64 @@ const Layout = () => {
                   <PresetSelector />
                   <div
                     className="checkbox-wrapper"
-                    onClick={handleBotEnabledToggle}
+                    onClick={() => {
+                      dispatch(setIsBotEnabled(!botEnabled));
+                    }}
                     tooltip="Enable/Disable global rule precessing (alt+e)"
                   >
                     <CustomCheckbox
                       checked={botEnabled}
-                      onChange={handleBotEnabledToggle}
+                      onChange={() => {
+                        dispatch(setIsBotEnabled(!botEnabled));
+                      }}
                       disabled={windowId === null}
                       width={18}
                       height={18}
                     />
                     <span>Enable (alt+e)</span>
                   </div>
-                  <NavButton
+                  <SideBarNavButton
                     to="/healing#userrules"
-                    image={automaton}
-                    text={'UserRules'}
+                    img={healingImg}
+                    text={'Auto Heal'}
+                    imageWidth="32px"
                     tooltip="Show user rules"
-                  ></NavButton>
-                  <NavButton
-                    to="/healing#misc"
-                    image={automaton}
-                    text={'Misc'}
-                    tooltip="Show miscelanious settings"
-                  ></NavButton>
+                  ></SideBarNavButton>
+                  <SideBarNavButton
+                    to="/healing#party"
+                    img={healParty}
+                    imageWidth="32px"
+                    text={'Party Heal'}
+                    tooltip="Show party heal rules"
+                  ></SideBarNavButton>
+                  <SideBarNavButton
+                    to="/healing#manasync"
+                    img={UMP}
+                    imageWidth="32px"
+                    text={'Mana-Sync'}
+                    tooltip="Show mana sync rules"
+                    className="UMP-image"
+                  ></SideBarNavButton>
+                  <SideBarNavButton
+                    to="/healing#equip"
+                    img={SSA}
+                    imageWidth="32px"
+                    text={'Auto Equip'}
+                    tooltip="Show auto equip rules"
+                    className="SSA-image"
+                  ></SideBarNavButton>
                 </>
               ) : null}
             </SidebarWrapper>
             <div className="main-content">
-              <Routes>
-                <Route path="/" element={<Healing />} />
-                <Route path="/healing" element={<Healing />} />
-                <Route path="/misc" element={<Misc />} />
-              </Routes>
+              <div className="routes-wrapper">
+                <Routes>
+                  <Route path="/" element={<Healing />} />
+                  <Route path="/healing" element={<Healing />} />
+                  <Route path="/healing#party" element={<ManaSync />} />
+                  <Route path="/healing#manasync" element={<ManaSync />} />
+                </Routes>
+              </div>
               <HoverInfo></HoverInfo>
             </div>
           </div>

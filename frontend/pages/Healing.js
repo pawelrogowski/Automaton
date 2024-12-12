@@ -26,31 +26,49 @@ export const Healing = () => {
   const hash = location.hash;
 
   return (
-    <>
-      {hash === '#userrules' ? (
-        <StyledMain>
-          <StyledSection>
-            <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
-
-            <HighWrapper title="Rules" className="healing-rules-box">
-              <div>
-                <RuleListWrapper tooltip="Customize rules for conditional execution">
-                  {rules
-                    .filter((rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend')
-                    .map((rule, index) => (
-                      <HealingRule
-                        key={rule.id}
-                        rule={rule}
-                        className={index % 2 === 0 ? 'list-bg' : ''}
-                      />
-                    ))}
-                </RuleListWrapper>
-              </div>
-            </HighWrapper>
-          </StyledSection>
-        </StyledMain>
-      ) : null}
-    </>
+    <StyledMain>
+      <StyledSection>
+        <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
+        {hash === '#userrules' ? (
+          <HighWrapper title="Rules" className="healing-rules-box">
+            <div>
+              <RuleListWrapper tooltip="Customize rules for conditional">
+                {rules
+                  .filter((rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend')
+                  .map((rule, index) => (
+                    <HealingRule
+                      key={rule.id}
+                      rule={rule}
+                      className={index % 2 === 0 ? 'list-bg' : ''}
+                    />
+                  ))}
+              </RuleListWrapper>
+            </div>
+          </HighWrapper>
+        ) : hash === '#manasync' ? (
+          <HighWrapper title="Mana-Sync Rules" className="healing-rules-box">
+            <ManaSyncController />
+          </HighWrapper>
+        ) : hash === '#party' ? (
+          <HighWrapper title="Party Heal Rules" className="healing-rules-box">
+            <div>
+              <RuleListWrapper variant="friends" tooltip="Customize rules for conditional">
+                {rules
+                  .filter((rule) => rule.id.includes('healFriend'))
+                  .map((rule, index) => (
+                    <HealingRule
+                      variant="friends"
+                      key={rule.id}
+                      rule={rule}
+                      className={index % 2 === 0 ? 'list-bg' : ''}
+                    />
+                  ))}
+              </RuleListWrapper>
+            </div>
+          </HighWrapper>
+        ) : null}
+      </StyledSection>
+    </StyledMain>
   );
 };
 export default Healing;

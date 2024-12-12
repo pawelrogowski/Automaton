@@ -113,5 +113,17 @@ const StyledDiv = styled.div`
   .save-button {
     width: 50%;
   }
+  .UMP-image {
+    img {
+      margin-left: -3px;
+      margin-top: -4px;
+    }
+  }
+  .SSA-image {
+    img {
+      margin-left: 0px;
+      margin-top: -2px;
+    }
+  }
 `;
 export default StyledDiv;
