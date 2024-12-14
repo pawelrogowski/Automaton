@@ -11,139 +11,129 @@ import {
   updateRuleEnabled,
   updateRuleCategory,
   updateRuleKey,
-  updateRuleHpTrigger,
   updateRuleManaTrigger,
   updateRuleMonsterNum,
   updateRulePriority,
   updateRuleDelay,
+  toggleManaShieldRequired,
+  toggleUseRune,
+  toggleAttackCooldownRequired,
+  updateRuleFriendHpTrigger,
 } from '../../redux/slices/healingSlice.js';
-import StyledDiv from './HealingRule.styled.js';
+import StyledDiv from './PartyHealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
 import ListSelect from '../ListSelect/ListSelect.js';
 
-const HealingRule = ({ rule, className }) => {
+const PartyHealingRule = ({ rule, className }) => {
   const dispatch = useDispatch();
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const currentRule =
+  const healing =
     useSelector((state) =>
       state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
     ) || {};
 
-  const handleStatusConditionChange = (status, value) => {
-    dispatch(updateCondition({ id: currentRule.id, condition: status, value }));
-  };
-
-  const handleRemoveRule = () => {
-    // Display a confirmation alert
+  const handleRemoveRule = useCallback(() => {
     const confirmDelete = window.confirm('Are you sure you want to delete this rule?');
 
     if (confirmDelete) {
-      // If the user confirms, dispatch the action to remove the rule
-      dispatch(removeRule(currentRule.id));
+      dispatch(removeRule(healing.id));
     }
-  };
+  }, [dispatch, healing.id]);
 
-  const handleUpdateName = (event) => {
-    dispatch(updateRuleName({ id: currentRule.id, name: event.target.value }));
-  };
+  const handleUpdateEnabled = useCallback(() => {
+    dispatch(updateRuleEnabled({ id: healing.id, enabled: !healing.enabled }));
+  }, [dispatch, healing.id, healing.enabled]);
 
-  const handleUpdateEnabled = () => {
-    dispatch(updateRuleEnabled({ id: currentRule.id, enabled: !currentRule.enabled }));
-  };
+  const handleUpdateKey = useCallback(
+    (event) => {
+      dispatch(updateRuleKey({ id: healing.id, key: event.target.value }));
+    },
+    [dispatch, healing.id],
+  );
 
-  const handleUpdateCategory = (event) => {
-    dispatch(updateRuleCategory({ id: currentRule.id, category: event.target.value }));
-  };
+  const handleUpdatePriority = useCallback(
+    (event) => {
+      dispatch(updateRulePriority({ id: healing.id, priority: event.target.value }));
+    },
+    [dispatch, healing.id],
+  );
 
-  const handleUpdateKey = (event) => {
-    dispatch(updateRuleKey({ id: currentRule.id, key: event.target.value }));
-  };
+  const handleUpdateDelay = useCallback(
+    (event) => {
+      dispatch(updateRuleDelay({ id: healing.id, delay: event.target.value }));
+    },
+    [dispatch, healing.id],
+  );
 
-  const handleUpdateHpTrigger = (field) => (event) => {
-    const payload = { id: currentRule.id };
-    if (field === 'condition') {
-      payload.condition = event.target.value;
-      payload.percentage = currentRule.hpTriggerPercentage;
-    } else {
-      payload.condition = currentRule.hpTriggerCondition;
-      payload.percentage = event.target.value;
-    }
-    dispatch(updateRuleHpTrigger(payload));
-  };
+  const handleToggleManaShieldRequired = useCallback(() => {
+    dispatch(toggleManaShieldRequired());
+  }, [dispatch]);
 
-  const handleUpdateManaTrigger = (field) => (event) => {
-    const payload = { id: currentRule.id };
-    if (field === 'condition') {
-      payload.condition = event.target.value;
-      payload.percentage = currentRule.manaTriggerPercentage;
-    } else {
-      payload.condition = currentRule.manaTriggerCondition;
-      payload.percentage = event.target.value;
-    }
-    dispatch(updateRuleManaTrigger(payload));
-  };
+  const handleToggleUseRune = useCallback(() => {
+    dispatch(toggleUseRune());
+  }, [dispatch]);
 
-  const handleUpdateMonsterNum = (field) => (event) => {
-    const payload = { id: currentRule.id };
-    if (field === 'condition') {
-      payload.condition = event.target.value;
-      payload.num = currentRule.monsterNum;
-    } else {
-      payload.condition = currentRule.monsterNumCondition;
-      payload.num = event.target.value;
-    }
-    dispatch(updateRuleMonsterNum(payload));
-  };
+  const handleToggleAttackCooldownRequired = useCallback(() => {
+    dispatch(toggleAttackCooldownRequired());
+  }, [dispatch]);
 
-  const handleUpdatePriority = (event) => {
-    dispatch(updateRulePriority({ id: currentRule.id, priority: event.target.value }));
-  };
+  const handleUpdateFriendHpTrigger = useCallback(
+    (event) => {
+      const payload = {
+        id: healing.id,
+        friendHpTriggerPercentage: event.target.value,
+      };
+      dispatch(updateRuleFriendHpTrigger(payload));
+    },
+    [dispatch, healing.id],
+  );
 
-  const handleUpdateDelay = (event) => {
-    dispatch(updateRuleDelay({ id: currentRule.id, delay: event.target.value }));
-  };
+  const handleUpdateManaTrigger = useCallback(
+    (field) => (event) => {
+      const payload = { id: healing.id };
+      if (field === 'condition') {
+        payload.condition = event.target.value;
+        payload.percentage = healing.manaTriggerPercentage;
+      } else {
+        payload.condition = healing.manaTriggerCondition;
+        payload.percentage = event.target.value;
+      }
+      dispatch(updateRuleManaTrigger(payload));
+    },
+    [dispatch, healing.id, healing.manaTriggerCondition, healing.manaTriggerPercentage],
+  );
+
+  const handleUpdateMonsterNum = useCallback(
+    (field) => (event) => {
+      const payload = { id: healing.id };
+      if (field === 'condition') {
+        payload.condition = event.target.value;
+        payload.num = healing.monsterNum;
+      } else {
+        payload.condition = healing.monsterNumCondition;
+        payload.num = event.target.value;
+      }
+      dispatch(updateRuleMonsterNum(payload));
+    },
+    [dispatch, healing.id, healing.monsterNumCondition, healing.monsterNum],
+  );
 
   return (
-    <StyledDiv className={className} $running={currentRule.enabled}>
+    <StyledDiv className={className} $running={healing.enabled}>
       <details>
-        <CharacterStatusConditions
-          ruleId={rule.id}
-          onStatusConditionChange={handleStatusConditionChange}
-        />
         <summary>
           <CustomCheckbox
-            checked={currentRule.enabled}
+            checked={healing.enabled}
             onChange={handleUpdateEnabled}
             width={22}
             height={22}
           />
 
-          <ListInput
-            className="input"
-            id="name"
-            value={currentRule.name}
-            onChange={handleUpdateName}
-            placeholder="Rule Name"
-          />
-          <ListSelect
-            className="input input-category select-with-arrow"
-            id="category"
-            value={currentRule.category}
-            onChange={handleUpdateCategory}
-          >
-            <option value="Healing">Healing</option>
-            <option value="Potion">Potion</option>
-            <option value="Support">Support</option>
-            <option value="Attack">Attack</option>
-            <option value="Equip">Equip</option>
-            <option value="Others">Others</option>
-          </ListSelect>
-
           <ListSelect
             className="input input-hotkey"
             id="key"
-            value={currentRule.key}
+            value={healing.key}
             onChange={handleUpdateKey}
             placeholder="F1"
           >
@@ -153,18 +143,44 @@ const HealingRule = ({ rule, className }) => {
               </option>
             ))}
           </ListSelect>
+
+          <div className="checkbox-group">
+            <div>
+              <CustomCheckbox
+                checked={healing.requireManaShield}
+                onChange={handleToggleManaShieldRequired}
+                width={55}
+                height={22}
+                label="Require Mana Shield"
+              />
+            </div>
+            <div>
+              <CustomCheckbox
+                checked={healing.useRune}
+                onChange={handleToggleUseRune}
+                width={35}
+                height={22}
+                label="Use Rune"
+              />
+            </div>
+            <div>
+              <CustomCheckbox
+                checked={healing.requireAttackCooldown}
+                onChange={handleToggleAttackCooldownRequired}
+                width={85}
+                height={22}
+                label="Require Attack Cooldown"
+              />
+            </div>
+          </div>
+
           <ListSelect
             className="input input-percent-select"
             id="hpTriggerCondition"
-            value={currentRule.hpTriggerCondition}
-            onChange={handleUpdateHpTrigger('condition')}
+            disabled="true"
+            value="≤"
           >
             <option value="<=">{'≤'}</option>
-            <option value="<">{'<'}</option>
-            <option value="=">{'='}</option>
-            <option value=">">{'>'}</option>
-            <option value=">=">{'≥'}</option>
-            <option value="!=">{'≠'}</option>
           </ListSelect>
           <ListInput
             className="input-percent"
@@ -172,15 +188,16 @@ const HealingRule = ({ rule, className }) => {
             min="0"
             max="100"
             step="1"
-            id="hpTriggerPercentage"
-            value={currentRule.hpTriggerPercentage}
-            onChange={handleUpdateHpTrigger('percentage')}
-            placeholder="0"
+            id="friendHpTriggerPercentage"
+            value={healing.friendHpTriggerPercentage}
+            onChange={handleUpdateFriendHpTrigger}
+            placeholder="80"
           />
+
           <ListSelect
             className="input input-percent-select"
             id="manaTriggerCondition"
-            value={currentRule.manaTriggerCondition}
+            value={healing.manaTriggerCondition}
             onChange={handleUpdateManaTrigger('condition')}
           >
             <option value="<=">{'≤'}</option>
@@ -197,14 +214,14 @@ const HealingRule = ({ rule, className }) => {
             step="1"
             className="input input-percent"
             id="manaTriggerPercentage"
-            value={currentRule.manaTriggerPercentage}
+            value={healing.manaTriggerPercentage}
             onChange={handleUpdateManaTrigger('percentage')}
             placeholder="0"
           />
           <ListSelect
             className="input input-monster-num-condition"
             id="monsterNumCondition"
-            value={currentRule.monsterNumCondition}
+            value={healing.monsterNumCondition}
             onChange={handleUpdateMonsterNum('condition')}
           >
             <option value="<">{'<'}</option>
@@ -217,7 +234,7 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input input-monster-num"
             id="monsterNum"
-            value={currentRule.monsterNum}
+            value={healing.monsterNum}
             onChange={handleUpdateMonsterNum('num')}
             min="0"
             max="10"
@@ -227,7 +244,7 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input input-priority"
             id="priority"
-            value={currentRule.priority}
+            value={healing.priority}
             onChange={handleUpdatePriority}
             min="-999"
             max="999"
@@ -237,7 +254,7 @@ const HealingRule = ({ rule, className }) => {
             type="number"
             className="input-delay"
             id="delay"
-            value={currentRule.delay}
+            value={healing.delay}
             onChange={handleUpdateDelay}
             placeholder="5"
             min="0"
@@ -252,20 +269,13 @@ const HealingRule = ({ rule, className }) => {
           >
             ×
           </button>
-          <button
-            type="button"
-            className="rule-button button-expand"
-            style={{ pointerEvents: 'none' }}
-          >
-            ▾
-          </button>
         </summary>
       </details>
     </StyledDiv>
   );
 };
 
-HealingRule.propTypes = {
+PartyHealingRule.propTypes = {
   rule: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string,
@@ -275,9 +285,10 @@ HealingRule.propTypes = {
     requireManaShield: PropTypes.bool,
     useRune: PropTypes.bool,
     requireAttackCooldown: PropTypes.bool,
+    friendHpTriggerPercentage: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   }).isRequired,
   className: PropTypes.string,
   variant: PropTypes.string,
 };
 
-export default HealingRule;
+export default PartyHealingRule;

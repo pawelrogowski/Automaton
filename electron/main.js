@@ -61,7 +61,7 @@ store.subscribe(() => {
     });
 
     ScreenMonitor.on('error', (error) => {
-      console.error('resetting screen monitor worker due to an unexpected error...');
+      console.error('resetting screen monitor worker due to an unexpected error...', error);
       resetWorkers();
     });
 

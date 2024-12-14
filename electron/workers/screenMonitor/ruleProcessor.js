@@ -115,28 +115,31 @@ const getHighestPriorityRulesByCategory = (rules) => {
   return Array.from(categoryMap.values());
 };
 
-const scheduleManaSyncExecution = (manaSyncRule, global) => {
+const scheduleManaSyncExecution = (manaSyncRules, global) => {
   if (manaSyncTimeoutId) {
     clearTimeout(manaSyncTimeoutId);
   }
 
   manaSyncTimeoutId = setTimeout(async () => {
     const executionTime = Date.now();
-    lastRuleExecutionTimes[manaSyncRule.id] = executionTime;
-    lastCategoriesExecutionTimes[manaSyncRule.category] = executionTime;
+    manaSyncRules.forEach((rule) => {
+      lastRuleExecutionTimes[rule.id] = executionTime;
+      lastCategoriesExecutionTimes[rule.category] = executionTime;
+
+      const manaSyncStartTime = performance.now();
+      keyPressManaSync(global.windowId, rule.key, 6);
+      const manaSyncDuration = performance.now() - manaSyncStartTime;
+
+      if (OPTIONS.logsEnabled) {
+        console.log(
+          `Executing manaSync command for key: ${rule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
+        );
+      }
+    });
+
     lastManaSyncExecutionTime = executionTime;
     manaSyncTimeoutId = null;
     manaSyncScheduled = false;
-
-    const manaSyncStartTime = performance.now();
-    keyPressManaSync(global.windowId, manaSyncRule.key, 6);
-    const manaSyncDuration = performance.now() - manaSyncStartTime;
-
-    if (OPTIONS.logsEnabled) {
-      console.log(
-        `Executing manaSync command for key: ${manaSyncRule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
-      );
-    }
   }, customManaSyncDelay);
 
   if (OPTIONS.logsEnabled) {
@@ -150,10 +153,10 @@ export const processRules = async (activePreset, rules, directGameState, global)
   const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
 
   if (highestPriorityRules.length > 0) {
-    const manaSyncRule = highestPriorityRules.find((rule) => rule.id === 'manaSync');
+    const manaSyncRules = highestPriorityRules.filter((rule) => rule.id.startsWith('manaSync'));
     const healFriendRule = highestPriorityRules.find((rule) => rule.id === 'healFriend');
     const regularRules = highestPriorityRules.filter(
-      (rule) => rule.id !== 'manaSync' && rule.id !== 'healFriend',
+      (rule) => !rule.id.startsWith('manaSync') && rule.id !== 'healFriend',
     );
 
     let executeManaSyncThisRotation = true;
@@ -205,11 +208,11 @@ export const processRules = async (activePreset, rules, directGameState, global)
     if (directGameState.attackCdActive !== lastAttackCooldownState) {
       if (directGameState.attackCdActive) {
         attackCooldownStartTime = Date.now();
-        if (executeManaSyncThisRotation && manaSyncRule) {
-          keyPressManaSync(global.windowId, manaSyncRule.key, 1);
+        if (executeManaSyncThisRotation && manaSyncRules.length > 0) {
+          manaSyncRules.forEach((rule) => keyPressManaSync(global.windowId, rule.key, 1));
         }
-        if (manaSyncRule && !manaSyncScheduled && executeManaSyncThisRotation) {
-          scheduleManaSyncExecution(manaSyncRule, global);
+        if (manaSyncRules.length > 0 && !manaSyncScheduled && executeManaSyncThisRotation) {
+          scheduleManaSyncExecution(manaSyncRules, global);
         }
       } else {
         if (manaSyncTimeoutId) {

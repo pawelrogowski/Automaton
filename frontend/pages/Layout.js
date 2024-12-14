@@ -15,13 +15,15 @@ import SSA from '../assets/Stone_Skin_Amulet.gif';
 import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
-import { addRule } from '../redux/slices/healingSlice.js';
+import { addRule, addHealFriendRule, addManaSyncRule } from '../redux/slices/healingSlice.js';
 const { saveRules, loadRules } = window.electron;
 import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
 import HoverInfo from '../components/HoverInfo/HoverInfo.jsx';
 import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
-
+import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
+import HealingRule from '../components/HealingRule/HealingRule.js';
+import { v4 as uuidv4 } from 'uuid';
 const Layout = () => {
   const dispatch = useDispatch();
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
@@ -29,6 +31,7 @@ const Layout = () => {
   const { windowId, botEnabled } = useSelector((state) => state.global);
 
   const location = useLocation();
+  const hash = location.hash;
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -44,6 +47,16 @@ const Layout = () => {
     }
   }, [navigate, location]);
 
+  const handleAddRule = () => {
+    const id = uuidv4();
+    hash === '#userrules'
+      ? dispatch(addRule(id))
+      : hash === '#party'
+        ? dispatch(addHealFriendRule(id))
+        : hash === '#manasync'
+          ? dispatch(addManaSyncRule(id))
+          : null;
+  };
   return (
     <StyledDiv>
       <h1 className="title" tooltip="just a title bar">
@@ -82,9 +95,7 @@ const Layout = () => {
                     <button
                       className="add-button"
                       type="button"
-                      onMouseDown={() => {
-                        dispatch(addRule());
-                      }}
+                      onMouseDown={handleAddRule}
                       tooltip="Add a new rule to selected section"
                     >
                       Add New Rule
@@ -167,7 +178,6 @@ const Layout = () => {
             <div className="main-content">
               <div className="routes-wrapper">
                 <Routes>
-                  <Route path="/" element={<Healing />} />
                   <Route path="/healing" element={<Healing />} />
                   <Route path="/healing#party" element={<ManaSync />} />
                   <Route path="/healing#manasync" element={<ManaSync />} />

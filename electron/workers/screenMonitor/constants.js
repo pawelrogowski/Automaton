@@ -6,7 +6,7 @@ export const OPTIONS = {
     Support: 500,
     Attack: 1000,
     Equip: 250,
-    Others: 25,
+    Others: 50,
   },
   cooldownStateMapping: {
     Healing: 'healingCdActive',
