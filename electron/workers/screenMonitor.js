@@ -24,6 +24,10 @@ let prevState;
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
 let cooldownBarRegions, statusBarRegions;
+let minimapChanged = false;
+let lastMinimapImageData = null;
+let lastMinimapChangeTime = null;
+const CHANGE_DURATION = 1000; // used for minimap changes
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
@@ -58,8 +62,15 @@ async function main() {
       console.log('Adjusting screen position...');
       const imageData = await grabScreen(global.windowId);
       const startRegions = findSequences(imageData, regionColorSequences);
-      const { healthBar, manaBar, cooldownBar, statusBar, battleListStart, partyListStart } =
-        startRegions;
+      const {
+        healthBar,
+        manaBar,
+        cooldownBar,
+        statusBar,
+        battleListStart,
+        partyListStart,
+        minimap,
+      } = startRegions;
 
       const battleListRegion = {
         x: battleListStart.x,
@@ -96,6 +107,13 @@ async function main() {
         height: 9,
       };
 
+      const minimapRegion = {
+        x: minimap.x,
+        y: minimap.y,
+        width: 106,
+        height: 1,
+      };
+
       async function loop() {
         while (true) {
           const regionsToGrab = [
@@ -104,6 +122,7 @@ async function main() {
             statusBarRegion,
             battleListRegion,
             partyListRegion,
+            minimapRegion,
           ];
 
           const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 1);
@@ -122,8 +141,26 @@ async function main() {
             statusBarImageData,
             battleListImageData,
             partyListImageData,
+            minimapImageData,
             ...partyEntryImageData
           ] = grabResults;
+
+          // Minimap change detection logic
+          if (lastMinimapImageData) {
+            const minimapIsDifferent = Buffer.compare(minimapImageData, lastMinimapImageData) !== 0;
+
+            if (minimapIsDifferent) {
+              minimapChanged = true;
+              lastMinimapChangeTime = Date.now();
+            } else if (
+              lastMinimapChangeTime &&
+              Date.now() - lastMinimapChangeTime > CHANGE_DURATION
+            ) {
+              minimapChanged = false;
+            }
+          }
+
+          lastMinimapImageData = minimapImageData;
 
           const newHealthPercentage = calculatePercentages(
             healthBar,
@@ -216,9 +253,10 @@ async function main() {
             ),
             characterStatus: characterStatusUpdates,
             monsterNum: battleListEntries.length,
+            isMoving: minimapChanged,
             partyMembers: partyData,
           };
-
+          console.log(minimapChanged);
           if (global.botEnabled) {
             await processRules(
               healing.presets[healing.activePresetIndex],

@@ -21,13 +21,10 @@ import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
 import HoverInfo from '../components/HoverInfo/HoverInfo.jsx';
 import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
-import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
-import HealingRule from '../components/HealingRule/HealingRule.js';
+
 import { v4 as uuidv4 } from 'uuid';
 const Layout = () => {
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const rules = useSelector((state) => state.healing.presets[activePresetIndex]);
   const { windowId, botEnabled } = useSelector((state) => state.global);
 
   const location = useLocation();
@@ -48,13 +45,13 @@ const Layout = () => {
   }, [navigate, location]);
 
   const handleAddRule = () => {
-    const id = uuidv4();
+    const newRuleId = uuidv4();
     hash === '#userrules'
-      ? dispatch(addRule(id))
+      ? dispatch(addRule(`userRule${newRuleId}`))
       : hash === '#party'
-        ? dispatch(addHealFriendRule(id))
+        ? dispatch(addRule(`healFriend${newRuleId}`))
         : hash === '#manasync'
-          ? dispatch(addManaSyncRule(id))
+          ? dispatch(addRule(`manaSync${newRuleId}`))
           : null;
   };
   return (
@@ -183,9 +180,9 @@ const Layout = () => {
                   <Route path="/healing#manasync" element={<ManaSync />} />
                 </Routes>
               </div>
-              <HoverInfo></HoverInfo>
             </div>
-          </div>
+          </div>{' '}
+          <HoverInfo></HoverInfo>
         </div>
       </div>
     </StyledDiv>

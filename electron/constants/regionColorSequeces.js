@@ -22,7 +22,7 @@ const regionColorSequences = {
   },
   minimap: {
     direction: 'horizontal',
-    offset: { x: -72, y: -64 },
+    offset: { x: -119, y: 35 },
     sequence: [
       [113, 113, 113],
       [199, 199, 199],
@@ -93,19 +93,7 @@ const regionColorSequences = {
       [112, 112, 113],
     ],
   },
-  weaponSlot: {
-    direction: 'horizontal',
-    offset: { x: -100, y: -94 },
-    sequence: [
-      [41, 42, 42],
-      [28, 28, 29],
-      [44, 45, 45],
-      [40, 40, 41],
-      [44, 44, 44],
-      [46, 46, 46],
-      [112, 112, 113],
-    ],
-  },
+
   hotkeyBarBottomStart: {
     direction: 'vertical',
     offset: { x: 19, y: 0 },

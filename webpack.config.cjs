@@ -101,14 +101,14 @@ module.exports = {
     }),
   ],
   optimization: {
-    minimize: true,
+    minimize: false,
     minimizer: [
       new TerserPlugin({
         terserOptions: {
           compress: {
             drop_console: false,
           },
-          mangle: true,
+          mangle: false,
           output: {
             comments: false,
           },

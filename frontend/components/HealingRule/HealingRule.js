@@ -4,19 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import {
-  removeRule,
-  updateCondition,
-  updateRuleName,
-  updateRuleEnabled,
-  updateRuleCategory,
-  updateRuleKey,
-  updateRuleHpTrigger,
-  updateRuleManaTrigger,
-  updateRuleMonsterNum,
-  updateRulePriority,
-  updateRuleDelay,
-} from '../../redux/slices/healingSlice.js';
+import { removeRule, updateCondition, updateRule } from '../../redux/slices/healingSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -25,10 +13,9 @@ import ListSelect from '../ListSelect/ListSelect.js';
 const HealingRule = ({ rule, className }) => {
   const dispatch = useDispatch();
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const currentRule =
-    useSelector((state) =>
-      state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
-    ) || {};
+  const currentRule = useSelector((state) =>
+    state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
+  );
 
   const handleStatusConditionChange = (status, value) => {
     dispatch(updateCondition({ id: currentRule.id, condition: status, value }));
@@ -44,65 +31,22 @@ const HealingRule = ({ rule, className }) => {
     }
   };
 
-  const handleUpdateName = (event) => {
-    dispatch(updateRuleName({ id: currentRule.id, name: event.target.value }));
-  };
+  const conditionOptions = [
+    { value: '<=', label: '≤' },
+    { value: '<', label: '<' },
+    { value: '=', label: '=' },
+    { value: '>', label: '>' },
+    { value: '>=', label: '≥' },
+    { value: '!=', label: '≠' },
+  ];
 
-  const handleUpdateEnabled = () => {
-    dispatch(updateRuleEnabled({ id: currentRule.id, enabled: !currentRule.enabled }));
-  };
-
-  const handleUpdateCategory = (event) => {
-    dispatch(updateRuleCategory({ id: currentRule.id, category: event.target.value }));
-  };
-
-  const handleUpdateKey = (event) => {
-    dispatch(updateRuleKey({ id: currentRule.id, key: event.target.value }));
-  };
-
-  const handleUpdateHpTrigger = (field) => (event) => {
-    const payload = { id: currentRule.id };
-    if (field === 'condition') {
-      payload.condition = event.target.value;
-      payload.percentage = currentRule.hpTriggerPercentage;
-    } else {
-      payload.condition = currentRule.hpTriggerCondition;
-      payload.percentage = event.target.value;
-    }
-    dispatch(updateRuleHpTrigger(payload));
-  };
-
-  const handleUpdateManaTrigger = (field) => (event) => {
-    const payload = { id: currentRule.id };
-    if (field === 'condition') {
-      payload.condition = event.target.value;
-      payload.percentage = currentRule.manaTriggerPercentage;
-    } else {
-      payload.condition = currentRule.manaTriggerCondition;
-      payload.percentage = event.target.value;
-    }
-    dispatch(updateRuleManaTrigger(payload));
-  };
-
-  const handleUpdateMonsterNum = (field) => (event) => {
-    const payload = { id: currentRule.id };
-    if (field === 'condition') {
-      payload.condition = event.target.value;
-      payload.num = currentRule.monsterNum;
-    } else {
-      payload.condition = currentRule.monsterNumCondition;
-      payload.num = event.target.value;
-    }
-    dispatch(updateRuleMonsterNum(payload));
-  };
-
-  const handleUpdatePriority = (event) => {
-    dispatch(updateRulePriority({ id: currentRule.id, priority: event.target.value }));
-  };
-
-  const handleUpdateDelay = (event) => {
-    dispatch(updateRuleDelay({ id: currentRule.id, delay: event.target.value }));
-  };
+  const handleFieldChange = useCallback(
+    (field) => (event) => {
+      const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+      dispatch(updateRule({ id: currentRule.id, field, value }));
+    },
+    [dispatch, currentRule.id],
+  );
 
   return (
     <StyledDiv className={className} $running={currentRule.enabled}>
@@ -111,10 +55,16 @@ const HealingRule = ({ rule, className }) => {
           ruleId={rule.id}
           onStatusConditionChange={handleStatusConditionChange}
         />
-        <summary>
+        <summary
+          onKeyDown={(e) => {
+            if (e.code === 'Space' || e.code === 'Enter') {
+              e.preventDefault();
+            }
+          }}
+        >
           <CustomCheckbox
             checked={currentRule.enabled}
-            onChange={handleUpdateEnabled}
+            onChange={handleFieldChange('enabled')}
             width={22}
             height={22}
           />
@@ -123,14 +73,14 @@ const HealingRule = ({ rule, className }) => {
             className="input"
             id="name"
             value={currentRule.name}
-            onChange={handleUpdateName}
+            onChange={handleFieldChange('name')}
             placeholder="Rule Name"
           />
           <ListSelect
             className="input input-category select-with-arrow"
             id="category"
             value={currentRule.category}
-            onChange={handleUpdateCategory}
+            onChange={handleFieldChange('category')}
           >
             <option value="Healing">Healing</option>
             <option value="Potion">Potion</option>
@@ -144,7 +94,7 @@ const HealingRule = ({ rule, className }) => {
             className="input input-hotkey"
             id="key"
             value={currentRule.key}
-            onChange={handleUpdateKey}
+            onChange={handleFieldChange('key')}
             placeholder="F1"
           >
             {keyboardKeys.map((key) => (
@@ -157,14 +107,13 @@ const HealingRule = ({ rule, className }) => {
             className="input input-percent-select"
             id="hpTriggerCondition"
             value={currentRule.hpTriggerCondition}
-            onChange={handleUpdateHpTrigger('condition')}
+            onChange={handleFieldChange('hpTriggerCondition')}
           >
-            <option value="<=">{'≤'}</option>
-            <option value="<">{'<'}</option>
-            <option value="=">{'='}</option>
-            <option value=">">{'>'}</option>
-            <option value=">=">{'≥'}</option>
-            <option value="!=">{'≠'}</option>
+            {conditionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </ListSelect>
           <ListInput
             className="input-percent"
@@ -174,21 +123,20 @@ const HealingRule = ({ rule, className }) => {
             step="1"
             id="hpTriggerPercentage"
             value={currentRule.hpTriggerPercentage}
-            onChange={handleUpdateHpTrigger('percentage')}
+            onChange={handleFieldChange('hpTriggerPercentage')}
             placeholder="0"
           />
           <ListSelect
             className="input input-percent-select"
             id="manaTriggerCondition"
             value={currentRule.manaTriggerCondition}
-            onChange={handleUpdateManaTrigger('condition')}
+            onChange={handleFieldChange('manaTriggerCondition')}
           >
-            <option value="<=">{'≤'}</option>
-            <option value="<">{'<'}</option>
-            <option value="=">{'='}</option>
-            <option value=">">{'>'}</option>
-            <option value=">=">{'≥'}</option>
-            <option value="!=">{'≠'}</option>
+            {conditionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </ListSelect>
           <ListInput
             type="number"
@@ -198,27 +146,27 @@ const HealingRule = ({ rule, className }) => {
             className="input input-percent"
             id="manaTriggerPercentage"
             value={currentRule.manaTriggerPercentage}
-            onChange={handleUpdateManaTrigger('percentage')}
+            onChange={handleFieldChange('manaTriggerPercentage')}
             placeholder="0"
           />
           <ListSelect
             className="input input-monster-num-condition"
             id="monsterNumCondition"
             value={currentRule.monsterNumCondition}
-            onChange={handleUpdateMonsterNum('condition')}
+            onChange={handleFieldChange('monsterNumCondition')}
           >
-            <option value="<">{'<'}</option>
-            <option value="<=">{'≤'}</option>
-            <option value="=">{'='}</option>
-            <option value=">">{'>'}</option>
-            <option value=">=">{'≥'}</option>
+            {conditionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </ListSelect>
           <ListInput
             type="number"
             className="input input-monster-num"
             id="monsterNum"
             value={currentRule.monsterNum}
-            onChange={handleUpdateMonsterNum('num')}
+            onChange={handleFieldChange('monsterNum')}
             min="0"
             max="10"
             placeholder="0"
@@ -228,7 +176,7 @@ const HealingRule = ({ rule, className }) => {
             className="input input-priority"
             id="priority"
             value={currentRule.priority}
-            onChange={handleUpdatePriority}
+            onChange={handleFieldChange('priority')}
             min="-999"
             max="999"
             placeholder="Priority"
@@ -238,9 +186,9 @@ const HealingRule = ({ rule, className }) => {
             className="input-delay"
             id="delay"
             value={currentRule.delay}
-            onChange={handleUpdateDelay}
+            onChange={handleFieldChange('delay')}
             placeholder="5"
-            min="0"
+            min="25"
             step="25"
           />
 
