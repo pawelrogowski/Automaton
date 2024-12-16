@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { setActivePresetIndex, copyPreset } from '../../redux/slices/healingSlice';
 import styled from 'styled-components';
 import { PresetButton } from '../PresetButton/PresetButton';
+import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
 
 const PresetSelectorWrapper = styled.div`
   display: flex;
@@ -17,28 +18,59 @@ const PresetSelector = () => {
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
   const presets = useSelector((state) => state.healing.presets);
 
+  // State for managing the confirmation dialog
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingCopyIndex, setPendingCopyIndex] = useState(null);
+
+  // Function to handle mouse down event
   const handlePresetAction = (index, event) => {
     if (event.shiftKey) {
-      // Shift+left click: copy preset
-      dispatch(copyPreset({ sourceIndex: index, targetIndex: activePresetIndex }));
+      // Show confirmation dialog before copying preset
+      setPendingCopyIndex(index);
+      setShowConfirm(true);
     } else {
-      // Normal click: switch to preset
+      // Normal click: switch to preset immediately
       dispatch(setActivePresetIndex(index));
     }
   };
 
+  // Confirm the copy action
+  const handleConfirm = () => {
+    if (pendingCopyIndex !== null) {
+      dispatch(copyPreset({ sourceIndex: pendingCopyIndex, targetIndex: activePresetIndex }));
+    }
+    setShowConfirm(false);
+    setPendingCopyIndex(null);
+  };
+
+  // Cancel the copy action
+  const handleCancel = () => {
+    setShowConfirm(false);
+    setPendingCopyIndex(null);
+  };
+
   return (
-    <PresetSelectorWrapper>
-      {presets.map((_, index) => (
-        <PresetButton
-          key={index}
-          active={index === activePresetIndex}
-          onMouseDown={(event) => handlePresetAction(index, event)}
-        >
-          {index + 1}
-        </PresetButton>
-      ))}
-    </PresetSelectorWrapper>
+    <>
+      {showConfirm && (
+        <ConfirmDialog
+          title="Copy Preset Confirmation"
+          text={`Are you sure you want to copy preset ${pendingCopyIndex + 1} to preset ${activePresetIndex + 1}?`}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
+      )}
+      <PresetSelectorWrapper>
+        {presets.map((_, index) => (
+          <PresetButton
+            key={index}
+            active={index === activePresetIndex}
+            onMouseDown={(e) => handlePresetAction(index, e)}
+          >
+            {index + 1}
+          </PresetButton>
+        ))}
+      </PresetSelectorWrapper>
+    </>
   );
 };
 
