@@ -32,11 +32,12 @@ const filterRulesNotOnDelay = (rules) =>
 const filterRulesByActiveCooldowns = (rules, directGameState) =>
   rules.filter((rule) => {
     const cooldownStateKey = OPTIONS.cooldownStateMapping[rule.category];
+    return !cooldownStateKey || !directGameState[cooldownStateKey];
+  });
 
-    if (!cooldownStateKey) {
-      return true;
-    }
-    return !directGameState[cooldownStateKey];
+const filterRulesByWalkingState = (rules, directGameState) =>
+  rules.filter((rule) => {
+    return !rule.isWalking || (rule.isWalking && directGameState.isWalking);
   });
 
 const filterRulesByConditions = (rules, directGameState) =>
@@ -65,13 +66,12 @@ const filterRulesByConditions = (rules, directGameState) =>
           parseInt(rule.friendHpTriggerPercentage, 10),
           directGameState.partyMembers[0].hpPercentage,
         );
-      if (!basicConditionsMet) return false;
 
-      if (rule.requireManaShield) {
-        return rule.conditions.some((condition) => directGameState.characterStatus[condition.name]);
-      } else {
-        return true; // If requireManaShield is false, no additional conditions need to be met
-      }
+      return (
+        basicConditionsMet &&
+        (!rule.requireManaShield ||
+          rule.conditions.some((condition) => directGameState.characterStatus[condition.name]))
+      );
     }
 
     return (
@@ -98,8 +98,10 @@ const getAllValidRules = (rules, directGameState) => {
   const enabledRules = filterEnabledRules(rules);
   const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
   const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns);
-  const rulesWithConditionsMet = filterRulesByConditions(rulesNotOnDelay, directGameState);
-  return rulesWithConditionsMet.sort((a, b) => b.priority - a.priority);
+  const rulesMeetingWalkingConditions = filterRulesByWalkingState(rulesNotOnDelay, directGameState);
+  return filterRulesByConditions(rulesMeetingWalkingConditions, directGameState).sort(
+    (a, b) => b.priority - a.priority,
+  );
 };
 
 const getHighestPriorityRulesByCategory = (rules) => {
@@ -120,21 +122,12 @@ const scheduleManaSyncExecution = (manaSyncRules, global) => {
     clearTimeout(manaSyncTimeoutId);
   }
 
-  manaSyncTimeoutId = setTimeout(async () => {
+  manaSyncTimeoutId = setTimeout(() => {
     const executionTime = Date.now();
     manaSyncRules.forEach((rule) => {
       lastRuleExecutionTimes[rule.id] = executionTime;
       lastCategoriesExecutionTimes[rule.category] = executionTime;
-
-      const manaSyncStartTime = performance.now();
       keyPressManaSync(global.windowId, rule.key, 6);
-      const manaSyncDuration = performance.now() - manaSyncStartTime;
-
-      if (OPTIONS.logsEnabled) {
-        console.log(
-          `Executing manaSync command for key: ${rule.key}, current time: ${executionTime}, duration: ${manaSyncDuration.toFixed(2)} ms`,
-        );
-      }
     });
 
     lastManaSyncExecutionTime = executionTime;
@@ -142,9 +135,6 @@ const scheduleManaSyncExecution = (manaSyncRules, global) => {
     manaSyncScheduled = false;
   }, customManaSyncDelay);
 
-  if (OPTIONS.logsEnabled) {
-    console.log(`Scheduled manaSync execution at ${Date.now() + customManaSyncDelay}`);
-  }
   manaSyncScheduled = true;
 };
 
@@ -154,55 +144,44 @@ export const processRules = async (activePreset, rules, directGameState, global)
 
   if (highestPriorityRules.length > 0) {
     const manaSyncRules = highestPriorityRules.filter((rule) => rule.id.startsWith('manaSync'));
-    const healFriendRule = highestPriorityRules.find((rule) => rule.id === 'healFriend');
+    const healFriendRules = highestPriorityRules.filter((rule) => rule.id.startsWith('healFriend'));
     const regularRules = highestPriorityRules.filter(
-      (rule) => !rule.id.startsWith('manaSync') && rule.id !== 'healFriend',
+      (rule) => !rule.id.startsWith('manaSync') && !rule.id.startsWith('healFriend'),
     );
 
     let executeManaSyncThisRotation = true;
 
-    if (healFriendRule) {
-      const healFriendStartTime = performance.now();
-      if (healFriendRule.useRune) {
-        useItemOnCoordinates(
-          global.windowId,
-          directGameState.partyMembers[0].uhCoordinates.x,
-          directGameState.partyMembers[0].uhCoordinates.y,
-          healFriendRule.key,
-        );
-        executeManaSyncThisRotation = false;
-      } else {
-        keyPress(global.windowId, [healFriendRule.key]);
-      }
-      const healFriendDuration = performance.now() - healFriendStartTime;
+    for (const healFriendRule of healFriendRules) {
+      const positionIndex = parseInt(healFriendRule.partyPosition, 10) - 1;
+      const partyMember = directGameState.partyMembers[positionIndex];
 
-      lastRuleExecutionTimes[healFriendRule.id] = Date.now();
-      lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
+      if (partyMember && partyMember.isActive) {
+        if (healFriendRule.useRune) {
+          useItemOnCoordinates(
+            global.windowId,
+            partyMember.uhCoordinates.x,
+            partyMember.uhCoordinates.y,
+            healFriendRule.key,
+          );
+          executeManaSyncThisRotation = false;
+        } else {
+          keyPress(global.windowId, [healFriendRule.key]);
+        }
 
-      if (OPTIONS.logsEnabled) {
-        console.log(
-          `Executing healFriend command for key: ${healFriendRule.key}, useRune: ${healFriendRule.useRune}, current time: ${Date.now()}, duration: ${healFriendDuration.toFixed(2)} ms`,
-        );
+        lastRuleExecutionTimes[healFriendRule.id] = Date.now();
+        lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
       }
     }
 
     if (regularRules.length > 0) {
       const regularRuleKeys = regularRules.map((rule) => rule.key);
-      const keypressStartTime = performance.now();
       keyPress(global.windowId, regularRuleKeys);
-      const keypressDuration = performance.now() - keypressStartTime;
 
       const now = Date.now();
       regularRules.forEach((rule) => {
         lastRuleExecutionTimes[rule.id] = now;
         lastCategoriesExecutionTimes[rule.category] = now;
       });
-
-      if (OPTIONS.logsEnabled) {
-        console.log(
-          `Executing chained command for keys: ${regularRuleKeys.join(', ')}, current time: ${now}, keypress duration: ${keypressDuration.toFixed(2)} ms`,
-        );
-      }
     }
 
     if (directGameState.attackCdActive !== lastAttackCooldownState) {

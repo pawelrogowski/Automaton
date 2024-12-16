@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { StyledDiv } from './RuleListWrapper.styled.js';
 import { sortRulesBy } from '../../redux/slices/healingSlice.js';
 import { useDispatch } from 'react-redux';
-
+import runningMan from '../../assets/running-man.png';
 const RuleListWrapper = ({ children, variant, tooltip }) => {
   const dispatch = useDispatch();
 
@@ -92,6 +92,17 @@ const RuleListWrapper = ({ children, variant, tooltip }) => {
           onMouseDown={() => dispatch(sortRulesBy(['delay', 'priority']))}
         >
           CustomCD
+        </div>
+        <div
+          className="header-item header-item_running"
+          onMouseDown={() => dispatch(sortRulesBy(['isWalking', 'priority']))}
+        >
+          <img
+            src={runningMan}
+            alt="isWalking"
+            tooltip="Require to be in movement during casting(last 1 second)"
+            className=""
+          ></img>
         </div>
         <div className="header-item header-placeholder">-</div>
       </div>

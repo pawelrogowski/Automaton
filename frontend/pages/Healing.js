@@ -7,7 +7,7 @@ import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
 import { StatBars } from '../components/StatBars.js/StatBars.js';
 import HighWrapper from '../components/HighWrapper/HighWrapper.js';
 import { useLocation } from 'react-router-dom';
-// import PartyHealingRule from '../components/PartyHealingRule/PartyHealingRule.js';
+import PartyHealingRule from '../components/PartyHealingRule/PartyHealingRule.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export const Healing = () => {
@@ -22,9 +22,10 @@ export const Healing = () => {
 
   const renderRules = (rules, isParty = false) => {
     return rules.map((rule, index) => {
+      console.log('Rendering rule with ID:', rule.id);
       const className = index % 2 === 0 ? 'list-bg' : '';
 
-      const RuleComponent = HealingRule;
+      const RuleComponent = isParty ? PartyHealingRule : HealingRule;
       return <RuleComponent key={rule.id} rule={rule} className={className} />;
     });
   };
@@ -51,9 +52,9 @@ export const Healing = () => {
           rules.filter((rule) => rule.id.includes('userRule')),
         )}
 
-        {/* {renderSection('#manasync', 'Mana-Sync Rules', manaSyncRules)}
+        {renderSection('#manasync', 'Mana-Sync Rules', manaSyncRules)}
 
-        {renderSection('#party', 'Party Heal Rules', healFriendRules, 'friends')} */}
+        {renderSection('#party', 'Party Heal Rules', healFriendRules, 'friends')}
       </StyledSection>
     </StyledMain>
   );

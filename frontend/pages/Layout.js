@@ -23,6 +23,7 @@ import HoverInfo from '../components/HoverInfo/HoverInfo.jsx';
 import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
 
 import { v4 as uuidv4 } from 'uuid';
+import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog.jsx';
 const Layout = () => {
   const dispatch = useDispatch();
   const { windowId, botEnabled } = useSelector((state) => state.global);
@@ -59,6 +60,7 @@ const Layout = () => {
       <h1 className="title" tooltip="just a title bar">
         Automaton
       </h1>
+
       <div className="helper-wrapper">
         <div className="helper-wrapper2">
           <Header>

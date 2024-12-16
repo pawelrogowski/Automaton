@@ -65,6 +65,19 @@ export const StyledDiv = styled.div`
       width: 85px;
       min-width: 85px;
     }
+    .header-item_running {
+      width: 22px;
+      min-width: 22px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding-top: 2px;
+      > img {
+        padding: 1px 2px;
+        width: 16px;
+        height: 16px;
+      }
+    }
     .header-placeholder {
       width: 100%;
     }

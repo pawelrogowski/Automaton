@@ -253,10 +253,10 @@ async function main() {
             ),
             characterStatus: characterStatusUpdates,
             monsterNum: battleListEntries.length,
-            isMoving: minimapChanged,
+            isWalking: minimapChanged,
             partyMembers: partyData,
           };
-          console.log(minimapChanged);
+
           if (global.botEnabled) {
             await processRules(
               healing.presets[healing.activePresetIndex],
@@ -283,7 +283,7 @@ async function main() {
             lastDispatchedManaPercentage = newManaPercentage;
           }
 
-          await new Promise((resolve) => setTimeout(resolve, 64));
+          await new Promise((resolve) => setTimeout(resolve, 16));
         }
       }
 
