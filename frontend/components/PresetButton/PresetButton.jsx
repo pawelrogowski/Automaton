@@ -9,7 +9,7 @@ export const PresetButton = ({ className, onMouseDown, children, active }) => {
       type="button"
       onMouseDown={onMouseDown}
       active={active}
-      tooltip="Switch rule preset (alt+1-5), (shift+left click) on another preset button to copy other preset into current one"
+      tooltip="Switch rule preset (alt+1-5), (shift+left click) on another preset button to copy"
     >
       {children}
     </StyledButton>
