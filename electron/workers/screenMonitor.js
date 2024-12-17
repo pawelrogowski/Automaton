@@ -283,7 +283,7 @@ async function main() {
             lastDispatchedManaPercentage = newManaPercentage;
           }
 
-          await new Promise((resolve) => setTimeout(resolve, 16));
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
       }
 
