@@ -183,7 +183,7 @@ const Layout = () => {
                 </Routes>
               </div>
             </div>
-          </div>{' '}
+          </div>
           <HoverInfo></HoverInfo>
         </div>
       </div>

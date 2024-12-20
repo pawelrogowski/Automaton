@@ -85,12 +85,12 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './frontend/index.html',
     }),
-    new CompressionPlugin({
-      algorithm: 'gzip',
-      test: /\.js$|\.css$|\.html$/,
-      threshold: 10240,
-      minRatio: 0.8,
-    }),
+    // new CompressionPlugin({
+    //   algorithm: 'gzip',
+    //   test: /\.js$|\.css$|\.html$/,
+    //   threshold: 10240,
+    //   minRatio: 0.8,
+    // }),
     new CopyWebpackPlugin({
       patterns: [
         {
@@ -100,20 +100,20 @@ module.exports = {
       ],
     }),
   ],
-  optimization: {
-    minimize: false,
-    minimizer: [
-      new TerserPlugin({
-        terserOptions: {
-          compress: {
-            drop_console: false,
-          },
-          mangle: false,
-          output: {
-            comments: false,
-          },
-        },
-      }),
-    ],
-  },
+  // optimization: {
+  //   minimize: false,
+  //   minimizer: [
+  //     new TerserPlugin({
+  //       terserOptions: {
+  //         compress: {
+  //           drop_console: false,
+  //         },
+  //         mangle: false,
+  //         output: {
+  //           comments: false,
+  //         },
+  //       },
+  //     }),
+  //   ],
+  // },
 };

@@ -12,7 +12,7 @@ let lastManaSyncExecutionTime = 0;
 let attackCooldownStartTime = 0;
 let manaSyncScheduled = false;
 
-const customManaSyncDelay = 600;
+const customManaSyncDelay = 800;
 
 const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
 
@@ -127,7 +127,7 @@ const scheduleManaSyncExecution = (manaSyncRules, global) => {
     manaSyncRules.forEach((rule) => {
       lastRuleExecutionTimes[rule.id] = executionTime;
       lastCategoriesExecutionTimes[rule.category] = executionTime;
-      keyPressManaSync(global.windowId, rule.key, 6);
+      keyPressManaSync(global.windowId, rule.key, 2);
     });
 
     lastManaSyncExecutionTime = executionTime;
@@ -187,9 +187,7 @@ export const processRules = async (activePreset, rules, directGameState, global)
     if (directGameState.attackCdActive !== lastAttackCooldownState) {
       if (directGameState.attackCdActive) {
         attackCooldownStartTime = Date.now();
-        if (executeManaSyncThisRotation && manaSyncRules.length > 0) {
-          manaSyncRules.forEach((rule) => keyPressManaSync(global.windowId, rule.key, 1));
-        }
+
         if (manaSyncRules.length > 0 && !manaSyncScheduled && executeManaSyncThisRotation) {
           scheduleManaSyncExecution(manaSyncRules, global);
         }

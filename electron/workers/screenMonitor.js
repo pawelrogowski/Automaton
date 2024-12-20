@@ -27,7 +27,7 @@ let cooldownBarRegions, statusBarRegions;
 let minimapChanged = false;
 let lastMinimapImageData = null;
 let lastMinimapChangeTime = null;
-const CHANGE_DURATION = 1000; // used for minimap changes
+const CHANGE_DURATION = 500; // used for minimap changes
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
@@ -145,7 +145,6 @@ async function main() {
             ...partyEntryImageData
           ] = grabResults;
 
-          // Minimap change detection logic
           if (lastMinimapImageData) {
             const minimapIsDifferent = Buffer.compare(minimapImageData, lastMinimapImageData) !== 0;
 
@@ -159,7 +158,6 @@ async function main() {
               minimapChanged = false;
             }
           }
-
           lastMinimapImageData = minimapImageData;
 
           const newHealthPercentage = calculatePercentages(
@@ -172,6 +170,8 @@ async function main() {
           if (newHealthPercentage === 0) {
             return;
           }
+
+          // Mana Calculation Timing
 
           const newManaPercentage = calculatePercentages(
             manaBar,
@@ -210,7 +210,6 @@ async function main() {
               130,
             );
 
-            // Check for active/inactive status
             const nameStartIndex =
               (nameRegion.y - partyListRegion.y) * partyListRegion.width +
               (nameRegion.x - partyListRegion.x);
@@ -236,32 +235,32 @@ async function main() {
             }
           }
 
-          const directGameState = {
-            hpPercentage: newHealthPercentage,
-            manaPercentage: newManaPercentage,
-            healingCdActive: cooldownManager.updateCooldown(
-              'healing',
-              cooldownBarRegions.healing?.x !== undefined,
-            ),
-            supportCdActive: cooldownManager.updateCooldown(
-              'support',
-              cooldownBarRegions.support?.x !== undefined,
-            ),
-            attackCdActive: cooldownManager.updateCooldown(
-              'attack',
-              cooldownBarRegions.attack?.x !== undefined,
-            ),
-            characterStatus: characterStatusUpdates,
-            monsterNum: battleListEntries.length,
-            isWalking: minimapChanged,
-            partyMembers: partyData,
-          };
-
+          // Rule Processing Timing
+          let ruleProcessingTime = 0;
           if (global.botEnabled) {
             await processRules(
               healing.presets[healing.activePresetIndex],
               healing,
-              directGameState,
+              {
+                hpPercentage: newHealthPercentage,
+                manaPercentage: newManaPercentage,
+                healingCdActive: cooldownManager.updateCooldown(
+                  'healing',
+                  cooldownBarRegions.healing?.x !== undefined,
+                ),
+                supportCdActive: cooldownManager.updateCooldown(
+                  'support',
+                  cooldownBarRegions.support?.x !== undefined,
+                ),
+                attackCdActive: cooldownManager.updateCooldown(
+                  'attack',
+                  cooldownBarRegions.attack?.x !== undefined,
+                ),
+                characterStatus: characterStatusUpdates,
+                monsterNum: battleListEntries.length,
+                isWalking: minimapChanged,
+                partyMembers: partyData,
+              },
               global,
             );
           }
@@ -274,6 +273,7 @@ async function main() {
             });
             lastDispatchedHealthPercentage = newHealthPercentage;
           }
+
           if (newManaPercentage !== lastDispatchedManaPercentage) {
             parentPort.postMessage({
               storeUpdate: true,
@@ -283,7 +283,7 @@ async function main() {
             lastDispatchedManaPercentage = newManaPercentage;
           }
 
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          await new Promise((resolve) => setTimeout(resolve, 16));
         }
       }
 
