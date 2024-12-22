@@ -31,8 +31,8 @@
     "extraResources": [
       "frontend/preload.js",
       {
-        "from": "resources/xdotool",
-        "to": "resources/xdotool",
+        "from": "resources",
+        "to": "resources",
         "filter": [
           "**/*"
         ]
@@ -43,7 +43,7 @@
         "AppImage"
       ],
       "asarUnpack": [
-        "resources/xdotool/**/*"
+        "resources/**/**/*"
       ],
       "category": "Utility"
     },

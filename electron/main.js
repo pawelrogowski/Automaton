@@ -17,12 +17,17 @@ const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
 let xdotoolPath;
+let grabImagePath;
 
 if (app.isPackaged) {
   xdotoolPath = path.join(app.getAppPath(), '..', 'resources', 'xdotool', 'xdotool');
+  grabImagePath = path.join(app.getAppPath(), '..', 'resources', 'grabImage', 'grab_image');
 } else {
   xdotoolPath = path.join(cwd, 'resources', 'xdotool', 'xdotool');
+  grabImagePath = path.join(cwd, '..', 'resources', 'grabImage', 'grab_image');
 }
+
+console.log(grabImagePath);
 
 let ScreenMonitor = null;
 let prevWindowId = null;
@@ -51,7 +56,7 @@ store.subscribe(() => {
     const screenMonitorWorkerPath = resolve(cwd, './workers', 'screenMonitor.js');
     ScreenMonitor = new Worker(screenMonitorWorkerPath, {
       name: 'screenMonitor.js',
-      workerData: { xdotoolPath },
+      workerData: { xdotoolPath, grabImagePath },
     });
 
     ScreenMonitor.on('message', (message) => {

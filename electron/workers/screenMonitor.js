@@ -5,7 +5,9 @@ import {
   statusBarSequences,
   battleListSequences,
 } from '../constants/index.js';
-import { parentPort } from 'worker_threads';
+import { parentPort, workerData } from 'worker_threads';
+globalThis.grabImagePath = workerData.grabImagePath;
+
 import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
@@ -52,6 +54,7 @@ const waitForWindowId = new Promise((resolve) => {
 const cooldownManager = new CooldownManager();
 
 async function main() {
+  console.log('starting monitor');
   while (true) {
     try {
       if (!global.windowId) {
@@ -60,7 +63,12 @@ async function main() {
       }
 
       console.log('Adjusting screen position...');
-      const imageData = await grabScreen(global.windowId);
+      const imageData = await grabScreen(global.windowId, {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1170,
+      });
       const startRegions = findSequences(imageData, regionColorSequences);
       const {
         healthBar,
