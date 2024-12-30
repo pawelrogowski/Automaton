@@ -1,9 +1,20 @@
 import { buildTrie, clearTrieNodes } from './trieUtils.js';
 
 function findSequences(imageData, targetSequences, searchArea = null, occurrence = 'first') {
-  // Extract dimensions from the buffer
+  if (imageData.length < 8) {
+    throw new Error(`Buffer too short to contain dimensions. Length: ${imageData.length}`);
+  }
   const bufferWidth = imageData.readUInt32LE(0);
   const bufferHeight = imageData.readUInt32LE(4);
+
+  const expectedLength = bufferWidth * bufferHeight * 3;
+  if (imageData.length < expectedLength) {
+    throw new Error(
+      `Buffer too short for declared dimensions: ${bufferWidth}x${bufferHeight}. ` +
+        `Expected: ${expectedLength}, Received: ${imageData.length}, command target sequences`,
+    );
+  }
+
   const rgbData = imageData.subarray(8);
 
   const length = rgbData.length / 3;

@@ -1,7 +1,7 @@
 {
   "name": "automaton",
   "productName": "Automaton",
-  "version": "1.7.7",
+  "version": "1.8.1",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "start": "webpack --mode production && electron .",
+    "rebuild": "electron-rebuild",
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
     "make": "npm run build && electron-builder ",
@@ -31,8 +32,8 @@
     "extraResources": [
       "frontend/preload.js",
       {
-        "from": "resources/xdotool",
-        "to": "resources/xdotool",
+        "from": "resources",
+        "to": "resources",
         "filter": [
           "**/*"
         ]
@@ -43,7 +44,8 @@
         "AppImage"
       ],
       "asarUnpack": [
-        "resources/xdotool/**/*"
+        "resources/**/**/*",
+        "resources/x11capture/x11capture.node"
       ],
       "category": "Utility"
     },
@@ -70,6 +72,7 @@
     "react-redux": "^9.0.4",
     "react-router-dom": "^6.28.0",
     "redux-logger": "^3.0.6",
+    "shm-typed-array": "^0.1.1",
     "styled-components": "^6.1.6",
     "uuid": "^11.0.3",
     "webpack-node-externals": "^3.0.0",
@@ -91,6 +94,7 @@
     "css-loader": "^6.8.1",
     "electron": "^29.1.5",
     "electron-builder": "^25.1.8",
+    "electron-rebuild": "^3.2.9",
     "eslint": "^8.56.0",
     "file-loader": "^6.2.0",
     "html-webpack-plugin": "^5.6.0",

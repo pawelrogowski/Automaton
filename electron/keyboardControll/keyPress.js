@@ -1,16 +1,7 @@
 import commandExecutor from '../utils/commandExecutor.js';
 
-commandExecutor;
-export const keyPress = async (windowId, keys, delay = null) => {
-  const extraDelay = delay ? delay / 1000 : 0;
-  const keySequence = keys.join(' ');
-  const command = `key --delay 50 --window ${windowId} ${keySequence}`;
-
-  if (delay) {
-    await new Promise((resolve) => setTimeout(resolve, extraDelay * 1000));
-  }
-
-  await commandExecutor.addCommand(command);
+export const keyPress = async (windowId, key) => {
+  await commandExecutor.addCommand(`key --window ${windowId} ${key}`);
 };
 
 export const keyPressManaSync = async (windowId, key, pressNumber = 1) => {

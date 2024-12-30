@@ -1,10 +1,10 @@
 import { performance as perf } from 'perf_hooks';
 
-const ENABLE_COOLDOWN_LOGGING = false;
+const ENABLE_COOLDOWN_LOGGING = true;
 
 const COOLDOWN_DURATIONS = {
-  healing: 800,
-  attack: 1935,
+  healing: 0,
+  attack: 1950,
   support: 425,
 };
 
