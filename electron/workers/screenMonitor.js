@@ -18,10 +18,52 @@ import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { X11Capture } = require(workerData.x11capturePath);
+const maxWidth = 1920;
+const maxHeight = 1170;
+const bufferSize = maxWidth * maxHeight * 3 + 8;
+const buffer = Buffer.allocUnsafe(bufferSize);
+
+const capture = new X11Capture();
+
+/**
+ * Wrapper function to capture image data with a dynamically allocated buffer.
+ *
+ * @param {any} windowId - The X11 window ID.
+ * @param {{x: number, y: number, width: number, height: number}} options - Options object containing capture coordinates and dimensions.
+ * @returns {Buffer} - A buffer containing the image data.
+ */
+function captureImage(windowId, options) {
+  const { x, y, width, height } = options;
+
+  if (
+    !Number.isInteger(x) ||
+    !Number.isInteger(y) ||
+    !Number.isInteger(width) ||
+    !Number.isInteger(height)
+  ) {
+    throw new Error('Invalid coordinate or dimension');
+  }
+
+  // Calculate the buffer size (width * height * 3 + 8 for header).
+  const bufferSize = width * height * 3 + 8;
+  const buffer = Buffer.allocUnsafe(bufferSize);
+
+  try {
+    capture.getImageData(windowId, x, y, width, height, buffer);
+    return buffer;
+  } catch (error) {
+    console.error('Capture error:', error);
+    throw error;
+  }
+}
+
 let state = null;
 let global = null;
 let healing = null;
-let gameState = null;
+
 let prevState;
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
@@ -29,11 +71,14 @@ let cooldownBarRegions, statusBarRegions;
 let minimapChanged = false;
 let lastMinimapImageData = null;
 let lastMinimapChangeTime = null;
-const CHANGE_DURATION = 500; // used for minimap changes
+let numWindowId;
+const CHANGE_DURATION = 128; // used for minimap changes
+const LOOP_INTERVAL = 16; // Define loop interval as a constant
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
-    ({ gameState, global, healing } = state);
+    ({ global, healing } = state);
+    numWindowId = Number(global.windowId);
   }
   prevState = state;
 });
@@ -54,7 +99,6 @@ const waitForWindowId = new Promise((resolve) => {
 const cooldownManager = new CooldownManager();
 
 async function main() {
-  console.log('starting monitor');
   while (true) {
     try {
       if (!global.windowId) {
@@ -63,7 +107,7 @@ async function main() {
       }
 
       console.log('Adjusting screen position...');
-      const imageData = await grabScreen(global.windowId, {
+      const imageData = captureImage(numWindowId, {
         x: 0,
         y: 0,
         width: 1920,
@@ -123,24 +167,27 @@ async function main() {
       };
 
       async function loop() {
+        let lastLoopStartTime = Date.now();
+
         while (true) {
+          const loopStartTime = Date.now();
           const regionsToGrab = [
             hpManaRegion,
             cooldownsRegion,
             statusBarRegion,
             battleListRegion,
-            partyListRegion,
+            // partyListRegion,
             minimapRegion,
           ];
 
-          const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 1);
-          partyEntryRegions.forEach((entry) => {
-            regionsToGrab.push(entry.bar);
-            regionsToGrab.push(entry.name);
-          });
+          // const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 1);
+          // partyEntryRegions.forEach((entry) => {
+          //   regionsToGrab.push(entry.bar);
+          //   regionsToGrab.push(entry.name);
+          // });
 
           const grabResults = await Promise.all(
-            regionsToGrab.map((region) => grabScreen(global.windowId, region)),
+            regionsToGrab.map((region) => captureImage(numWindowId, region)),
           );
 
           const [
@@ -148,9 +195,9 @@ async function main() {
             cooldownBarImageData,
             statusBarImageData,
             battleListImageData,
-            partyListImageData,
+            // partyListImageData,
             minimapImageData,
-            ...partyEntryImageData
+            // ...partyEntryImageData
           ] = grabResults;
 
           if (lastMinimapImageData) {
@@ -202,53 +249,53 @@ async function main() {
             battleListSequences.battleEntry,
           );
 
-          const partyData = [];
-          for (let i = 0; i < partyEntryRegions.length; i++) {
-            const barRegion = partyEntryRegions[i].bar;
-            const nameRegion = partyEntryRegions[i].name;
+          // const partyData = [];
+          // for (let i = 0; i < partyEntryRegions.length; i++) {
+          //   const barRegion = partyEntryRegions[i].bar;
+          //   const nameRegion = partyEntryRegions[i].name;
 
-            const barStartIndex =
-              (barRegion.y - partyListRegion.y) * partyListRegion.width +
-              (barRegion.x - partyListRegion.x);
+          //   const barStartIndex =
+          //     (barRegion.y - partyListRegion.y) * partyListRegion.width +
+          //     (barRegion.x - partyListRegion.x);
 
-            const hpPercentage = calculatePartyHpPercentage(
-              partyListImageData,
-              resourceBars.partyEntryHpBar,
-              barStartIndex * 3,
-              130,
-            );
+          //   const hpPercentage = calculatePartyHpPercentage(
+          //     partyListImageData,
+          //     resourceBars.partyEntryHpBar,
+          //     barStartIndex * 3,
+          //     130,
+          //   );
 
-            const nameStartIndex =
-              (nameRegion.y - partyListRegion.y) * partyListRegion.width +
-              (nameRegion.x - partyListRegion.x);
-            const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
+          //   const nameStartIndex =
+          //     (nameRegion.y - partyListRegion.y) * partyListRegion.width +
+          //     (nameRegion.x - partyListRegion.x);
+          //   const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
 
-            const statusSequences = findSequences(
-              partyListImageData.subarray(nameStartIndex * 3, nameEndIndex * 3),
-              PARTY_MEMBER_STATUS,
-              null,
-              'first',
-            );
+          //   const statusSequences = findSequences(
+          //     partyListImageData.subarray(nameStartIndex * 3, nameEndIndex * 3),
+          //     PARTY_MEMBER_STATUS,
+          //     null,
+          //     'first',
+          //   );
 
-            const isActive =
-              Object.keys(statusSequences.active).length > 0 ||
-              Object.keys(statusSequences.activeHover).length > 0;
+          //   const isActive =
+          //     Object.keys(statusSequences.active).length > 0 ||
+          //     Object.keys(statusSequences.activeHover).length > 0;
 
-            if (hpPercentage >= 0) {
-              partyData.push({
-                hpPercentage,
-                uhCoordinates: partyEntryRegions[i].uhCoordinates,
-                isActive,
-              });
-            }
-          }
+          //   if (hpPercentage >= 0) {
+          //     partyData.push({
+          //       hpPercentage,
+          //       uhCoordinates: partyEntryRegions[i].uhCoordinates,
+          //       isActive,
+          //     });
+          //   }
+          // }
 
           // Rule Processing Timing
           let ruleProcessingTime = 0;
           if (global.botEnabled) {
             await processRules(
               healing.presets[healing.activePresetIndex],
-              healing,
+
               {
                 hpPercentage: newHealthPercentage,
                 manaPercentage: newManaPercentage,
@@ -267,7 +314,7 @@ async function main() {
                 characterStatus: characterStatusUpdates,
                 monsterNum: battleListEntries.length,
                 isWalking: minimapChanged,
-                partyMembers: partyData,
+                // partyMembers: partyData,
               },
               global,
             );
@@ -291,7 +338,18 @@ async function main() {
             lastDispatchedManaPercentage = newManaPercentage;
           }
 
-          await new Promise((resolve) => setTimeout(resolve, 16));
+          // Calculate time spent in this iteration
+          const processingTime = Date.now() - loopStartTime;
+          // console.log(processingTime, 'ms');
+          // Calculate delay needed to maintain consistent interval
+          const delay = Math.max(0, LOOP_INTERVAL - processingTime);
+
+          // Wait for the calculated delay
+          if (delay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+
+          lastLoopStartTime = loopStartTime;
         }
       }
 

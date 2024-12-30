@@ -1,7 +1,7 @@
 export const OPTIONS = {
   globalDelay: 0,
   categoryDelays: {
-    Healing: 200,
+    Healing: 250,
     Potion: 1000,
     Support: 500,
     Attack: 1000,

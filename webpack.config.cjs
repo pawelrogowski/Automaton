@@ -31,6 +31,9 @@ module.exports = {
       {
         test: /\.node$/,
         loader: 'node-loader',
+        options: {
+          name: '[name].[ext]',
+        },
       },
       {
         test: /\.css$/,
@@ -91,14 +94,14 @@ module.exports = {
     //   threshold: 10240,
     //   minRatio: 0.8,
     // }),
-    new CopyWebpackPlugin({
-      patterns: [
-        {
-          from: path.resolve(__dirname, 'resources', 'xdotool'),
-          to: path.resolve(__dirname, 'dist', 'resources', 'xdotool'),
-        },
-      ],
-    }),
+    // new CopyWebpackPlugin({
+    //   patterns: [
+    //     {
+    //       from: path.resolve(__dirname, 'resources', 'xdotool'),
+    //       to: path.resolve(__dirname, 'dist', 'resources', 'xdotool'),
+    //     },
+    //   ],
+    // }),
   ],
   // optimization: {
   //   minimize: false,

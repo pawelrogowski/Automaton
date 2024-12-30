@@ -11,8 +11,25 @@ let lastAttackCooldownState = false;
 let lastManaSyncExecutionTime = 0;
 let attackCooldownStartTime = 0;
 let manaSyncScheduled = false;
+let lastKeypressTime = 0; // Added: Track the last keypress time
 
+const KEYPRESS_COOLDOWN = 50; // Added: 50ms cooldown between keypresses
 const customManaSyncDelay = 800;
+
+// Added: Helper function to check if enough time has passed since last keypress
+const canExecuteKeypress = () => {
+  const now = Date.now();
+  return now - lastKeypressTime >= KEYPRESS_COOLDOWN;
+};
+
+// Added: Wrapper function for keyPress that respects the rate limit
+const executeRateLimitedKeyPress = (windowId, keys) => {
+  if (!canExecuteKeypress()) return false;
+
+  keyPress(windowId, keys);
+  lastKeypressTime = Date.now();
+  return true;
+};
 
 const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
 
@@ -117,20 +134,23 @@ const getHighestPriorityRulesByCategory = (rules) => {
   return Array.from(categoryMap.values());
 };
 
+// Modified: Updated to use rate-limited keypress
 const scheduleManaSyncExecution = (manaSyncRules, global) => {
   if (manaSyncTimeoutId) {
     clearTimeout(manaSyncTimeoutId);
   }
 
   manaSyncTimeoutId = setTimeout(() => {
-    const executionTime = Date.now();
-    manaSyncRules.forEach((rule) => {
-      lastRuleExecutionTimes[rule.id] = executionTime;
-      lastCategoriesExecutionTimes[rule.category] = executionTime;
-      keyPressManaSync(global.windowId, rule.key, 2);
-    });
-
-    lastManaSyncExecutionTime = executionTime;
+    if (canExecuteKeypress()) {
+      const executionTime = Date.now();
+      manaSyncRules.forEach((rule) => {
+        lastRuleExecutionTimes[rule.id] = executionTime;
+        lastCategoriesExecutionTimes[rule.category] = executionTime;
+        keyPressManaSync(global.windowId, rule.key, 2);
+      });
+      lastKeypressTime = executionTime;
+      lastManaSyncExecutionTime = executionTime;
+    }
     manaSyncTimeoutId = null;
     manaSyncScheduled = false;
   }, customManaSyncDelay);
@@ -138,7 +158,7 @@ const scheduleManaSyncExecution = (manaSyncRules, global) => {
   manaSyncScheduled = true;
 };
 
-export const processRules = async (activePreset, rules, directGameState, global) => {
+export const processRules = async (activePreset, directGameState, global) => {
   const validRules = getAllValidRules(activePreset, directGameState);
   const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
 
@@ -157,15 +177,20 @@ export const processRules = async (activePreset, rules, directGameState, global)
 
       if (partyMember && partyMember.isActive) {
         if (healFriendRule.useRune) {
-          useItemOnCoordinates(
-            global.windowId,
-            partyMember.uhCoordinates.x,
-            partyMember.uhCoordinates.y,
-            healFriendRule.key,
-          );
-          executeManaSyncThisRotation = false;
+          if (canExecuteKeypress()) {
+            useItemOnCoordinates(
+              global.windowId,
+              partyMember.uhCoordinates.x,
+              partyMember.uhCoordinates.y,
+              healFriendRule.key,
+            );
+            lastKeypressTime = Date.now();
+            executeManaSyncThisRotation = false;
+          }
         } else {
-          keyPress(global.windowId, [healFriendRule.key]);
+          if (executeRateLimitedKeyPress(global.windowId, [healFriendRule.key])) {
+            executeManaSyncThisRotation = false;
+          }
         }
 
         lastRuleExecutionTimes[healFriendRule.id] = Date.now();
@@ -175,13 +200,13 @@ export const processRules = async (activePreset, rules, directGameState, global)
 
     if (regularRules.length > 0) {
       const regularRuleKeys = regularRules.map((rule) => rule.key);
-      keyPress(global.windowId, regularRuleKeys);
-
-      const now = Date.now();
-      regularRules.forEach((rule) => {
-        lastRuleExecutionTimes[rule.id] = now;
-        lastCategoriesExecutionTimes[rule.category] = now;
-      });
+      if (executeRateLimitedKeyPress(global.windowId, regularRuleKeys)) {
+        const now = Date.now();
+        regularRules.forEach((rule) => {
+          lastRuleExecutionTimes[rule.id] = now;
+          lastCategoriesExecutionTimes[rule.category] = now;
+        });
+      }
     }
 
     if (directGameState.attackCdActive !== lastAttackCooldownState) {

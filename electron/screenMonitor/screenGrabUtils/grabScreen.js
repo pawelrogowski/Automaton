@@ -10,10 +10,10 @@ async function grabScreen(windowId, region = {}) {
 
 // Clean up when the app exits
 process.on('exit', () => {
-  grabberInstance.terminate();
+  grabberInstance.cleanup();
 });
 process.on('SIGINT', () => {
-  grabberInstance.terminate();
+  grabberInstance.cleanup();
   process.exit();
 });
 
