@@ -1,64 +1,30 @@
-import {
-  regionColorSequences,
-  resourceBars,
-  cooldownColorSequences,
-  statusBarSequences,
-  battleListSequences,
-} from '../constants/index.js';
+import { regionColorSequences, resourceBars, cooldownColorSequences, statusBarSequences, battleListSequences } from '../constants/index.js';
 import { parentPort, workerData } from 'worker_threads';
 globalThis.grabImagePath = workerData.grabImagePath;
 
 import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
-import findSequences from '../screenMonitor/screenGrabUtils/findSequences.js';
+import { findSequences } from '../screenMonitor/screenGrabUtils/findSequences.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import { processRules } from './screenMonitor/ruleProcessor.js';
 import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
-
+import { getWindowDimensions } from '../utils/getWindowDimensions.js';
 import { createRequire } from 'module';
+import { captureImage } from '../screenMonitor/screenGrabUtils/captureImage.js';
+import { calcBufferSize } from '../screenMonitor/screenGrabUtils/calcBufferSize.js';
+import { findBoundingRect } from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
+
 const require = createRequire(import.meta.url);
 const { X11Capture } = require(workerData.x11capturePath);
-const maxWidth = 1920;
-const maxHeight = 1170;
-const bufferSize = maxWidth * maxHeight * 3 + 8;
-const buffer = Buffer.allocUnsafe(bufferSize);
 
-const capture = new X11Capture();
-
-/**
- * Wrapper function to capture image data with a dynamically allocated buffer.
- *
- * @param {any} windowId - The X11 window ID.
- * @param {{x: number, y: number, width: number, height: number}} options - Options object containing capture coordinates and dimensions.
- * @returns {Buffer} - A buffer containing the image data.
- */
-function captureImage(windowId, options) {
-  const { x, y, width, height } = options;
-
-  if (
-    !Number.isInteger(x) ||
-    !Number.isInteger(y) ||
-    !Number.isInteger(width) ||
-    !Number.isInteger(height)
-  ) {
-    throw new Error('Invalid coordinate or dimension');
-  }
-
-  // Calculate the buffer size (width * height * 3 + 8 for header).
-  const bufferSize = width * height * 3 + 8;
-  const buffer = Buffer.allocUnsafe(bufferSize);
-
-  try {
-    capture.getImageData(windowId, x, y, width, height, buffer);
-    return buffer;
-  } catch (error) {
-    console.error('Capture error:', error);
-    throw error;
-  }
-}
+// 4k resolution rgb data + 8bit header for width and height
+let maxWidth = 3840;
+let maxHeight = 2160;
+let bufferSize = maxWidth * maxHeight * 3 + 8;
+let imageBuffer = Buffer.allocUnsafe(bufferSize);
 
 let state = null;
 let global = null;
@@ -74,6 +40,8 @@ let lastMinimapChangeTime = null;
 let numWindowId;
 const CHANGE_DURATION = 128; // used for minimap changes
 const LOOP_INTERVAL = 16; // Define loop interval as a constant
+
+const captureInstance = new X11Capture();
 
 parentPort.on('message', (state) => {
   if (prevState !== state) {
@@ -106,37 +74,38 @@ async function main() {
         await waitForWindowId;
       }
 
+      const dimensions = await getWindowDimensions(global.windowId);
       console.log('Adjusting screen position...');
-      const imageData = captureImage(numWindowId, {
-        x: 0,
-        y: 0,
-        width: 1920,
-        height: 1170,
-      });
+      imageBuffer = Buffer.allocUnsafe(calcBufferSize(dimensions.width, dimensions.height, 8));
+
+      const imageData = captureImage(
+        numWindowId,
+        {
+          x: 0,
+          y: 0,
+          width: dimensions.width,
+          height: dimensions.height,
+        },
+        captureInstance,
+      );
       const startRegions = findSequences(imageData, regionColorSequences);
-      const {
-        healthBar,
-        manaBar,
-        cooldownBar,
-        statusBar,
-        battleListStart,
-        partyListStart,
-        minimap,
-      } = startRegions;
+      const { healthBar, manaBar, cooldownBar, statusBar, minimap } = startRegions;
 
-      const battleListRegion = {
-        x: battleListStart.x,
-        y: battleListStart.y,
-        width: 4,
-        height: 215,
-      };
+      const battleListRegion = findBoundingRect(
+        imageData,
+        regionColorSequences.battleListStart,
+        regionColorSequences.battleListEnd,
+        169,
+        dimensions.height,
+      );
 
-      const partyListRegion = {
-        x: partyListStart.x,
-        y: partyListStart.y,
-        width: 131,
-        height: 81,
-      };
+      const partyListRegion = findBoundingRect(
+        imageData,
+        regionColorSequences.partyListStart,
+        regionColorSequences.partyListEnd,
+        169,
+        dimensions.height,
+      );
 
       const hpManaRegion = {
         x: healthBar.x,
@@ -171,34 +140,17 @@ async function main() {
 
         while (true) {
           const loopStartTime = Date.now();
-          const regionsToGrab = [
-            hpManaRegion,
-            cooldownsRegion,
-            statusBarRegion,
-            battleListRegion,
-            // partyListRegion,
-            minimapRegion,
-          ];
+          const regionsToGrab = [hpManaRegion, cooldownsRegion, statusBarRegion, battleListRegion, partyListRegion, minimapRegion];
+          const partyEntryRegions = calculatePartyEntryRegions(partyListRegion, Math.floor(partyListRegion.height / 26));
+          partyEntryRegions.forEach((entry) => {
+            regionsToGrab.push(entry.bar);
+            regionsToGrab.push(entry.name);
+          });
+          console.log(partyEntryRegions.length);
+          const grabResults = await Promise.all(regionsToGrab.map((region) => captureImage(numWindowId, region, captureInstance)));
 
-          // const partyEntryRegions = calculatePartyEntryRegions(partyListStart, 1);
-          // partyEntryRegions.forEach((entry) => {
-          //   regionsToGrab.push(entry.bar);
-          //   regionsToGrab.push(entry.name);
-          // });
-
-          const grabResults = await Promise.all(
-            regionsToGrab.map((region) => captureImage(numWindowId, region)),
-          );
-
-          const [
-            hpManaImageData,
-            cooldownBarImageData,
-            statusBarImageData,
-            battleListImageData,
-            // partyListImageData,
-            minimapImageData,
-            // ...partyEntryImageData
-          ] = grabResults;
+          const [hpManaImageData, cooldownBarImageData, statusBarImageData, battleListImageData, partyListImageData, minimapImageData] =
+            grabResults;
 
           if (lastMinimapImageData) {
             const minimapIsDifferent = Buffer.compare(minimapImageData, lastMinimapImageData) !== 0;
@@ -206,37 +158,19 @@ async function main() {
             if (minimapIsDifferent) {
               minimapChanged = true;
               lastMinimapChangeTime = Date.now();
-            } else if (
-              lastMinimapChangeTime &&
-              Date.now() - lastMinimapChangeTime > CHANGE_DURATION
-            ) {
+            } else if (lastMinimapChangeTime && Date.now() - lastMinimapChangeTime > CHANGE_DURATION) {
               minimapChanged = false;
             }
           }
           lastMinimapImageData = minimapImageData;
 
-          const newHealthPercentage = calculatePercentages(
-            healthBar,
-            hpManaRegion,
-            hpManaImageData,
-            resourceBars.healthBar,
-          );
-
+          const newHealthPercentage = calculatePercentages(healthBar, hpManaRegion, hpManaImageData, resourceBars.healthBar);
+          const newManaPercentage = calculatePercentages(manaBar, hpManaRegion, hpManaImageData, resourceBars.manaBar);
           if (newHealthPercentage === 0) {
             return;
           }
 
-          // Mana Calculation Timing
-
-          const newManaPercentage = calculatePercentages(
-            manaBar,
-            hpManaRegion,
-            hpManaImageData,
-            resourceBars.manaBar,
-          );
-
           cooldownBarRegions = findSequences(cooldownBarImageData, cooldownColorSequences);
-
           statusBarRegions = findSequences(statusBarImageData, statusBarSequences);
 
           const characterStatusUpdates = {};
@@ -244,54 +178,40 @@ async function main() {
             characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
           }
 
-          let battleListEntries = findAllOccurrences(
-            battleListImageData,
-            battleListSequences.battleEntry,
-          );
+          let battleListEntries = findAllOccurrences(battleListImageData, battleListSequences.battleEntry);
 
-          // const partyData = [];
-          // for (let i = 0; i < partyEntryRegions.length; i++) {
-          //   const barRegion = partyEntryRegions[i].bar;
-          //   const nameRegion = partyEntryRegions[i].name;
+          const partyData = [];
+          for (let i = 0; i < partyEntryRegions.length; i++) {
+            const barRegion = partyEntryRegions[i].bar;
+            const nameRegion = partyEntryRegions[i].name;
 
-          //   const barStartIndex =
-          //     (barRegion.y - partyListRegion.y) * partyListRegion.width +
-          //     (barRegion.x - partyListRegion.x);
+            const barStartIndex = (barRegion.y - partyListRegion.y) * partyListRegion.width + (barRegion.x - partyListRegion.x);
 
-          //   const hpPercentage = calculatePartyHpPercentage(
-          //     partyListImageData,
-          //     resourceBars.partyEntryHpBar,
-          //     barStartIndex * 3,
-          //     130,
-          //   );
+            const hpPercentage = calculatePartyHpPercentage(partyListImageData, resourceBars.partyEntryHpBar, barStartIndex * 3, 130);
 
-          //   const nameStartIndex =
-          //     (nameRegion.y - partyListRegion.y) * partyListRegion.width +
-          //     (nameRegion.x - partyListRegion.x);
-          //   const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
+            const nameStartIndex = (nameRegion.y - partyListRegion.y) * partyListRegion.width + (nameRegion.x - partyListRegion.x);
+            const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
 
-          //   const statusSequences = findSequences(
-          //     partyListImageData.subarray(nameStartIndex * 3, nameEndIndex * 3),
-          //     PARTY_MEMBER_STATUS,
-          //     null,
-          //     'first',
-          //   );
+            const partyMemberStatusSequences = findSequences(
+              partyListImageData.subarray(nameStartIndex * 3, nameEndIndex * 3),
+              PARTY_MEMBER_STATUS,
+              null,
+              'first',
+              true,
+            );
 
-          //   const isActive =
-          //     Object.keys(statusSequences.active).length > 0 ||
-          //     Object.keys(statusSequences.activeHover).length > 0;
+            const isActive =
+              Object.keys(partyMemberStatusSequences.active).length > 0 || Object.keys(partyMemberStatusSequences.activeHover).length > 0;
 
-          //   if (hpPercentage >= 0) {
-          //     partyData.push({
-          //       hpPercentage,
-          //       uhCoordinates: partyEntryRegions[i].uhCoordinates,
-          //       isActive,
-          //     });
-          //   }
-          // }
+            if (hpPercentage >= 0) {
+              partyData.push({
+                hpPercentage,
+                uhCoordinates: partyEntryRegions[i].uhCoordinates,
+                isActive,
+              });
+            }
+          }
 
-          // Rule Processing Timing
-          let ruleProcessingTime = 0;
           if (global.botEnabled) {
             await processRules(
               healing.presets[healing.activePresetIndex],
@@ -299,22 +219,13 @@ async function main() {
               {
                 hpPercentage: newHealthPercentage,
                 manaPercentage: newManaPercentage,
-                healingCdActive: cooldownManager.updateCooldown(
-                  'healing',
-                  cooldownBarRegions.healing?.x !== undefined,
-                ),
-                supportCdActive: cooldownManager.updateCooldown(
-                  'support',
-                  cooldownBarRegions.support?.x !== undefined,
-                ),
-                attackCdActive: cooldownManager.updateCooldown(
-                  'attack',
-                  cooldownBarRegions.attack?.x !== undefined,
-                ),
+                healingCdActive: cooldownManager.updateCooldown('healing', cooldownBarRegions.healing?.x !== undefined),
+                supportCdActive: cooldownManager.updateCooldown('support', cooldownBarRegions.support?.x !== undefined),
+                attackCdActive: cooldownManager.updateCooldown('attack', cooldownBarRegions.attack?.x !== undefined),
                 characterStatus: characterStatusUpdates,
                 monsterNum: battleListEntries.length,
                 isWalking: minimapChanged,
-                // partyMembers: partyData,
+                partyMembers: partyData,
               },
               global,
             );
@@ -340,7 +251,7 @@ async function main() {
 
           // Calculate time spent in this iteration
           const processingTime = Date.now() - loopStartTime;
-          // console.log(processingTime, 'ms');
+          console.log(processingTime, 'ms');
           // Calculate delay needed to maintain consistent interval
           const delay = Math.max(0, LOOP_INTERVAL - processingTime);
 

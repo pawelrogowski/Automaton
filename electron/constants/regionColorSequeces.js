@@ -7,18 +7,7 @@ const regionColorSequences = {
   manaBar: {
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
-    sequence: [
-      [99, 96, 248],
-      [95, 92, 219],
-      [80, 79, 140],
-      'any',
-      'any',
-      'any',
-      'any',
-      'any',
-      'any',
-      [61, 61, 125],
-    ],
+    sequence: [[99, 96, 248], [95, 92, 219], [80, 79, 140], 'any', 'any', 'any', 'any', 'any', 'any', [61, 61, 125]],
   },
   minimap: {
     direction: 'horizontal',
@@ -34,11 +23,14 @@ const regionColorSequences = {
   },
   cooldownBar: {
     direction: 'horizontal',
-    offset: { x: -2, y: 0 },
+    offset: { x: -227, y: 0 },
     sequence: [
-      [109, 109, 110],
-      [65, 18, 2],
-      [49, 14, 4],
+      [59, 59, 60],
+      [50, 50, 51],
+      [60, 60, 60],
+      [113, 113, 113],
+      [40, 40, 40],
+      [56, 56, 57],
     ],
   },
   statusBar: {
@@ -156,6 +148,17 @@ const regionColorSequences = {
       [56, 56, 56],
     ],
   },
+  battleListEnd: {
+    direction: 'horizontal',
+    offset: { x: -137, y: 0 },
+    sequence: [
+      [67, 67, 67],
+      [39, 39, 39],
+      [48, 48, 48],
+      [64, 64, 64],
+      [88, 88, 88],
+    ],
+  },
   partyListStart: {
     direction: 'horizontal',
     offset: { x: 10, y: 13 },
@@ -166,24 +169,16 @@ const regionColorSequences = {
       [56, 56, 56],
     ],
   },
-  battleListEnd: {
-    direction: 'horizontal',
-    offset: { x: 0, y: 0 },
-    sequence: [
-      [114, 114, 114],
-      [116, 116, 116],
-      [117, 117, 117],
-      [117, 117, 117],
-    ],
-  },
+
   partyListEnd: {
     direction: 'horizontal',
-    offset: { x: 1, y: 1 },
+    offset: { x: -10, y: 0 },
     sequence: [
-      [114, 114, 114],
-      [116, 116, 116],
-      [117, 117, 117],
-      [117, 117, 117],
+      [67, 67, 67],
+      [39, 39, 39],
+      [48, 48, 48],
+      [64, 64, 64],
+      [88, 88, 88],
     ],
   },
 };
