@@ -3,13 +3,10 @@ import commandExecutor from '../utils/commandExecutor.js';
 async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
   try {
     const chainedCommands = [
-      `mousemove --clearmodifiers --sync ${targetX} ${targetY}`,
-      `key --window ${targetWindowId} --clearmodifiers  ${key}`,
-      `click --window ${targetWindowId} --clearmodifiers 1`,
-      `mousemove --clearmodifiers --sync restore`,
-      `keyup --window ${targetWindowId} --delay 0 ctrl`,
-      `keyup --window ${targetWindowId} --delay 0 shift`,
-      `keyup --window ${targetWindowId} --delay 0 alt`,
+      `mousemove ${targetX} ${targetY}`,
+      `key --window ${targetWindowId} ${key}`,
+      `click --window ${targetWindowId} 1`,
+      `mousemove restore`,
     ];
 
     const combinedCommand = chainedCommands.join(' ');

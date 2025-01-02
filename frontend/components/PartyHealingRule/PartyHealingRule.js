@@ -16,9 +16,7 @@ const PartyHealingRule = ({ rule, className }) => {
 
   const dispatch = useDispatch();
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const currentRule = useSelector((state) =>
-    state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
-  );
+  const currentRule = useSelector((state) => state.healing.presets[activePresetIndex].find((r) => r.id === rule.id));
 
   const handleStatusConditionChange = (status, value) => {
     dispatch(updateCondition({ id: currentRule.id, condition: status, value }));
@@ -66,10 +64,7 @@ const PartyHealingRule = ({ rule, className }) => {
       )}
       <StyledDiv className={className} $running={currentRule.enabled}>
         <details>
-          <CharacterStatusConditions
-            ruleId={rule.id}
-            onStatusConditionChange={handleStatusConditionChange}
-          />
+          <CharacterStatusConditions ruleId={rule.id} onStatusConditionChange={handleStatusConditionChange} />
           <summary
             onKeyDown={(e) => {
               if (e.code === 'Space' || e.code === 'Enter') {
@@ -77,12 +72,7 @@ const PartyHealingRule = ({ rule, className }) => {
               }
             }}
           >
-            <CustomCheckbox
-              checked={currentRule.enabled}
-              onChange={handleFieldChange('enabled')}
-              width={22}
-              height={22}
-            />
+            <CustomCheckbox checked={currentRule.enabled} onChange={handleFieldChange('enabled')} width={22} height={22} />
 
             <ListSelect
               className="input input-hotkey"
@@ -98,33 +88,39 @@ const PartyHealingRule = ({ rule, className }) => {
               ))}
             </ListSelect>
 
-            <div className="checkbox-group">
-              <div>
-                <CustomCheckbox
-                  checked={currentRule.useRune}
-                  onChange={handleFieldChange('useRune')}
-                  width={35}
-                  height={22}
-                  label="Use Rune"
-                />
-              </div>
-              <div>
-                <CustomCheckbox
-                  checked={currentRule.requireAttackCooldown}
-                  onChange={handleFieldChange('requireAttackCooldown')}
-                  width={85}
-                  height={22}
-                  label="Require Attack Cooldown"
-                />
-              </div>
+            <div>
+              <CustomCheckbox
+                checked={currentRule.useRune}
+                onChange={handleFieldChange('useRune')}
+                width={35}
+                height={22}
+                label="Use Rune"
+              />
+            </div>
+            <div>
+              <CustomCheckbox
+                checked={currentRule.requireAttackCooldown}
+                onChange={handleFieldChange('requireAttackCooldown')}
+                width={100}
+                height={22}
+                label="Require Attack Cooldown"
+              />
             </div>
 
-            <ListSelect
-              className="input input-percent-select"
-              id="hpTriggerCondition"
-              disabled="true"
-              value="≤"
-            >
+            <ListInput
+              className="input-party-position"
+              type="number"
+              defaultValue={1}
+              min="0"
+              max="20"
+              step="1"
+              id="partyPosition"
+              value={currentRule.partyPosition}
+              onChange={handleFieldChange('partyPosition')}
+              placeholder="80"
+            />
+
+            <ListSelect className="input input-percent-select" id="hpTriggerCondition" disabled="true" value="≤">
               <option value="<=">{'≤'}</option>
             </ListSelect>
             <ListInput
@@ -139,51 +135,6 @@ const PartyHealingRule = ({ rule, className }) => {
               placeholder="80"
             />
 
-            <ListSelect
-              className="input input-percent-select"
-              id="manaTriggerCondition"
-              value={currentRule.manaTriggerCondition}
-              onChange={handleFieldChange('manaTriggerCondition')}
-            >
-              {conditionOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </ListSelect>
-            <ListInput
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              className="input input-percent"
-              id="manaTriggerPercentage"
-              value={currentRule.manaTriggerPercentage}
-              onChange={handleFieldChange('manaTriggerPercentage')}
-              placeholder="0"
-            />
-            <ListSelect
-              className="input input-monster-num-condition"
-              id="monsterNumCondition"
-              value={currentRule.monsterNumCondition}
-              onChange={handleFieldChange('monsterNumCondition')}
-            >
-              {conditionOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </ListSelect>
-            <ListInput
-              type="number"
-              className="input input-monster-num"
-              id="monsterNum"
-              value={currentRule.monsterNum}
-              onChange={handleFieldChange('monsterNum')}
-              min="0"
-              max="10"
-              placeholder="0"
-            />
             <ListInput
               type="number"
               className="input input-priority"
@@ -205,19 +156,10 @@ const PartyHealingRule = ({ rule, className }) => {
               step="25"
             />
 
-            <button
-              className="remove-rule-button rule-button"
-              type="button"
-              onMouseDown={handleRemoveRule}
-              aria-label="remove-rule"
-            >
+            <button className="remove-rule-button rule-button" type="button" onMouseDown={handleRemoveRule} aria-label="remove-rule">
               ×
             </button>
-            <button
-              type="button"
-              className="rule-button button-expand"
-              style={{ pointerEvents: 'none' }}
-            >
+            <button type="button" className="rule-button button-expand" style={{ pointerEvents: 'none' }}>
               ▾
             </button>
           </summary>

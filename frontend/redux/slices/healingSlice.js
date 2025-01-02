@@ -90,6 +90,10 @@ const sortRules = (state, sortBy) => {
     monsterNum: { key: 'monsterNum', type: 'number' },
     hpTriggerPercentage: { key: 'hpTriggerPercentage', type: 'number' },
     manaTriggerPercentage: { key: 'manaTriggerPercentage', type: 'number' },
+    friendHpTriggerPercentage: { key: 'friendHpTriggerPercentage', type: 'number' },
+    partyPosition: { key: 'partyPosition', type: 'number' },
+    requireAttackCooldown: { key: 'requireAttackCooldown', type: 'boolean' },
+    useRune: { key: 'useRune', type: 'boolean' },
   };
 
   state.presets[state.activePresetIndex].sort((a, b) => {
@@ -123,15 +127,9 @@ const validateField = (field, value) => {
 const validateRule = (rule) => {
   return {
     ...rule,
-    friendHpTriggerPercentage: Math.max(
-      0,
-      Math.min(100, parseInt(rule.friendHpTriggerPercentage, 10) || 80),
-    ),
+    friendHpTriggerPercentage: Math.max(0, Math.min(100, parseInt(rule.friendHpTriggerPercentage, 10) || 80)),
     hpTriggerPercentage: Math.max(0, Math.min(100, parseInt(rule.hpTriggerPercentage, 10) || 0)),
-    manaTriggerPercentage: Math.max(
-      0,
-      Math.min(100, parseInt(rule.manaTriggerPercentage, 10) || 0),
-    ),
+    manaTriggerPercentage: Math.max(0, Math.min(100, parseInt(rule.manaTriggerPercentage, 10) || 0)),
     monsterNum: Math.max(0, Math.min(10, parseInt(rule.monsterNum, 10) || 0)),
     priority: Math.max(-99, Math.min(99, parseInt(rule.priority, 10) || 0)),
     delay: Math.max(0, Math.min(86400000, parseInt(rule.delay, 10) || 0)),
@@ -163,9 +161,7 @@ const healingSlice = createSlice({
     },
 
     removeRule: (state, action) => {
-      state.presets[state.activePresetIndex] = state.presets[state.activePresetIndex].filter(
-        (rule) => rule.id !== action.payload,
-      );
+      state.presets[state.activePresetIndex] = state.presets[state.activePresetIndex].filter((rule) => rule.id !== action.payload);
     },
     updateRule: (state, action) => {
       const { id, field, value } = action.payload;
@@ -197,9 +193,9 @@ const healingSlice = createSlice({
       const { id, condition } = action.payload;
       const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
 
-      state.presets[state.activePresetIndex][ruleIndex].conditions = state.presets[
-        state.activePresetIndex
-      ][ruleIndex].conditions.filter((c) => c.name !== condition);
+      state.presets[state.activePresetIndex][ruleIndex].conditions = state.presets[state.activePresetIndex][ruleIndex].conditions.filter(
+        (c) => c.name !== condition,
+      );
     },
 
     loadRules: (state, action) => {

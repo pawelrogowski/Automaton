@@ -146,7 +146,7 @@ async function main() {
             regionsToGrab.push(entry.bar);
             regionsToGrab.push(entry.name);
           });
-          console.log(partyEntryRegions.length);
+
           const grabResults = await Promise.all(regionsToGrab.map((region) => captureImage(numWindowId, region, captureInstance)));
 
           const [hpManaImageData, cooldownBarImageData, statusBarImageData, battleListImageData, partyListImageData, minimapImageData] =
@@ -251,7 +251,7 @@ async function main() {
 
           // Calculate time spent in this iteration
           const processingTime = Date.now() - loopStartTime;
-          console.log(processingTime, 'ms');
+          // console.log(processingTime, 'ms');
           // Calculate delay needed to maintain consistent interval
           const delay = Math.max(0, LOOP_INTERVAL - processingTime);
 

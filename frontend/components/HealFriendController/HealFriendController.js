@@ -58,35 +58,15 @@ const HealFriendControls = () => {
     <HealFriend>
       <HighWrapper className="heal-friend-wrapper" title="Heal Friend">
         <div className="heal-friend-header">
-          <CustomCheckbox
-            checked={healFriendRule.enabled}
-            onChange={handleHealFriendToggle}
-            size={18}
-          />
+          <CustomCheckbox checked={healFriendRule.enabled} onChange={handleHealFriendToggle} size={18} />
           <h5 className="">Enabled</h5>
         </div>
         <div className="heal-friend-header">
-          <CustomCheckbox
-            checked={healFriendRule.useRune}
-            onChange={handleUseRuneToggle}
-            size={18}
-          />
+          <CustomCheckbox checked={healFriendRule.useRune} onChange={handleUseRuneToggle} size={18} />
           <h5 className="">use UH</h5>
         </div>
         <div className="heal-friend-header">
-          <CustomCheckbox
-            checked={healFriendRule.requireManaShield}
-            onChange={handleManaShieldToggle}
-            size={18}
-          />
-          <h5 className="">MShield</h5>
-        </div>
-        <div className="heal-friend-header">
-          <CustomCheckbox
-            checked={healFriendRule.requireAttackCooldown}
-            onChange={handleAttackCdToggle}
-            size={18}
-          />
+          <CustomCheckbox checked={healFriendRule.requireAttackCooldown} onChange={handleAttackCdToggle} size={18} />
           <h5 className="">AttackCD</h5>
         </div>
         <div className="">
@@ -116,7 +96,6 @@ const HealFriendControls = () => {
               value={healFriendRule.friendHpTriggerPercentage}
               onChange={handleFriendHpTriggerPercentageChange}
               defaultValue={70}
-              placeholder="70"
               min="1"
               max="100"
             />

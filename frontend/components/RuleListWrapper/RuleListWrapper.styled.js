@@ -65,6 +65,18 @@ export const StyledDiv = styled.div`
       width: 85px;
       min-width: 85px;
     }
+    .header-item_wait-atk {
+      width: 100px;
+      min-width: 100px;
+    }
+    .header-item_party-member {
+      width: 126px;
+      min-width: 126px;
+    }
+    .header-item_member-hp {
+      width: 156px;
+      min-width: 156px;
+    }
     .header-item_running {
       width: 22px;
       min-width: 22px;

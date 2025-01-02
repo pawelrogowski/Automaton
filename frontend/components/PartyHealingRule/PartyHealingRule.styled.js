@@ -70,6 +70,12 @@ const StyledDiv = styled.div`
     -webkit-appearance: none;
     -moz-appearance: none;
   }
+  .input-party-position {
+    width: 126px;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+  }
   .rule-button {
     font-size: 12px;
     height: 22px;
@@ -114,7 +120,7 @@ const StyledDiv = styled.div`
 
   .input-percent,
   .input-monster-num {
-    width: 48px;
+    width: 78px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
     text-align: center;
@@ -128,7 +134,7 @@ const StyledDiv = styled.div`
   .input-percent-select,
   .input-monster-num-condition {
     padding: 0;
-    width: 46px;
+    width: 78px;
     appearance: none;
     text-align: center;
     -webkit-appearance: none;
