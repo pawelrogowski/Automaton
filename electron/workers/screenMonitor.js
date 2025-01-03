@@ -2,7 +2,6 @@ import { regionColorSequences, resourceBars, cooldownColorSequences, statusBarSe
 import { parentPort, workerData } from 'worker_threads';
 globalThis.grabImagePath = workerData.grabImagePath;
 
-import { grabScreen } from '../screenMonitor/screenGrabUtils/grabScreen.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import { findSequences } from '../screenMonitor/screenGrabUtils/findSequences.js';
@@ -213,6 +212,7 @@ async function main() {
           }
 
           if (global.botEnabled) {
+            // console.log(partyData);
             await processRules(
               healing.presets[healing.activePresetIndex],
 

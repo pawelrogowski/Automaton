@@ -3,7 +3,6 @@ import store from './store.js';
 import { saveRulesToFile, loadRulesFromFile, autoLoadRules } from './rulesManager.js';
 import { registerGlobalShortcuts } from './globalShortcuts.js';
 import { getMainWindow } from './createMainWindow.js';
-import { grabScreen } from './screenMonitor/screenGrabUtils/grabScreen.js';
 
 ipcMain.on('state-change', (_, serializedAction) => {
   try {

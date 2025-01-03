@@ -1,18 +1,9 @@
-import commandExecutor from '../utils/commandExecutor.js';
+import { workerData } from 'worker_threads';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const keycoordinates = require(workerData.useItemOnPath);
 
-async function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
-  try {
-    const chainedCommands = [
-      `mousemove ${targetX} ${targetY}`,
-      `key --window ${targetWindowId} ${key}`,
-      `click --window ${targetWindowId} 1`,
-      `mousemove restore`,
-    ];
-
-    const combinedCommand = chainedCommands.join(' ');
-    await commandExecutor.addCommand(combinedCommand);
-  } catch (error) {
-    console.error('Error in useItemOnCoordinates:', error);
-  }
+function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
+  keycoordinates.useKeyOnCoordinates(parseInt(targetWindowId), key, parseInt(targetX), parseInt(targetY));
 }
 export default useItemOnCoordinates;

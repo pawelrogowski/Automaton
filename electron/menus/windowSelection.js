@@ -13,9 +13,9 @@ const __dirname = path.dirname(__filename);
 let xdotool;
 
 if (app.isPackaged) {
-  xdotool = path.join(app.getAppPath(), '..', 'resources', 'xdotool', 'xdotool');
+  xdotool = path.join(app.getAppPath(), '..', 'resources', 'x11utils', 'xdotool');
 } else {
-  xdotool = path.join(__dirname, '..', '..', 'resources', 'xdotool', 'xdotool');
+  xdotool = path.join(__dirname, '..', '..', 'resources', 'x11utils', 'xdotool');
 }
 let selectedWindowId = null;
 

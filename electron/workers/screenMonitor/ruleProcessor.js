@@ -11,36 +11,24 @@ let lastAttackCooldownState = false;
 let lastManaSyncExecutionTime = 0;
 let attackCooldownStartTime = 0;
 let manaSyncScheduled = false;
-let lastKeypressTime = 0;
+let lastKeypressTime = 0; // Added: Track the last keypress time
 
-const KEYPRESS_COOLDOWN = 50;
+const KEYPRESS_COOLDOWN = 50; // Added: 50ms cooldown between keypresses
 const customManaSyncDelay = 800;
 
+// Added: Helper function to check if enough time has passed since last keypress
 const canExecuteKeypress = () => {
   const now = Date.now();
   return now - lastKeypressTime >= KEYPRESS_COOLDOWN;
 };
 
+// Added: Wrapper function for keyPress that respects the rate limit
 const executeRateLimitedKeyPress = (windowId, keys) => {
   if (!canExecuteKeypress()) return false;
 
   keyPress(windowId, keys);
   lastKeypressTime = Date.now();
   return true;
-};
-
-// Helper function to check if a party member needs healing
-const doesPartyMemberNeedHealing = (partyMember, rule, directGameState) => {
-  // Explicit threshold check - heal when HP is BELOW the threshold
-  const currentHp = partyMember.hpPercentage;
-  const thresholdHp = parseInt(rule.friendHpTriggerPercentage, 10);
-  const hpThresholdMet = currentHp <= thresholdHp; // Only heal if HP is less than threshold
-
-  const basicConditionsMet = (rule.requireAttackCooldown ? directGameState.attackCdActive : true) && partyMember.isActive && hpThresholdMet;
-
-  return (
-    basicConditionsMet && (!rule.requireManaShield || rule.conditions.some((condition) => directGameState.characterStatus[condition.name]))
-  );
 };
 
 const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
@@ -66,14 +54,23 @@ const filterRulesByWalkingState = (rules, directGameState) =>
 
 const filterRulesByConditions = (rules, directGameState) =>
   rules.filter((rule) => {
-    if (rule.name.startsWith('healFriend')) {
-      if (rule.partyPosition === '0') {
-        // When monitoring all party members, we'll check if ANY member needs healing
-        return directGameState.partyMembers.some((member) => doesPartyMemberNeedHealing(member, rule, directGameState));
-      } else {
-        const partyMember = directGameState.partyMembers[parseInt(rule.partyPosition, 10) - 1];
-        return partyMember && doesPartyMemberNeedHealing(partyMember, rule, directGameState);
-      }
+    if (rule.id.startsWith('healFriend')) {
+      const isAttackCooldownMet = rule.requireAttackCooldown ? directGameState.attackCdActive : true;
+
+      // Handle partyPosition 0 (all members) vs specific position
+      const relevantMembers =
+        rule.partyPosition === 0
+          ? directGameState.partyMembers.filter((member) => member.isActive)
+          : [directGameState.partyMembers[parseInt(rule.partyPosition, 10) - 1]].filter((member) => member && member.isActive);
+
+      // Check if any relevant party member meets the HP condition
+      const memberMeetsHpCondition = relevantMembers.some((member) => member.hpPercentage <= parseInt(rule.friendHpTriggerPercentage, 10));
+
+      const basicConditionsMet = isAttackCooldownMet && memberMeetsHpCondition;
+      const manaShieldCheck =
+        !rule.requireManaShield || rule.conditions.some((condition) => directGameState.characterStatus[condition.name]);
+
+      return basicConditionsMet && manaShieldCheck;
     }
 
     return (
@@ -102,6 +99,7 @@ const getHighestPriorityRulesByCategory = (rules) => {
   return Array.from(categoryMap.values());
 };
 
+// Modified: Updated to use rate-limited keypress
 const scheduleManaSyncExecution = (manaSyncRules, global) => {
   if (manaSyncTimeoutId) {
     clearTimeout(manaSyncTimeoutId);
@@ -124,51 +122,69 @@ const scheduleManaSyncExecution = (manaSyncRules, global) => {
 
   manaSyncScheduled = true;
 };
+
 export const processRules = async (activePreset, directGameState, global) => {
   const validRules = getAllValidRules(activePreset, directGameState);
   const highestPriorityRules = getHighestPriorityRulesByCategory(validRules);
 
   if (highestPriorityRules.length > 0) {
+    const manaSyncRules = highestPriorityRules.filter((rule) => rule.id.startsWith('manaSync'));
     const healFriendRules = highestPriorityRules.filter((rule) => rule.id.startsWith('healFriend'));
+    const regularRules = highestPriorityRules.filter((rule) => !rule.id.startsWith('manaSync') && !rule.id.startsWith('healFriend'));
 
+    let executeManaSyncThisRotation = true;
+
+    // Process healFriend rules in priority order
     for (const healFriendRule of healFriendRules) {
-      // console.log(`Processing heal friend rule: ${healFriendRule.id}`);
-      // console.log(`Party position: ${healFriendRule.partyPosition}`);
+      // Get relevant party members based on position
+      const relevantMembers =
+        healFriendRule.partyPosition === 0
+          ? directGameState.partyMembers.filter((member) => member.isActive)
+          : [directGameState.partyMembers[parseInt(healFriendRule.partyPosition, 10) - 1]].filter((member) => member && member.isActive);
 
-      if (healFriendRule.partyPosition === '0') {
-        // Handle monitoring all party members
-        // console.log('Checking all party members...');
-        for (let i = 0; i < directGameState.partyMembers.length; i++) {
-          const partyMember = directGameState.partyMembers[i];
-          // console.log(`Checking party member ${i + 1}, HP: ${partyMember.hpPercentage}`);
+      // Filter members that meet HP condition
+      const membersNeedingHeal = relevantMembers.filter(
+        (member) => member.hpPercentage <= parseInt(healFriendRule.friendHpTriggerPercentage, 10),
+      );
 
-          if (partyMember && partyMember.isActive && doesPartyMemberNeedHealing(partyMember, healFriendRule, directGameState)) {
-            if (healFriendRule.useRune && canExecuteKeypress()) {
-              console.log(`Healing party member ${i + 1} at coordinates:`, partyMember.uhCoordinates);
-              useItemOnCoordinates(global.windowId, partyMember.uhCoordinates.x, partyMember.uhCoordinates.y + 26, healFriendRule.key);
-              lastKeypressTime = Date.now();
-              lastRuleExecutionTimes[healFriendRule.id] = Date.now();
-              lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
-              break;
-            }
-          }
-        }
-      } else {
-        const positionIndex = parseInt(healFriendRule.partyPosition, 10) - 1;
-        const partyMember = directGameState.partyMembers[positionIndex];
+      if (membersNeedingHeal.length > 0) {
+        // Find the member with lowest HP if multiple match
+        const targetMember = membersNeedingHeal.reduce((lowest, current) =>
+          current.hpPercentage < lowest.hpPercentage ? current : lowest,
+        );
 
-        console.log(`Checking specific party member ${positionIndex + 1}`);
-        if (partyMember && partyMember.isActive && doesPartyMemberNeedHealing(partyMember, healFriendRule, directGameState)) {
-          if (healFriendRule.useRune && canExecuteKeypress()) {
-            console.log(`Healing specific party member at coordinates:`, partyMember.uhCoordinates);
-            useItemOnCoordinates(global.windowId, partyMember.uhCoordinates.x, partyMember.uhCoordinates.y + 26, healFriendRule.key);
+        if (healFriendRule.useRune) {
+          if (canExecuteKeypress()) {
+            useItemOnCoordinates(global.windowId, targetMember.uhCoordinates.x, targetMember.uhCoordinates.y, healFriendRule.key);
             lastKeypressTime = Date.now();
-            lastRuleExecutionTimes[healFriendRule.id] = Date.now();
-            lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
+            executeManaSyncThisRotation = false;
+          }
+        } else {
+          if (executeRateLimitedKeyPress(global.windowId, [healFriendRule.key])) {
+            executeManaSyncThisRotation = false;
           }
         }
+
+        lastRuleExecutionTimes[healFriendRule.id] = Date.now();
+        lastCategoriesExecutionTimes[healFriendRule.category] = Date.now();
+
+        // Break after executing highest priority rule that found a target
+        break;
       }
     }
+
+    // Rest of the original processRules function remains the same
+    if (regularRules.length > 0) {
+      const regularRuleKeys = regularRules.map((rule) => rule.key);
+      if (executeRateLimitedKeyPress(global.windowId, regularRuleKeys)) {
+        const now = Date.now();
+        regularRules.forEach((rule) => {
+          lastRuleExecutionTimes[rule.id] = now;
+          lastCategoriesExecutionTimes[rule.category] = now;
+        });
+      }
+    }
+
     if (directGameState.attackCdActive !== lastAttackCooldownState) {
       if (directGameState.attackCdActive) {
         attackCooldownStartTime = Date.now();

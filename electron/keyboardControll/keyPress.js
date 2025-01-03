@@ -1,18 +1,18 @@
-import commandExecutor from '../utils/commandExecutor.js';
+import { workerData } from 'worker_threads';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const keypress = require(workerData.keypressPath);
 
-export const keyPress = async (windowId, key) => {
-  await commandExecutor.addCommand(`key --window ${windowId} ${key}`);
+export const keyPress = (windowId, key) => {
+  keypress.sendKey(parseInt(windowId), key[0]);
 };
 
 export const keyPressManaSync = async (windowId, key, pressNumber = 1) => {
-  const singlePressCommand = `key --window ${windowId} ${key}`;
-
-  // Execute first press immediately
-  await commandExecutor.addCommand(singlePressCommand);
+  keypress.sendKey(parseInt(windowId), key);
 
   // Handle remaining presses with delays
   for (let i = 1; i < pressNumber; i++) {
     await new Promise((resolve) => setTimeout(resolve, 50));
-    await commandExecutor.addCommand(singlePressCommand);
+    await keypress.sendKey(parseInt(windowId), key);
   }
 };
