@@ -8,7 +8,6 @@ import { StatBars } from '../components/StatBars.js/StatBars.js';
 import HighWrapper from '../components/HighWrapper/HighWrapper.js';
 import { useLocation } from 'react-router-dom';
 import PartyHealingRule from '../components/PartyHealingRule/PartyHealingRule.js';
-import { v4 as uuidv4 } from 'uuid';
 
 export const Healing = () => {
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
@@ -30,16 +29,31 @@ export const Healing = () => {
     });
   };
 
-  const renderSection = (hashKey, title, rulesToRender, variant = null) =>
-    hash === hashKey && (
-      <HighWrapper title={title} className="healing-rules-box">
-        <div>
-          <RuleListWrapper tooltip="Customize rules for conditional" variant={variant}>
-            {renderRules(rulesToRender, hashKey === '#party')}
-          </RuleListWrapper>
-        </div>
-      </HighWrapper>
+  const renderSection = (hashKey, title, rulesToRender, variant = null) => {
+    if (hashKey === '#equip') {
+      return (
+        hash === hashKey && (
+          <HighWrapper title={title} className="healing-rules-box">
+            <div>
+              <span style={{ color: '#fafafa', fontSize: '24px' }}>Coming Soon</span>
+            </div>
+          </HighWrapper>
+        )
+      );
+    }
+
+    return (
+      hash === hashKey && (
+        <HighWrapper title={title} className="healing-rules-box">
+          <div>
+            <RuleListWrapper tooltip="Customize rules for conditional" variant={variant}>
+              {renderRules(rulesToRender, hashKey === '#party')}
+            </RuleListWrapper>
+          </div>
+        </HighWrapper>
+      )
     );
+  };
 
   return (
     <StyledMain>
@@ -55,6 +69,8 @@ export const Healing = () => {
         {renderSection('#manasync', 'Mana-Sync Rules', manaSyncRules)}
 
         {renderSection('#party', 'Party Heal Rules', healFriendRules, 'friends')}
+
+        {renderSection('#equip', 'Equipment Rules', [])}
       </StyledSection>
     </StyledMain>
   );

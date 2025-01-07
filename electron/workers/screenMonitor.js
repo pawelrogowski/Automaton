@@ -10,7 +10,6 @@ import { processRules } from './screenMonitor/ruleProcessor.js';
 import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
-import { getWindowDimensions } from '../utils/getWindowDimensions.js';
 import { createRequire } from 'module';
 import { captureImage } from '../screenMonitor/screenGrabUtils/captureImage.js';
 import { calcBufferSize } from '../screenMonitor/screenGrabUtils/calcBufferSize.js';
@@ -18,6 +17,7 @@ import { findBoundingRect } from '../screenMonitor/screenGrabUtils/findBoundingR
 
 const require = createRequire(import.meta.url);
 const { X11Capture } = require(workerData.x11capturePath);
+const windowinfo = require(workerData.windowInfoPath);
 
 // 4k resolution rgb data + 8bit header for width and height
 let maxWidth = 3840;
@@ -73,10 +73,10 @@ async function main() {
         await waitForWindowId;
       }
 
-      const dimensions = await getWindowDimensions(global.windowId);
-      console.log('Adjusting screen position...');
+      const dimensions = windowinfo.getDimensions(numWindowId);
+      console.log(`Scanning Window: ${windowinfo.getName(numWindowId)}(${numWindowId})\n${JSON.stringify(dimensions)}`);
       imageBuffer = Buffer.allocUnsafe(calcBufferSize(dimensions.width, dimensions.height, 8));
-
+      console.time('FindAllSequencesInBinaryData');
       const imageData = captureImage(
         numWindowId,
         {
@@ -87,7 +87,9 @@ async function main() {
         },
         captureInstance,
       );
+
       const startRegions = findSequences(imageData, regionColorSequences);
+      console.timeEnd('FindAllSequencesInBinaryData');
       const { healthBar, manaBar, cooldownBar, statusBar, minimap } = startRegions;
 
       const battleListRegion = findBoundingRect(
@@ -97,6 +99,7 @@ async function main() {
         169,
         dimensions.height,
       );
+      console.log('battleList', battleListRegion);
 
       const partyListRegion = findBoundingRect(
         imageData,
@@ -105,6 +108,7 @@ async function main() {
         169,
         dimensions.height,
       );
+      console.log('partyList', partyListRegion);
 
       const hpManaRegion = {
         x: healthBar.x,
@@ -112,6 +116,7 @@ async function main() {
         width: 94,
         height: 14,
       };
+      console.log('hpmana', hpManaRegion);
 
       const cooldownsRegion = {
         x: cooldownBar.x,
@@ -119,6 +124,7 @@ async function main() {
         width: 260,
         height: 1,
       };
+      console.log('cooldownbar', cooldownsRegion);
 
       const statusBarRegion = {
         x: statusBar.x,
@@ -126,6 +132,7 @@ async function main() {
         width: 104,
         height: 9,
       };
+      console.log('statusbar', statusBarRegion);
 
       const minimapRegion = {
         x: minimap.x,
@@ -133,6 +140,7 @@ async function main() {
         width: 106,
         height: 1,
       };
+      console.log('minimap', minimapRegion);
 
       async function loop() {
         let lastLoopStartTime = Date.now();

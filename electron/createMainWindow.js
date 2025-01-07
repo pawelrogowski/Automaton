@@ -100,7 +100,7 @@ const buildAppMenu = () => {
       submenu: [
         { label: 'Show/Hide', click: toggleMainWindowVisibility },
         { type: 'separator' },
-        { label: 'Select Window', click: selectWindow },
+        { label: 'Select Window', click: async () => await selectWindow() },
         { label: 'Reset Engine', click: resetWorkers },
         { type: 'separator' },
         { label: 'Load Settings', click: loadRulesFromFile },
@@ -219,9 +219,7 @@ export const createMainWindow = () => {
   //   mainWindow.webContents.openDevTools();
   // }
 
-  mainWindow
-    .loadURL(`file://${path.join(dirname, HTML_PATH)}`)
-    .catch((err) => console.error('Failed to load URL:', err));
+  mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
 
   createTray();
   Menu.setApplicationMenu(buildAppMenu());

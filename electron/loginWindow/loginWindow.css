@@ -90,6 +90,7 @@ button:hover {
   align-items: center;
   justify-content: space-between;
   margin-top: 20px;
+  user-select: none;
 }
 
 .remember-me input[type='checkbox'] {

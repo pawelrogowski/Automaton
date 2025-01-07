@@ -19,15 +19,18 @@ const preloadPath = path.join(cwd, '/preload.js');
 let x11capturePath;
 let keypressPath;
 let useItemOnPath;
+let windowInfoPath;
 
 if (app.isPackaged) {
   x11capturePath = path.join(app.getAppPath(), '..', 'resources', 'x11utils', 'x11capture.node');
   keypressPath = path.join(app.getAppPath(), '..', 'resources', 'x11utils', 'keypress.node');
   useItemOnPath = path.join(app.getAppPath(), '..', 'resources', 'x11utils', 'useItemOn.node');
+  windowInfoPath = path.join(app.getAppPath(), '..', 'resources', 'x11utils', 'windowinfo.node');
 } else {
   x11capturePath = path.join(cwd, '..', 'resources', 'x11utils', 'x11capture.node');
   keypressPath = path.join(cwd, '..', 'resources', 'x11utils', 'keypress.node');
   useItemOnPath = path.join(cwd, '..', 'resources', 'x11utils', 'useItemOn.node');
+  windowInfoPath = path.join(cwd, '..', 'resources', 'x11utils', 'windowinfo.node');
 }
 
 let ScreenMonitor = null;
@@ -61,6 +64,7 @@ store.subscribe(() => {
         x11capturePath,
         keypressPath,
         useItemOnPath,
+        windowInfoPath,
       },
     });
 

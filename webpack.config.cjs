@@ -88,35 +88,27 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './frontend/index.html',
     }),
-    // new CompressionPlugin({
-    //   algorithm: 'gzip',
-    //   test: /\.js$|\.css$|\.html$/,
-    //   threshold: 10240,
-    //   minRatio: 0.8,
-    // }),
-    // new CopyWebpackPlugin({
-    //   patterns: [
-    //     {
-    //       from: path.resolve(__dirname, 'resources', 'xdotool'),
-    //       to: path.resolve(__dirname, 'dist', 'resources', 'xdotool'),
-    //     },
-    //   ],
-    // }),
+    new CompressionPlugin({
+      algorithm: 'gzip',
+      test: /\.js$|\.css$|\.html$/,
+      threshold: 10240,
+      minRatio: 0.8,
+    }),
   ],
-  // optimization: {
-  //   minimize: false,
-  //   minimizer: [
-  //     new TerserPlugin({
-  //       terserOptions: {
-  //         compress: {
-  //           drop_console: false,
-  //         },
-  //         mangle: false,
-  //         output: {
-  //           comments: false,
-  //         },
-  //       },
-  //     }),
-  //   ],
-  // },
+  optimization: {
+    minimize: true,
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          compress: {
+            drop_console: false,
+          },
+          mangle: false,
+          output: {
+            comments: false,
+          },
+        },
+      }),
+    ],
+  },
 };

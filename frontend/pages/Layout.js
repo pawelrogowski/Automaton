@@ -24,6 +24,7 @@ import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js
 
 import { v4 as uuidv4 } from 'uuid';
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog.jsx';
+import EquipWrapper from './Equip.js';
 const Layout = () => {
   const dispatch = useDispatch();
   const { windowId, botEnabled } = useSelector((state) => state.global);
@@ -78,25 +79,14 @@ const Layout = () => {
               imageWidth="32px"
               tooltip="Hotkeys Section - Overview of key combination to controll the bot."
             ></NavButton>
-            <NavButton
-              to="/about"
-              text="About"
-              img={anatomyBook}
-              imageWidth="32px"
-              tooltip="About Tibia Automaton Page."
-            ></NavButton>
+            <NavButton to="/about" text="About" img={anatomyBook} imageWidth="32px" tooltip="About Tibia Automaton Page."></NavButton>
           </Header>
           <div className="side-main">
             <SidebarWrapper className="aside">
               {location.pathname === '/' || location.pathname.includes('/healing') ? (
                 <>
                   <div className="button-container">
-                    <button
-                      className="add-button"
-                      type="button"
-                      onMouseDown={handleAddRule}
-                      tooltip="Add a new rule to selected section"
-                    >
+                    <button className="add-button" type="button" onMouseDown={handleAddRule} tooltip="Add a new rule to selected section">
                       Add New Rule
                     </button>
                     <div className="save-load-buttons">
@@ -178,8 +168,10 @@ const Layout = () => {
               <div className="routes-wrapper">
                 <Routes>
                   <Route path="/healing" element={<Healing />} />
-                  <Route path="/healing#party" element={<ManaSync />} />
-                  <Route path="/healing#manasync" element={<ManaSync />} />
+                  {/* <Route path="/healing#party" element={<ManaSync />} />
+                  <Route path="/healing#manasync" element={<ManaSync />} /> */}
+                  <Route path="/hotkeys" element={<span style={{ color: '#fafafa', fontSize: '24px' }}>Coming Soon</span>} />
+                  <Route path="/about" element={<span style={{ color: '#fafafa', fontSize: '24px' }}>Coming Soon</span>} />
                 </Routes>
               </div>
             </div>

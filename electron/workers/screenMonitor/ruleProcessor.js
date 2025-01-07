@@ -155,7 +155,7 @@ export const processRules = async (activePreset, directGameState, global) => {
 
         if (healFriendRule.useRune) {
           if (canExecuteKeypress()) {
-            useItemOnCoordinates(global.windowId, targetMember.uhCoordinates.x, targetMember.uhCoordinates.y, healFriendRule.key);
+            useItemOnCoordinates(global.windowId, targetMember.uhCoordinates.x + 130, targetMember.uhCoordinates.y, healFriendRule.key);
             lastKeypressTime = Date.now();
             executeManaSyncThisRotation = false;
           }
