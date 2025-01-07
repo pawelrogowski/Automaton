@@ -16,7 +16,7 @@ export const StyledButton = styled.button`
   border-left: 1px solid ${(props) => (props.active ? '#2c2c2c' : '#757676')};
   border-bottom: 1px solid ${(props) => (props.active ? '#757676' : '#2c2c2c')};
   border-right: 1px solid ${(props) => (props.active ? '#757676' : '#2c2c2c')};
-  font-size: 10px;
+  font-size: 17px;
 
   &:hover {
     cursor: pointer;

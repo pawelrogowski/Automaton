@@ -98,7 +98,7 @@ const Layout = () => {
                         }}
                         tooltip="Load rules from a file - this replaces existing rules"
                       >
-                        LOAD
+                        Load
                       </button>
                       <button
                         className="load-button"
@@ -108,7 +108,7 @@ const Layout = () => {
                         }}
                         tooltip="Save rules to a file"
                       >
-                        SAVE
+                        Save
                       </button>
                     </div>
                   </div>

@@ -12,7 +12,7 @@ export const StyledDiv = styled.div`
   .title {
     width: 100%;
     height: 18px;
-    font-size: 12px;
+    font-size: 20px;
     color: #909090;
     display: flex;
     justify-content: center;
@@ -20,6 +20,7 @@ export const StyledDiv = styled.div`
     background-image: url(${tibiaBgDark});
     background-repeat: repeat;
     border-bottom: 1px solid black;
+    line-height: 1;
   }
   .wrapped-content {
     display: flex;

@@ -31,7 +31,8 @@ const StyledDiv = styled.div`
     width: 100px;
     height: 22px;
     padding: 0 6px;
-    font-size: 10px;
+    font-size: 17px;
+    line-height: 1;
     border: none;
     color: #d3d3d3;
     background: #414141;
@@ -114,7 +115,9 @@ const StyledDiv = styled.div`
 
   .input-percent,
   .input-monster-num {
+    font-family: joystix !important;
     width: 48px;
+
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
     text-align: center;
@@ -124,9 +127,12 @@ const StyledDiv = styled.div`
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
+    font-size: 10px !important;
+    line-height: 1;
   }
   .input-percent-select,
   .input-monster-num-condition {
+    font-family: joystix !important;
     padding: 0;
     width: 46px;
     appearance: none;
@@ -136,6 +142,8 @@ const StyledDiv = styled.div`
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
     border-right: none;
+    font-size: 10px !important;
+    line-height: 1;
   }
   .select-with-arrow::after {
     content: ' ▾';

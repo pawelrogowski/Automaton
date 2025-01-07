@@ -39,7 +39,8 @@ export const StyledDiv = styled.div`
       border-right: solid 2px rgb(39, 39, 39);
       border-bottom: solid 1px rgb(39, 39, 39);
       color: rgb(120, 120, 120);
-      font-size: 10px;
+      font-size: 20px;
+      line-height: 1;
     }
     > div {
       width: 100%;
@@ -68,7 +69,7 @@ export const StyledDiv = styled.div`
             height: 55px;
             border-bottom: solid 1px rgb(39, 39, 39);
             > p {
-              font-size: 10px;
+              font-size: 17px;
               color: rgb(180, 180, 180);
             }
           }
@@ -103,7 +104,7 @@ export const StyledDiv = styled.div`
     border-left: 1px solid #757676;
     border-bottom: 1px solid #2c2c2c;
     border-right: 1px solid #2c2c2c;
-    font-size: 10px;
+    font-size: 17px;
 
     &:active {
       background: url(${tibiaBgDark});

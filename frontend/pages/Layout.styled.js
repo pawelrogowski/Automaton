@@ -25,7 +25,7 @@ const StyledDiv = styled.div`
   > .title {
     width: calc(100vw -1px);
     height: 15px;
-    font-size: 10px;
+    font-size: 20px;
     color: #909090;
     display: flex;
     justify-content: center;
@@ -33,6 +33,7 @@ const StyledDiv = styled.div`
     background-image: url(${tibiaBgDark});
     background-repeat: repeat;
     border-bottom: 1px solid #292a29;
+    line-height: 1;
   }
   > .helper-wrapper {
     background-image: url(${tibiaBg});
@@ -69,7 +70,7 @@ const StyledDiv = styled.div`
     > span {
       text-align: center;
       color: #fafafa;
-      font-size: 10px;
+      font-size: 17px;
       padding: 0 3px;
       text-justify: center;
       width: 100%;
@@ -84,7 +85,7 @@ const StyledDiv = styled.div`
       color: #fafafa;
       background: url(${tibiaBg});
       background-repeat: repeat;
-      font-size: 10px;
+      font-size: 17px;
       cursor: pointer;
       border-top: 1px solid rgba(117, 117, 118, 0.8);
       border-left: 1px solid rgba(117, 117, 118, 0.8);

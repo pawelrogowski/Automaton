@@ -7,8 +7,8 @@ const StyledDiv = styled.div`
   width: 100%;
 
   > span {
-    font-size: 12px;
-    line-height: 0.9;
+    font-size: 22px;
+    line-height: 0.5;
     color: #fff;
     mix-blend-mode: difference;
     white-space: nowrap;

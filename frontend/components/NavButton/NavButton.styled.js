@@ -28,7 +28,7 @@ export const StyledLink = styled(NavLink)`
   > span {
     text-align: center;
     color: #fafafa;
-    font-size: 12px;
+    font-size 27px;
     padding: 0 18px;
   }
 `;

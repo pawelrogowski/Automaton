@@ -33,8 +33,7 @@ const StyledMain = styled.main`
     gap: 4px;
     width: 100%;
     input,
-    select {
-    }
+
   }
   .enable-wrapper {
     font-size: 8px;
@@ -70,7 +69,7 @@ const StyledMain = styled.main`
     margin-left: auto;
   }
   .mana-sync-row-text {
-    font-size: 10px;
+    font-size: 17px;
     color: rgb(175, 175, 175);
   }
   .refresh-rate-row {
