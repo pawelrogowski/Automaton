@@ -38,7 +38,6 @@ let lastMinimapImageData = null;
 let lastMinimapChangeTime = null;
 let numWindowId;
 const CHANGE_DURATION = 128; // used for minimap changes
-const LOOP_INTERVAL = 16; // Define loop interval as a constant
 
 const captureInstance = new X11Capture();
 
@@ -146,6 +145,8 @@ async function main() {
         let lastLoopStartTime = Date.now();
 
         while (true) {
+          const LOOP_INTERVAL = global.refreshRate;
+
           const loopStartTime = Date.now();
           const regionsToGrab = [hpManaRegion, cooldownsRegion, statusBarRegion, battleListRegion, partyListRegion, minimapRegion];
           const partyEntryRegions = calculatePartyEntryRegions(partyListRegion, Math.floor(partyListRegion.height / 26));
@@ -275,7 +276,7 @@ async function main() {
       await loop();
     } catch (error) {
       console.log(error);
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
 }

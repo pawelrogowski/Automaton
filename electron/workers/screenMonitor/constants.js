@@ -4,7 +4,7 @@ export const OPTIONS = {
     Healing: 250,
     Potion: 1000,
     Support: 500,
-    Attack: 1000,
+    Attack: 2000,
     Equip: 250,
     Others: 50,
   },
