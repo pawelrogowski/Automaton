@@ -12,6 +12,8 @@ import hotkey from '../assets/hotkey.png';
 import anatomyBook from '../assets/Anatomy_Book.gif';
 import UMP from '../assets/Ultimate_Mana_Potion.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
+import FAQ from '../assets/FAQ.png';
+import CustomRules from '../assets/cutomRules.png';
 import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
@@ -79,6 +81,7 @@ const Layout = () => {
               imageWidth="32px"
               tooltip="Hotkeys Section - Overview of key combination to controll the bot."
             ></NavButton>
+            <NavButton to="/faq" text="FAQ" img={FAQ} imageWidth="32px" tooltip="Frequently Asked Questions"></NavButton>
             <NavButton to="/about" text="About" img={anatomyBook} imageWidth="32px" tooltip="About Tibia Automaton Page."></NavButton>
           </Header>
           <div className="side-main">
@@ -129,14 +132,20 @@ const Layout = () => {
                       width={18}
                       height={18}
                     />
-                    <span>Enable (alt+e)</span>
+                    <span
+                      onClick={() => {
+                        dispatch(setIsBotEnabled(!botEnabled));
+                      }}
+                    >
+                      Enable (alt+e)
+                    </span>
                   </div>
                   <SideBarNavButton
                     to="/healing#userrules"
-                    img={healingImg}
-                    text={'Auto Heal'}
+                    img={CustomRules}
+                    text={'Custom Rules'}
                     imageWidth="32px"
-                    tooltip="Show user rules"
+                    tooltip="Show custom rules"
                   ></SideBarNavButton>
                   <SideBarNavButton
                     to="/healing#party"
@@ -149,8 +158,8 @@ const Layout = () => {
                     to="/healing#manasync"
                     img={UMP}
                     imageWidth="32px"
-                    text={'Mana-Sync'}
-                    tooltip="Show mana sync rules"
+                    text={'Attack-Sync'}
+                    tooltip="Show attack-sync rules - executed after attack spell/rune to not block the cd queue"
                     className="UMP-image"
                   ></SideBarNavButton>
                   <SideBarNavButton
@@ -168,10 +177,33 @@ const Layout = () => {
               <div className="routes-wrapper">
                 <Routes>
                   <Route path="/healing" element={<Healing />} />
-                  {/* <Route path="/healing#party" element={<ManaSync />} />
-                  <Route path="/healing#manasync" element={<ManaSync />} /> */}
-                  <Route path="/hotkeys" element={<span style={{ color: '#fafafa', fontSize: '24px' }}>Coming Soon</span>} />
+                  <Route
+                    path="/hotkeys"
+                    element={
+                      <ol style={{ color: '#fafafa', fontSize: '13px' }}>
+                        <li>
+                          Alt+W - Select active window and reset workers. Shows window ID in notification and starts updating hp and mana
+                          values
+                        </li>
+                        <li>Alt+E - Toggle bot enabled/disabled state. Plays sound and shows notification</li>
+                        <li>Alt+V - Toggle main window visibility (show/hide)</li>
+                        <li>Alt+1 - Switch to preset 1</li>
+                        <li>Alt+2 - Switch to preset 2</li>
+                        <li>Alt+3 - Switch to preset 3</li>
+                        <li>Alt+4 - Switch to preset 4</li>
+                        <li>Alt+5 - Switch to preset 5</li>
+                      </ol>
+                    }
+                  />
                   <Route path="/about" element={<span style={{ color: '#fafafa', fontSize: '24px' }}>Coming Soon</span>} />
+                  <Route
+                    path="/faq"
+                    element={
+                      <ol style={{ color: '#fafafa', fontSize: '13px' }}>
+                        <li>Coming Soon</li>
+                      </ol>
+                    }
+                  />
                 </Routes>
               </div>
             </div>

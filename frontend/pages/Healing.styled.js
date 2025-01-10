@@ -32,8 +32,6 @@ const StyledMain = styled.main`
     flex-direction: row;
     gap: 4px;
     width: 100%;
-    input,
-
   }
   .enable-wrapper {
     font-size: 8px;
@@ -69,7 +67,7 @@ const StyledMain = styled.main`
     margin-left: auto;
   }
   .mana-sync-row-text {
-    font-size: 17px;
+    font-size: 11px;
     color: rgb(175, 175, 175);
   }
   .refresh-rate-row {

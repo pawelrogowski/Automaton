@@ -3,6 +3,10 @@
   src: url('./assets/fonts/joystix.otf') format('opentype');
 }
 @font-face {
+  font-family: 'retro';
+  src: url('./assets/fonts/Retro\ Gaming.ttf') format('truetype');
+}
+@font-face {
   font-family: 'Poppins';
   src: url('./assets/fonts/Poppins-Regular.woff2') format('woff2');
 }
@@ -13,8 +17,9 @@
 /* set default font */
 * {
   font-family:
-    bb,
     joystix,
+    retro,
+    bb,
     Poppins,
     system-ui,
     -apple-system,

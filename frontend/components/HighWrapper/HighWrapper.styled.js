@@ -24,7 +24,7 @@ export const StyledDiv = styled.div`
     left: 0;
     width: 100%;
     height: 15px;
-    font-size: 20px;
+    font-size: 14px;
     line-height: 1;
     color: #909090;
     display: flex;

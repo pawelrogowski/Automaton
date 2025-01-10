@@ -16,7 +16,7 @@ const StyledHeader = styled.header`
     display: flex;
     justify-content: center;
     width: 100%;
-    font-size: 20px;
+    font-size: 14px;
     color: #909090;
   }
 `;

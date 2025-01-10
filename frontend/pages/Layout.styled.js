@@ -25,7 +25,7 @@ const StyledDiv = styled.div`
   > .title {
     width: calc(100vw -1px);
     height: 15px;
-    font-size: 20px;
+    font-size: 14px;
     color: #909090;
     display: flex;
     justify-content: center;
@@ -57,6 +57,11 @@ const StyledDiv = styled.div`
     padding: 5px 0px 5px 0px;
     padding-bottom: 0px;
     width: 100%;
+    ol {
+      font-size: {
+        font-size: 13px;
+      }
+    }
   }
   .checkbox-wrapper {
     display: flex;
@@ -70,10 +75,10 @@ const StyledDiv = styled.div`
     > span {
       text-align: center;
       color: #fafafa;
-      font-size: 17px;
       padding: 0 3px;
       text-justify: center;
       width: 100%;
+      font-size: 11px;
     }
   }
   .button-container {
@@ -85,7 +90,7 @@ const StyledDiv = styled.div`
       color: #fafafa;
       background: url(${tibiaBg});
       background-repeat: repeat;
-      font-size: 17px;
+      font-size: 11px;
       cursor: pointer;
       border-top: 1px solid rgba(117, 117, 118, 0.8);
       border-left: 1px solid rgba(117, 117, 118, 0.8);

@@ -53,6 +53,6 @@ export const StyledLink = styled(NavLink)`
     padding: 0 18px;
     text-align: center;
     color: #fafafa;
-    font-size: 17px;
+    font-size: 11px;
   }
 `;

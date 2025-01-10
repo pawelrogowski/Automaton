@@ -31,7 +31,7 @@ const StyledDiv = styled.div`
     width: 100px;
     height: 22px;
     padding: 0 6px;
-    font-size: 17px;
+    font-size: 11px;
     line-height: 1;
     border: none;
     color: #d3d3d3;
@@ -107,7 +107,7 @@ const StyledDiv = styled.div`
   }
 
   .remove-rule-button {
-    font-size: 20px;
+    font-size: 14px;
     margin-left: auto;
     justify-self: flex-end;
     width: 22px;

@@ -7,7 +7,7 @@ const StyledDiv = styled.div`
   width: 100%;
 
   > span {
-    font-size: 22px;
+    font-size: 13px;
     line-height: 0.5;
     color: #fff;
     mix-blend-mode: difference;

@@ -3,8 +3,47 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const keypress = require(workerData.keypressPath);
 
-export const keyPress = (windowId, key) => {
-  keypress.sendKey(parseInt(windowId), key[0]);
+export const keyPress = (windowId, key, rule) => {
+  const startTime = Date.now(); // Record the start time
+
+  try {
+    keypress.sendKey(parseInt(windowId), key[0]);
+
+    // Format the conditions to make them more readable
+    const readableConditions =
+      rule.conditions.length > 0 ? rule.conditions.map((condition) => `${condition.name}: ${condition.value}`).join(', ') : 'None'; // Concatenate each condition in a readable format
+
+    const executionTime = Date.now() - startTime; // Calculate the elapsed time
+
+    // Log the details with execution time
+    console.table({
+      name: rule.name,
+      category: rule.category,
+      key: rule.key,
+      hpTrigger: `${rule.hpTriggerCondition} ${rule.hpTriggerPercentage}%`,
+      manaTrigger: `${rule.manaTriggerCondition} ${rule.manaTriggerPercentage}%`,
+      priority: rule.priority,
+      conditions: readableConditions, // Use the formatted conditions
+      executionTime: `${executionTime} ms`, // Show the execution time in milliseconds
+    });
+  } catch (error) {
+    const readableConditions =
+      rule.conditions.length > 0 ? rule.conditions.map((condition) => `${condition.name}: ${condition.value}`).join(', ') : 'None'; // Concatenate each condition in a readable format
+
+    const executionTime = Date.now() - startTime; // Calculate the elapsed time
+
+    // Log the details with execution time
+    console.table({
+      name: rule.name,
+      category: rule.category,
+      key: rule.key,
+      hpTrigger: `${rule.hpTriggerCondition} ${rule.hpTriggerPercentage}%`,
+      manaTrigger: `${rule.manaTriggerCondition} ${rule.manaTriggerPercentage}%`,
+      priority: rule.priority,
+      conditions: readableConditions,
+      error: error,
+    });
+  }
 };
 
 export const keyPressManaSync = async (windowId, key, pressNumber = 1) => {

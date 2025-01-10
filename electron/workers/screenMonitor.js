@@ -1,3 +1,4 @@
+//new script
 import { regionColorSequences, resourceBars, cooldownColorSequences, statusBarSequences, battleListSequences } from '../constants/index.js';
 import { parentPort, workerData } from 'worker_threads';
 globalThis.grabImagePath = workerData.grabImagePath;
@@ -32,7 +33,8 @@ let healing = null;
 let prevState;
 let lastDispatchedHealthPercentage;
 let lastDispatchedManaPercentage;
-let cooldownBarRegions, statusBarRegions;
+let cooldownBarRegions;
+let statusBarRegions;
 let minimapChanged = false;
 let lastMinimapImageData = null;
 let lastMinimapChangeTime = null;
@@ -75,6 +77,7 @@ async function main() {
       const dimensions = windowinfo.getDimensions(numWindowId);
       console.log(`Scanning Window: ${windowinfo.getName(numWindowId)}(${numWindowId})\n${JSON.stringify(dimensions)}`);
       imageBuffer = Buffer.allocUnsafe(calcBufferSize(dimensions.width, dimensions.height, 8));
+
       console.time('FindAllSequencesInBinaryData');
       const imageData = captureImage(
         numWindowId,
@@ -89,7 +92,61 @@ async function main() {
 
       const startRegions = findSequences(imageData, regionColorSequences);
       console.timeEnd('FindAllSequencesInBinaryData');
-      const { healthBar, manaBar, cooldownBar, statusBar, minimap } = startRegions;
+      console.log('Refresh Rate set at:', Math.floor(1000 / global.refreshRate), 'FPS');
+      const { healthBar, manaBar, cooldownBar, cooldownBarFallback, statusBar, minimap } = startRegions;
+
+      // Define regions only if they were found
+      let hpManaRegion;
+      if (healthBar?.x !== undefined) {
+        hpManaRegion = {
+          x: healthBar.x,
+          y: healthBar.y,
+          width: 94,
+          height: 14,
+        };
+        console.log('hpmana', hpManaRegion);
+      }
+
+      let cooldownsRegion;
+      if (cooldownBar?.x !== undefined) {
+        cooldownsRegion = {
+          x: cooldownBar.x,
+          y: cooldownBar.y,
+          width: 260,
+          height: 1,
+        };
+        console.log('cooldownbar', cooldownsRegion);
+      } else if (cooldownBarFallback?.x !== undefined) {
+        cooldownsRegion = {
+          x: cooldownBarFallback.x,
+          y: cooldownBarFallback.y,
+          width: 260,
+          height: 1,
+        };
+        console.log('cooldownbarFallback', cooldownsRegion);
+      }
+
+      let statusBarRegion;
+      if (statusBar?.x !== undefined) {
+        statusBarRegion = {
+          x: statusBar.x,
+          y: statusBar.y,
+          width: 104,
+          height: 9,
+        };
+        console.log('statusbar', statusBarRegion);
+      }
+
+      let minimapRegion;
+      if (minimap?.x !== undefined) {
+        minimapRegion = {
+          x: minimap.x,
+          y: minimap.y,
+          width: 106,
+          height: 1,
+        };
+        console.log('minimap', minimapRegion);
+      }
 
       const battleListRegion = findBoundingRect(
         imageData,
@@ -109,122 +166,140 @@ async function main() {
       );
       console.log('partyList', partyListRegion);
 
-      const hpManaRegion = {
-        x: healthBar.x,
-        y: healthBar.y,
-        width: 94,
-        height: 14,
-      };
-      console.log('hpmana', hpManaRegion);
-
-      const cooldownsRegion = {
-        x: cooldownBar.x,
-        y: cooldownBar.y,
-        width: 260,
-        height: 1,
-      };
-      console.log('cooldownbar', cooldownsRegion);
-
-      const statusBarRegion = {
-        x: statusBar.x,
-        y: statusBar.y,
-        width: 104,
-        height: 9,
-      };
-      console.log('statusbar', statusBarRegion);
-
-      const minimapRegion = {
-        x: minimap.x,
-        y: minimap.y,
-        width: 106,
-        height: 1,
-      };
-      console.log('minimap', minimapRegion);
-
       async function loop() {
         let lastLoopStartTime = Date.now();
 
         while (true) {
           const LOOP_INTERVAL = global.refreshRate;
-
           const loopStartTime = Date.now();
-          const regionsToGrab = [hpManaRegion, cooldownsRegion, statusBarRegion, battleListRegion, partyListRegion, minimapRegion];
-          const partyEntryRegions = calculatePartyEntryRegions(partyListRegion, Math.floor(partyListRegion.height / 26));
-          partyEntryRegions.forEach((entry) => {
-            regionsToGrab.push(entry.bar);
-            regionsToGrab.push(entry.name);
-          });
 
+          // Prepare regions to grab, only including defined regions
+          const regionsToGrab = [];
+          const regionTypes = []; // Keep track of what each region is
+
+          // Helper function to safely add regions
+          const addRegionIfDefined = (region, type) => {
+            if (region?.x !== undefined) {
+              regionsToGrab.push(region);
+              regionTypes.push(type);
+            } else {
+              console.log(`${type} region not found`);
+            }
+          };
+
+          // Add each region only if it's defined
+          addRegionIfDefined(hpManaRegion, 'hpMana');
+          addRegionIfDefined(cooldownsRegion, 'cooldowns');
+          addRegionIfDefined(statusBarRegion, 'statusBar');
+          addRegionIfDefined(battleListRegion, 'battleList');
+          addRegionIfDefined(partyListRegion, 'partyList');
+          addRegionIfDefined(minimapRegion, 'minimap');
+
+          // Only add party entry regions if party list region exists
+          let partyEntryRegions = [];
+          if (partyListRegion?.x !== undefined) {
+            partyEntryRegions = calculatePartyEntryRegions(partyListRegion, Math.floor(partyListRegion.height / 26));
+            partyEntryRegions.forEach((entry, index) => {
+              addRegionIfDefined(entry.bar, `partyEntryBar_${index}`);
+              addRegionIfDefined(entry.name, `partyEntryName_${index}`);
+            });
+          }
+
+          // Grab images only for regions that exist
           const grabResults = await Promise.all(regionsToGrab.map((region) => captureImage(numWindowId, region, captureInstance)));
 
-          const [hpManaImageData, cooldownBarImageData, statusBarImageData, battleListImageData, partyListImageData, minimapImageData] =
-            grabResults;
+          // Map results to their corresponding types
+          const capturedData = {};
+          grabResults.forEach((result, index) => {
+            capturedData[regionTypes[index]] = result;
+          });
 
-          if (lastMinimapImageData) {
-            const minimapIsDifferent = Buffer.compare(minimapImageData, lastMinimapImageData) !== 0;
+          // Process HP/Mana
+          let newHealthPercentage = 0;
+          let newManaPercentage = 0;
+          if (capturedData.hpMana) {
+            newHealthPercentage = calculatePercentages(healthBar, hpManaRegion, capturedData.hpMana, resourceBars.healthBar);
+            newManaPercentage = calculatePercentages(manaBar, hpManaRegion, capturedData.hpMana, resourceBars.manaBar);
+          }
 
-            if (minimapIsDifferent) {
-              minimapChanged = true;
-              lastMinimapChangeTime = Date.now();
-            } else if (lastMinimapChangeTime && Date.now() - lastMinimapChangeTime > CHANGE_DURATION) {
-              minimapChanged = false;
+          // Process minimap changes
+          if (capturedData.minimap) {
+            if (lastMinimapImageData) {
+              const minimapIsDifferent = Buffer.compare(capturedData.minimap, lastMinimapImageData) !== 0;
+              if (minimapIsDifferent) {
+                minimapChanged = true;
+                lastMinimapChangeTime = Date.now();
+              } else if (lastMinimapChangeTime && Date.now() - lastMinimapChangeTime > CHANGE_DURATION) {
+                minimapChanged = false;
+              }
             }
-          }
-          lastMinimapImageData = minimapImageData;
-
-          const newHealthPercentage = calculatePercentages(healthBar, hpManaRegion, hpManaImageData, resourceBars.healthBar);
-          const newManaPercentage = calculatePercentages(manaBar, hpManaRegion, hpManaImageData, resourceBars.manaBar);
-          if (newHealthPercentage === 0) {
-            return;
+            lastMinimapImageData = capturedData.minimap;
           }
 
-          cooldownBarRegions = findSequences(cooldownBarImageData, cooldownColorSequences);
-          statusBarRegions = findSequences(statusBarImageData, statusBarSequences);
+          // Process cooldowns
+          if (capturedData.cooldowns) {
+            cooldownBarRegions = findSequences(capturedData.cooldowns, cooldownColorSequences);
+          } else {
+            cooldownBarRegions = {
+              healing: { x: undefined },
+              support: { x: undefined },
+              attack: { x: undefined },
+            };
+          }
+
+          // Process status bar
+          if (capturedData.statusBar) {
+            statusBarRegions = findSequences(capturedData.statusBar, statusBarSequences);
+          }
 
           const characterStatusUpdates = {};
           for (const [key, _] of Object.entries(statusBarSequences)) {
-            characterStatusUpdates[key] = statusBarRegions[key]?.x !== undefined;
+            characterStatusUpdates[key] = statusBarRegions?.[key]?.x !== undefined;
           }
 
-          let battleListEntries = findAllOccurrences(battleListImageData, battleListSequences.battleEntry);
+          // Process battle list
+          let battleListEntries = [];
+          if (capturedData.battleList) {
+            battleListEntries = findAllOccurrences(capturedData.battleList, battleListSequences.battleEntry);
+          }
 
+          // Process party data
           const partyData = [];
-          for (let i = 0; i < partyEntryRegions.length; i++) {
-            const barRegion = partyEntryRegions[i].bar;
-            const nameRegion = partyEntryRegions[i].name;
+          if (capturedData.partyList) {
+            for (let i = 0; i < partyEntryRegions.length; i++) {
+              const barRegion = partyEntryRegions[i].bar;
+              const nameRegion = partyEntryRegions[i].name;
 
-            const barStartIndex = (barRegion.y - partyListRegion.y) * partyListRegion.width + (barRegion.x - partyListRegion.x);
+              // Calculate HP percentage using direct offset in the main party list image
+              const barStartIndex = (barRegion.y - partyListRegion.y) * partyListRegion.width + (barRegion.x - partyListRegion.x);
+              const hpPercentage = calculatePartyHpPercentage(capturedData.partyList, resourceBars.partyEntryHpBar, barStartIndex * 3, 130);
 
-            const hpPercentage = calculatePartyHpPercentage(partyListImageData, resourceBars.partyEntryHpBar, barStartIndex * 3, 130);
+              // Create proper buffer for name status checking
+              const nameStartIndex = (nameRegion.y - partyListRegion.y) * partyListRegion.width + (nameRegion.x - partyListRegion.x);
+              const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
 
-            const nameStartIndex = (nameRegion.y - partyListRegion.y) * partyListRegion.width + (nameRegion.x - partyListRegion.x);
-            const nameEndIndex = nameStartIndex + nameRegion.width * nameRegion.height;
+              const nameBuffer = capturedData.partyList.subarray(nameStartIndex * 3, nameEndIndex * 3);
 
-            const partyMemberStatusSequences = findSequences(
-              partyListImageData.subarray(nameStartIndex * 3, nameEndIndex * 3),
-              PARTY_MEMBER_STATUS,
-              null,
-              'first',
-              true,
-            );
+              const partyMemberStatusSequences = findSequences(nameBuffer, PARTY_MEMBER_STATUS, null, 'first', true);
 
-            const isActive =
-              Object.keys(partyMemberStatusSequences.active).length > 0 || Object.keys(partyMemberStatusSequences.activeHover).length > 0;
+              const isActive =
+                Object.keys(partyMemberStatusSequences.active || {}).length > 0 ||
+                Object.keys(partyMemberStatusSequences.activeHover || {}).length > 0;
 
-            if (hpPercentage >= 0) {
-              partyData.push({
-                hpPercentage,
-                uhCoordinates: partyEntryRegions[i].uhCoordinates,
-                isActive,
-              });
+              if (hpPercentage >= 0) {
+                partyData.push({
+                  hpPercentage,
+                  uhCoordinates: partyEntryRegions[i].uhCoordinates,
+                  isActive,
+                });
+              }
             }
           }
 
+          // Process rules if bot is enabled
           if (global.botEnabled) {
-            // console.log(partyData);
             await processRules(
               healing.presets[healing.activePresetIndex],
-
               {
                 hpPercentage: newHealthPercentage,
                 manaPercentage: newManaPercentage,
@@ -240,6 +315,7 @@ async function main() {
             );
           }
 
+          // Update store with new percentages
           if (newHealthPercentage !== lastDispatchedHealthPercentage) {
             parentPort.postMessage({
               storeUpdate: true,
@@ -258,13 +334,9 @@ async function main() {
             lastDispatchedManaPercentage = newManaPercentage;
           }
 
-          // Calculate time spent in this iteration
+          // Calculate and apply delay for consistent interval
           const processingTime = Date.now() - loopStartTime;
-          // console.log(processingTime, 'ms');
-          // Calculate delay needed to maintain consistent interval
           const delay = Math.max(0, LOOP_INTERVAL - processingTime);
-
-          // Wait for the calculated delay
           if (delay > 0) {
             await new Promise((resolve) => setTimeout(resolve, delay));
           }

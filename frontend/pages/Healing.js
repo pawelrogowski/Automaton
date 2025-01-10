@@ -19,13 +19,39 @@ export const Healing = () => {
   const manaSyncRules = rules.filter((rule) => rule.id.includes('manaSync'));
   const healFriendRules = rules.filter((rule) => rule.id.includes('healFriend'));
 
+  // Function to get the tooltip based on rule type
+  const getTooltipForRuleType = (ruleType) => {
+    switch (ruleType) {
+      case 'userRule':
+        return 'Customize Rules For Conditional Execution - Potions, Spells, Dishes etc.';
+      case 'manaSync':
+        return 'Rules that synchronize with your attack cooldowns.';
+      case 'party':
+        return "Party healing rules to manage your allies' health.";
+      case 'equip':
+        return 'Equipment-related rules';
+      default:
+        return 'Customize rules for conditional execution';
+    }
+  };
+
   const renderRules = (rules, isParty = false) => {
     return rules.map((rule, index) => {
       console.log('Rendering rule with ID:', rule.id);
       const className = index % 2 === 0 ? 'list-bg' : '';
 
       const RuleComponent = isParty ? PartyHealingRule : HealingRule;
-      return <RuleComponent key={rule.id} rule={rule} className={className} />;
+
+      // Determine the tooltip based on the rule type
+      const tooltip = getTooltipForRuleType(
+        rule.id.includes('manaSync') ? 'manaSync' : rule.id.includes('healFriend') ? 'party' : 'userRule',
+      );
+
+      return (
+        <RuleComponent key={rule.id} rule={rule} className={className}>
+          <RuleListWrapper tooltip={tooltip}>{/* Render the actual rule content */}</RuleListWrapper>
+        </RuleComponent>
+      );
     });
   };
 
@@ -46,7 +72,7 @@ export const Healing = () => {
       hash === hashKey && (
         <HighWrapper title={title} className="healing-rules-box">
           <div>
-            <RuleListWrapper tooltip="Customize rules for conditional" variant={variant}>
+            <RuleListWrapper tooltip="Customize rules for conditional execution" variant={variant}>
               {renderRules(rulesToRender, hashKey === '#party')}
             </RuleListWrapper>
           </div>
@@ -66,7 +92,7 @@ export const Healing = () => {
           rules.filter((rule) => rule.id.includes('userRule')),
         )}
 
-        {renderSection('#manasync', 'Mana-Sync Rules', manaSyncRules)}
+        {renderSection('#manasync', 'Attack-Sync Rules', manaSyncRules)}
 
         {renderSection('#party', 'Party Heal Rules', healFriendRules, 'friends')}
 
