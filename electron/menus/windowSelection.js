@@ -6,6 +6,7 @@ import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
+import { restartWorker } from '../main.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,15 +29,15 @@ const getWindowName = (id) => windowinfo.getName(id);
 export const selectWindow = async () => {
   const pickedWindowId = windowinfo.getWindowIdByClick();
   const winInfo = windowinfo.getAllInfo(pickedWindowId);
-
+  restartWorker('screenMonitor');
   if (!winInfo.name.includes('Tibia')) {
     console.error('Error: Please select a valid tibia window.');
-    getMainWindow().setTitle('Automaton - No Window Selected');
-    setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
+    getMainWindow().setTitle(' ');
+    setGlobalState('global/setWindowTitle', ``);
     return;
   }
-  getMainWindow().setTitle(`Automaton - ${winInfo.name}`);
-  setGlobalState('global/setWindowTitle', `Automaton - (${winInfo.name})`);
+  getMainWindow().setTitle(`${winInfo.name}`);
+  setGlobalState('global/setWindowTitle', `${winInfo.name}`);
   setGlobalState('global/setWindowId', pickedWindowId);
 };
 
@@ -45,18 +46,17 @@ const getActiveWindowId = () => windowinfo.getActiveWindow();
 export const selectActiveWindow = async () => {
   try {
     const windowId = await getActiveWindowId();
-
+    restartWorker('screenMonitor');
     const windowTitle = await getWindowName(windowinfo.getActiveWindow());
     if (!windowTitle.includes('Tibia')) {
       console.error('Error: Please select a valid tibia window.');
-      getMainWindow().setTitle('Automaton - No Window');
-      setGlobalState('global/setWindowTitle', `Error: Please select a valid tibia window.`);
+      getMainWindow().setTitle(' ');
+      setGlobalState('global/setWindowTitle', ` `);
       return;
     }
 
-    getMainWindow().setTitle(`Automaton - ${windowId}`);
-
-    setGlobalState('global/setWindowTitle', `Automaton - (${windowId})`);
+    getMainWindow().setTitle(`${windowId}`);
+    setGlobalState('global/setWindowTitle', `(${windowId})`);
     setGlobalState('global/setWindowId', windowId);
   } catch (error) {
     console.error(`Error getting active window ID: ${error}`);
