@@ -1,5 +1,3 @@
-import { buildTrie, clearTrieNodes } from './trieUtils.js';
-
 export const findSequences = (imageData, targetSequences, searchArea = null, occurrence = 'first', ignoreHeaderWarrnings = false) => {
   if (imageData.length < 8) throw new Error(`Buffer too short to contain dimensions. Length: ${imageData.length}`);
 
