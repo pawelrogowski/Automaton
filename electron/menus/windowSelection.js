@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { getMainWindow } from '../createMainWindow.js';
 import setGlobalState from '../setGlobalState.js';
-import { resetWorkers } from '../main.js';
+
 import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -26,7 +26,6 @@ let selectedWindowId = null;
 const getWindowName = (id) => windowinfo.getName(id);
 
 export const selectWindow = async () => {
-  resetWorkers();
   const pickedWindowId = windowinfo.getWindowIdByClick();
   const winInfo = windowinfo.getAllInfo(pickedWindowId);
 
@@ -56,7 +55,7 @@ export const selectActiveWindow = async () => {
     }
 
     getMainWindow().setTitle(`Automaton - ${windowId}`);
-    resetWorkers();
+
     setGlobalState('global/setWindowTitle', `Automaton - (${windowId})`);
     setGlobalState('global/setWindowId', windowId);
   } catch (error) {
