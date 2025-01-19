@@ -79,6 +79,34 @@ class WorkerManager {
     return worker;
   }
 
+  async restartWorker(name) {
+    // Get the current worker path before stopping it
+    const worker = this.workers.get(name);
+    if (!worker) {
+      console.warn(`No worker found with name: ${name}`);
+      return;
+    }
+
+    const workerPath = worker.filename;
+
+    // Stop the existing worker
+    this.stopWorker(name);
+
+    // Wait a brief moment to ensure cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Start a new worker with the same path
+    const newWorker = this.startWorker(name, workerPath);
+
+    // Update the worker with current state
+    if (newWorker) {
+      const state = store.getState();
+      newWorker.postMessage(state);
+    }
+
+    return newWorker;
+  }
+
   stopWorker(name) {
     const worker = this.workers.get(name);
     if (worker) {
@@ -132,6 +160,10 @@ class WorkerManager {
 
 // Create worker manager instance
 const workerManager = new WorkerManager();
+
+export const restartWorker = async (workerName) => {
+  return await workerManager.restartWorker(workerName);
+};
 
 // Initialize login window
 let loginWindow;
