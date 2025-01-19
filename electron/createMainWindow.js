@@ -1,7 +1,7 @@
 import { BrowserWindow, app, Tray, Menu, dialog, nativeImage } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { resetWorkers } from './main.js';
+
 import { selectWindow } from './menus/windowSelection.js';
 import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
 import { toggleNotifications } from '../frontend/redux/slices/globalSlice.js';
@@ -70,7 +70,7 @@ const buildTrayContextMenu = () =>
     },
     { type: 'separator' },
     { label: 'Select Window', click: selectWindow },
-    { label: 'Reset Engine', click: resetWorkers },
+
     { type: 'separator' },
     { label: 'Load Settings', click: loadRulesFromFile },
     { label: 'Save Settings', click: saveRulesToFile },
@@ -101,7 +101,7 @@ const buildAppMenu = () => {
         { label: 'Show/Hide', click: toggleMainWindowVisibility },
         { type: 'separator' },
         { label: 'Select Window', click: async () => await selectWindow() },
-        { label: 'Reset Engine', click: resetWorkers },
+
         { type: 'separator' },
         { label: 'Load Settings', click: loadRulesFromFile },
         { label: 'Save Settings', click: saveRulesToFile },

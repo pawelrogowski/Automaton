@@ -2,7 +2,7 @@ import { globalShortcut } from 'electron';
 import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
 import { getMainWindow } from './createMainWindow.js';
-import { resetWorkers } from './main.js';
+
 import { showNotification } from './notificationHandler.js';
 import debounce from 'lodash/debounce.js';
 import store from './store.js';
@@ -46,7 +46,6 @@ const playSound = (filePath) => {
 };
 
 const debouncedSelectActiveWindow = debounce(() => {
-  resetWorkers();
   selectActiveWindow();
   setTimeout(() => {
     showNotification(`🔐 Window Selected - ${windId}`);
