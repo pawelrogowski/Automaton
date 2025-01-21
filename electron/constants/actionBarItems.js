@@ -3,6 +3,7 @@ const actionBarItems = {
   healthPotion: {
     name: 'Health Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [129, 12, 2],
       [187, 14, 29],
@@ -12,6 +13,7 @@ const actionBarItems = {
   strongHealthPotion: {
     name: 'Strong Health Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [184, 0, 37],
       [173, 0, 17],
@@ -22,6 +24,7 @@ const actionBarItems = {
   greatHealthPotion: {
     name: 'Great Health Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [127, 7, 0],
       [159, 8, 0],
@@ -32,6 +35,7 @@ const actionBarItems = {
   ultimateHealthPotion: {
     name: 'Ultimate Health Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [174, 1, 0],
       [191, 1, 0],
@@ -43,6 +47,7 @@ const actionBarItems = {
   supremeHealthPotion: {
     name: 'Supreme Health Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [167, 40, 31],
       [167, 40, 31],
@@ -54,6 +59,7 @@ const actionBarItems = {
   manaPotion: {
     name: 'Mana Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [129, 2, 119],
       [171, 14, 187],
@@ -64,6 +70,7 @@ const actionBarItems = {
   strongManaPotion: {
     name: 'Strong Mana Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [156, 0, 116],
       [176, 0, 148],
@@ -74,6 +81,7 @@ const actionBarItems = {
   greatManaPotion: {
     name: 'Great Mana Potion',
     direction: 'vertical',
+    offset: { x: 0, y: 0 },
     sequence: [
       [145, 49, 108],
       [171, 57, 128],
@@ -83,6 +91,7 @@ const actionBarItems = {
   ultimateManaPotion: {
     name: 'Ultimate Mana Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [162, 55, 122],
       [133, 39, 103],
@@ -94,6 +103,7 @@ const actionBarItems = {
   greatSpiritPotion: {
     name: 'Great Spirit Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [89, 36, 0],
       [130, 69, 0],
@@ -104,6 +114,7 @@ const actionBarItems = {
   ultimateSpiritPotion: {
     name: 'Ultimate Spirit Potion',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [140, 84, 0],
       [114, 63, 0],
@@ -116,6 +127,7 @@ const actionBarItems = {
   exuraInfir: {
     name: 'Exura Infir',
     direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
       [85, 145, 185],
       [116, 168, 203],
@@ -127,17 +139,17 @@ const actionBarItems = {
   },
   exura: {
     name: 'Exura',
-    direction: 'vertical',
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
     sequence: [
-      [234, 245, 250],
-      [236, 243, 247],
-      [187, 179, 194],
-      [146, 135, 160],
+      [65, 111, 155],
+      [66, 110, 156],
     ],
   },
   exuraGran: {
     name: 'Exura Gran',
     direction: 'vertical',
+    offset: { x: 0, y: 0 },
     sequence: [
       [234, 237, 243],
       [202, 189, 202],
@@ -147,11 +159,21 @@ const actionBarItems = {
   exuraVita: {
     name: 'Exura Vita',
     direction: 'vertical',
+    offset: { x: 0, y: 0 },
     sequence: [
       [230, 243, 255],
       [244, 249, 255],
       [253, 253, 255],
       [251, 253, 255],
+    ],
+  },
+  exuraMaxVita: {
+    name: 'Exura Max Vita',
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [32, 75, 174],
+      [33, 96, 144],
     ],
   },
 };

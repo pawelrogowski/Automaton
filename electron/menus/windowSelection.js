@@ -6,7 +6,7 @@ import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
-import { restartWorker } from '../main.js';
+import { restartWorker } from '../workerManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
