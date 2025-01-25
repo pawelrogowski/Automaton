@@ -1,7 +1,7 @@
 export const captureImage = (windowId, options, captureInstance) => {
   return new Promise(async (resolve, reject) => {
     const { x, y, width, height } = options;
-    const MAX_RETRIES = 1;
+    const MAX_RETRIES = 0;
     const RETRY_DELAY = 50; // ms between retries
     const RECONNECT_DELAY = 100; // ms after reconnection
 

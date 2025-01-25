@@ -23,11 +23,13 @@ const regionColorSequences = {
   },
   cooldownBar: {
     direction: 'horizontal',
-    offset: { x: -3, y: 0 },
+    offset: { x: -224, y: 0 },
     sequence: [
-      [66, 18, 2],
-      [49, 14, 4],
-      [65, 16, 2],
+      [57, 57, 58],
+      [57, 58, 58],
+      [60, 60, 60],
+      [113, 113, 113],
+      [54, 54, 54],
     ],
   },
   cooldownBarFallback: {
@@ -94,7 +96,7 @@ const regionColorSequences = {
 
   hotkeyBarBottomStart: {
     direction: 'horizontal',
-    offset: { x: 0, y: -1 },
+    offset: { x: 0, y: 0 },
     sequence: [
       [75, 75, 75],
       [68, 68, 68],
@@ -118,11 +120,10 @@ const regionColorSequences = {
   },
   hotkeyBarBottomEnd: {
     direction: 'horizontal',
-    offset: { x: -18, y: 1 },
+    offset: { x: -19, y: 1 },
     sequence: [
-      [66, 66, 66],
       [40, 40, 40],
-      'any',
+      [43, 43, 43],
       'any',
       'any',
       'any',
@@ -138,8 +139,6 @@ const regionColorSequences = {
       'any',
       [41, 41, 41],
       [66, 66, 66],
-      [40, 40, 40],
-      [43, 43, 43],
     ],
   },
   battleListStart: {

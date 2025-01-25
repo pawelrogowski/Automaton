@@ -1,7 +1,7 @@
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { dirname, resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 
@@ -25,16 +25,6 @@ class WorkerManager {
     this.paths = {
       utils: null,
       workers: null,
-      workerFiles: {
-        screenMonitor: 'screenMonitor.js',
-      },
-      x11Modules: {
-        x11capture: 'x11capture.node',
-        keypress: 'keypress.node',
-        useItemOn: 'useItemOn.node',
-        windowInfo: 'windowinfo.node',
-        sequenceFinder: 'sequence_finder.node',
-      },
     };
 
     this.handleWorkerError = this.handleWorkerError.bind(this);
@@ -44,19 +34,19 @@ class WorkerManager {
   }
 
   setupPaths(app, cwd) {
-    this.paths.utils = app.isPackaged
-      ? path.join(app.getAppPath(), '..', 'resources', 'x11utils')
-      : path.join(cwd, '..', 'resources', 'x11utils');
-
-    this.paths.workers = app.isPackaged ? path.join(app.getAppPath(), 'workers') : path.join(this.electronDir, 'workers');
-
-    for (const [key, fileName] of Object.entries(this.paths.x11Modules)) {
-      this.paths[key] = path.join(this.paths.utils, fileName);
+    // Set up x11 utility paths
+    if (app.isPackaged) {
+      this.paths.utils = path.join(app.getAppPath(), '..', 'resources', 'x11utils');
+    } else {
+      this.paths.utils = path.join(cwd, '..', 'resources', 'x11utils');
     }
 
-    for (const [key, fileName] of Object.entries(this.paths.workerFiles)) {
-      this.paths.workerFiles[key] = path.join(this.paths.workers, fileName);
-    }
+    // X11 utilities paths
+    this.paths.x11capture = path.join(this.paths.utils, 'x11capture.node');
+    this.paths.keypress = path.join(this.paths.utils, 'keypress.node');
+    this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
+    this.paths.windowInfo = path.join(this.paths.utils, 'windowinfo.node');
+    this.paths.sequenceFinder = path.join(this.paths.utils, 'sequence_finder.node');
 
     if (!app.isPackaged) {
       console.log('Initialized paths:', this.paths);
@@ -80,11 +70,8 @@ class WorkerManager {
   }
 
   getWorkerPath(workerName) {
-    const workerPath = this.paths.workerFiles[workerName];
-    if (!workerPath) {
-      throw new Error(`Unknown worker type: ${workerName}`);
-    }
-    return workerPath;
+    // Use the same path resolution approach as the original implementation
+    return resolve(this.electronDir, './workers', `${workerName}.js`);
   }
 
   handleWorkerError(name, error) {
@@ -110,7 +97,7 @@ class WorkerManager {
           });
         },
         RESTART_COOLDOWN * (attempts + 1),
-      ); // Exponential backoff
+      );
     } else if (attempts >= MAX_RESTART_ATTEMPTS) {
       console.error(`Maximum restart attempts reached for worker ${name}`);
       this.resetRestartState(name);
@@ -181,7 +168,6 @@ class WorkerManager {
       const state = store.getState();
       newWorker.postMessage(state);
 
-      // Reset restart attempts on successful restart
       if (name === 'screenMonitor') {
         this.resetRestartState(name);
       }

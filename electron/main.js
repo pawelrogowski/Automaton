@@ -1,4 +1,3 @@
-// main.js
 import { app, ipcMain, BrowserWindow } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -25,6 +24,8 @@ const createLoginWindow = () => {
     fullscreenable: false,
     devTools: false,
     frame: false,
+    alwaysOnTop: true,
+    type: 'notification',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

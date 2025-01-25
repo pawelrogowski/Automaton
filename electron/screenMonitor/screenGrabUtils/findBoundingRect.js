@@ -1,32 +1,6 @@
 import { findSequences } from './findSequences.js';
 import { imageBufferGrab } from './imageBufferGrab.js';
 
-/**
- * Finds a bounding rectangle between two RGB sequences within specified bounds
- * @param {Buffer} imageData - Buffer containing image data with dimensions header (8 bytes) followed by RGB data
- * @param {Object} startSequence - RGB sequence to find the starting point
- * @param {Object} endSequence - RGB sequence to find the ending point within bounded area
- * @param {number} maxRight - Maximum pixels to search right from start sequence
- * @param {number} maxDown - Maximum pixels to search down from start sequence
- * @returns {Object} Bounding rectangle data
- * @property {number} x - X coordinate of the top-left corner
- * @property {number} y - Y coordinate of the top-left corner
- * @property {number} width - Width of the bounding rectangle
- * @property {number} height - Height of the bounding rectangle
- * @property {boolean} startFound - Whether the start sequence was found
- * @property {boolean} endFound - Whether the end sequence was found
- * @property {string} [error] - Error message if sequence(s) not found
- * @throws {Error} If input parameters are invalid
- * @throws {Error} If buffer dimensions are invalid
- * @throws {Error} If search area is invalid
- * @example
- * const rect = findBoundingRect(imageBuffer,
- *   { sequence1: [[255, 0, 0]] }, // red pixel
- *   { sequence2: [[0, 255, 0]] }, // green pixel
- *   100, // search 100px right
- *   50   // search 50px down
- * );
- */
 export const findBoundingRect = (imageData, startSequence, endSequence, maxRight, maxDown) => {
   // Validate input parameters
   if (!imageData || !Buffer.isBuffer(imageData)) {
@@ -52,7 +26,7 @@ export const findBoundingRect = (imageData, startSequence, endSequence, maxRight
     throw new Error('Buffer size does not match declared dimensions');
   }
 
-  // Find start sequence
+  // Find start sequence using findSequences
   const startResult = findSequences(imageData, { start: startSequence }, null, 'first');
 
   if (!startResult.start.x && !startResult.start.y) {
@@ -97,7 +71,7 @@ export const findBoundingRect = (imageData, startSequence, endSequence, maxRight
       height: searchHeight,
     });
 
-    // Search for end sequence
+    // Search for end sequence using findSequences
     const endResult = findSequences(boundedBuffer, { end: endSequence }, null, 'first');
 
     if (!endResult.end.x && !endResult.end.y) {

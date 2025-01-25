@@ -1,5 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { createRequire } from 'module';
+import { performance } from 'perf_hooks'; // Use performance module
 import { calcBufferSize } from '../screenMonitor/screenGrabUtils/calcBufferSize.js';
 import { captureImage } from '../screenMonitor/screenGrabUtils/captureImage.js';
 import { findSequences } from '../screenMonitor/screenGrabUtils/findSequences.js';
@@ -14,7 +15,7 @@ import {
 import { findBoundingRect } from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
-import { processRules } from './screenMonitor/ruleProcessor.js';
+import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import findAllOccurrences from '../screenMonitor/screenGrabUtils/findAllOccurences.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
@@ -37,7 +38,9 @@ let hpManaRegion,
   partyListRegion,
   cooldownBarRegions,
   statusBarRegions,
+  foundActionItems,
   actionBarsRegion;
+
 let hpbar, mpbar;
 let lastMinimapImageData;
 let lastDispatchedHealthPercentage, lastDispatchedManaPercentage;
@@ -45,7 +48,7 @@ let lastMinimapChangeTime;
 let minimapChanged = false;
 let error = '';
 const MINIMAP_CHANGE_INTERVAL = 128;
-const LOG_EXECUTION_TIME = true;
+const LOG_EXECUTION_TIME = false;
 const DIMENSION_CHECK_INTERVAL = 32;
 let lastDimensionCheck = Date.now();
 
@@ -54,6 +57,8 @@ const windowinfo = require(workerData.windowInfoPath);
 const { X11Capture } = require(workerData.x11capturePath);
 const captureInstance = new X11Capture();
 const cooldownManager = new CooldownManager();
+
+const ruleProcessorInstance = new RuleProcessor();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -86,10 +91,31 @@ parentPort.on('message', (updatedState) => {
   state = updatedState;
 });
 
+// Function to calculate statistics
+const calculateStatistics = (values) => {
+  if (values.length === 0) return { average: 0, median: 0, highest: 0, lowest: 0 };
+
+  const sortedValues = [...values].sort((a, b) => a - b);
+  const sum = sortedValues.reduce((acc, val) => acc + val, 0);
+  const average = sum / sortedValues.length;
+  const median = sortedValues[Math.floor(sortedValues.length / 2)];
+  const highest = sortedValues[sortedValues.length - 1];
+  const lowest = sortedValues[0];
+
+  return { average, median, highest, lowest };
+};
+
 (async function mainLoop() {
+  const executionStats = {}; // Object to store statistics for each metric
+  let iterationCount = 0; // Track the number of iterations
+
   while (true) {
+    const executionTimes = {}; // Object to store execution times for this loop
+    iterationCount++;
+
     try {
       if ((!initialized && state?.global?.windowId) || shouldRestart) {
+        performance.mark('initialization-start');
         hpManaRegion = null;
         cooldownsRegion = null;
         statusBarRegion = null;
@@ -115,7 +141,11 @@ parentPort.on('message', (updatedState) => {
           captureInstance,
         );
 
+        performance.mark('findSequences-start');
         startRegions = findSequences(fullWindowImageData, regionColorSequences, null, 'first', false);
+        performance.mark('findSequences-end');
+        executionTimes['findSequences'] = performance.measure('findSequences', 'findSequences-start', 'findSequences-end').duration;
+
         const { healthBar, manaBar, cooldownBar, cooldownBarFallback, statusBar, minimap } = startRegions;
         hpbar = healthBar;
         mpbar = manaBar;
@@ -162,6 +192,7 @@ parentPort.on('message', (updatedState) => {
           };
         }
 
+        performance.mark('findBoundingRect-start');
         battleListRegion = findBoundingRect(
           fullWindowImageData,
           regionColorSequences.battleListStart,
@@ -177,7 +208,7 @@ parentPort.on('message', (updatedState) => {
           169,
           dimensions.height,
         );
-
+        console.time('findActionBars');
         actionBarsRegion = findBoundingRect(
           fullWindowImageData,
           regionColorSequences.hotkeyBarBottomStart,
@@ -185,8 +216,18 @@ parentPort.on('message', (updatedState) => {
           dimensions.width,
           dimensions.height,
         );
+        console.timeEnd('findActionBars');
         console.log(actionBarsRegion);
+        performance.mark('findBoundingRect-end');
+        executionTimes['findBoundingRect'] = performance.measure(
+          'findBoundingRect',
+          'findBoundingRect-start',
+          'findBoundingRect-end',
+        ).duration;
+
         initialized = true;
+        performance.mark('initialization-end');
+        executionTimes['initialization'] = performance.measure('initialization', 'initialization-start', 'initialization-end').duration;
       }
 
       if (initialized) {
@@ -196,12 +237,12 @@ parentPort.on('message', (updatedState) => {
           if (checkDimensions()) {
             initialized = false;
             shouldRestart = true;
-            await delay(150);
+            await delay(50);
             continue;
           }
         }
 
-        const startTime = Date.now();
+        const startTime = performance.now();
 
         const regionsToGrab = [];
         const regionTypes = [];
@@ -232,9 +273,12 @@ parentPort.on('message', (updatedState) => {
           });
         }
 
+        performance.mark('captureImage-start');
         const grabResults = await Promise.all(
           regionsToGrab.map(async (region) => await captureImage(state.global.windowId, region, captureInstance)),
         );
+        performance.mark('captureImage-end');
+        executionTimes['captureImage'] = performance.measure('captureImage', 'captureImage-start', 'captureImage-end').duration;
 
         const capturedData = {};
         grabResults.forEach((result, index) => {
@@ -245,8 +289,19 @@ parentPort.on('message', (updatedState) => {
         let newHealthPercentage = 0;
         let newManaPercentage = 0;
         if (capturedData.hpMana) {
+          performance.mark('calculatePercentages-start');
           newHealthPercentage = calculatePercentages(hpbar, hpManaRegion, capturedData.hpMana, resourceBars.healthBar);
           newManaPercentage = calculatePercentages(mpbar, hpManaRegion, capturedData.hpMana, resourceBars.manaBar);
+          performance.mark('calculatePercentages-end');
+          executionTimes['calculatePercentages'] = performance.measure(
+            'calculatePercentages',
+            'calculatePercentages-start',
+            'calculatePercentages-end',
+          ).duration;
+        }
+
+        if (newHealthPercentage === 0) {
+          shouldRestart = true;
         }
 
         // Process minimap changes
@@ -265,7 +320,14 @@ parentPort.on('message', (updatedState) => {
 
         // Process cooldowns
         if (capturedData.cooldowns) {
+          performance.mark('findSequencesCooldowns-start');
           cooldownBarRegions = findSequences(capturedData.cooldowns, cooldownColorSequences);
+          performance.mark('findSequencesCooldowns-end');
+          executionTimes['findSequencesCooldowns'] = performance.measure(
+            'findSequencesCooldowns',
+            'findSequencesCooldowns-start',
+            'findSequencesCooldowns-end',
+          ).duration;
         } else {
           cooldownBarRegions = {
             healing: { x: undefined },
@@ -274,17 +336,16 @@ parentPort.on('message', (updatedState) => {
           };
         }
 
-        if (capturedData.actionBars) {
-          const actionBarItemEntries = findSequences(capturedData.actionBars, actionBarItems);
-          // console.log(actionBarItemEntries);
-          // if (actionBarItemEntries.exura?.x) {
-          //   keyPress(state.global.windowId, 'p');
-          // }
-        }
-
         // Process status bar
         if (capturedData.statusBar) {
+          performance.mark('findSequencesStatusBar-start');
           statusBarRegions = findSequences(capturedData.statusBar, statusBarSequences);
+          performance.mark('findSequencesStatusBar-end');
+          executionTimes['findSequencesStatusBar'] = performance.measure(
+            'findSequencesStatusBar',
+            'findSequencesStatusBar-start',
+            'findSequencesStatusBar-end',
+          ).duration;
         }
 
         const characterStatusUpdates = {};
@@ -292,10 +353,27 @@ parentPort.on('message', (updatedState) => {
           characterStatusUpdates[key] = statusBarRegions?.[key]?.x !== undefined;
         }
 
+        // Process action bar items
+        if (capturedData.actionBars) {
+          foundActionItems = findSequences(capturedData.actionBars, actionBarItems);
+
+          console.log(foundActionItems);
+          // if (foundActionItems.exura?.x !== undefined && newHealthPercentage < 100) {
+          //   keyPress(state.global.windowId, ['p']);
+          // }
+        }
+
         // Process battle list
         let battleListEntries = [];
         if (capturedData.battleList) {
+          performance.mark('findAllOccurrences-start');
           battleListEntries = findAllOccurrences(capturedData.battleList, battleListSequences.battleEntry);
+          performance.mark('findAllOccurrences-end');
+          executionTimes['findAllOccurrences'] = performance.measure(
+            'findAllOccurrences',
+            'findAllOccurrences-start',
+            'findAllOccurrences-end',
+          ).duration;
         }
 
         // Process party data
@@ -333,7 +411,8 @@ parentPort.on('message', (updatedState) => {
 
         // Process rules if bot is enabled
         if (state.global.botEnabled) {
-          await processRules(
+          performance.mark('processRules-start');
+          ruleProcessorInstance.processRules(
             state.healing.presets[state.healing.activePresetIndex],
             {
               hpPercentage: newHealthPercentage,
@@ -348,6 +427,8 @@ parentPort.on('message', (updatedState) => {
             },
             state.global,
           );
+          performance.mark('processRules-end');
+          executionTimes['processRules'] = performance.measure('processRules', 'processRules-start', 'processRules-end').duration;
         }
 
         // Update store with new percentages
@@ -369,15 +450,39 @@ parentPort.on('message', (updatedState) => {
           lastDispatchedManaPercentage = newManaPercentage;
         }
 
-        const executionTime = Date.now() - startTime;
+        const executionTime = performance.now() - startTime;
+        executionTimes['totalLoop'] = executionTime;
+
+        // Update statistics for each metric
+        for (const [key, value] of Object.entries(executionTimes)) {
+          if (!executionStats[key]) {
+            executionStats[key] = [];
+          }
+          executionStats[key].push(value);
+        }
+
         if (LOG_EXECUTION_TIME) {
-          console.log(`Loop execution time: ${executionTime} ms`);
+          console.clear(); // Clear the terminal
+
+          // Calculate and log statistics
+          const statsTable = {};
+          for (const [key, values] of Object.entries(executionStats)) {
+            const { average, median, highest, lowest } = calculateStatistics(values);
+            statsTable[key] = {
+              average: average.toFixed(2),
+              median: median.toFixed(2),
+              highest: highest.toFixed(2),
+              lowest: lowest.toFixed(2),
+            };
+          }
+          s;
+          console.table(statsTable);
+          console.log(`Iteration Count: ${iterationCount}`);
         }
       }
       await delay(32);
     } catch (err) {
       console.error('Error in main loop:', err);
-      await delay(50);
     }
   }
 })();

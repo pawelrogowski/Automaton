@@ -1,7 +1,6 @@
 {
-  "name": "automaton",
-  "productName": "Automaton",
-  "version": "1.0.6b",
+  "name": "flux_forge",
+  "version": "1.0.8b",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -9,16 +8,18 @@
     "frontend/preload.js"
   ],
   "scripts": {
+    "pre-build": "node scripts/set-random-name.js",
     "start": "webpack --mode production && electron .",
     "rebuild": "electron-rebuild",
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
-    "make": "npm run build && electron-builder ",
-    "lint": "eslint . --ext .js,.jsx,.mjs"
+    "make": "rm -rf dist && npm run pre-build && npm run build && electron-builder ",
+    "lint": "eslint . --ext .js,.jsx,.mjs",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.feiron.automaton",
-    "productName": "Automaton",
+    "appId": "com.electron.flux_forge",
+    "productName": "Flux Forge",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -27,7 +28,8 @@
       "dist/**/*",
       "electron/**/*",
       "frontend/**/*",
-      "package.json"
+      "package.json",
+      "!scripts/*"
     ],
     "extraResources": [
       "frontend/preload.js",
