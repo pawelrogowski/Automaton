@@ -55,7 +55,7 @@ class ScreenMonitorWorker {
 
     // Configuration Object
     this.config = {
-      logLevel: 'debug', // 'silent' | 'error' | 'warn' | 'info' | 'debug'
+      logLevel: 'silent', // 'silent' | 'error' | 'warn' | 'info' | 'debug'
       clearConsole: false,
       captureRegions: {
         hpMana: { enabled: true, log: false },
@@ -64,7 +64,7 @@ class ScreenMonitorWorker {
         battleList: { enabled: true, log: false },
         partyList: { enabled: true, log: false },
         minimap: { enabled: true, log: false },
-        actionBars: { enabled: true, log: false },
+        actionBars: { enabled: false, log: false },
       },
       processing: {
         checkDimensions: true,

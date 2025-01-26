@@ -23,13 +23,11 @@ const regionColorSequences = {
   },
   cooldownBar: {
     direction: 'horizontal',
-    offset: { x: -220, y: 8 },
+    offset: { x: -154, y: 8 },
     sequence: [
-      [57, 57, 58],
-      [57, 58, 58],
-      [60, 60, 60],
-      [113, 113, 113],
-      [40, 40, 40],
+      [76, 75, 67],
+      [76, 75, 71],
+      [66, 65, 58],
     ],
   },
   // cooldownBarFallback: {

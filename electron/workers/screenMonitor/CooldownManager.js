@@ -7,14 +7,14 @@ const CONFIG = {
   HISTORY_LENGTH: 3,
   MAX_COOLDOWN_DURATIONS: {
     attack: 2000,
-    healing: 950,
+    healing: 1000,
     support: 500,
   },
 };
 
 const COOLDOWN_DURATIONS = {
-  healing: 950,
-  attack: 1900,
+  healing: 1000,
+  attack: 1950,
   support: 500,
 };
 
