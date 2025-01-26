@@ -1,17 +1,17 @@
 const regionColorSequences = {
   healthBar: {
     direction: 'horizontal',
-    offset: { x: 0, y: 0 },
+    offset: { x: 5, y: 0 },
     sequence: [[241, 97, 97], [219, 91, 91], [103, 55, 55], 'any', 'any', [120, 61, 64]],
   },
   manaBar: {
     direction: 'horizontal',
-    offset: { x: 0, y: 0 },
+    offset: { x: 9, y: 0 },
     sequence: [[99, 96, 248], [95, 92, 219], [80, 79, 140], 'any', 'any', 'any', 'any', 'any', 'any', [61, 61, 125]],
   },
   minimap: {
     direction: 'horizontal',
-    offset: { x: -119, y: 35 },
+    offset: { x: -117, y: 35 },
     sequence: [
       [113, 113, 113],
       [199, 199, 199],
@@ -23,27 +23,27 @@ const regionColorSequences = {
   },
   cooldownBar: {
     direction: 'horizontal',
-    offset: { x: -224, y: 0 },
+    offset: { x: -220, y: 8 },
     sequence: [
       [57, 57, 58],
       [57, 58, 58],
       [60, 60, 60],
       [113, 113, 113],
-      [54, 54, 54],
+      [40, 40, 40],
     ],
   },
-  cooldownBarFallback: {
-    direction: 'horizontal',
-    offset: { x: -3, y: 0 },
-    sequence: [
-      [65, 18, 2],
-      [49, 14, 4],
-      [65, 16, 2],
-    ],
-  },
+  // cooldownBarFallback: {
+  //   direction: 'horizontal',
+  //   offset: { x: -3, y: 0 },
+  //   sequence: [
+  //     [65, 18, 2],
+  //     [49, 14, 4],
+  //     [65, 16, 2],
+  //   ],
+  // },
   statusBar: {
     direction: 'horizontal',
-    offset: { x: -110, y: 1 },
+    offset: { x: -99, y: 1 },
     sequence: [
       [41, 42, 42],
       [28, 28, 29],
@@ -54,49 +54,49 @@ const regionColorSequences = {
       [112, 112, 113],
     ],
   },
-  amuletSlot: {
-    direction: 'horizontal',
-    offset: { x: -100, y: -130 },
-    sequence: [
-      [41, 42, 42],
-      [28, 28, 29],
-      [44, 45, 45],
-      [40, 40, 41],
-      [44, 44, 44],
-      [46, 46, 46],
-      [112, 112, 113],
-    ],
-  },
-  ringSlot: {
-    direction: 'horizontal',
-    offset: { x: -100, y: -58 },
-    sequence: [
-      [41, 42, 42],
-      [28, 28, 29],
-      [44, 45, 45],
-      [40, 40, 41],
-      [44, 44, 44],
-      [46, 46, 46],
-      [112, 112, 113],
-    ],
-  },
-  weaponSlot: {
-    direction: 'horizontal',
-    offset: { x: -100, y: -58 },
-    sequence: [
-      [41, 42, 42],
-      [28, 28, 29],
-      [44, 45, 45],
-      [40, 40, 41],
-      [44, 44, 44],
-      [46, 46, 46],
-      [112, 112, 113],
-    ],
-  },
+  // amuletSlot: {
+  //   direction: 'horizontal',
+  //   offset: { x: -100, y: -130 },
+  //   sequence: [
+  //     [41, 42, 42],
+  //     [28, 28, 29],
+  //     [44, 45, 45],
+  //     [40, 40, 41],
+  //     [44, 44, 44],
+  //     [46, 46, 46],
+  //     [112, 112, 113],
+  //   ],
+  // },
+  // ringSlot: {
+  //   direction: 'horizontal',
+  //   offset: { x: -100, y: -58 },
+  //   sequence: [
+  //     [41, 42, 42],
+  //     [28, 28, 29],
+  //     [44, 45, 45],
+  //     [40, 40, 41],
+  //     [44, 44, 44],
+  //     [46, 46, 46],
+  //     [112, 112, 113],
+  //   ],
+  // },
+  // weaponSlot: {
+  //   direction: 'horizontal',
+  //   offset: { x: -100, y: -58 },
+  //   sequence: [
+  //     [41, 42, 42],
+  //     [28, 28, 29],
+  //     [44, 45, 45],
+  //     [40, 40, 41],
+  //     [44, 44, 44],
+  //     [46, 46, 46],
+  //     [112, 112, 113],
+  //   ],
+  // },
 
   hotkeyBarBottomStart: {
     direction: 'horizontal',
-    offset: { x: 0, y: 0 },
+    offset: { x: 19, y: 0 },
     sequence: [
       [75, 75, 75],
       [68, 68, 68],
@@ -120,7 +120,7 @@ const regionColorSequences = {
   },
   hotkeyBarBottomEnd: {
     direction: 'horizontal',
-    offset: { x: -19, y: 1 },
+    offset: { x: -2, y: 0 },
     sequence: [
       [40, 40, 40],
       [43, 43, 43],
@@ -143,7 +143,7 @@ const regionColorSequences = {
   },
   battleListStart: {
     direction: 'horizontal',
-    offset: { x: 10, y: 17 },
+    offset: { x: 14, y: 17 },
     sequence: [
       [49, 49, 49],
       [129, 79, 41],
@@ -156,10 +156,9 @@ const regionColorSequences = {
     offset: { x: -137, y: 0 },
     sequence: [
       [67, 67, 67],
-      [39, 39, 39],
-      [48, 48, 48],
-      [64, 64, 64],
-      [88, 88, 88],
+      [78, 78, 78],
+      [104, 104, 104],
+      [67, 67, 67],
     ],
   },
   partyListStart: {
@@ -175,13 +174,12 @@ const regionColorSequences = {
 
   partyListEnd: {
     direction: 'horizontal',
-    offset: { x: -10, y: 0 },
+    offset: { x: -7, y: 0 },
     sequence: [
       [67, 67, 67],
-      [39, 39, 39],
-      [48, 48, 48],
-      [64, 64, 64],
-      [88, 88, 88],
+      [78, 78, 78],
+      [104, 104, 104],
+      [67, 67, 67],
     ],
   },
 };

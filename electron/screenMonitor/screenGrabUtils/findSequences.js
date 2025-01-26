@@ -112,23 +112,17 @@ export const findSequences = (imageData, targetSequences, searchArea = null, occ
       }
 
       if (match) {
-        if (direction === 'horizontal') {
-          const endPixelIndex = (i + (sequence.length - 1) * 3) / 3;
-          const endX = endPixelIndex % bufferWidth;
-          const endY = Math.floor(endPixelIndex / bufferWidth);
-          tempCoords.x = endX + offset.x;
-          tempCoords.y = endY + offset.y;
-        } else {
-          const endPixelIndex = (i + (sequence.length - 1) * bufferWidth3) / 3;
-          const endX = endPixelIndex % bufferWidth;
-          const endY = Math.floor(endPixelIndex / bufferWidth);
-          tempCoords.x = endX - offset.x;
-          tempCoords.y = endY - offset.y;
-        }
+        // Calculate coordinates for the FIRST pixel in the sequence
+        const firstPixelIndex = i / 3;
+        const firstX = firstPixelIndex % bufferWidth;
+        const firstY = Math.floor(firstPixelIndex / bufferWidth);
+
+        // Apply the offset to the FIRST pixel
+        tempCoords.x = firstX + offset.x;
+        tempCoords.y = firstY + offset.y;
 
         if (occurrence === 'first') {
           if (foundSequences[seqName] === null) {
-            // Allocate a new object only if necessary
             foundSequences[seqName] = { x: tempCoords.x, y: tempCoords.y };
             // Early exit if we found all sequences
             if (Object.values(foundSequences).every((seq) => seq !== null)) {
@@ -139,7 +133,6 @@ export const findSequences = (imageData, targetSequences, searchArea = null, occ
           // Check for duplicates without allocating new objects
           const exists = foundSequences[seqName].some((seq) => seq.x === tempCoords.x && seq.y === tempCoords.y);
           if (!exists) {
-            // Allocate a new object only if necessary
             foundSequences[seqName].push({ x: tempCoords.x, y: tempCoords.y });
           }
         }

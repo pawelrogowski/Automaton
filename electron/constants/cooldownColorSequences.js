@@ -1,42 +1,53 @@
 const cooldownColorSequences = {
   attack: {
-    direction: 'horizontal',
+    direction: 'vertical',
     sequence: [
-      [109, 109, 110],
-      [217, 60, 7],
-      [162, 46, 12],
+      [0, 0, 6],
+      [70, 13, 1],
+      [171, 42, 9],
+      [255, 255, 255],
     ],
   },
   healing: {
-    direction: 'horizontal',
+    direction: 'vertical',
     sequence: [
-      [109, 109, 110],
-      [103, 144, 181],
-      [14, 84, 141],
+      [1, 37, 102],
+      [77, 111, 158],
+      [39, 75, 116],
+      [255, 255, 255],
     ],
   },
   support: {
-    direction: 'horizontal',
+    direction: 'vertical',
     sequence: [
-      [109, 109, 110],
-      [93, 236, 233],
-      [117, 244, 238],
+      [0, 61, 52],
+      [0, 109, 99],
+      [52, 179, 172],
+      [255, 255, 255],
     ],
   },
-  focus: {
-    direction: 'horizontal',
+  attackInactive: {
+    direction: 'vertical',
     sequence: [
-      [109, 109, 110],
-      [210, 147, 186],
-      [122, 10, 70],
+      [71, 13, 2],
+      [53, 10, 3],
+      [0, 0, 0],
     ],
   },
-  ultimateStrikes: {
-    direction: 'horizontal',
+  healingInactive: {
+    direction: 'vertical',
     sequence: [
-      [109, 109, 110],
-      [193, 137, 132],
-      [208, 56, 34],
+      [17, 29, 45],
+      [6, 16, 30],
+      [0, 0, 0],
+    ],
+  },
+  supportInactive: {
+    direction: 'vertical',
+    sequence: [
+      [42, 74, 73],
+      [28, 50, 48],
+      [0, 0, 0],
     ],
   },
 };

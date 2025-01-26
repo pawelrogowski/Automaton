@@ -9,15 +9,13 @@ class RuleProcessor {
   constructor() {
     this.lastRuleExecutionTimes = {};
     this.lastCategoriesExecutionTimes = {};
-    this.manaSyncTimeoutId = null;
     this.lastAttackCooldownState = false;
-    this.lastManaSyncExecutionTime = 0;
     this.attackCooldownStartTime = 0;
-    this.manaSyncScheduled = false;
     this.lastKeypressTime = 0;
+    this.delayedCheckPerformed = false;
 
-    this.KEYPRESS_COOLDOWN = 64;
-    this.customManaSyncDelay = 800;
+    this.KEYPRESS_COOLDOWN = 50;
+    this.customManaSyncDelay = 650;
   }
 
   canExecuteKeypress() {
@@ -61,8 +59,10 @@ class RuleProcessor {
     return rules.filter((rule) => !rule.isWalking || (rule.isWalking && directGameState.isWalking));
   }
 
-  shouldHealFriend(rule, directGameState) {
-    const isAttackCooldownMet = rule.requireAttackCooldown ? directGameState.attackCdActive : true;
+  shouldHealFriend(rule, directGameState, ignoreRequireAttackCooldown = false) {
+    if (!directGameState?.partyMembers) return false;
+
+    const isAttackCooldownMet = ignoreRequireAttackCooldown ? true : rule.requireAttackCooldown ? directGameState.attackCdActive : true;
     if (!isAttackCooldownMet) {
       return false;
     }
@@ -70,12 +70,10 @@ class RuleProcessor {
     const hpTriggerPercentage = parseInt(rule.friendHpTriggerPercentage, 10);
 
     if (rule.partyPosition === '0') {
-      // Check all party members
       return directGameState.partyMembers.some(
         (member) => member.isActive && member.hpPercentage <= hpTriggerPercentage && member.hpPercentage > 0,
       );
     } else {
-      // Check specific party member
       const partyIndex = parseInt(rule.partyPosition, 10) - 1;
       const targetMember = directGameState.partyMembers[partyIndex];
 
@@ -131,12 +129,13 @@ class RuleProcessor {
   }
 
   executeHealFriendRule(rule, directGameState, global) {
+    if (!directGameState?.partyMembers) return false;
+
     const hpTriggerPercentage = parseInt(rule.friendHpTriggerPercentage, 10);
     const now = Date.now();
     let executed = false;
 
     if (rule.partyPosition === '0') {
-      // Heal the first party member that meets the HP threshold
       for (const targetMember of directGameState.partyMembers) {
         if (targetMember.isActive && targetMember.hpPercentage <= hpTriggerPercentage && targetMember.hpPercentage > 0) {
           if (rule.useRune) {
@@ -149,16 +148,15 @@ class RuleProcessor {
               );
               this.lastKeypressTime = now;
               executed = true;
-              break; // Heal only one member per rule execution
+              break;
             }
           } else {
             executed = this.executeRateLimitedKeyPress(global.windowId, [rule.key], rule);
-            break; // Heal only one member per rule execution
+            break;
           }
         }
       }
     } else {
-      // Heal specific party member
       const partyIndex = parseInt(rule.partyPosition, 10) - 1;
       const targetMember = directGameState.partyMembers[partyIndex];
 
@@ -188,32 +186,6 @@ class RuleProcessor {
     return executed;
   }
 
-  scheduleManaSyncExecution(manaSyncRules, global) {
-    if (this.manaSyncTimeoutId) {
-      clearTimeout(this.manaSyncTimeoutId);
-    }
-
-    this.manaSyncTimeoutId = setTimeout(() => {
-      if (this.canExecuteKeypress()) {
-        const executionTime = Date.now();
-
-        manaSyncRules.forEach((rule) => {
-          this.lastRuleExecutionTimes[rule.id] = executionTime;
-          this.lastCategoriesExecutionTimes[rule.category] = executionTime;
-          keyPressManaSync(global.windowId, rule.key, 2);
-        });
-
-        this.lastKeypressTime = executionTime;
-        this.lastManaSyncExecutionTime = executionTime;
-      }
-
-      this.manaSyncTimeoutId = null;
-      this.manaSyncScheduled = false;
-    }, this.customManaSyncDelay);
-
-    this.manaSyncScheduled = true;
-  }
-
   async processRules(activePreset, directGameState, global) {
     const validRules = this.getAllValidRules(activePreset, directGameState);
     const highestPriorityRules = this.getHighestPriorityRulesByCategory(validRules);
@@ -223,21 +195,22 @@ class RuleProcessor {
       const healFriendRules = highestPriorityRules.filter((rule) => rule.id.startsWith('healFriend'));
       const regularRules = highestPriorityRules.filter((rule) => !rule.id.startsWith('manaSync') && !rule.id.startsWith('healFriend'));
 
-      let executeManaSyncThisRotation = true;
+      let executeDelayedRules = true;
 
-      for (const healFriendRule of healFriendRules) {
-        const healExecuted = this.executeHealFriendRule(healFriendRule, directGameState, global);
-        if (healExecuted) {
-          executeManaSyncThisRotation = false;
+      // Immediate healFriend rules (non-rune OR don't require attack cooldown)
+      const immediateHealFriends = healFriendRules.filter((rule) => !rule.useRune || !rule.requireAttackCooldown);
+
+      for (const healFriendRule of immediateHealFriends) {
+        if (this.executeHealFriendRule(healFriendRule, directGameState, global)) {
+          executeDelayedRules = false;
           break;
         }
       }
 
-      if (regularRules.length > 0) {
-        const regularRuleKeys = regularRules.map((rule) => rule.key);
-
-        regularRules.forEach((rule, index) => {
-          if (this.executeRateLimitedKeyPress(global.windowId, [regularRuleKeys[index]], rule)) {
+      // Execute regular rules if no immediate rule was executed
+      if (executeDelayedRules && regularRules.length > 0) {
+        regularRules.forEach((rule) => {
+          if (this.executeRateLimitedKeyPress(global.windowId, [rule.key], rule)) {
             const now = Date.now();
             this.lastRuleExecutionTimes[rule.id] = now;
             this.lastCategoriesExecutionTimes[rule.category] = now;
@@ -245,18 +218,50 @@ class RuleProcessor {
         });
       }
 
+      // Handle attack cooldown state changes
       if (directGameState.attackCdActive !== this.lastAttackCooldownState) {
         if (directGameState.attackCdActive) {
           this.attackCooldownStartTime = Date.now();
-
-          if (manaSyncRules.length > 0 && !this.manaSyncScheduled && executeManaSyncThisRotation) {
-            this.scheduleManaSyncExecution(manaSyncRules, global);
-          }
+          this.delayedCheckPerformed = false;
         } else {
-          if (this.manaSyncTimeoutId) {
-            clearTimeout(this.manaSyncTimeoutId);
-            this.manaSyncTimeoutId = null;
-            this.manaSyncScheduled = false;
+          this.delayedCheckPerformed = false;
+        }
+      }
+
+      // Perform delayed check using current state
+      if (directGameState.attackCdActive && !this.delayedCheckPerformed) {
+        const timeSinceCooldown = Date.now() - this.attackCooldownStartTime;
+
+        if (timeSinceCooldown >= this.customManaSyncDelay) {
+          this.delayedCheckPerformed = true;
+
+          // Get all potential delayed rules
+          const delayedHealFriends = healFriendRules.filter((rule) => rule.requireAttackCooldown && rule.useRune);
+          const delayedRules = [...manaSyncRules, ...delayedHealFriends];
+
+          // Check current validity (ignore attack cooldown for healFriends)
+          const validDelayedRules = delayedRules.filter((rule) => {
+            if (rule.id.startsWith('manaSync')) {
+              return directGameState.attackCdActive;
+            }
+            return this.shouldHealFriend(rule, directGameState, true);
+          });
+
+          // Sort by priority and execute highest
+          const sortedRules = validDelayedRules.sort((a, b) => b.priority - a.priority);
+          if (sortedRules.length > 0 && this.canExecuteKeypress()) {
+            const ruleToExecute = sortedRules[0];
+
+            if (ruleToExecute.id.startsWith('manaSync')) {
+              keyPressManaSync(global.windowId, ruleToExecute.key, 2);
+            } else {
+              this.executeHealFriendRule(ruleToExecute, directGameState, global);
+            }
+
+            const now = Date.now();
+            this.lastRuleExecutionTimes[ruleToExecute.id] = now;
+            this.lastCategoriesExecutionTimes[ruleToExecute.category] = now;
+            this.lastKeypressTime = now;
           }
         }
       }
