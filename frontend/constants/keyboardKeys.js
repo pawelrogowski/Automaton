@@ -1,4 +1,5 @@
 const keyboardKeys = [
+  // Function keys
   'F1',
   'F2',
   'F3',
@@ -12,6 +13,7 @@ const keyboardKeys = [
   'F11',
   'F12',
 
+  // Number keys
   '1',
   '2',
   '3',
@@ -22,6 +24,8 @@ const keyboardKeys = [
   '8',
   '9',
   '0',
+
+  // Alphabet keys
   'a',
   'b',
   'c',
@@ -48,6 +52,38 @@ const keyboardKeys = [
   'x',
   'y',
   'z',
+
+  // Special character keys
+  '=',
+  '-',
+  '.',
+  '/',
+  '\\',
+  ';',
+  "'",
+  '[',
+  ']',
+
+  // Navigation keys
+  'left',
+  'right',
+  'up',
+  'down',
+  'home',
+  'end',
+  'pgup',
+  'pgdn',
+
+  // Menu key
+  'menu',
+
+  // Other keys
+  'enter',
+  'tab',
+  'space',
+  'backspace',
+  'delete',
+  'escape',
 ].map((key) => ({ value: key, label: key }));
 
 export default keyboardKeys;
