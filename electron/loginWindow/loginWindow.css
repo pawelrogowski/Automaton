@@ -100,3 +100,36 @@ button:hover {
 .remember-me label {
   color: var(--checkbox-label);
 }
+
+#hardware-info {
+  position: fixed;
+  bottom: px;
+  left: 20px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(200, 200, 200, 0.3);
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+
+#hardware-id {
+  user-select: all;
+}
+
+#hardware-id.invalid {
+  color: var(--error-message);
+  animation: shake 0.5s;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}

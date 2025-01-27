@@ -55,13 +55,13 @@ class ScreenMonitorWorker {
 
     // Configuration Object
     this.config = {
-      logLevel: 'silent', // 'silent' | 'error' | 'warn' | 'info' | 'debug'
+      logLevel: 'debug', // 'silent' | 'error' | 'warn' | 'info' | 'debug'
       clearConsole: false,
       captureRegions: {
         hpMana: { enabled: true, log: false },
         cooldowns: { enabled: true, log: false },
         statusBar: { enabled: true, log: false },
-        battleList: { enabled: true, log: false },
+        battleList: { enabled: true, log: true },
         partyList: { enabled: true, log: false },
         minimap: { enabled: true, log: false },
         actionBars: { enabled: false, log: false },
@@ -75,7 +75,7 @@ class ScreenMonitorWorker {
     };
 
     this.MINIMAP_CHANGE_INTERVAL = 128;
-    this.DIMENSION_CHECK_INTERVAL = 32;
+    this.DIMENSION_CHECK_INTERVAL = 250;
     this.lastDimensionCheck = Date.now();
 
     this.captureInstance = new X11Capture();
@@ -311,6 +311,11 @@ class ScreenMonitorWorker {
     if (this.config.captureRegions.actionBars.enabled) {
       this.processActionBars(capturedData.actionBars);
     }
+    if (this.config.captureRegions.battleList.enabled) {
+      const battleListEntries = this.getBattleListEntries(capturedData.battleList);
+      const monsterNum = battleListEntries.length;
+      this.logDebug(`Monsters: ${monsterNum}`, 'battleList');
+    }
   }
 
   handleMinimapChange(minimapData) {
@@ -402,6 +407,7 @@ class ScreenMonitorWorker {
         isWalking: this.minimapChanged,
         partyMembers: partyData,
       },
+
       this.state.global,
     );
   }

@@ -6,6 +6,7 @@ import { createMainWindow, getMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import workerManager from './workerManager.js';
+import { getLinuxHardwareId } from './hardwareId.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -68,6 +69,15 @@ app.on('before-quit', async () => {
 
 app.on('window-all-closed', () => {
   app.quit();
+});
+
+ipcMain.handle('get-hardware-id', () => {
+  try {
+    return getLinuxHardwareId();
+  } catch (error) {
+    console.error('Hardware ID error:', error);
+    return 'error-failed-retrieval';
+  }
 });
 
 export default app;

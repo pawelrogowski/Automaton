@@ -3,6 +3,9 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
   attemptLogin();
 });
 
+let currentHardwareId = null;
+let resetTimer = null;
+
 function toggleCheckbox() {
   const checkbox = document.getElementById('remember-me');
   checkbox.checked = !checkbox.checked;
@@ -10,22 +13,57 @@ function toggleCheckbox() {
 
 function setLoadingState(isLoading) {
   const loginButton = document.querySelector('button[type="submit"]');
+  loginButton.disabled = isLoading;
+  loginButton.style.opacity = isLoading ? '0.7' : '1';
   if (isLoading) {
-    loginButton.disabled = true;
-    loginButton.style.opacity = '0.7';
-    loginButton.textContent = 'Logging in...';
-  } else {
-    loginButton.disabled = false;
-    loginButton.style.opacity = '1';
+    loginButton.textContent = 'Authenticating...';
+  }
+}
+
+function showButtonMessage(message, color) {
+  const loginButton = document.querySelector('button[type="submit"]');
+  clearTimeout(resetTimer);
+  loginButton.textContent = message;
+  loginButton.style.color = color;
+  resetTimer = setTimeout(() => {
     loginButton.textContent = 'Login';
+    loginButton.style.color = '';
+  }, 10000);
+}
+
+async function checkHardwareId() {
+  const hardwareIdElement = document.getElementById('hardware-id');
+  try {
+    hardwareIdElement.classList.remove('valid', 'invalid');
+    currentHardwareId = await window.electron.ipcRenderer.invoke('get-hardware-id');
+
+    if (!currentHardwareId || currentHardwareId.includes('error')) {
+      throw new Error('Invalid hardware ID');
+    }
+
+    const storedHardwareId = localStorage.getItem('validHardwareId');
+    hardwareIdElement.textContent = `${currentHardwareId.slice(0, 55)}...`;
+    hardwareIdElement.title = `Device Fingerprint: ${currentHardwareId}`;
+
+    if (storedHardwareId) {
+      const isMatch = currentHardwareId === storedHardwareId;
+      hardwareIdElement.classList.toggle('valid', isMatch);
+      hardwareIdElement.classList.toggle('invalid', !isMatch);
+      if (!isMatch) showButtonMessage('New device detected', 'var(--error-message)');
+    }
+  } catch (error) {
+    console.error('Hardware check failed:', error);
+    hardwareIdElement.textContent = 'ID UNAVAILABLE';
+    hardwareIdElement.classList.add('invalid');
+    showButtonMessage('Device verification failed', 'var(--error-message)');
   }
 }
 
 async function attemptLogin() {
+  const loginButton = document.querySelector('button[type="submit"]');
   const username = document.getElementById('username').value;
   const password = document.getElementById('password').value;
   const rememberMe = document.getElementById('remember-me').checked;
-  const messageElement = document.getElementById('message');
 
   setLoadingState(true);
 
@@ -34,48 +72,43 @@ async function attemptLogin() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-Device-ID': currentHardwareId,
       },
       body: JSON.stringify({
         email: username,
         password: password,
+        hardwareId: currentHardwareId, // This is the key line that adds hardwareId to the request
       }),
     });
 
     const data = await response.json();
-    messageElement.textContent = data.message || 'Processing...';
 
     if (response.ok) {
-      messageElement.style.color = 'green'; // Change color for success message
-
-      // Store credentials if remember me is checked
+      localStorage.setItem('validHardwareId', currentHardwareId);
       if (rememberMe) {
         localStorage.setItem('credentials', JSON.stringify({ username, password }));
-      } else {
-        localStorage.removeItem('credentials');
       }
-
-      // Wait 2000ms before proceeding
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Notify electron of successful login
+      showButtonMessage(data.message || 'Login successful!', '#00ff00');
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       window.electron.ipcRenderer.send('login-success');
     } else {
-      messageElement.style.color = 'var(--error-message)'; // Reset to error color
-      messageElement.textContent = data.message || 'Login failed. Please check your credentials.';
-      setLoadingState(false);
+      showButtonMessage(data.message || `Error: ${response.status}`, 'var(--error-message)');
     }
   } catch (error) {
-    console.error('Login error:', error);
-    messageElement.style.color = 'var(--error-message)';
-    messageElement.textContent = 'Connection error. Please try again later.';
+    showButtonMessage('Connection error. Please try again.', 'var(--error-message)');
+  } finally {
     setLoadingState(false);
   }
 }
 
-// Load saved credentials but don't auto-login
-const credentials = JSON.parse(localStorage.getItem('credentials'));
-if (credentials) {
-  document.getElementById('username').value = credentials.username;
-  document.getElementById('password').value = credentials.password;
-  document.getElementById('remember-me').checked = true;
-}
+document.addEventListener('DOMContentLoaded', async () => {
+  const credentials = JSON.parse(localStorage.getItem('credentials'));
+  if (credentials) {
+    document.getElementById('username').value = credentials.username;
+    document.getElementById('password').value = credentials.password;
+    document.getElementById('remember-me').checked = true;
+  }
+
+  await checkHardwareId();
+  document.getElementById('username').focus();
+});
