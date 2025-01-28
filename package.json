@@ -1,6 +1,6 @@
 {
-  "name": "flux_forge",
-  "version": "1.0.8b",
+  "name": "astro-base-sys-studio",
+  "version": "1.0.9b",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -13,13 +13,14 @@
     "rebuild": "electron-rebuild",
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
-    "make": "rm -rf dist && npm run pre-build && npm run build && electron-builder ",
+    "obfuscate": "node scripts/obfuscate-for-build.js",
+    "make": "rm -rf dist && npm run pre-build && npm run obfuscate && npm run build && electron-builder",
     "lint": "eslint . --ext .js,.jsx,.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.flux_forge",
-    "productName": "Flux Forge",
+    "appId": "com.electron.astro-base-sys-studio",
+    "productName": "Astro Base Sys Studio",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -30,6 +31,16 @@
       "frontend/**/*",
       "package.json",
       "!scripts/*"
+    ],
+    "extraFiles": [
+      {
+        "from": ".electron-obfuscated",
+        "to": "electron",
+        "filter": [
+          "**/*",
+          "!path-map.json"
+        ]
+      }
     ],
     "extraResources": [
       "frontend/preload.js",
@@ -45,10 +56,7 @@
       "target": [
         "AppImage"
       ],
-      "asarUnpack": [
-        "resources/**/**/*",
-        "resources/x11capture/x11capture.node"
-      ],
+      "asarUnpack": "**/*.node",
       "category": "Utility"
     },
     "asar": true,
@@ -99,8 +107,9 @@
     "electron-rebuild": "^3.2.9",
     "eslint": "^8.56.0",
     "file-loader": "^6.2.0",
+    "fs-extra": "^11.3.0",
     "html-webpack-plugin": "^5.6.0",
-    "javascript-obfuscator": "^4.1.0",
+    "javascript-obfuscator": "^4.1.1",
     "prettier": "^3.1.1",
     "style-loader": "^3.3.3",
     "terser-webpack-plugin": "^5.3.10",

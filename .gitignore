@@ -57,4 +57,4 @@ dist/
 bun.lockb
 
 node_modules
-electron/screenMonitor/x11window/createX11Window.js
+.electron-obfuscated
