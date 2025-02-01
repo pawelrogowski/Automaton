@@ -234,6 +234,16 @@ class ScreenMonitorWorker {
     if (dimensionsChanged) {
       this.dimensions = currentDimensions;
       this.lastDimensions = currentDimensions;
+
+      if (this.resizeStabilizeTimeout) clearTimeout(this.resizeStabilizeTimeout);
+      this.isResizing = true;
+
+      this.resizeStabilizeTimeout = setTimeout(() => {
+        this.isResizing = false;
+        this.initialized = false;
+        this.shouldRestart = true;
+      }, this.RESIZE_STABILIZE_DELAY);
+
       return true;
     }
     return false;
