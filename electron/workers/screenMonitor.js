@@ -1,6 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
 import { createRequire } from 'module';
-import { calcBufferSize } from '../screenMonitor/screenGrabUtils/calcBufferSize.js';
 import { captureImage } from '../screenMonitor/screenGrabUtils/captureImage.js';
 import { findSequences } from '../screenMonitor/screenGrabUtils/findSequences.js';
 import {
