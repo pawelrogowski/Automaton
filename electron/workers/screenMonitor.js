@@ -119,18 +119,20 @@ class ScreenMonitorWorker {
           this.checkDimensionsRegularly();
         }
 
-        const capturedData = await this.captureAndProcessRegions();
-        this.processCapturedData(capturedData);
+        if (!this.isResizing) {
+          const capturedData = await this.captureAndProcessRegions();
+          this.processCapturedData(capturedData);
 
-        if (this.state?.global?.botEnabled) {
-          this.runRules(capturedData);
+          if (this.state?.global?.botEnabled) {
+            this.runRules(capturedData);
+          }
+
+          if (this.config.processing.trackMinimap) {
+            this.handleMinimapChange(capturedData.minimap);
+          }
+
+          this.handleHealthAndManaUpdates(capturedData);
         }
-
-        if (this.config.processing.trackMinimap) {
-          this.handleMinimapChange(capturedData.minimap);
-        }
-
-        this.handleHealthAndManaUpdates(capturedData);
       }
     } catch (err) {
       this.logError(`Iteration error: ${err.message}`);
