@@ -31,6 +31,9 @@ class ScreenMonitorWorker {
     this.shouldRestart = false;
     this.dimensions = null;
     this.lastDimensions = null;
+    this.isResizing = false;
+    this.resizeStabilizeTimeout = null;
+    this.RESIZE_STABILIZE_DELAY = 500;
     this.imageBuffer = null;
     this.fullWindowImageData = null;
     this.startRegions = null;
