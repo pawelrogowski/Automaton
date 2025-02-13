@@ -32,7 +32,7 @@ class ScreenMonitorWorker {
     this.lastDimensions = null;
     this.isResizing = false;
     this.resizeStabilizeTimeout = null;
-    this.RESIZE_STABILIZE_DELAY = 500;
+    this.RESIZE_STABILIZE_DELAY = 250;
     this.imageBuffer = null;
     this.fullWindowImageData = null;
     this.startRegions = null;
@@ -53,20 +53,18 @@ class ScreenMonitorWorker {
     this.lastDispatchedManaPercentage = null;
     this.lastMinimapChangeTime = null;
     this.minimapChanged = false;
-    this.logEntries = [];
 
-    // Configuration Object
     this.config = {
-      logLevel: 'debug', // 'silent' | 'error' | 'warn' | 'info' | 'debug'
+      logLevel: 'silent',
       clearConsole: false,
       captureRegions: {
-        hpMana: { enabled: true, log: false },
-        cooldowns: { enabled: true, log: false },
-        statusBar: { enabled: true, log: false },
-        battleList: { enabled: true, log: true },
-        partyList: { enabled: true, log: false },
-        minimap: { enabled: true, log: false },
-        actionBars: { enabled: false, log: false },
+        hpMana: { enabled: true },
+        cooldowns: { enabled: true },
+        statusBar: { enabled: true },
+        battleList: { enabled: true },
+        partyList: { enabled: true },
+        minimap: { enabled: true },
+        actionBars: { enabled: false },
       },
       processing: {
         checkDimensions: true,
@@ -95,7 +93,7 @@ class ScreenMonitorWorker {
       try {
         await this.mainLoopIteration();
       } catch (err) {
-        this.logError(`Main loop error: ${err.message}`);
+        console.error(err);
       } finally {
         const executionTime = Date.now() - iterationStart;
         const delayTime = this.calculateDelayTime(executionTime);
@@ -105,45 +103,66 @@ class ScreenMonitorWorker {
   }
 
   async mainLoopIteration() {
-    if (this.config.clearConsole) process.stdout.write('\x1Bc');
-    this.logEntries = [];
-
     try {
       if (this.needsInitialization()) {
         await this.initializeRegions();
       }
 
       if (this.initialized) {
-        if (this.config.processing.checkDimensions) {
-          this.checkDimensionsRegularly();
-        }
+        this.checkDimensionsRegularly();
+        const capturedData = await this.captureAndProcessRegions();
+        this.processCapturedData(capturedData);
 
-        if (!this.isResizing) {
-          const capturedData = await this.captureAndProcessRegions();
-          this.processCapturedData(capturedData);
-
+        if (this.validateDimensions()) {
           if (this.state?.global?.botEnabled) {
             this.runRules(capturedData);
           }
-
-          if (this.config.processing.trackMinimap) {
-            this.handleMinimapChange(capturedData.minimap);
-          }
-
           this.handleHealthAndManaUpdates(capturedData);
+        } else {
+          this.shouldRestart = true;
+        }
+
+        if (this.config.processing.trackMinimap) {
+          this.handleMinimapChange(capturedData.minimap);
         }
       }
     } catch (err) {
-      this.logError(`Iteration error: ${err.message}`);
-    }
-
-    if (this.logEntries.length > 0) {
-      console.log(this.logEntries.join('\n'));
+      console.error(err);
     }
   }
 
   needsInitialization() {
     return (!this.initialized && this.state?.global?.windowId && this.state?.global?.refreshRate) || this.shouldRestart;
+  }
+
+  validateDimensions() {
+    if (!this.state?.global?.windowId) return false;
+
+    const currentDimensions = windowinfo.getDimensions(this.state.global.windowId);
+    const isValid =
+      this.dimensions && currentDimensions.width === this.dimensions.width && currentDimensions.height === this.dimensions.height;
+
+    if (!isValid) {
+      this.handleResizeStart(currentDimensions);
+    }
+    return isValid;
+  }
+
+  handleResizeStart(newDimensions) {
+    this.dimensions = newDimensions;
+    this.lastDimensions = newDimensions;
+
+    if (this.resizeStabilizeTimeout) clearTimeout(this.resizeStabilizeTimeout);
+    parentPort.postMessage({
+      notification: {
+        title: 'Screen Monitor Warning',
+        body: 'Window Size Changed',
+      },
+    });
+    this.resizeStabilizeTimeout = setTimeout(() => {
+      this.initialized = false;
+      this.shouldRestart = true;
+    }, this.RESIZE_STABILIZE_DELAY);
   }
 
   async initializeRegions() {
@@ -163,6 +182,9 @@ class ScreenMonitorWorker {
 
     this.initialized = true;
     this.shouldRestart = false;
+
+    // Notify about the status of region initialization
+    this.notifyInitializationStatus();
   }
 
   resetRegions() {
@@ -174,6 +196,7 @@ class ScreenMonitorWorker {
     this.partyListRegion = null;
     this.cooldownBarRegions = null;
     this.statusBarRegions = null;
+    this.actionBarsRegion = null;
   }
 
   initializeStandardRegions() {
@@ -193,61 +216,69 @@ class ScreenMonitorWorker {
 
   initializeSpecialRegions() {
     if (this.config.captureRegions.battleList.enabled) {
-      this.battleListRegion = this.findBoundingRegion(regionColorSequences.battleListStart, regionColorSequences.battleListEnd);
+      const battleRegion = this.findBoundingRegion(regionColorSequences.battleListStart, regionColorSequences.battleListEnd);
+      this.battleListRegion = this.validateRegionDimensions(battleRegion) ? battleRegion : null;
     }
 
     if (this.config.captureRegions.partyList.enabled) {
-      this.partyListRegion = this.findBoundingRegion(regionColorSequences.partyListStart, regionColorSequences.partyListEnd);
+      const partyRegion = this.findBoundingRegion(regionColorSequences.partyListStart, regionColorSequences.partyListEnd);
+      this.partyListRegion = this.validateRegionDimensions(partyRegion) ? partyRegion : null;
     }
 
     if (this.config.captureRegions.actionBars.enabled) {
-      this.actionBarsRegion = this.findBoundingRegion(
+      const actionBarRegion = this.findBoundingRegion(
         regionColorSequences.hotkeyBarBottomStart,
         regionColorSequences.hotkeyBarBottomEnd,
         this.dimensions.width,
         this.dimensions.height,
       );
+      this.actionBarsRegion = this.validateRegionDimensions(actionBarRegion) ? actionBarRegion : null;
     }
   }
 
+  validateRegionDimensions(region) {
+    return region?.x !== undefined && region.width > 0 && region.height > 0;
+  }
+
   findBoundingRegion(startSequence, endSequence, width = 169, height = this.dimensions.height) {
-    return findBoundingRect(this.fullWindowImageData, startSequence, endSequence, width, height);
+    try {
+      const result = findBoundingRect(this.fullWindowImageData, startSequence, endSequence, width, height);
+      return result.startFound && result.endFound && result.width > 0 && result.height > 0 ? result : null;
+    } catch (error) {
+      console.error('Error in findBoundingRegion:', error);
+      return null;
+    }
+  }
+
+  notifyInitializationStatus() {
+    const status = {
+      hpManaRegion: !!this.hpManaRegion,
+      cooldownsRegion: !!this.cooldownsRegion,
+      statusBarRegion: !!this.statusBarRegion,
+      minimapRegion: !!this.minimapRegion,
+      battleListRegion: !!this.battleListRegion,
+      partyListRegion: !!this.partyListRegion,
+      actionBarsRegion: !!this.actionBarsRegion,
+    };
+
+    let message = '';
+    for (const [region, found] of Object.entries(status)) {
+      message += `${region}: ${found ? '✅' : '❌'}\n`;
+    }
+
+    parentPort.postMessage({
+      notification: {
+        title: 'Monitor Status',
+        body: message,
+      },
+    });
   }
 
   checkDimensionsRegularly() {
     if (Date.now() - this.lastDimensionCheck > this.DIMENSION_CHECK_INTERVAL) {
       this.lastDimensionCheck = Date.now();
-      if (this.checkDimensions()) {
-        this.initialized = false;
-        this.shouldRestart = true;
-      }
+      this.validateDimensions();
     }
-  }
-
-  checkDimensions() {
-    if (!this.state?.global?.windowId) return false;
-
-    const currentDimensions = windowinfo.getDimensions(this.state.global.windowId);
-    const dimensionsChanged =
-      this.lastDimensions &&
-      (currentDimensions.width !== this.lastDimensions.width || currentDimensions.height !== this.lastDimensions.height);
-
-    if (dimensionsChanged) {
-      this.dimensions = currentDimensions;
-      this.lastDimensions = currentDimensions;
-
-      if (this.resizeStabilizeTimeout) clearTimeout(this.resizeStabilizeTimeout);
-      this.isResizing = true;
-
-      this.resizeStabilizeTimeout = setTimeout(() => {
-        this.isResizing = false;
-        this.initialized = false;
-        this.shouldRestart = true;
-      }, this.RESIZE_STABILIZE_DELAY);
-
-      return true;
-    }
-    return false;
   }
 
   async captureAndProcessRegions() {
@@ -274,7 +305,7 @@ class ScreenMonitorWorker {
     ];
 
     regions.forEach(({ type, region }) => {
-      if (this.config.captureRegions[type]?.enabled && region?.x !== undefined) {
+      if (this.config.captureRegions[type]?.enabled && this.validateRegionDimensions(region)) {
         regionsToGrab.push(region);
         regionTypes.push(type);
       }
@@ -313,6 +344,13 @@ class ScreenMonitorWorker {
   }
 
   processCapturedData(capturedData) {
+    // First check critical HP/mana capture
+    if (this.config.captureRegions.hpMana.enabled && !capturedData.hpMana) {
+      this.shouldRestart = true;
+      return;
+    }
+
+    // Then process other non-critical regions
     if (this.config.processing.trackMinimap) {
       this.handleMinimapChange(capturedData.minimap);
     }
@@ -324,11 +362,6 @@ class ScreenMonitorWorker {
     }
     if (this.config.captureRegions.actionBars.enabled) {
       this.processActionBars(capturedData.actionBars);
-    }
-    if (this.config.captureRegions.battleList.enabled) {
-      const battleListEntries = this.getBattleListEntries(capturedData.battleList);
-      const monsterNum = battleListEntries.length;
-      this.logDebug(`Monsters: ${monsterNum}`, 'battleList');
     }
   }
 
@@ -353,58 +386,38 @@ class ScreenMonitorWorker {
     this.cooldownBarRegions = cooldownsData
       ? findSequences(cooldownsData, cooldownColorSequences)
       : { healing: { x: undefined }, support: { x: undefined }, attack: { x: undefined } };
-
-    this.logDebug(`Cooldowns: ${JSON.stringify(this.cooldownBarRegions)}`, 'cooldowns');
   }
 
   processStatusBars(statusBarData) {
     this.statusBarRegions = statusBarData ? findSequences(statusBarData, statusBarSequences) : {};
-    this.logDebug(`Status: ${JSON.stringify(this.statusBarRegions)}`, 'statusBar');
   }
 
   processActionBars(actionBarsData) {
     this.foundActionItems = actionBarsData ? findSequences(actionBarsData, actionBarItems) : {};
-    this.logDebug(`Action Items: ${JSON.stringify(this.foundActionItems)}`, 'actionBars');
-  }
-
-  logDebug(message, regionType) {
-    if (this.config.logLevel === 'debug' && this.config.captureRegions[regionType]?.log) {
-      this.logEntries.push(`[DEBUG] ${message}`);
-    }
-  }
-
-  logInfo(message) {
-    if (['info', 'debug'].includes(this.config.logLevel)) {
-      this.logEntries.push(`[INFO] ${message}`);
-    }
-  }
-
-  logWarn(message) {
-    if (['warn', 'info', 'debug'].includes(this.config.logLevel)) {
-      this.logEntries.push(`[WARN] ${message}`);
-    }
-  }
-
-  logError(message) {
-    if (this.config.logLevel !== 'silent') {
-      console.error(`[ERROR] ${message}`);
-    }
   }
 
   runRules(capturedData) {
-    const { newHealthPercentage, newManaPercentage } = this.calculateHealthAndMana(capturedData.hpMana);
-    const characterStatus = this.getCharacterStatus();
-    const battleListEntries = this.getBattleListEntries(capturedData.battleList);
-    const partyData = this.config.processing.handleParty ? this.getPartyData(capturedData.partyList) : [];
+    // Default values if regions aren't captured
+    const hpManaData = capturedData.hpMana || null;
+    const battleListData = capturedData.battleList || null;
+    const partyListData = capturedData.partyList || null;
 
-    // Check inactive states first
-    if (this.cooldownBarRegions.attackInactive?.x !== undefined) {
+    const { newHealthPercentage, newManaPercentage } = this.calculateHealthAndMana(hpManaData);
+    const characterStatus = this.getCharacterStatus();
+    const battleListEntries = this.getBattleListEntries(battleListData);
+    const partyData = this.config.processing.handleParty ? this.getPartyData(partyListData) : [];
+
+    // Default cooldownBarRegions if not found
+    const cooldownDefaults = { healing: { x: undefined }, support: { x: undefined }, attack: { x: undefined } };
+    const cooldownBarRegions = this.cooldownBarRegions || cooldownDefaults;
+
+    if (cooldownBarRegions.attackInactive?.x !== undefined) {
       this.cooldownManager.forceDeactivate('attack');
     }
-    if (this.cooldownBarRegions.healingInactive?.x !== undefined) {
+    if (cooldownBarRegions.healingInactive?.x !== undefined) {
       this.cooldownManager.forceDeactivate('healing');
     }
-    if (this.cooldownBarRegions.supportInactive?.x !== undefined) {
+    if (cooldownBarRegions.supportInactive?.x !== undefined) {
       this.cooldownManager.forceDeactivate('support');
     }
 
@@ -413,22 +426,19 @@ class ScreenMonitorWorker {
       {
         hpPercentage: newHealthPercentage,
         manaPercentage: newManaPercentage,
-        healingCdActive: this.cooldownManager.updateCooldown('healing', this.cooldownBarRegions.healing?.x !== undefined),
-        supportCdActive: this.cooldownManager.updateCooldown('support', this.cooldownBarRegions.support?.x !== undefined),
-        attackCdActive: this.cooldownManager.updateCooldown('attack', this.cooldownBarRegions.attack?.x !== undefined),
+        healingCdActive: this.cooldownManager.updateCooldown('healing', cooldownBarRegions.healing?.x !== undefined),
+        supportCdActive: this.cooldownManager.updateCooldown('support', cooldownBarRegions.support?.x !== undefined),
+        attackCdActive: this.cooldownManager.updateCooldown('attack', cooldownBarRegions.attack?.x !== undefined),
         characterStatus,
-        monsterNum: battleListEntries.length,
+        monsterNum: battleListEntries.length || 0, // Ensure 0 if empty
         isWalking: this.minimapChanged,
-        partyMembers: partyData,
+        partyMembers: partyData || [], // Ensure empty array if undefined
       },
-
       this.state.global,
     );
   }
 
   calculateHealthAndMana(hpManaData) {
-    if (!hpManaData) return { newHealthPercentage: 0, newManaPercentage: 0 };
-
     return {
       newHealthPercentage: calculatePercentages(this.hpbar, this.hpManaRegion, hpManaData, resourceBars.healthBar),
       newManaPercentage: calculatePercentages(this.mpbar, this.hpManaRegion, hpManaData, resourceBars.manaBar),
@@ -515,7 +525,7 @@ class ScreenMonitorWorker {
 
   calculateDelayTime(executionTime) {
     if (!this.initialized || !this.state?.global?.refreshRate) {
-      return 50;
+      return 16;
     }
     return Math.max(0, this.state.global.refreshRate - executionTime);
   }

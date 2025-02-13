@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
+import { showNotification } from './notificationHandler.js';
 
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
@@ -107,6 +108,11 @@ class WorkerManager {
   }
 
   handleWorkerMessage(message) {
+    if (message.notification) {
+      const { title, body } = message.notification;
+      showNotification(title, body);
+    }
+
     if (message.storeUpdate) {
       setGlobalState(`gameState/${message.type}`, message.payload);
     }
@@ -155,7 +161,9 @@ class WorkerManager {
     this.clearRestartLockWithTimeout(name);
 
     try {
+      // Wait for the existing worker to close before starting a new one.
       await this.stopWorker(name);
+      // Small delay to help ensure everything is cleaned up
       await new Promise((resolve) => setTimeout(resolve, WORKER_INIT_DELAY));
 
       const newWorker = this.startWorker(name);
@@ -163,20 +171,20 @@ class WorkerManager {
         throw new Error(`Failed to create new worker: ${name}`);
       }
 
+      // Allow the new worker some time to initialize
       await new Promise((resolve) => setTimeout(resolve, WORKER_INIT_DELAY));
-
       const state = store.getState();
       newWorker.postMessage(state);
 
       if (name === 'screenMonitor') {
         this.resetRestartState(name);
       }
-
       return newWorker;
     } catch (error) {
       console.error(`Error during worker ${name} restart:`, error);
       throw error;
     } finally {
+      // Ensure we clear the lock after a short cooldown period
       setTimeout(() => {
         this.restartLocks.set(name, false);
       }, RESTART_COOLDOWN);
@@ -187,10 +195,12 @@ class WorkerManager {
     const worker = this.workers.get(name);
     if (worker) {
       try {
+        // Await termination to ensure the worker has closed before proceeding.
         await worker.terminate();
       } catch (error) {
         console.error(`Error terminating worker ${name}:`, error);
       }
+      // Remove the worker from our collections
       this.workers.delete(name);
       this.workerPaths.delete(name);
     }

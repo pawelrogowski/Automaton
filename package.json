@@ -1,6 +1,6 @@
 {
-  "name": "astro-base-sys-studio",
-  "version": "1.0.9b",
+  "name": "nitromax",
+  "version": "1.1.0b",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.astro-base-sys-studio",
-    "productName": "Astro Base Sys Studio",
+    "appId": "com.electron.nitromax",
+    "productName": "Nitromax",
     "directories": {
       "output": "dist",
       "buildResources": "build"

@@ -36,9 +36,9 @@ export const selectWindow = async () => {
     setGlobalState('global/setWindowTitle', ``);
     return;
   }
-  if (winInfo.name.includes('Tibia')) {
-    restartWorker('screenMonitor');
-  }
+  // if (winInfo.name.includes('Tibia')) {
+  //   restartWorker('screenMonitor');
+  // }
   getMainWindow().setTitle(`${winInfo.name}`);
   setGlobalState('global/setWindowTitle', `${winInfo.name}`);
   setGlobalState('global/setWindowId', pickedWindowId);
