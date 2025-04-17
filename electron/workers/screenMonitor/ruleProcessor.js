@@ -14,8 +14,8 @@ class RuleProcessor {
     this.lastKeypressTime = 0;
     this.delayedCheckPerformed = false;
 
-    this.KEYPRESS_COOLDOWN = 50;
-    this.customManaSyncDelay = 650;
+    this.KEYPRESS_COOLDOWN = 25;
+    this.customManaSyncDelay = 700;
   }
 
   canExecuteKeypress() {
@@ -253,7 +253,7 @@ class RuleProcessor {
             const ruleToExecute = sortedRules[0];
 
             if (ruleToExecute.id.startsWith('manaSync')) {
-              keyPressManaSync(global.windowId, ruleToExecute.key, 2);
+              keyPressManaSync(global.windowId, ruleToExecute.key, 3);
             } else {
               this.executeHealFriendRule(ruleToExecute, directGameState, global);
             }

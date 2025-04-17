@@ -81,8 +81,8 @@ const Layout = () => {
               imageWidth="32px"
               tooltip="Hotkeys Section - Overview of key combination to controll the bot."
             ></NavButton>
-            <NavButton to="/faq" text="FAQ" img={FAQ} imageWidth="32px" tooltip="Frequently Asked Questions"></NavButton>
-            <NavButton to="/about" text="About" img={anatomyBook} imageWidth="32px" tooltip="About Tibia Automaton Page."></NavButton>
+            {/* <NavButton to="/faq" text="FAQ" img={FAQ} imageWidth="32px" tooltip="Frequently Asked Questions"></NavButton>
+            <NavButton to="/about" text="About" img={anatomyBook} imageWidth="32px" tooltip="About Tibia Automaton Page."></NavButton> */}
           </Header>
           <div className="side-main">
             <SidebarWrapper className="aside">

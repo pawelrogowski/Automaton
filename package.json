@@ -1,6 +1,6 @@
 {
-  "name": "nitromax",
-  "version": "1.1.0b",
+  "name": "smart_pulse_stellar_wave",
+  "version": "1.1.3b",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "pre-build": "node scripts/set-random-name.js",
-    "start": "webpack --mode production && electron .",
+    "start": "webpack --mode production && NODE_ENV=production electron .",
     "rebuild": "electron-rebuild",
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.nitromax",
-    "productName": "Nitromax",
+    "appId": "com.electron.smart_pulse_stellar_wave",
+    "productName": "Smart Pulse Stellar Wave",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -67,11 +67,14 @@
   "license": "CC-BY-ND-4.0",
   "dependencies": {
     "@reduxjs/toolkit": "^2.0.1",
+    "ahocorasick": "^1.0.2",
     "compression-webpack-plugin": "^11.1.0",
     "copy-webpack-plugin": "^11.0.0",
+    "ioredis": "^5.6.0",
     "lodash": "^4.17.21",
     "modern-normalize": "^2.0.0",
     "node-loader": "^2.0.0",
+    "node-valkey": "^1.0.3",
     "path-browserify": "^1.0.1",
     "play-sound": "^1.1.6",
     "process": "^0.11.10",
@@ -81,10 +84,13 @@
     "react-feather": "^2.0.10",
     "react-redux": "^9.0.4",
     "react-router-dom": "^6.28.0",
+    "redis": "^4.7.0",
+    "redis-memory-server": "^0.12.1",
     "redux-logger": "^3.0.6",
     "shm-typed-array": "^0.1.1",
     "styled-components": "^6.1.6",
     "uuid": "^11.0.3",
+    "valkey": "^0.0.3",
     "webpack-node-externals": "^3.0.0",
     "x11": "^2.3.0"
   },

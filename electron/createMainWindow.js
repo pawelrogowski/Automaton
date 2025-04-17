@@ -126,12 +126,12 @@ const buildAppMenu = () => {
     },
   ];
 
-  if (process.env.NODE_ENV !== 'production') {
-    template.push({
-      label: 'Developer',
-      submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
-    });
-  }
+  // if (process.env.NODE_ENV !== 'production') {
+  //   template.push({
+  //     label: 'Developer',
+  //     submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
+  //   });
+  // }
 
   return Menu.buildFromTemplate(template);
 };
@@ -204,20 +204,15 @@ export const createMainWindow = () => {
     icon: ICON_PATHS.app,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-
-    devTools: true,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(dirname, '/preload.js'),
-    },
+    resizable: false,
     alwaysOnTop: true,
     transparent: false,
+    webPreferences: { devTools: false, nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
   });
 
-  // if (process.env.NODE_ENV !== 'production') {
-  //   mainWindow.webContents.openDevTools();
-  // }
+  if (process.env.NODE_ENV !== 'production') {
+    mainWindow.webContents.openDevTools();
+  }
 
   mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
 

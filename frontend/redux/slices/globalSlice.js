@@ -2,12 +2,12 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  windowTitle: 'Press Alt+W on focused tibia window or Alt+Shift+W to manually select',
+  windowTitle: 'Press Alt+W on focused tibia window to attach bot',
   windowId: null,
   windowPos: { x: 0, y: 0 },
   botEnabled: false,
-  refreshRate: 16,
-  notificationsEnabled: false,
+  refreshRate: 32,
+  notificationsEnabled: true,
   activePresetIndex: 0,
 };
 

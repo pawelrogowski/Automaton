@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
@@ -7,6 +7,7 @@ import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import workerManager from './workerManager.js';
 import { getLinuxHardwareId } from './hardwareId.js';
+import { initializeStore, quitStore } from '../store/store.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -25,7 +26,6 @@ const createLoginWindow = () => {
     fullscreenable: false,
     devTools: false,
     frame: false,
-    alwaysOnTop: true,
     type: 'notification',
     webPreferences: {
       nodeIntegration: false,
@@ -36,35 +36,41 @@ const createLoginWindow = () => {
 
   const loginHtmlPath = path.join(cwd, 'loginWindow', 'loginWindow.html');
   loginWindow.loadFile(loginHtmlPath);
-
-  loginWindow.on('close', () => {
-    if (!getMainWindow()) app.quit();
-  });
 };
 
 // Application initialization
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   try {
-    // Initialize worker manager
+    await initializeStore();
     workerManager.initialize(app, cwd);
-
-    // Create login window
     createLoginWindow();
 
-    // Handle successful login
     ipcMain.on('login-success', () => {
-      loginWindow.close();
+      if (loginWindow && !loginWindow.isDestroyed()) {
+        loginWindow.close();
+      }
       createMainWindow();
     });
   } catch (error) {
-    console.error('Error during application startup:', error);
+    console.error('[Main] FATAL: Error during application startup:', error);
+    dialog.showErrorBox(
+      'Application Startup Error',
+      `Failed to initialize critical components: ${error.message}\n\nPlease check logs for details. The application will now exit.`,
+    );
     app.quit();
   }
 });
 
-// Additional application event handlers
 app.on('before-quit', async () => {
+  console.log('[Main] Preparing to quit application...');
+  console.log('[Main] Closing store connection...');
+  try {
+    await quitStore();
+  } catch (error) {
+    console.error('[Main] Error closing store connection:', error);
+  }
   unregisterGlobalShortcuts();
+  console.log('[Main] Application cleanup finished.');
 });
 
 app.on('window-all-closed', () => {
