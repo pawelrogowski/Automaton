@@ -29,7 +29,8 @@ export const findBoundingRect = (imageData, startSequence, endSequence, maxRight
   // Find start sequence using findSequences
   const startResult = findSequences(imageData, { start: startSequence }, null, 'first');
 
-  if (!startResult.start.x && !startResult.start.y) {
+  // Validate start sequence result
+  if (!startResult || !startResult.start || startResult.start.x === undefined || startResult.start.y === undefined) {
     return {
       x: 0,
       y: 0,
@@ -43,7 +44,15 @@ export const findBoundingRect = (imageData, startSequence, endSequence, maxRight
 
   // Validate start sequence position
   if (startResult.start.x >= bufferWidth || startResult.start.y >= bufferHeight) {
-    throw new Error('Start sequence found outside buffer dimensions');
+    return {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      startFound: false,
+      endFound: false,
+      error: 'Start sequence found outside buffer dimensions',
+    };
   }
 
   // Calculate and validate search bounds
@@ -74,7 +83,8 @@ export const findBoundingRect = (imageData, startSequence, endSequence, maxRight
     // Search for end sequence using findSequences
     const endResult = findSequences(boundedBuffer, { end: endSequence }, null, 'first');
 
-    if (!endResult.end.x && !endResult.end.y) {
+    // Validate end sequence result
+    if (!endResult || !endResult.end || endResult.end.x === undefined || endResult.end.y === undefined) {
       return {
         x: startResult.start.x,
         y: startResult.start.y,
@@ -96,6 +106,14 @@ export const findBoundingRect = (imageData, startSequence, endSequence, maxRight
       endFound: true,
     };
   } catch (error) {
-    throw new Error(`Failed to process search area: ${error.message}`);
+    return {
+      x: startResult.start.x,
+      y: startResult.start.y,
+      width: 0,
+      height: 0,
+      startFound: true,
+      endFound: false,
+      error: `Failed to process search area: ${error.message}`,
+    };
   }
 };

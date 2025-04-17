@@ -7,6 +7,12 @@ const cooldownColorSequences = {
       [171, 42, 9],
       [255, 255, 255],
     ],
+    backupSequence: [
+      [0, 0, 6],
+      [70, 13, 1],
+      [171, 42, 9],
+      [255, 255, 255],
+    ],
   },
   healing: {
     direction: 'vertical',
@@ -31,6 +37,11 @@ const cooldownColorSequences = {
     sequence: [
       [71, 13, 2],
       [53, 10, 3],
+      [0, 0, 0],
+    ],
+    backupSequence: [
+      [72, 13, 2],
+      [53, 11, 3],
       [0, 0, 0],
     ],
   },

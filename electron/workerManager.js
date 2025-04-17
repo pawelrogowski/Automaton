@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
+import { showNotification } from './notificationHandler.js';
+import { getRedisConnectionDetails } from '../store/redisClient.js';
 
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
@@ -106,9 +108,16 @@ class WorkerManager {
     }
   }
 
-  handleWorkerMessage(message) {
-    if (message.storeUpdate) {
+  async handleWorkerMessage(message) {
+    if (message.notification) {
+      const { title, body } = message.notification;
+      showNotification(title, body);
+    }
+
+    if (message.storeUpdate && message.type && message.payload) {
       setGlobalState(`gameState/${message.type}`, message.payload);
+    } else if (message.storeUpdate) {
+      console.warn('[WorkerManager] Received storeUpdate message with missing type or payload:', message);
     }
   }
 
@@ -119,6 +128,13 @@ class WorkerManager {
     }
 
     try {
+      const redisDetails = getRedisConnectionDetails();
+      if (!redisDetails || !redisDetails.host || !redisDetails.port) {
+        console.error(`[WorkerManager] Cannot start worker ${name}: Redis connection details unavailable.`);
+        return null;
+      }
+      console.log(`[WorkerManager] Passing Redis details to worker ${name}:`, redisDetails);
+
       const workerPath = this.getWorkerPath(name);
       const worker = new Worker(workerPath, {
         name,
@@ -128,11 +144,13 @@ class WorkerManager {
           useItemOnPath: this.paths.useItemOn,
           windowInfoPath: this.paths.windowInfo,
           sequenceFinderPath: this.paths.sequenceFinder,
+          redisHost: redisDetails.host,
+          redisPort: redisDetails.port,
         },
       });
 
       this.workerPaths.set(name, workerPath);
-      worker.on('message', this.handleWorkerMessage);
+      worker.on('message', (msg) => this.handleWorkerMessage(msg));
       worker.on('error', (error) => this.handleWorkerError(name, error));
       worker.on('exit', (code) => this.handleWorkerExit(name, code));
 
@@ -164,18 +182,16 @@ class WorkerManager {
       }
 
       await new Promise((resolve) => setTimeout(resolve, WORKER_INIT_DELAY));
-
-      const state = store.getState();
-      newWorker.postMessage(state);
+      const reduxState = store.getState();
+      newWorker.postMessage(reduxState);
 
       if (name === 'screenMonitor') {
         this.resetRestartState(name);
       }
-
       return newWorker;
     } catch (error) {
       console.error(`Error during worker ${name} restart:`, error);
-      throw error;
+      this.resetRestartState(name);
     } finally {
       setTimeout(() => {
         this.restartLocks.set(name, false);
@@ -213,19 +229,27 @@ class WorkerManager {
     const state = store.getState();
     const { windowId } = state.global;
 
-    if (windowId !== this.prevWindowId) {
+    // Only restart workers if windowId actually changed and is valid
+    if (windowId && windowId !== this.prevWindowId) {
+      console.log(`Window ID changed from ${this.prevWindowId} to ${windowId}, restarting workers...`);
       if (!this.restartLocks.get('screenMonitor')) {
         this.restartAllWorkers();
       }
     }
 
+    // Start screenMonitor if needed
     if (windowId && !this.workers.has('screenMonitor')) {
+      console.log('Starting screenMonitor worker for window ID:', windowId);
       const worker = this.startWorker('screenMonitor');
       if (worker) {
-        worker.postMessage(state);
+        // Add a small delay before sending initial state
+        setTimeout(() => {
+          worker.postMessage(state);
+        }, 100);
       }
     }
 
+    // Update existing workers
     for (const [name, worker] of this.workers) {
       if (!this.restartLocks.get(name)) {
         worker.postMessage(state);
