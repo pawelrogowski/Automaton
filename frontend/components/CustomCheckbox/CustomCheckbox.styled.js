@@ -9,6 +9,7 @@ export const TibiaCheckbox = styled.div`
   height: ${({ height }) => height}px;
   min-width: ${({ width }) => width}px;
   min-height: ${({ height }) => height}px;
+  position: relative;
 
   span {
     color: #fafafa;
@@ -30,34 +31,49 @@ export const TibiaCheckbox = styled.div`
     border-right: 1px solid #16181d;
     cursor: pointer;
     position: relative;
-  }
-
-  .custom-checkbox-label::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-size: cover;
+    background-size: auto;
     background-position: center;
+    background-repeat: no-repeat;
   }
 
   .custom-checkbox:checked + .custom-checkbox-label {
     background-color: #414141;
-  }
 
-  .custom-checkbox:checked + .custom-checkbox-label::after {
-    content: '✔';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #d3d3d3;
-    font-size: ${({ width, height }) => Math.min(width, height) / 2}px;
+    ${({ checkedIconSrc }) =>
+      checkedIconSrc &&
+      `
+      background-image: url(${checkedIconSrc});
+    `}
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #d3d3d3;
+      font-size: ${({ width, height }) => Math.min(width, height) / 1.8}px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    ${({ checkedIconSrc }) =>
+      !checkedIconSrc &&
+      `
+      &::after {
+        content: '✔';
+      }
+    `}
   }
 
   .custom-checkbox-label:active {
-    /* Add active styles */
+    /* Optional: Add active styles if desired */
+    /* Example: filter: brightness(0.9); */
+  }
+
+  .custom-checkbox:disabled + .custom-checkbox-label {
+    cursor: not-allowed;
+    opacity: 0.6;
+    /* Adjust background/border for disabled state if needed */
   }
 `;

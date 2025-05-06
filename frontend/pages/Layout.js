@@ -2,19 +2,20 @@ import ManaSync from './ManaSync.js';
 import Healing from './Healing.js';
 import StyledDiv from './Layout.styled.js';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import SidebarWrapper from '../components/SidebarWrapper/SidebarWrapper.js';
 import NavButton from '../components/NavButton/NavButton.js';
 import automaton from '../assets/cyberskull.png';
-import healParty from '../assets/Heal_Party.gif';
+import healParty from '../assets/actionBarItems/Ultimate_Healing_Rune.gif';
 import healingImg from '../assets/Light_Healing.gif';
 import hotkey from '../assets/hotkey.png';
-import anatomyBook from '../assets/Anatomy_Book.gif';
-import UMP from '../assets/Ultimate_Mana_Potion.gif';
+import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
+import momentum from '../assets/Momentum_Effect.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
 import FAQ from '../assets/FAQ.png';
+import ActionBarIcon from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
-import { setIsBotEnabled } from '../redux/slices/globalSlice.js';
+import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
 import { addRule, addHealFriendRule, addManaSyncRule } from '../redux/slices/healingSlice.js';
@@ -27,41 +28,115 @@ import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js
 import { v4 as uuidv4 } from 'uuid';
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog.jsx';
 import EquipWrapper from './Equip.js';
+
+// Helper to clamp value between min and max
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const DEBOUNCE_DELAY = 250; // milliseconds to wait after slider stops moving
+
 const Layout = () => {
   const dispatch = useDispatch();
-  const { windowId, botEnabled } = useSelector((state) => state.global);
+  const { windowId, botEnabled, refreshRate: refreshRateFromRedux, windowTitle, actualFps } = useSelector((state) => state.global);
+  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const rules = useSelector((state) => state.healing.presets[activePresetIndex]);
 
   const location = useLocation();
   const hash = location.hash;
   const navigate = useNavigate();
 
+  // Local state for immediate UI feedback
+  const [displayedRate, setDisplayedRate] = useState(refreshRateFromRedux);
+
+  // Ref to store the debounce timeout ID
+  const debounceTimeoutRef = useRef(null);
+
   useEffect(() => {
     console.log(location);
-    if (location.pathname === '/healing' && location.hash == '') {
-      navigate('/healing#userrules', { replace: true });
+    if (location.pathname === '/healing' && location.hash === '') {
+      navigate('/healing#actionbar', { replace: true });
+      // Blur the focused element after navigation
+      document.activeElement?.blur();
     }
-  }, [location]);
+  }, [location, navigate]);
 
   useEffect(() => {
     if (location.pathname === '/') {
-      navigate('/healing#userrules', { replace: true });
+      navigate('/healing#actionbar', { replace: true });
+      // Blur the focused element after navigation
+      document.activeElement?.blur();
     }
   }, [navigate, location]);
 
+  // Update local state if Redux state changes externally
+  useEffect(() => {
+    setDisplayedRate(refreshRateFromRedux);
+  }, [refreshRateFromRedux]);
+
   const handleAddRule = () => {
-    const newRuleId = uuidv4();
-    hash === '#userrules'
-      ? dispatch(addRule(`userRule${newRuleId}`))
-      : hash === '#party'
-        ? dispatch(addRule(`healFriend${newRuleId}`))
-        : hash === '#manasync'
-          ? dispatch(addRule(`manaSync${newRuleId}`))
-          : null;
+    let ruleIdPrefix;
+    switch (hash) {
+      case '#userrules':
+        ruleIdPrefix = 'userRule';
+        break;
+      case '#party':
+        ruleIdPrefix = 'healFriend';
+        break;
+      case '#manasync':
+        ruleIdPrefix = 'manaSync';
+        break;
+      case '#actionbar':
+        ruleIdPrefix = 'actionBarItem';
+        break;
+      case '#rotations': // Added case for rotations
+        ruleIdPrefix = 'rotationRule';
+        break;
+      case '#equip':
+        // Decide on prefix for equip rules if/when implemented
+        console.log("Equip rule adding not implemented yet.");
+        return; // Don't add a rule for equip yet
+      default:
+        console.log("Cannot add rule on current page/hash:", hash);
+        // Fallback to userRule or return, depending on desired behavior
+        ruleIdPrefix = 'userRule'; // Or return;
+        break;
+    }
+     if (ruleIdPrefix) {
+        const newRuleId = `${ruleIdPrefix}${uuidv4()}`;
+        dispatch(addRule(newRuleId));
+    }
   };
+
+  // Debounced handler for slider change
+  const handleRefreshRateChange = (event) => {
+    const newRate = parseInt(event.target.value, 10);
+
+    // --- Immediate UI Update ---
+    setDisplayedRate(newRate); // Update local state immediately
+
+    // --- Debounced Redux Update ---
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    debounceTimeoutRef.current = setTimeout(() => {
+      console.log(`Debounced: Dispatching setRefreshRate(${newRate})`);
+      dispatch(setRefreshRate(newRate));
+    }, DEBOUNCE_DELAY);
+  };
+
+  // Clean up the timeout when the component unmounts
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <StyledDiv>
-      <h1 className="title" tooltip="just a title bar">
-        Automaton
+      <h1 className="title">
+        {windowTitle}
       </h1>
 
       <div className="helper-wrapper">
@@ -141,11 +216,11 @@ const Layout = () => {
                     </span>
                   </div>
                   <SideBarNavButton
-                    to="/healing#userrules"
-                    img={CustomRules}
-                    text={'Custom Rules'}
+                    to="/healing#actionbar"
+                    img={ActionBarIcon}
+                    text={'Action Bar'}
                     imageWidth="32px"
-                    tooltip="Show custom rules"
+                    tooltip="Show action bar rules"
                   ></SideBarNavButton>
                   <SideBarNavButton
                     to="/healing#party"
@@ -158,8 +233,8 @@ const Layout = () => {
                     to="/healing#manasync"
                     img={UMP}
                     imageWidth="32px"
-                    text={'Attack-Sync'}
-                    tooltip="Show attack-sync rules - executed after attack spell/rune to not block the cd queue"
+                    text={'Potion-Sync'}
+                    tooltip="Show potion-sync rules - triggers only after detecting attack cooldown"
                     className="UMP-image"
                   ></SideBarNavButton>
                   <SideBarNavButton
@@ -170,6 +245,42 @@ const Layout = () => {
                     tooltip="Show auto equip rules"
                     className="SSA-image"
                   ></SideBarNavButton>
+                  <SideBarNavButton
+                    to="/healing#userrules"
+                    img={CustomRules}
+                    text={'Custom Rules'}
+                    imageWidth="32px"
+                    tooltip="Show custom rules"
+                  ></SideBarNavButton>
+                  <SideBarNavButton
+                    to="/healing#rotations"
+                    img={ActionBarIcon}
+                    text={'Spell Rotations'}
+                    imageWidth="32px"
+                    tooltip="Show spell rotation rules"
+                  ></SideBarNavButton>
+
+                  {/* --- Refresh Rate Slider --- */}
+                  <div className="slider-container" tooltip={`Adjust screen capture rate: ${displayedRate} FPS`}>
+                    <label htmlFor="refreshRateSlider">Target Refresh Rate ({displayedRate} FPS)</label>
+                    <input
+                      type="range"
+                      id="refreshRateSlider"
+                      min="10"
+                      max="60"
+                      step="1"
+                      value={displayedRate}
+                      onChange={handleRefreshRateChange}
+                      disabled={windowId === null}
+                    />
+                    {/* Display Actual FPS */}
+                    {windowId !== null && (
+                      <span style={{ fontSize: '11px', color: '#aaa', display: 'block', textAlign: 'center', marginTop: '2px' }}>
+                        Actual: {actualFps} FPS
+                      </span>
+                    )}
+                  </div>
+                  {/* --- End Refresh Rate Slider --- */}
                 </>
               ) : null}
             </SidebarWrapper>

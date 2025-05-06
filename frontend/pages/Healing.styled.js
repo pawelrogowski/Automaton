@@ -134,7 +134,7 @@ const StyledMain = styled.main`
   .setting-section {
     min-height: 72px;
     max-height: 72px;
-    overflow: hidden;
+    
     gap: 0px;
     * {
       font-size: 11px !important;
@@ -188,6 +188,12 @@ const StyledMain = styled.main`
     height: 445px;
     min-height: 445px;
     max-height: 445px;
+    > div {
+      height: 100%;
+      > div {
+        height: 100%;
+      }
+    }
   }
 `;
 export default StyledMain;

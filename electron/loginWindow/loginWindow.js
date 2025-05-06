@@ -5,10 +5,13 @@ document.getElementById('login-form').addEventListener('submit', (e) => {
 
 let currentHardwareId = null;
 let resetTimer = null;
+let autoLoginTimeout = null;
 
-function toggleCheckbox() {
-  const checkbox = document.getElementById('remember-me');
-  checkbox.checked = !checkbox.checked;
+function toggleCheckbox(checkboxId) {
+  const checkbox = document.getElementById(checkboxId);
+  if (checkbox) {
+    checkbox.checked = !checkbox.checked;
+  }
 }
 
 function setLoadingState(isLoading) {
@@ -42,7 +45,8 @@ async function checkHardwareId() {
     }
 
     const storedHardwareId = localStorage.getItem('validHardwareId');
-    hardwareIdElement.textContent = `${currentHardwareId.slice(0, 55)}...`;
+    const shortId = currentHardwareId.length > 53 ? `${currentHardwareId.slice(-10)}` : currentHardwareId;
+    hardwareIdElement.textContent = shortId;
     hardwareIdElement.title = `Device Fingerprint: ${currentHardwareId}`;
 
     if (storedHardwareId) {
@@ -60,10 +64,21 @@ async function checkHardwareId() {
 }
 
 async function attemptLogin() {
+  if (autoLoginTimeout) {
+    clearTimeout(autoLoginTimeout);
+    autoLoginTimeout = null;
+  }
+
   const loginButton = document.querySelector('button[type="submit"]');
-  const username = document.getElementById('username').value;
-  const password = document.getElementById('password').value;
-  const rememberMe = document.getElementById('remember-me').checked;
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
+  const rememberMeCheckbox = document.getElementById('remember-me');
+  const autoLoginCheckbox = document.getElementById('auto-login');
+
+  const username = usernameInput.value;
+  const password = passwordInput.value;
+  const rememberMe = rememberMeCheckbox.checked;
+  const autoLogin = autoLoginCheckbox.checked;
 
   setLoadingState(true);
 
@@ -77,7 +92,7 @@ async function attemptLogin() {
       body: JSON.stringify({
         email: username,
         password: password,
-        hardwareId: currentHardwareId, // This is the key line that adds hardwareId to the request
+        hardwareId: currentHardwareId,
       }),
     });
 
@@ -87,6 +102,14 @@ async function attemptLogin() {
       localStorage.setItem('validHardwareId', currentHardwareId);
       if (rememberMe) {
         localStorage.setItem('credentials', JSON.stringify({ username, password }));
+        if (autoLogin) {
+          localStorage.setItem('autoLoginEnabled', 'true');
+        } else {
+          localStorage.removeItem('autoLoginEnabled');
+        }
+      } else {
+        localStorage.removeItem('credentials');
+        localStorage.removeItem('autoLoginEnabled');
       }
       showButtonMessage(data.message || 'Login successful!', '#00ff00');
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -101,14 +124,47 @@ async function attemptLogin() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+function cancelAutoLogin() {
+  if (autoLoginTimeout) {
+    clearTimeout(autoLoginTimeout);
+    autoLoginTimeout = null;
+    console.log('Auto-login cancelled due to user interaction.');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const usernameInput = document.getElementById('username');
+  const passwordInput = document.getElementById('password');
+  const rememberMeCheckbox = document.getElementById('remember-me');
+  const autoLoginCheckbox = document.getElementById('auto-login');
+  const loginButton = document.querySelector('button[type="submit"]');
+
   const credentials = JSON.parse(localStorage.getItem('credentials'));
+  const autoLoginEnabled = localStorage.getItem('autoLoginEnabled') === 'true';
+
   if (credentials) {
-    document.getElementById('username').value = credentials.username;
-    document.getElementById('password').value = credentials.password;
-    document.getElementById('remember-me').checked = true;
+    usernameInput.value = credentials.username;
+    passwordInput.value = credentials.password;
+    rememberMeCheckbox.checked = true;
+    autoLoginCheckbox.checked = autoLoginEnabled;
   }
 
-  await checkHardwareId();
-  document.getElementById('username').focus();
+  checkHardwareId();
+
+  if (credentials && autoLoginEnabled) {
+    console.log('Auto-login enabled. Starting 1s timer...');
+    autoLoginTimeout = setTimeout(() => {
+      console.log('Auto-login timer expired. Attempting login...');
+      autoLoginTimeout = null;
+      attemptLogin();
+    }, 1000);
+  }
+
+  usernameInput.addEventListener('input', cancelAutoLogin);
+  passwordInput.addEventListener('input', cancelAutoLogin);
+  loginButton.addEventListener('click', cancelAutoLogin);
+  rememberMeCheckbox.addEventListener('change', cancelAutoLogin);
+  autoLoginCheckbox.addEventListener('change', cancelAutoLogin);
+
+  usernameInput.focus();
 });

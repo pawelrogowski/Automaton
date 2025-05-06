@@ -131,5 +131,68 @@ const StyledDiv = styled.div`
       margin-top: -2px;
     }
   }
+
+  // --- Slider Styles ---
+  .slider-container {
+    padding: 10px 0px;
+    margin-top: auto;
+    border-top: 1px solid #5f6161; // Separator line
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+
+    label {
+      font-size: 9px;
+      color: #fafafa;
+      text-align: center;
+    }
+
+    input[type='range'] {
+      -webkit-appearance: none; // Override default look
+      appearance: none;
+      width: 90%; // Adjust width as needed
+      height: 8px; // Slider track height
+      background: rgb(83 83 83); // Track background
+      border-radius: 5px;
+      outline: none;
+      cursor: pointer;
+
+      // Thumb styles (Chrome, Edge, Safari)
+      &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px; // Thumb width
+        height: 16px; // Thumb height
+        background: #909090; // Thumb color
+        border: 1px solid #2c2c2c;
+        border-radius: 50%; // Make it round
+        cursor: pointer;
+      }
+
+      // Thumb styles (Firefox)
+      &::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: #909090;
+        border: 1px solid #2c2c2c;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      &:disabled {
+          cursor: not-allowed;
+          opacity: 0.5;
+      }
+
+       &:disabled::-webkit-slider-thumb {
+           cursor: not-allowed;
+       }
+       &:disabled::-moz-range-thumb {
+           cursor: not-allowed;
+       }
+    }
+  }
+  // --- End Slider Styles ---
 `;
 export default StyledDiv;

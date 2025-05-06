@@ -4,3 +4,4 @@ export { default as battleListSequences } from './battleListSequences.js';
 export { default as statusBarSequences } from './statusBarSequences.js';
 export { default as resourceBars } from './resourceBars.js';
 export { default as actionBarItems } from './actionBarItems.js';
+export { default as equippedItems } from './equippedItems.js';

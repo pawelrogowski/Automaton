@@ -126,12 +126,12 @@ const buildAppMenu = () => {
     },
   ];
 
-  // if (process.env.NODE_ENV !== 'production') {
-  //   template.push({
-  //     label: 'Developer',
-  //     submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
-  //   });
-  // }
+  if (process.env.NODE_ENV !== 'production') {
+    template.push({
+      label: 'Developer',
+      submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
+    });
+  }
 
   return Menu.buildFromTemplate(template);
 };
@@ -207,12 +207,12 @@ export const createMainWindow = () => {
     resizable: false,
     alwaysOnTop: true,
     transparent: false,
-    webPreferences: { devTools: false, nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
+    webPreferences: { devTools: true, nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  // if (process.env.NODE_ENV !== 'production') {
     mainWindow.webContents.openDevTools();
-  }
+  // }
 
   mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
 

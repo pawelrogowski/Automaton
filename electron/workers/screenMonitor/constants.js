@@ -31,11 +31,11 @@ export const PARTY_MEMBER_STATUS = {
     ],
     direction: 'horizontal',
   },
-  inactive: {
-    sequence: [
-      [128, 128, 128],
-      [128, 128, 128],
-    ],
-    direction: 'horizontal',
-  },
+  // inactive: {
+  //   sequence: [
+  //     [128, 128, 128],
+  //     [128, 128, 128],
+  //   ],
+  //   direction: 'horizontal',
+  // },
 };

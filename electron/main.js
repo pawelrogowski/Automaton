@@ -2,12 +2,11 @@ import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
-import { createMainWindow, getMainWindow } from './createMainWindow.js';
+import { createMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import workerManager from './workerManager.js';
 import { getLinuxHardwareId } from './hardwareId.js';
-import { initializeStore, quitStore } from '../store/store.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -18,7 +17,7 @@ let loginWindow;
 const createLoginWindow = () => {
   loginWindow = new BrowserWindow({
     width: 360,
-    height: 400,
+    height: 420,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     resizable: false,
@@ -41,14 +40,12 @@ const createLoginWindow = () => {
 // Application initialization
 app.whenReady().then(async () => {
   try {
-    await initializeStore();
-    workerManager.initialize(app, cwd);
     createLoginWindow();
-
     ipcMain.on('login-success', () => {
       if (loginWindow && !loginWindow.isDestroyed()) {
         loginWindow.close();
       }
+      workerManager.initialize(app, cwd);
       createMainWindow();
     });
   } catch (error) {
@@ -65,7 +62,6 @@ app.on('before-quit', async () => {
   console.log('[Main] Preparing to quit application...');
   console.log('[Main] Closing store connection...');
   try {
-    await quitStore();
   } catch (error) {
     console.error('[Main] Error closing store connection:', error);
   }

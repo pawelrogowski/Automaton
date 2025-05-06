@@ -89,8 +89,14 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 20px;
   user-select: none;
+}
+.mt {
+  margin-top: 20px;
+}
+/* Style for the auto-login checkbox container */
+.auto-login {
+  /* margin-top: 5px; Remove margin, rely on flex gap */
 }
 
 .remember-me input[type='checkbox'] {
@@ -102,9 +108,8 @@ button:hover {
 }
 
 #hardware-info {
-  position: fixed;
-  bottom: px;
-  left: 20px;
+  text-align: center;
+  width: 90%;
   font-size: 12px;
   color: var(--text-primary);
   background: rgba(200, 200, 200, 0.3);
@@ -114,6 +119,14 @@ button:hover {
 
 #hardware-id {
   user-select: all;
+  /* Prevent text wrapping and add ellipsis if needed */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Ensure it behaves correctly within the flex/fixed positioning */
+  display: inline-block; 
+  max-width: 100%; /* Prevent it from overflowing its container */
+  vertical-align: bottom; /* Align better with the 'Device ID:' text */
 }
 
 #hardware-id.invalid {

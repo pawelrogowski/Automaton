@@ -1,119 +1,101 @@
-import { findSequences } from './findSequences.js';
-import { imageBufferGrab } from './imageBufferGrab.js';
+// IMPORTANT: Assumes the existence of a function:
+// extractSubBuffer(sourceImageDataWithHeader, absoluteRect {x, y, width, height})
+// which returns a NEW Buffer containing the specified region's pixel data
+// PREPENDED with a new 8-byte header (width, height in Little Endian).
+// You will need to provide or implement this function.
+import { extractSubBuffer } from './extractSubBuffer.js'; // Adjust path if needed
 
-export const findBoundingRect = (imageData, startSequence, endSequence, maxRight, maxDown) => {
-  // Validate input parameters
-  if (!imageData || !Buffer.isBuffer(imageData)) {
-    throw new Error('Invalid or missing imageData buffer');
-  }
-
-  if (!startSequence || !endSequence) {
-    throw new Error('Start and end sequences are required');
-  }
-
-  if (typeof maxRight !== 'number' || typeof maxDown !== 'number') {
-    throw new Error('maxRight and maxDown must be numbers');
-  }
-
-  if (maxRight <= 0 || maxDown <= 0) {
-    throw new Error('maxRight and maxDown must be positive values');
-  }
+/**
+ * Finds a bounding rectangle defined by start and end sequences,
+ * replicating the old logic by extracting a sub-buffer for the end search.
+ * @param {function} findSequencesNativeFunc - The loaded native findSequences function.
+ * @param {Buffer} imageData - Full image data buffer including 8-byte header.
+ * @param {object} startSequence - Config object for the start sequence.
+ * @param {object} endSequence - Config object for the end sequence.
+ * @param {number} maxRight - Max width to search rightwards from start.
+ * @param {number} maxDown - Max height to search downwards from start.
+ * @returns {object} Result object { x, y, width, height, startFound, endFound, error? }.
+ */
+export const findBoundingRect = (findSequencesNativeFunc, imageData, startSequence, endSequence, maxRight, maxDown) => {
+  // --- Input Validation --- (Keep existing checks)
+  if (typeof findSequencesNativeFunc !== 'function') throw new Error('findBoundingRect: findSequencesNativeFunc (first argument) must be a function.');
+  if (typeof extractSubBuffer !== 'function') throw new Error('findBoundingRect: extractSubBuffer helper function is required and was not found.'); // Add check
+  if (!imageData || !Buffer.isBuffer(imageData) || imageData.length < 8) throw new Error('findBoundingRect: Invalid imageData buffer');
+  if (!startSequence || !endSequence) throw new Error('findBoundingRect: Start/end sequences required');
+  if (typeof maxRight !== 'number' || typeof maxDown !== 'number') throw new Error('findBoundingRect: maxRight/maxDown must be numbers');
+  if (maxRight <= 0 || maxDown <= 0) throw new Error('findBoundingRect: maxRight/maxDown must be positive');
 
   const bufferWidth = imageData.readUInt32LE(0);
   const bufferHeight = imageData.readUInt32LE(4);
+  if (imageData.length < bufferWidth * bufferHeight * 3 + 8) console.warn(`findBoundingRect: Buffer size smaller than expected.`);
 
-  if (imageData.length < bufferWidth * bufferHeight * 3 + 8) {
-    throw new Error('Buffer size does not match declared dimensions');
-  }
+  // --- Find Start Sequence (in full image) ---
+  const startResult = findSequencesNativeFunc(imageData, { start: startSequence }, null, "first");
 
-  // Find start sequence using findSequences
-  const startResult = findSequences(imageData, { start: startSequence }, null, 'first');
+  if (!startResult?.start) return { x: 0, y: 0, width: 0, height: 0, startFound: false, endFound: false, error: 'Start sequence not found' };
+  const startX = startResult.start.x; const startY = startResult.start.y;
+  if (startX >= bufferWidth || startY >= bufferHeight) return { x: startX, y: startY, width: 0, height: 0, startFound: true, endFound: false, error: 'Start sequence outside buffer' };
 
-  // Validate start sequence result
-  if (!startResult || !startResult.start || startResult.start.x === undefined || startResult.start.y === undefined) {
-    return {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-      startFound: false,
-      endFound: false,
-      error: 'Start sequence not found in image',
-    };
-  }
+  // --- Define the Search Area dimensions relative to start ---
+  const searchWidth = Math.min(maxRight, bufferWidth - startX);
+  const searchHeight = Math.min(maxDown, bufferHeight - startY);
+  if (searchWidth <= 0 || searchHeight <= 0) return { x: startX, y: startY, width: 0, height: 0, startFound: true, endFound: false, error: 'Search area zero size' };
 
-  // Validate start sequence position
-  if (startResult.start.x >= bufferWidth || startResult.start.y >= bufferHeight) {
-    return {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-      startFound: false,
-      endFound: false,
-      error: 'Start sequence found outside buffer dimensions',
-    };
-  }
-
-  // Calculate and validate search bounds
-  const searchWidth = Math.min(maxRight, bufferWidth - startResult.start.x);
-  const searchHeight = Math.min(maxDown, bufferHeight - startResult.start.y);
-
-  if (searchWidth <= 0 || searchHeight <= 0) {
-    return {
-      x: startResult.start.x,
-      y: startResult.start.y,
-      width: 0,
-      height: 0,
-      startFound: true,
-      endFound: false,
-      error: 'Search area too small or out of bounds',
-    };
-  }
-
+  // --- Extract the Sub-Buffer for the end search ---
+  let subBuffer = null;
   try {
-    // Extract bounded search area
-    const boundedBuffer = imageBufferGrab(imageData, {
-      x: startResult.start.x,
-      y: startResult.start.y,
-      width: searchWidth,
-      height: searchHeight,
-    });
-
-    // Search for end sequence using findSequences
-    const endResult = findSequences(boundedBuffer, { end: endSequence }, null, 'first');
-
-    // Validate end sequence result
-    if (!endResult || !endResult.end || endResult.end.x === undefined || endResult.end.y === undefined) {
-      return {
-        x: startResult.start.x,
-        y: startResult.start.y,
-        width: 0,
-        height: 0,
-        startFound: true,
-        endFound: false,
-        error: 'End sequence not found within search bounds',
-      };
+    // Define the absolute rectangle to extract
+    const extractionRect = { x: startX, y: startY, width: searchWidth, height: searchHeight };
+    subBuffer = extractSubBuffer(imageData, extractionRect);
+    if (!subBuffer || !Buffer.isBuffer(subBuffer) || subBuffer.length < 8) {
+        throw new Error('extractSubBuffer returned invalid data');
+    }
+    // Optional: Verify header in subBuffer matches searchWidth/searchHeight
+    const subWidth = subBuffer.readUInt32LE(0);
+    const subHeight = subBuffer.readUInt32LE(4);
+    if (subWidth !== searchWidth || subHeight !== searchHeight) {
+        console.warn(`findBoundingRect: Sub-buffer dimensions (${subWidth}x${subHeight}) don't match requested extraction (${searchWidth}x${searchHeight}).`);
+        // Potentially throw an error or try to proceed carefully
     }
 
-    // Calculate and return rect dimensions
-    return {
-      x: startResult.start.x,
-      y: startResult.start.y,
-      width: endResult.end.x + 1,
-      height: endResult.end.y + 1,
-      startFound: true,
-      endFound: true,
-    };
   } catch (error) {
-    return {
-      x: startResult.start.x,
-      y: startResult.start.y,
-      width: 0,
-      height: 0,
-      startFound: true,
-      endFound: false,
-      error: `Failed to process search area: ${error.message}`,
-    };
+    console.error('findBoundingRect: Error extracting sub-buffer:', error);
+    return { x: startX, y: startY, width: 0, height: 0, startFound: true, endFound: false, error: `Failed to extract search area: ${error.message}` };
   }
+
+  // --- Find End Sequence (searching ONLY within the extracted sub-buffer) ---
+  // Pass null for searchArea as we're searching the entire subBuffer.
+  const endResult = findSequencesNativeFunc(subBuffer, { end: endSequence }, null, "first");
+
+  // Check if an end sequence was found within the sub-buffer
+  if (!endResult?.end) {
+    // console.warn(`findBoundingRect: End sequence not found in extracted sub-buffer.`); // Less verbose log
+    return { x: startX, y: startY, width: 0, height: 0, startFound: true, endFound: false, error: 'End sequence not found within search bounds (sub-buffer)' };
+  }
+
+  // Get the coordinates RELATIVE to the sub-buffer's top-left (0,0)
+  const endX_rel = endResult.end.x;
+  const endY_rel = endResult.end.y;
+
+  // --- Calculate Final Bounding Rectangle ---
+  // Width/height are based on the end sequence's position within the sub-buffer.
+  const rectWidth = endX_rel + 1;
+  const rectHeight = endY_rel + 1;
+
+  // Validate relative coordinates and dimensions
+  const subBufferWidth = subBuffer.readUInt32LE(0); // Read actual width from sub-buffer header
+  const subBufferHeight = subBuffer.readUInt32LE(4); // Read actual height from sub-buffer header
+  if (endX_rel < 0 || endX_rel >= subBufferWidth || endY_rel < 0 || endY_rel >= subBufferHeight) {
+       console.warn(`findBoundingRect: Relative end coordinates (${endX_rel},${endY_rel}) are outside sub-buffer dimensions (${subBufferWidth}x${subBufferHeight}).`);
+       // This likely indicates an issue with findSequencesNative or sub-buffer extraction
+        return { x: startX, y: startY, width: 0, height: 0, startFound: true, endFound: false, error: 'Internal error: End sequence found outside sub-buffer bounds' };
+  }
+  if (rectWidth <= 0 || rectHeight <= 0) {
+    console.warn(`findBoundingRect: Calculated non-positive rect dims (w=${rectWidth}, h=${rectHeight}) from relative end coords (${endX_rel},${endY_rel}).`);
+    return { x: startX, y: startY, width: 0, height: 0, startFound: true, endFound: true, error: 'Non-positive rect dims calculated from relative coords' };
+  }
+
+  // Return the rectangle starting at the original absolute (startX, startY)
+  // but with width/height determined by the relative search.
+  return { x: startX, y: startY, width: rectWidth, height: rectHeight, startFound: true, endFound: true };
 };

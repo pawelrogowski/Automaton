@@ -5,7 +5,7 @@ import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { app } from 'electron';
-import { restartWorker } from '../workerManager.js';
+import workerManager from '../workerManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,10 +28,10 @@ const getWindowName = (id) => windowinfo.getName(id);
 export const selectWindow = async () => {
   const pickedWindowId = windowinfo.getWindowIdByClick();
   const winInfo = windowinfo.getAllInfo(pickedWindowId);
-  restartWorker('screenMonitor');
   if (!winInfo.name.includes('Tibia')) {
     return;
   }
+  setGlobalState('global/setWindowTitle', winInfo.name);
   setGlobalState('global/setWindowId', pickedWindowId);
 };
 
@@ -40,14 +40,22 @@ const getActiveWindowId = () => windowinfo.getActiveWindow();
 export const selectActiveWindow = async () => {
   try {
     const windowId = await getActiveWindowId();
+    const windowTitle = await getWindowName(windowId);
 
-    const windowTitle = await getWindowName(windowinfo.getActiveWindow());
     if (!windowTitle.includes('Tibia')) {
+      setGlobalState('global/setWindowTitle', 'Please focus a Tibia window and press Alt+W');
       return;
     }
-    restartWorker('screenMonitor');
     getMainWindow().setTitle(``);
+    setGlobalState('global/setWindowTitle', windowTitle);
     setGlobalState('global/setWindowId', windowId);
+
+    const screenMonitorWorker = workerManager.workers.get('screenMonitor');
+    if (screenMonitorWorker) {
+      console.log('[windowSelection] Sending forceReinitialize command to screenMonitor');
+      screenMonitorWorker.postMessage({ command: 'forceReinitialize' });
+    }
+
   } catch (error) {
     console.error(`Error getting active window ID: ${error}`);
   }

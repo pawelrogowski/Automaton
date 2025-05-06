@@ -5,7 +5,6 @@ import { dirname, resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { showNotification } from './notificationHandler.js';
-import { getRedisConnectionDetails } from '../store/redisClient.js';
 
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
@@ -47,8 +46,8 @@ class WorkerManager {
     this.paths.x11capture = path.join(this.paths.utils, 'x11capture.node');
     this.paths.keypress = path.join(this.paths.utils, 'keypress.node');
     this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
-    this.paths.windowInfo = path.join(this.paths.utils, 'windowinfo.node');
-    this.paths.sequenceFinder = path.join(this.paths.utils, 'sequence_finder.node');
+    // this.paths.windowInfo = path.join(this.paths.utils, 'windowinfo.node');
+    this.paths.findSequences = path.join(this.paths.utils, 'findSequences.node');
 
     if (!app.isPackaged) {
       console.log('Initialized paths:', this.paths);
@@ -114,10 +113,16 @@ class WorkerManager {
       showNotification(title, body);
     }
 
-    if (message.storeUpdate && message.type && message.payload) {
-      setGlobalState(`gameState/${message.type}`, message.payload);
+    // Handle specific game state updates from workers
+    if (message.storeUpdate && message.type === 'setHealthPercent') {
+      setGlobalState('gameState/setHealthPercent', message.payload);
+    } else if (message.storeUpdate && message.type === 'setManaPercent') {
+      setGlobalState('gameState/setManaPercent', message.payload);
+    // Add case for the new actual FPS update
+    } else if (message.storeUpdate && message.type === 'setActualFps') {
+      setGlobalState('global/setActualFps', message.payload.actualFps); // Update global slice
     } else if (message.storeUpdate) {
-      console.warn('[WorkerManager] Received storeUpdate message with missing type or payload:', message);
+      console.warn('[WorkerManager] Received storeUpdate message with unrecognized type or missing payload:', message);
     }
   }
 
@@ -128,13 +133,6 @@ class WorkerManager {
     }
 
     try {
-      const redisDetails = getRedisConnectionDetails();
-      if (!redisDetails || !redisDetails.host || !redisDetails.port) {
-        console.error(`[WorkerManager] Cannot start worker ${name}: Redis connection details unavailable.`);
-        return null;
-      }
-      console.log(`[WorkerManager] Passing Redis details to worker ${name}:`, redisDetails);
-
       const workerPath = this.getWorkerPath(name);
       const worker = new Worker(workerPath, {
         name,
@@ -142,10 +140,8 @@ class WorkerManager {
           x11capturePath: this.paths.x11capture,
           keypressPath: this.paths.keypress,
           useItemOnPath: this.paths.useItemOn,
-          windowInfoPath: this.paths.windowInfo,
-          sequenceFinderPath: this.paths.sequenceFinder,
-          redisHost: redisDetails.host,
-          redisPort: redisDetails.port,
+          // windowInfoPath: this.paths.windowInfo,
+          findSequencesPath: this.paths.findSequences,
         },
       });
 
@@ -229,15 +225,7 @@ class WorkerManager {
     const state = store.getState();
     const { windowId } = state.global;
 
-    // Only restart workers if windowId actually changed and is valid
-    if (windowId && windowId !== this.prevWindowId) {
-      console.log(`Window ID changed from ${this.prevWindowId} to ${windowId}, restarting workers...`);
-      if (!this.restartLocks.get('screenMonitor')) {
-        this.restartAllWorkers();
-      }
-    }
-
-    // Start screenMonitor if needed
+    // Start screenMonitor if needed (e.g., first launch or after a crash)
     if (windowId && !this.workers.has('screenMonitor')) {
       console.log('Starting screenMonitor worker for window ID:', windowId);
       const worker = this.startWorker('screenMonitor');
@@ -255,8 +243,6 @@ class WorkerManager {
         worker.postMessage(state);
       }
     }
-
-    this.prevWindowId = windowId;
   }
 
   initialize(app, cwd) {

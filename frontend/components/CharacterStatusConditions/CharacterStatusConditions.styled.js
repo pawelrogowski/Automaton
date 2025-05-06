@@ -13,7 +13,6 @@ export const StyledList = styled.ul`
   /* background-image: url(${tibiaBgDark});
   background-repeat: repeat; */
   background: #363636;
-  z-index: 10;
 `;
 
 export const StyledListItem = styled.li`

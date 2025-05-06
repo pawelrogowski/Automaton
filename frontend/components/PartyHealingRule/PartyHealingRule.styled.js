@@ -1,5 +1,9 @@
 import styled from 'styled-components';
 import tibiaBg from '../../assets/tibiaBg.webp';
+
+const ROW_HEIGHT = '38px'; // Consistent row height
+const BUTTON_SIZE = '38px'; // Consistent button size
+
 const StyledDiv = styled.div`
   position: relative;
   display: flex;
@@ -8,171 +12,151 @@ const StyledDiv = styled.div`
     z-index: 500;
     outline: 2px solid rgba(255, 255, 255, 0.6) !important;
   }
+
+  * {
+  border-top: none !important;
+  }
   summary {
     cursor: pointer;
     display: flex;
-    height: 22px;
     align-items: center;
-  }
-  .input-wrapper {
-    position: relative;
-    height: 100%;
-    padding: 0;
-    margin: 0;
-    position: relative;
-  }
-  .input-wrapper-checkbox {
-    position: relative;
-    height: 22px;
-    margin-top: 4px;
-  }
-  input,
-  select {
-    width: 100px;
-    height: 22px;
-    padding: 0 6px;
-    font-size: 11px;
-    line-height: 1;
-    border: none;
-    color: #d3d3d3;
+    list-style: none; /* Ensure list style is none */
     background: #414141;
-    outline: none;
-    position: relative;
-    border-top: 1px solid #16181d;
-    border-left: 1px solid #79797930;
-    border-bottom: 1px solid #79797930;
-    border-right: 1px solid #16181d;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #555;
+    border-bottom: none; /* Prevent double border when details is closed */
+    border-bottom: 1px solid #2c2c2c;
   }
-  .input-checkbox {
-    width: 32px;
-    background: #16181d;
+
+  /* Wrapper for the CustomIconSelect */
+  .action-item-wrapper {
+      width: 162px; /* Action Item width (same as action bar) */
+      height: ${ROW_HEIGHT};
+      flex-shrink: 0;
+      > div { /* Ensure select trigger fills wrapper */
+         width: 100%;
+         height: 100%;
+      }
   }
+
+  /* Generic input/select styles */
+  .input {
+     height: ${ROW_HEIGHT};
+     padding: 0px;
+     font-size: 11px;
+     line-height: 1;
+     border: none;
+     color: #d3d3d3;
+     background: #414141;
+     outline: none;
+     border-top: 1px solid #16181d;
+     border-left: 1px solid #79797930;
+     border-bottom: 1px solid #79797930;
+     border-right: 1px solid #16181d;
+     display: flex;
+     align-items: center;
+     justify-content: center; /* Center text */
+     text-align: center; /* Ensure text aligns center */
+     box-sizing: border-box;
+     appearance: none; -webkit-appearance: none; -moz-appearance: none; /* Remove default styles */
+  }
+  /* Remove arrows from number inputs */
+   input[type=number] {
+     -moz-appearance: textfield;
+   }
+   input[type=number]::-webkit-outer-spin-button,
+   input[type=number]::-webkit-inner-spin-button {
+     -webkit-appearance: none;
+     margin: 0;
+   }
+
+  /* Specific Widths for Party Heal Row */
   .input-hotkey {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
     width: 60px;
   }
-  .input-category {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    width: 90px;
+  .input-party-position {
+    width: 126px; /* Kept the width, adjust if needed for select dropdown */
+    /* Add text-align: left if centered text looks odd for "Any" */
+    /* text-align: left; */
+    /* padding-left: 8px; */ /* Add padding if text is too close to edge */
+  }
+  .input-percent-select {
+     width: 50px; /* Condition select width */
+     border-right: none;
+     border-top-right-radius: 0;
+     border-bottom-right-radius: 0;
+     cursor: not-allowed; /* Indicate disabled */
+  }
+  .input-percent { /* Friend HP % input */
+     width: 62px; /* Value input width */
+     border-left: none;
+     border-top-left-radius: 0;
+     border-bottom-left-radius: 0;
   }
   .input-priority {
-    width: 90px;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
+    width: 80px;
   }
   .input-delay {
-    width: 85px;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
+    width: 100px; /* Align with action bar delay */
+    /* margin-left: auto; */ /* Pushed by placeholder */
   }
-  .input-party-position {
-    width: 126px;
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-  }
+
+
+  /* Button Styles (copied from ActionBarRule.styled.js) */
   .rule-button {
     font-size: 12px;
-    height: 22px;
+    height: ${BUTTON_SIZE};
+    width: ${BUTTON_SIZE};
     display: flex;
     justify-content: center;
     align-items: center;
-    border: none;
-    background: none;
-    border-top: 1px solid #757676;
-    border-left: 1px solid #757676;
-    border-bottom: 1px solid #2c2c2c;
-    border-right: 1px solid #2c2c2c;
-    color: rgb(175, 175, 175);
-    /* margin-bottom: 8px; */
-
-    cursor: pointer;
+    border: none; background: none;
+    border-top: 1px solid #757676; border-left: 1px solid #757676;
+    border-bottom: 1px solid #2c2c2c; border-right: 1px solid #2c2c2c;
+    color: rgb(175, 175, 175); cursor: pointer;
+    flex-shrink: 0;
     &:active {
-      border-top: 1px solid #2c2c2c;
-      border-left: 1px solid #2c2c2c;
-      border-bottom: 1px solid #757676;
-      border-right: 1px solid #757676;
+      border-top: 1px solid #2c2c2c; border-left: 1px solid #2c2c2c;
+      border-bottom: 1px solid #757676; border-right: 1px solid #757676;
     }
-  }
-  .button-expand {
-    font-size: 13px;
-    width: 22px;
-    height: 22px;
+    margin-left: 0;
   }
 
   .remove-rule-button {
     font-size: 14px;
-    margin-left: auto;
-    justify-self: flex-end;
-    width: 22px;
-    height: 22px;
     background: #8f000052;
-    border-top: 1px solid #8b5757;
-    border-left: 1px solid #8b5757;
-    border-bottom: 1px solid #470909;
-    border-right: 1px solid #470909;
+    border-top: 1px solid #8b5757; border-left: 1px solid #8b5757;
+    border-bottom: 1px solid #470909; border-right: 1px solid #470909;
   }
 
-  .input-percent,
-  .input-monster-num {
-    font-family: joystix !important;
-    width: 78px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    text-align: center;
-    padding: 0;
-    padding-right: 4px;
-    border-left: none;
-    appearance: none;
-    font-size: 10px !important;
-    line-height: 1;
-    -webkit-appearance: none;
-    -moz-appearance: none;
+  .button-expand {
+     font-size: 12px;
+     margin-left: auto;
   }
-  .input-percent-select,
-  .input-monster-num-condition {
-    font-family: joystix !important;
-    padding: 0;
-    width: 78px;
-    appearance: none;
-    text-align: center;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right: none;
-    font-size: 10px !important;
-    line-height: 1;
-  }
-  .select-with-arrow::after {
-    content: ' ▾';
-    color: #909090;
-    position: absolute;
-    right: 10px; /* Adjust as needed */
-    top: 50%;
-    transform: translateY(-50%);
-    pointer-events: none; /* Ensures clicks go through to the select */
-  }
-  .checkbox-group {
-    padding: 0;
-    margin: 0;
-    height: 32px;
-    width: 175px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    > div {
-      display: flex;
-      margin: 0;
-      padding: 0;
-    }
-  }
+
+  /* Checkbox Container Styling (for RequireAttackCooldown etc.) */
+   .checkbox-container {
+     display: flex;
+     align-items: center;
+     justify-content: center;
+     height: ${ROW_HEIGHT};
+     width: 36px; /* Consistent width */
+     flex-shrink: 0;
+     /* Add borders if needed */
+      border-top: 1px solid #16181d;
+      border-left: 1px solid #79797930;
+      border-bottom: 1px solid #79797930;
+      border-right: 1px solid #16181d;
+   }
+   /* Specific class for require attack cooldown checkbox container */
+   .checkbox-require-atk {
+       width: 83px; /* Adjust width if needed */
+   }
+   .checkbox-is-walking { /* If you add the walking checkbox */
+       width: 36px;
+   }
+
 `;
 
 export default StyledDiv;

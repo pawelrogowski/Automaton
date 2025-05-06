@@ -57,32 +57,32 @@ const regionColorSequences = {
       [112, 112, 113],
     ],
   },
-  // amuletSlot: {
-  //   direction: 'horizontal',
-  //   offset: { x: -100, y: -130 },
-  //   sequence: [
-  //     [41, 42, 42],
-  //     [28, 28, 29],
-  //     [44, 45, 45],
-  //     [40, 40, 41],
-  //     [44, 44, 44],
-  //     [46, 46, 46],
-  //     [112, 112, 113],
-  //   ],
-  // },
-  // ringSlot: {
-  //   direction: 'horizontal',
-  //   offset: { x: -100, y: -58 },
-  //   sequence: [
-  //     [41, 42, 42],
-  //     [28, 28, 29],
-  //     [44, 45, 45],
-  //     [40, 40, 41],
-  //     [44, 44, 44],
-  //     [46, 46, 46],
-  //     [112, 112, 113],
-  //   ],
-  // },
+  amuletSlot: {
+    direction: 'horizontal',
+    offset: { x: -100, y: -130 },
+    sequence: [
+      [41, 42, 42],
+      [28, 28, 29],
+      [44, 45, 45],
+      [40, 40, 41],
+      [44, 44, 44],
+      [46, 46, 46],
+      [112, 112, 113],
+    ],
+  },
+  ringSlot: {
+    direction: 'horizontal',
+    offset: { x: -100, y: -58 },
+    sequence: [
+      [41, 42, 42],
+      [28, 28, 29],
+      [44, 45, 45],
+      [40, 40, 41],
+      [44, 44, 44],
+      [46, 46, 46],
+      [112, 112, 113],
+    ],
+  },
   // weaponSlot: {
   //   direction: 'horizontal',
   //   offset: { x: -100, y: -58 },
@@ -166,7 +166,7 @@ const regionColorSequences = {
   },
   partyListStart: {
     direction: 'horizontal',
-    offset: { x: 10, y: 13 },
+    offset: { x: 13, y: 13 },
     sequence: [
       [30, 115, 255],
       [55, 55, 55],
