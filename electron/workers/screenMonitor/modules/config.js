@@ -38,7 +38,7 @@ export const config = {
     logCaptureStatus: false,     // Log getLatestFrame success/failure/stale data status
     // --- Rule Processor Specific ---
     logRuleProcessingSteps: false, // Log count of rules remaining after each filter step
-    logRuleExecutionDetails: false,// Log details when attempting/executing/failing rules (includes input simulation)
+    logRuleExecutionDetails: true,// Log details when attempting/executing/failing rules (includes input simulation)
     logActiveActionItems: false, // Log which action items are detected as active each cycle (keep this one)
     logEquippedItems: false,
   }

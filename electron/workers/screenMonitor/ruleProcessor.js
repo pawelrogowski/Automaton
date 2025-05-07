@@ -21,18 +21,23 @@ class RuleProcessor {
 
     // --- ManaSync Specific State ---
     this.manaSyncWatchList = new Map();
-    this.executedManaSyncThisCooldown = new Set();
-    this.forcedManaSyncExecutedThisCooldown = new Set();
+    this.executedManaSyncThisCooldown = new Set(); // Tracks normal/watched ManaSync
+    this.forcedManaSyncExecutedThisCooldown = new Set(); // Tracks forced ManaSync
 
     // --- Action Item Confirmation State ---
     this.pendingActionConfirmations = new Map();
 
+    // --- NEW STATE FOR ATTACK COOLDOWN EXCLUSIVITY ---
+    this.actionTakenThisAttackCooldown = false; // True if ManaSync OR HealFriend (rune) executed
+    this.healFriendRuneExecutionsThisAttackCooldown = 0; // Counter for HealFriend (rune)
+    // --- END NEW STATE ---
+
     // --- Constants ---
-    this.KEYPRESS_COOLDOWN_MS = 200; // Min time between non-priority keypress commands
-    this.PARTY_HEAL_MIN_INTERVAL_MS = 100; // Min time between any PartyHeal action
-    this.MANASYNC_FORCED_EXECUTION_DELAY_MS = 750; // Delay after CD start to *begin* forced ManaSync window
+    this.KEYPRESS_COOLDOWN_MS = 50; // Min time between non-priority keypress commands
+    this.PARTY_HEAL_MIN_INTERVAL_MS = 50; // Min time between any PartyHeal action
+    this.MANASYNC_FORCED_EXECUTION_DELAY_MS = 740; // Delay after CD start to *begin* forced ManaSync window
     this.MANASYNC_FORCED_EXECUTION_WINDOW_MS = 100; // Duration of the forced execution window
-    this.MANA_SYNC_WATCH_DURATION_MS = 1000; // How long to watch for a mana sync item
+    this.MANA_SYNC_WATCH_DURATION_MS = 800; // How long to watch for a mana sync item
     this.ACTION_CONFIRMATION_TIMEOUT_MS = 300; // How long to wait for confirmation
 
     // --- Rule Type Identifiers ---
@@ -65,42 +70,48 @@ class RuleProcessor {
     const logExec = config.logging.logRuleExecutionDetails;
     const now = Date.now(); // Use a single timestamp for the cycle
 
-    // --- Standard Rule Processing --- (Temporary test logic removed)
     if (logSteps) console.log(`[RuleProc] --- Cycle Start (Time: ${now}) ---`);
 
     // 1. Detect Attack Cooldown Changes & Handle ManaSync Init/Cleanup
     const attackCdChanged = this._handleAttackCooldownTransitions(now, gameState, activePreset, globalConfig);
     let manaSyncRuleExecutedImmediately = attackCdChanged.executed;
 
-    // 2. Process Ongoing ManaSync Watch (if Attack CD is active)
+    // 2. Process Ongoing ManaSync Watch (if Attack CD is active and no exclusive action taken)
     let manaSyncRuleExecutedFromWatch = false;
-    if (!manaSyncRuleExecutedImmediately && gameState.attackCdActive && this.manaSyncWatchList.size > 0) {
+    if (!manaSyncRuleExecutedImmediately && gameState.attackCdActive && this.manaSyncWatchList.size > 0 && !this.actionTakenThisAttackCooldown) {
       manaSyncRuleExecutedFromWatch = this._processManaSyncWatch(now, gameState, activePreset, globalConfig);
     }
 
-    // 2b. Process Forced ManaSync Execution (if nothing else ManaSync triggered yet)
+    // 2b. Process Forced ManaSync Execution (if Attack CD is active and no exclusive action taken)
     let manaSyncRuleForcedExecution = false;
-    if (gameState.attackCdActive) { // Only run if CD is active
+    if (gameState.attackCdActive && !this.actionTakenThisAttackCooldown) {
        manaSyncRuleForcedExecution = this._processForcedManaSyncExecution(now, gameState, activePreset, globalConfig);
     }
 
-    // 3. Process Pending Action Confirmations
+    // 3. Process Pending Action Confirmations (does not affect exclusivity logic directly)
     this._processActionConfirmations(now, gameState);
 
-    // Determine if *any* rule action has already been triggered this cycle for blocking non-ManaSync
-    // Note: Forced execution doesn't block normal ManaSync, but might delay non-ManaSync if it sets cooldown.
+    // Determine if an action that *should block others this cycle* was triggered.
+    // This includes ManaSync (which sets actionTakenThisAttackCooldown)
+    // or a standard rule that sets effectiveCooldownEndTime.
     let ruleActionTriggeredThisCycle = manaSyncRuleExecutedImmediately || manaSyncRuleExecutedFromWatch || manaSyncRuleForcedExecution;
 
-    // 4. If no rule action *intended to block others* was triggered, evaluate non-ManaSync
-    if (!ruleActionTriggeredThisCycle) { // Check if any action occurred that should block non-ManaSync
+    // 4. If no ManaSync action (which would set actionTakenThisAttackCooldown) was triggered,
+    //    evaluate non-ManaSync rules (including HealFriend runes which also check actionTakenThisAttackCooldown).
+    if (!ruleActionTriggeredThisCycle) {
        if (logSteps) console.log("[RuleProc] Evaluating non-ManaSync rules for execution...");
+       // _filterEligibleRules will now also check actionTakenThisAttackCooldown for HealFriend runes
        const nonManaSyncPreset = activePreset.filter(r => !r.id.startsWith(this.RULE_PREFIX.MANA_SYNC));
        const eligibleRules = this._filterEligibleRules(now, nonManaSyncPreset, gameState);
 
        if (eligibleRules.length > 0) {
           const ruleToExecute = eligibleRules[0];
           if (logExec) console.log(`[RuleProc] Attempting highest priority eligible rule: ${ruleToExecute.id} (Prio: ${ruleToExecute.priority})`);
-          ruleActionTriggeredThisCycle = this._attemptExecutionAndHandleOutcome(now, ruleToExecute, gameState, globalConfig);
+          // _attemptExecutionAndHandleOutcome will set actionTakenThisAttackCooldown for HealFriend runes
+          const nonManaSyncActionSuccess = this._attemptExecutionAndHandleOutcome(now, ruleToExecute, gameState, globalConfig);
+          if (nonManaSyncActionSuccess) {
+            ruleActionTriggeredThisCycle = true; // Mark that a standard rule action happened
+          }
        } else {
           if (logExec) console.log("[RuleProc] No non-ManaSync rules met all conditions.");
        }
@@ -108,7 +119,7 @@ class RuleProcessor {
         if (logSteps) console.log("[RuleProc] Skipping non-ManaSync evaluation as a ManaSync rule executed or is pending confirmation.");
     }
 
-    if (logSteps) console.log(`[RuleProc] --- Cycle End (Action Triggered: ${ruleActionTriggeredThisCycle}) ---`);
+    if (logSteps) console.log(`[RuleProc] --- Cycle End (Action Triggered This Cycle: ${ruleActionTriggeredThisCycle}, Exclusive Action This CD: ${this.actionTakenThisAttackCooldown}, HealFriendRuneCount: ${this.healFriendRuneExecutionsThisAttackCooldown}) ---`);
   }
 
 
@@ -128,72 +139,82 @@ class RuleProcessor {
    */
   _filterEligibleRules(now, rules, gameState) {
     const logSteps = config.logging.logRuleProcessingSteps;
-    const logExec = config.logging.logRuleExecutionDetails; // Use logExec for detailed condition failures
+    const logExec = config.logging.logRuleExecutionDetails;
     if (logSteps) console.log(`[RuleProc] Filtering ${rules.length} non-ManaSync rules...`);
 
-    // --- Start Pipeline ---
     let eligibleRules = rules
-        .filter(rule => rule.enabled); // 1. Enabled
+        .filter(rule => rule.enabled);
     if (logSteps) console.log(` -> Enabled: ${eligibleRules.length}`);
 
-    eligibleRules = this._filterRulesByActiveCooldowns(eligibleRules, gameState); // 2. Category Cooldown
+    eligibleRules = this._filterRulesByActiveCooldowns(eligibleRules, gameState);
     if (logSteps) console.log(` -> Off Category Cooldown: ${eligibleRules.length}`);
 
-    eligibleRules = this._filterRulesNotOnDelay(now, eligibleRules); // 3. Delay (Individual & Category)
+    eligibleRules = this._filterRulesNotOnDelay(now, eligibleRules);
     if (logSteps) console.log(` -> Individual/Category Delay Met: ${eligibleRules.length}`);
 
-    // --- 3b. Party Heal Minimum Interval ---
     eligibleRules = eligibleRules.filter(rule => {
-        if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
-            const timeSinceLastHeal = now - this.lastPartyHealActionTime;
-            const intervalMet = timeSinceLastHeal >= this.PARTY_HEAL_MIN_INTERVAL_MS;
-            if (!intervalMet && logExec) {
-                console.log(`[RuleProc] Delay Fail (PartyHeal Interval): ${rule.id} - ${timeSinceLastHeal.toFixed(0)}ms < ${this.PARTY_HEAL_MIN_INTERVAL_MS}ms`);
-            }
-            return intervalMet;
+      if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
+        const timeSinceLastHeal = now - this.lastPartyHealActionTime;
+        const intervalMet = timeSinceLastHeal >= this.PARTY_HEAL_MIN_INTERVAL_MS;
+        if (!intervalMet && logExec) {
+          console.log(`[RuleProc] Delay Fail (PartyHeal Interval): ${rule.id} - ${timeSinceLastHeal.toFixed(0)}ms < ${this.PARTY_HEAL_MIN_INTERVAL_MS}ms`);
         }
-        return true; // Pass if not a PartyHeal rule
+        return intervalMet;
+      }
+      return true;
     });
     if (logSteps) console.log(` -> Party Heal Interval Met: ${eligibleRules.length}`);
-    // --- End Party Heal Interval ---
 
+    // --- NEW FILTER STEP for HealFriend (Rune) Exclusivity and Limits ---
+    eligibleRules = eligibleRules.filter(rule => {
+      if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) && this.PARTY_HEAL_RUNE_ITEMS.has(rule.actionItem)) {
+        // This is a HealFriend RUNE rule
+        // Check only if attack CD is active, as these flags are relevant to it
+        if (gameState.attackCdActive) {
+            if (this.actionTakenThisAttackCooldown) {
+              if (logExec) console.log(`[RuleProc] Filter Fail (HealFriend Rune ${rule.id}): Exclusive action (ManaSync or another Heal Rune) already taken this attack cooldown.`);
+              return false;
+            }
+            if (this.healFriendRuneExecutionsThisAttackCooldown >= 2) {
+              if (logExec) console.log(`[RuleProc] Filter Fail (HealFriend Rune ${rule.id}): Max 2 executions reached this attack cooldown (${this.healFriendRuneExecutionsThisAttackCooldown}).`);
+              return false;
+            }
+        }
+      }
+      return true; // Pass if not a HealFriend Rune rule or if checks pass
+    });
+    if (logSteps) console.log(` -> HealFriend (Rune) Exclusivity/Limits Met: ${eligibleRules.length}`);
+    // --- END NEW FILTER STEP ---
 
-    eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState); // 4. Walking State
+    eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
     if (logSteps) console.log(` -> Walking State OK: ${eligibleRules.length}`);
 
-    eligibleRules = this._filterRulesByBasicConditions(eligibleRules, gameState); // 5. Basic Conditions (HP, Mana, Monster, Status)
+    eligibleRules = this._filterRulesByBasicConditions(eligibleRules, gameState);
     if (logSteps) console.log(` -> Basic Conditions Met: ${eligibleRules.length}`);
 
-    eligibleRules = this._filterRulesByItemAvailability(eligibleRules, gameState); // 6. Action Item Available (for Action/Party types)
+    eligibleRules = this._filterRulesByItemAvailability(eligibleRules, gameState);
     if (logSteps) console.log(` -> Action Item Available: ${eligibleRules.length}`);
 
-    // --- 7. Final Rule-Specific Condition Checks ---
     eligibleRules = eligibleRules.filter(rule => {
-        if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
-            const friendHpMet = this._shouldHealFriend(rule, gameState);
-            // _shouldHealFriend implicitly checks requireAttackCooldown if set
-            if (!friendHpMet && logExec) {
-                console.log(`[RuleProc] Final Condition Fail (PartyHeal ${rule.id}): _shouldHealFriend returned false.`);
-            }
-            return friendHpMet;
+      if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
+        const friendHpMet = this._shouldHealFriend(rule, gameState);
+        if (!friendHpMet && logExec) {
+          console.log(`[RuleProc] Final Condition Fail (PartyHeal ${rule.id}): _shouldHealFriend returned false.`);
         }
-        // ActionBarItem and UserRule have no further specific checks here
-        return true;
+        return friendHpMet;
+      }
+      return true;
     });
     if (logSteps) console.log(` -> Final Conditions Met: ${eligibleRules.length}`);
-    // --- End Final Checks ---
 
-
-    // --- 8. Sort by Priority (LAST STEP) ---
     eligibleRules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
     if (logSteps && eligibleRules.length > 0) {
-         console.log(` -> Final Eligible & Sorted: ${eligibleRules.length} (Highest Prio: ${eligibleRules[0].id} P${eligibleRules[0].priority})`);
+      console.log(` -> Final Eligible & Sorted: ${eligibleRules.length} (Highest Prio: ${eligibleRules[0].id} P${eligibleRules[0].priority})`);
     } else if (logSteps) {
-         console.log(` -> Final Eligible & Sorted: 0`);
+      console.log(` -> Final Eligible & Sorted: 0`);
     }
-    // --- End Sort ---
 
-    return eligibleRules; // Return the fully filtered and sorted list
+    return eligibleRules;
   }
 
   /** Filters rules based on mapped category cooldowns (only applies to userRule here) */
@@ -215,11 +236,9 @@ class RuleProcessor {
     const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter((rule) => {
       const ruleId = rule.id;
-      // Use rule's delay if specified, otherwise default (0 for most, maybe different for specific types if needed)
       const ruleDelay = rule.delay ?? 0;
       const category = rule.category;
 
-      // 1. Check Individual Rule Delay (using last successful trigger time)
       const timeSinceLastTrigger = now - (this.lastSuccessfulRuleActionTime[ruleId] || 0);
       const individualDelayMet = timeSinceLastTrigger >= ruleDelay;
 
@@ -228,11 +247,9 @@ class RuleProcessor {
         return false;
       }
 
-      // 2. Check Category Delay (Only for userRules with a defined category and delay)
       if (rule.id.startsWith(this.RULE_PREFIX.USER) && category) {
         const categoryDelay = OPTIONS.categoryDelays?.[category] ?? 0;
         if (categoryDelay > 0) {
-          // Use last successful trigger time for the whole category
           const timeSinceCategoryLastTrigger = now - (this.lastCategoryExecutionTime[category] || 0);
           const categoryDelayMet = timeSinceCategoryLastTrigger >= categoryDelay;
 
@@ -242,8 +259,6 @@ class RuleProcessor {
           }
         }
       }
-
-      // Rule passes if both individual and applicable category delays are met
       return true;
     });
   }
@@ -330,70 +345,79 @@ class RuleProcessor {
     const attackCdJustEnded = !attackCdIsCurrentlyActive && this.lastAttackCooldownState;
     let executedManaSyncNow = false;
 
-    // --- Attack CD End Logic ---
     if (attackCdJustEnded) {
-        if (logExec) {
-            const clearingWatch = this.manaSyncWatchList.size > 0;
-            const clearingExecuted = this.executedManaSyncThisCooldown.size > 0;
-            const clearingForced = this.forcedManaSyncExecutedThisCooldown.size > 0;
-            if (clearingWatch || clearingExecuted || clearingForced) {
-                console.log(`[RuleProc] Attack CD Ended. Clearing Watch (${this.manaSyncWatchList.size}), Executed (${this.executedManaSyncThisCooldown.size}), Forced (${this.forcedManaSyncExecutedThisCooldown.size}). Resetting CD Start Time.`);
-            } else {
-                 console.log(`[RuleProc] Attack CD Ended. Resetting CD Start Time.`);
-            }
+      if (logExec) {
+        const clearingWatch = this.manaSyncWatchList.size > 0;
+        const clearingExecuted = this.executedManaSyncThisCooldown.size > 0;
+        const clearingForced = this.forcedManaSyncExecutedThisCooldown.size > 0;
+        if (clearingWatch || clearingExecuted || clearingForced) {
+          console.log(`[RuleProc] Attack CD Ended. Clearing Watch (${this.manaSyncWatchList.size}), Executed (${this.executedManaSyncThisCooldown.size}), Forced (${this.forcedManaSyncExecutedThisCooldown.size}). Resetting CD Start Time.`);
+        } else {
+          console.log(`[RuleProc] Attack CD Ended. Resetting CD Start Time.`);
         }
-        this.manaSyncWatchList.clear();
-        this.executedManaSyncThisCooldown.clear();
-        this.forcedManaSyncExecutedThisCooldown.clear();
-        this.attackCooldownStartTime = null;
+      }
+      this.manaSyncWatchList.clear();
+      this.executedManaSyncThisCooldown.clear();
+      this.forcedManaSyncExecutedThisCooldown.clear();
+      this.attackCooldownStartTime = null;
+      // Exclusivity flags are reset on CD start.
     }
 
-    // --- Attack CD Start Logic ---
     if (attackCdJustStarted) {
-        if (logExec) console.log(`[RuleProc] Attack CD Started at ${now}. Evaluating immediate ManaSync rules...`);
-        this.attackCooldownStartTime = now;
-        this.manaSyncWatchList.clear();
-        this.executedManaSyncThisCooldown.clear();
-        this.forcedManaSyncExecutedThisCooldown.clear();
+      if (logExec) console.log(`[RuleProc] Attack CD Started at ${now}. Evaluating immediate ManaSync rules...`);
+      this.attackCooldownStartTime = now;
+      this.manaSyncWatchList.clear();
+      this.executedManaSyncThisCooldown.clear();
+      this.forcedManaSyncExecutedThisCooldown.clear();
+      this.actionTakenThisAttackCooldown = false; // RESET
+      this.healFriendRuneExecutionsThisAttackCooldown = 0; // RESET
 
-        const manaSyncRules = activePreset.filter(r => r.enabled && r.id.startsWith(this.RULE_PREFIX.MANA_SYNC));
-        manaSyncRules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      const manaSyncRules = activePreset.filter(r => r.enabled && r.id.startsWith(this.RULE_PREFIX.MANA_SYNC));
+      manaSyncRules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
-        for (const rule of manaSyncRules) {
-            if (executedManaSyncNow) break;
+      for (const rule of manaSyncRules) {
+        if (executedManaSyncNow) break; // Only one ManaSync of any type per CD
 
-            const conditionsMet = this._checkManaSyncConditions(rule, gameState);
-            const itemIsActive = !!gameState.activeActionItems?.[rule.actionItem];
-
-            if (logExec) console.log(`[RuleProc] ManaSync Initial Eval (${rule.id}, Prio ${rule.priority || 0}): ConditionsMet=${conditionsMet.all}, ItemActive=${itemIsActive}`);
-
-            if (conditionsMet.all) {
-                if (!rule.actionItem) {
-                    console.warn(`[RuleProc] ManaSync Rule ${rule.id} is missing 'actionItem'. Cannot execute or watch.`);
-                    continue;
-                }
-
-                if (itemIsActive) {
-                    const manaSyncPrio = rule.priority || 0;
-                    if (this._hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPrio)) {
-                        if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} immediate execution BLOCKED by higher priority HealFriend.`);
-                    } else {
-                        if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} attempting IMMEDIATE execution.`);
-                        const keypressSent = this._tryExecuteAction(now, rule, gameState, globalConfig, 'normal');
-                        if (keypressSent) {
-                            this.executedManaSyncThisCooldown.add(rule.id);
-                            executedManaSyncNow = true;
-                            if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} IMMEDIATE execution SUCCEEDED.`);
-                        } else {
-                             if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} IMMEDIATE execution FAILED (Rate Limit?).`);
-                        }
-                    }
-                } else {
-                    if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} conditions met, item unavailable. Adding to watch list.`);
-                    this.manaSyncWatchList.set(rule.id, { startTime: now, checkedConditions: conditionsMet });
-                }
-            }
+        // If an exclusive action (another ManaSync or HealFriend rune) has already happened this CD, stop.
+        if (this.actionTakenThisAttackCooldown) {
+          if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} immediate execution SKIPPED: Exclusive action already taken this attack cooldown.`);
+          continue;
         }
+
+        const conditionsMet = this._checkManaSyncConditions(rule, gameState);
+        const itemIsActive = !!gameState.activeActionItems?.[rule.actionItem];
+
+        if (logExec) console.log(`[RuleProc] ManaSync Initial Eval (${rule.id}, Prio ${rule.priority || 0}): ConditionsMet=${conditionsMet.all}, ItemActive=${itemIsActive}`);
+
+        if (conditionsMet.all) {
+          if (!rule.actionItem) {
+            console.warn(`[RuleProc] ManaSync Rule ${rule.id} is missing 'actionItem'. Cannot execute or watch.`);
+            continue;
+          }
+
+          if (itemIsActive) {
+            const manaSyncPrio = rule.priority || 0;
+            // _hasHigherPriorityEligibleHealFriend now also respects actionTakenThisAttackCooldown & limits
+            if (this._hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPrio, now)) {
+              if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} immediate execution BLOCKED by higher priority HealFriend.`);
+            } else {
+              if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} attempting IMMEDIATE execution.`);
+              const keypressSent = this._tryExecuteAction(now, rule, gameState, globalConfig, 'normal');
+              if (keypressSent) {
+                this.executedManaSyncThisCooldown.add(rule.id); // Track which ManaSync rule fired
+                this.actionTakenThisAttackCooldown = true; // SET EXCLUSIVITY FLAG
+                executedManaSyncNow = true;
+                if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} IMMEDIATE execution SUCCEEDED.`);
+              } else {
+                if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} IMMEDIATE execution FAILED (Rate Limit?).`);
+              }
+            }
+          } else {
+            if (logExec) console.log(`[RuleProc] --> ManaSync ${rule.id} conditions met, item unavailable. Adding to watch list.`);
+            this.manaSyncWatchList.set(rule.id, { startTime: now, checkedConditions: conditionsMet });
+          }
+        }
+      }
     }
 
     this.lastAttackCooldownState = attackCdIsCurrentlyActive;
@@ -410,71 +434,82 @@ class RuleProcessor {
     const logExec = config.logging.logRuleExecutionDetails;
     if (this.manaSyncWatchList.size === 0) return false;
 
+    // If an exclusive action has already happened this CD, don't process watch.
+    if (this.actionTakenThisAttackCooldown) {
+      if (logExec) console.log(`[RuleProc] Skipping ManaSync watch processing: Exclusive action already taken this attack cooldown.`);
+      return false;
+    }
+
     if (logExec) console.log(`[RuleProc] Processing ${this.manaSyncWatchList.size} watched ManaSync rules...`);
 
     let executedFromWatch = false;
     const rulesToRemoveFromWatch = [];
     const sortedWatchKeys = Array.from(this.manaSyncWatchList.keys()).sort((aKey, bKey) => {
-        const ruleA = activePreset.find(r => r.id === aKey);
-        const ruleB = activePreset.find(r => r.id === bKey);
-        return (ruleB?.priority || 0) - (ruleA?.priority || 0);
+      const ruleA = activePreset.find(r => r.id === aKey);
+      const ruleB = activePreset.find(r => r.id === bKey);
+      return (ruleB?.priority || 0) - (ruleA?.priority || 0);
     });
 
     for (const ruleId of sortedWatchKeys) {
-        if (executedFromWatch) break; // Only one normal watched execution per cycle
+      if (executedFromWatch) break; // Only one ManaSync of any type per CD
 
-        const watchData = this.manaSyncWatchList.get(ruleId);
-        const rule = activePreset.find(r => r.id === ruleId);
+      // Redundant check if outer one is reliable, but safe
+      if (this.actionTakenThisAttackCooldown) {
+        if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} SKIPPED (in loop): Exclusive action taken this attack cooldown.`);
+        rulesToRemoveFromWatch.push(ruleId);
+        continue;
+      }
 
-        // Check if ALREADY executed via normal path this CD, skip if yes
-        if (!rule || !rule.actionItem || this.executedManaSyncThisCooldown.has(ruleId)) {
-             if (logExec && this.executedManaSyncThisCooldown.has(ruleId)) {
-                console.log(`[RuleProc] --> Skipping watched check for ${ruleId}: Already executed normally this CD.`);
-             }
-             rulesToRemoveFromWatch.push(ruleId); continue;
+      const watchData = this.manaSyncWatchList.get(ruleId);
+      const rule = activePreset.find(r => r.id === ruleId);
+
+      if (!rule || !rule.actionItem || this.executedManaSyncThisCooldown.has(ruleId)) {
+        if (logExec && this.executedManaSyncThisCooldown.has(ruleId)) {
+          console.log(`[RuleProc] --> Skipping watched check for ${ruleId}: Already executed normally this CD.`);
         }
-        if (now - watchData.startTime > this.MANA_SYNC_WATCH_DURATION_MS) {
-            rulesToRemoveFromWatch.push(ruleId);
-            if (logExec) console.log(`[RuleProc] --> ManaSync Watch TIMEOUT for ${ruleId}.`);
-            continue;
+        rulesToRemoveFromWatch.push(ruleId); continue;
+      }
+      if (now - watchData.startTime > this.MANA_SYNC_WATCH_DURATION_MS) {
+        rulesToRemoveFromWatch.push(ruleId);
+        if (logExec) console.log(`[RuleProc] --> ManaSync Watch TIMEOUT for ${ruleId}.`);
+        continue;
+      }
+
+      const itemIsNowActive = !!gameState.activeActionItems?.[rule.actionItem];
+
+      if (itemIsNowActive) {
+        if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} item now ACTIVE. Re-checking conditions...`);
+        const conditionsStillMet = this._checkManaSyncConditions(rule, gameState);
+
+        if (conditionsStillMet.all) {
+          const manaSyncPrio = rule.priority || 0;
+          if (this._hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPrio, now)) {
+            if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${rule.id} execution BLOCKED by higher priority HealFriend.`);
+            rulesToRemoveFromWatch.push(ruleId); // Remove if blocked, so it doesn't get stuck
+          } else {
+            if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} conditions still MET. Attempting execution.`);
+            const keypressSent = this._tryExecuteAction(now, rule, gameState, globalConfig, 'normal');
+            if (keypressSent) {
+              this.executedManaSyncThisCooldown.add(ruleId);
+              this.actionTakenThisAttackCooldown = true; // SET EXCLUSIVITY FLAG
+              rulesToRemoveFromWatch.push(ruleId);
+              executedFromWatch = true;
+              if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} execution SUCCEEDED.`);
+            } else {
+              if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} execution FAILED (Rate Limit?).`);
+              rulesToRemoveFromWatch.push(ruleId); // Remove even on failure
+            }
+          }
+        } else {
+          if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} item appeared, but conditions FAILED NOW. Removing from watch.`);
+          rulesToRemoveFromWatch.push(ruleId);
         }
-
-        const itemIsNowActive = !!gameState.activeActionItems?.[rule.actionItem];
-
-        if (itemIsNowActive) {
-             if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} item now ACTIVE. Re-checking conditions...`);
-             const conditionsStillMet = this._checkManaSyncConditions(rule, gameState);
-
-             if (conditionsStillMet.all) {
-                const manaSyncPrio = rule.priority || 0;
-                if (this._hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPrio)) {
-                    if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${rule.id} execution BLOCKED by higher priority HealFriend.`);
-                    rulesToRemoveFromWatch.push(ruleId);
-                } else {
-                    if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} conditions still MET. Attempting execution.`);
-                    // Pass 'normal' execution type
-                    const keypressSent = this._tryExecuteAction(now, rule, gameState, globalConfig, 'normal');
-                    if (keypressSent) {
-                        // Add to NORMAL execution set
-                        this.executedManaSyncThisCooldown.add(ruleId);
-                        rulesToRemoveFromWatch.push(ruleId);
-                        executedFromWatch = true;
-                        if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} execution SUCCEEDED.`);
-                    } else {
-                        if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} execution FAILED (Rate Limit?).`);
-                        rulesToRemoveFromWatch.push(ruleId);
-                    }
-                }
-             } else {
-                 if (logExec) console.log(`[RuleProc] --> Watched ManaSync ${ruleId} item appeared, but conditions FAILED NOW. Removing from watch.`);
-                 rulesToRemoveFromWatch.push(ruleId);
-             }
-        }
+      }
     }
 
     rulesToRemoveFromWatch.forEach(id => this.manaSyncWatchList.delete(id));
     return executedFromWatch;
-}
+  }
 
   /** Checks HP, Mana, and Status conditions specifically for a ManaSync rule. */
   _checkManaSyncConditions(rule, gameState) {
@@ -498,33 +533,62 @@ class RuleProcessor {
    * @param {number} manaSyncPriority - The priority of the ManaSync rule currently being considered.
    * @returns {boolean} - True if a higher-priority, potentially eligible HealFriend exists.
    */
-  _hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPriority) {
-    // Filter for potentially competing HealFriend rules
+  _hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPriority, now) {
+    const logExec = config.logging.logRuleExecutionDetails;
+
+    if (this.actionTakenThisAttackCooldown) {
+        if (logExec) console.log(`[RuleProc] Check Higher Prio HealFriend: SKIPPED, actionTakenThisAttackCooldown is true (ManaSync or Heal Rune already acted).`);
+        return false;
+    }
+
     const competingHealFriends = activePreset.filter(rule =>
-        rule.enabled &&
-        rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) &&
-        rule.requireAttackCooldown === true && // Must require attack cooldown
-        (rule.priority || 0) > manaSyncPriority // Must have higher priority
+      rule.enabled &&
+      rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) &&
+      rule.requireAttackCooldown === true &&
+      (rule.priority || 0) > manaSyncPriority
     );
 
     if (competingHealFriends.length === 0) {
-        return false; // No potential competitors
+      return false;
     }
 
-    // Check if ANY of these competitors meet their core condition NOW
     for (const healRule of competingHealFriends) {
-        // Use _shouldHealFriend which checks HP% and implicitly the requireAttackCooldown flag too
-        if (this._shouldHealFriend(healRule, gameState)) {
-            // Found at least one higher-priority HealFriend whose condition is met
-            const logExec = config.logging.logRuleExecutionDetails;
-            if(logExec) console.log(`[RuleProc] Found higher priority HealFriend (${healRule.id}, Prio ${healRule.priority}) eligible, potentially blocking ManaSync (Prio ${manaSyncPriority}).`);
-            return true;
+      let canThisHealRuleRunDueToLimits = true;
+      if (this.PARTY_HEAL_RUNE_ITEMS.has(healRule.actionItem)) {
+        if (this.healFriendRuneExecutionsThisAttackCooldown >= 2) {
+          if (logExec) console.log(`[RuleProc] Check Higher Prio HealFriend (${healRule.id}): SKIPPED for ManaSync block, rune execution limit (${this.healFriendRuneExecutionsThisAttackCooldown}) reached.`);
+          canThisHealRuleRunDueToLimits = false;
         }
-    }
+      }
 
-    // None of the higher-priority competitors met their condition
+      if (!canThisHealRuleRunDueToLimits) continue;
+
+      const ruleDelay = healRule.delay ?? 0;
+      const timeSinceLastTrigger = now - (this.lastSuccessfulRuleActionTime[healRule.id] || 0);
+      const individualDelayMet = timeSinceLastTrigger >= ruleDelay;
+
+      if (!individualDelayMet) {
+          if(logExec) console.log(`[RuleProc] Check Higher Prio HealFriend (${healRule.id}): SKIPPED for ManaSync block, heal rule on individual delay.`);
+          continue;
+      }
+
+      // Check core heal condition.
+      // For the purpose of ManaSync deferral, we assume the item *would be* available if conditions are met.
+      // The actual item availability check for the healRule itself happens later in _filterRulesByItemAvailability.
+      if (this._shouldHealFriend(healRule, gameState)) {
+        // We also need to ensure the healRule itself has an actionItem defined, otherwise it can't block.
+        if (!healRule.actionItem) {
+            if (logExec) console.log(`[RuleProc] Higher Prio HealFriend (${healRule.id}) is missing 'actionItem', cannot evaluate for ManaSync block.`);
+            continue;
+        }
+        // If all other conditions for the heal rule are met (HP, status, delays, rune limits),
+        // then ManaSync should defer to it, regardless of the heal item's current screen visibility.
+        if (logExec) console.log(`[RuleProc] Found HIGHER PRIORITY eligible HealFriend (${healRule.id}, Prio ${healRule.priority}) whose core conditions are met, blocking ManaSync (Prio ${manaSyncPriority}). Item availability for HealFriend will be checked if/when it tries to execute.`);
+        return true;
+      }
+    }
     return false;
-}
+  }
 
   /**
    * Attempts to execute a ManaSync rule if the current time falls within the forced
@@ -539,61 +603,66 @@ class RuleProcessor {
 
     if (!gameState.attackCdActive || !this.attackCooldownStartTime) return false;
 
+    // If an exclusive action has already happened this CD, don't process forced.
+    if (this.actionTakenThisAttackCooldown) {
+      if (logExec) console.log(`[RuleProc] Skipping FORCED ManaSync processing: Exclusive action already taken this attack cooldown.`);
+      return false;
+    }
+
     const timeSinceCdStart = now - this.attackCooldownStartTime;
     const forcedWindowStartTime = this.attackCooldownStartTime + this.MANASYNC_FORCED_EXECUTION_DELAY_MS;
     const forcedWindowEndTime = forcedWindowStartTime + this.MANASYNC_FORCED_EXECUTION_WINDOW_MS;
-
-    // Check if 'now' is within the forced execution window [750ms, 950ms] after CD start
     const isInForcedWindow = now >= forcedWindowStartTime && now <= forcedWindowEndTime;
 
-    if (!isInForcedWindow) return false; // Not within the time window to attempt forced execution
+    if (!isInForcedWindow) return false;
 
     if (logExec) console.log(`[RuleProc] In FORCED ManaSync window (${timeSinceCdStart.toFixed(0)}ms since CD start). Checking rules...`);
 
     const manaSyncRules = activePreset.filter(r => r.enabled && r.id.startsWith(this.RULE_PREFIX.MANA_SYNC));
     manaSyncRules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
 
-    let forcedActionTakenThisCycle = false; // Track if *any* forced action happened in this specific call/cycle
+    let forcedActionTakenThisCycle = false;
 
     for (const rule of manaSyncRules) {
-        // Prevent multiple *forced* executions in the same *cycle*
-        if (forcedActionTakenThisCycle) break;
+      if (forcedActionTakenThisCycle) break; // Only one ManaSync of any type per CD
 
-        const ruleId = rule.id;
+      // Redundant check if outer is reliable
+      if (this.actionTakenThisAttackCooldown) {
+        if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${rule.id} SKIPPED (in loop): Exclusive action taken this attack cooldown.`);
+        continue;
+      }
 
-        // Skip if this rule already executed via FORCED path *this cooldown cycle*
-        if (this.forcedManaSyncExecutedThisCooldown.has(ruleId)) {
-            if (logExec) console.log(`[RuleProc] --> Skipping FORCED check for ${ruleId}: Already executed via forced path this CD cycle.`);
-            continue;
+      const ruleId = rule.id;
+      // A forced rule shouldn't run if any mana sync already ran this CD
+      if (this.forcedManaSyncExecutedThisCooldown.has(ruleId) || this.executedManaSyncThisCooldown.has(ruleId)) {
+        if (logExec) console.log(`[RuleProc] --> Skipping FORCED check for ${ruleId}: Already executed (normal/forced) this CD cycle.`);
+        continue;
+      }
+
+      const conditionsMet = this._checkManaSyncConditions(rule, gameState);
+      if (logExec) console.log(`[RuleProc] --> FORCED ManaSync Eval (${ruleId}, Prio ${rule.priority || 0}): ConditionsMet=${conditionsMet.all}`);
+
+      if (conditionsMet.all) {
+        const manaSyncPrio = rule.priority || 0;
+        if (this._hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPrio, now)) {
+          if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} execution BLOCKED by higher priority HealFriend.`);
+          continue;
         }
 
-        const conditionsMet = this._checkManaSyncConditions(rule, gameState);
-        if (logExec) console.log(`[RuleProc] --> FORCED ManaSync Eval (${ruleId}, Prio ${rule.priority || 0}): ConditionsMet=${conditionsMet.all}`);
+        if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} attempting execution (item presence ignored).`);
+        const keypressSent = this._tryExecuteAction(now, rule, gameState, globalConfig, 'forced');
 
-        if (conditionsMet.all) {
-            const manaSyncPrio = rule.priority || 0;
-            if (this._hasHigherPriorityEligibleHealFriend(gameState, activePreset, manaSyncPrio)) {
-                if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} execution BLOCKED by higher priority HealFriend.`);
-                continue; // Check next lower priority rule
-            }
-
-            if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} attempting execution (item presence ignored).`);
-            const keypressSent = this._tryExecuteAction(now, rule, gameState, globalConfig, 'forced'); // Pass 'forced' execution type
-
-            if (keypressSent) {
-                // Add to FORCED execution set for *this cooldown cycle*
-                this.forcedManaSyncExecutedThisCooldown.add(ruleId);
-                if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} execution SUCCEEDED.`);
-                forcedActionTakenThisCycle = true; // Mark that an action happened *this cycle*
-                return true; // Ensure only ONE forced action per cycle
-            } else {
-                 if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} execution FAILED (Rate Limit?).`);
-                 // Continue loop on failure to potentially try lower priority rule *this cycle*
-            }
+        if (keypressSent) {
+          this.forcedManaSyncExecutedThisCooldown.add(ruleId); // Track forced execution
+          this.actionTakenThisAttackCooldown = true; // SET EXCLUSIVITY FLAG
+          if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} execution SUCCEEDED.`);
+          forcedActionTakenThisCycle = true;
+          return true; // Only ONE forced action per cycle, even if others eligible
+        } else {
+          if (logExec) console.log(`[RuleProc] --> FORCED ManaSync ${ruleId} execution FAILED (Rate Limit?).`);
         }
+      }
     }
-
-    // Return true if any forced action was taken this cycle, false otherwise
     return forcedActionTakenThisCycle;
   }
 
@@ -647,47 +716,47 @@ class RuleProcessor {
     const ruleId = ruleToExecute.id;
     const targetsActionItem = typeof ruleToExecute.actionItem === 'string' && ruleToExecute.actionItem.length > 0;
 
-    // Double-check: Still pending confirmation?
     if (this.pendingActionConfirmations.has(ruleId)) {
-        if (logExec) console.log(`[RuleProc] Skipping Rule ${ruleId}: Still awaiting confirmation.`);
-        return false;
+      if (logExec) console.log(`[RuleProc] Skipping Rule ${ruleId}: Still awaiting confirmation.`);
+      return false;
     }
 
-    // --- Attempt Action ---
     if (logExec) console.log(`[RuleProc] --> Attempting action for pre-validated rule ${ruleId}...`);
-    const actionSuccess = this._tryExecuteAction(now, ruleToExecute, gameState, globalConfig);
+    
+    const actionSuccess = this._tryExecuteAction(now, ruleToExecute, gameState, globalConfig, 'standard');
 
-    // --- Handle Outcome ---
     if (actionSuccess) {
-        this.lastSuccessfulRuleActionTime[ruleId] = now; // Record successful trigger time for THIS rule's delay
+      this.lastSuccessfulRuleActionTime[ruleId] = now;
 
-        // Update category last trigger time (only for userRules with categories)
-        if (ruleToExecute.category && ruleId.startsWith(this.RULE_PREFIX.USER)) {
-             this.lastCategoryExecutionTime[ruleToExecute.category] = now;
-             if (logExec) console.log(`[RuleProc] --> Updated Category ${ruleToExecute.category} last trigger time.`);
+      if (ruleToExecute.category && ruleId.startsWith(this.RULE_PREFIX.USER)) {
+        this.lastCategoryExecutionTime[ruleToExecute.category] = now;
+        if (logExec) console.log(`[RuleProc] --> Updated Category ${ruleToExecute.category} last trigger time.`);
+      }
+
+      if (ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
+        this.lastPartyHealActionTime = now; 
+        if (logExec) console.log(`[RuleProc] --> Updated PartyHeal last action time to ${now}.`);
+
+        if (this.PARTY_HEAL_RUNE_ITEMS.has(ruleToExecute.actionItem) && gameState.attackCdActive) {
+          this.actionTakenThisAttackCooldown = true; 
+          this.healFriendRuneExecutionsThisAttackCooldown++; 
+          if (logExec) console.log(`[RuleProc] --> HealFriend (Rune) ${ruleId} EXECUTED during Attack CD. actionTakenThisAttackCooldown=true, runeExecutions=${this.healFriendRuneExecutionsThisAttackCooldown}.`);
+        } else if (this.PARTY_HEAL_RUNE_ITEMS.has(ruleToExecute.actionItem) && logExec) {
+             console.log(`[RuleProc] --> HealFriend (Rune) ${ruleId} EXECUTED (Attack CD NOT active). Exclusivity flags not set.`);
         }
+      }
 
-        // --- Update PartyHeal specific timer ---
-        if (ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
-            this.lastPartyHealActionTime = now;
-            if (logExec) console.log(`[RuleProc] --> Updated PartyHeal last action time to ${now}.`);
-        }
-        // --- End PartyHeal Timer Update ---
-
-
-        // Add to pending confirmation if it targets an action item
-        if (targetsActionItem) {
-            this.pendingActionConfirmations.set(ruleId, { attemptTimestamp: now, actionItem: ruleToExecute.actionItem });
-            if (logExec) console.log(`[RuleProc] --> Action initiated for ${ruleId}. Added to PENDING confirmation.`);
-        } else {
-            // No action item target (e.g., UserRule spell) - start individual delay timer immediately
-            this.lastRuleExecutionTimes[ruleId] = now;
-            if (logExec) console.log(`[RuleProc] --> Action initiated for ${ruleId}. Individual Delay timer started (no confirmation needed).`);
-        }
-        return true; // Action initiated
+      if (targetsActionItem) {
+        this.pendingActionConfirmations.set(ruleId, { attemptTimestamp: now, actionItem: ruleToExecute.actionItem });
+        if (logExec) console.log(`[RuleProc] --> Action initiated for ${ruleId}. Added to PENDING confirmation.`);
+      } else {
+        this.lastRuleExecutionTimes[ruleId] = now;
+        if (logExec) console.log(`[RuleProc] --> Action initiated for ${ruleId}. Individual Delay timer started (no confirmation needed).`);
+      }
+      return true;
     } else {
-         if (logExec) console.log(`[RuleProc] --> Action FAILED TO INITIATE for ${ruleId} (Rate Limit/Cooldown?).`);
-         return false; // Action failed
+      if (logExec) console.log(`[RuleProc] --> Action FAILED TO INITIATE for ${ruleId} (Rate Limit/Cooldown?).`);
+      return false;
     }
   }
 
@@ -703,79 +772,68 @@ class RuleProcessor {
    _tryExecuteAction(now, rule, gameState, globalConfig, executionType = 'standard') {
     const logExec = config.logging.logRuleExecutionDetails;
     const ruleId = rule.id;
-    // ManaSync is priority regardless of 'normal' or 'forced' for cooldown purposes
-    const isPriorityRule = ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL) || ruleId.startsWith(this.RULE_PREFIX.MANA_SYNC);
-    const SHORT_COOLDOWN_MS = 25; // Cooldown after priority rules
+    const isPriorityRuleForCooldown = ruleId.startsWith(this.RULE_PREFIX.MANA_SYNC) ||
+                                     (ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL) &&
+                                      this.PARTY_HEAL_RUNE_ITEMS.has(rule.actionItem) &&
+                                      gameState.attackCdActive); 
 
-    // --- Check effective global cooldown (only for non-priority rules) ---
-    if (!isPriorityRule && now < this.effectiveCooldownEndTime) {
-        if (logExec) console.log(`[RuleProc] Execute REJECTED (Global Cooldown Active until ${this.effectiveCooldownEndTime}) for standard rule ${ruleId}`);
-        return false;
-    } else if (isPriorityRule && logExec && now < this.effectiveCooldownEndTime) {
-        // Log if a priority rule bypasses the cooldown, but don't reject
-        console.log(`[RuleProc] Priority rule ${ruleId} bypassing global cooldown (Active until ${this.effectiveCooldownEndTime}, ${(now - this.lastKeypressTime).toFixed(0)}ms since last press).`);
+    const SHORT_COOLDOWN_MS = 25;
+
+    if (!isPriorityRuleForCooldown && now < this.effectiveCooldownEndTime) {
+      if (logExec) console.log(`[RuleProc] Execute REJECTED (Global Cooldown Active until ${this.effectiveCooldownEndTime}) for standard rule ${ruleId}`);
+      return false;
+    } else if (isPriorityRuleForCooldown && logExec && now < this.effectiveCooldownEndTime) {
+      console.log(`[RuleProc] Priority rule ${ruleId} bypassing global cooldown (Active until ${this.effectiveCooldownEndTime}, ${(now - this.lastKeypressTime).toFixed(0)}ms since last press).`);
     }
-    // --- End Cooldown Check ---
 
-
-    // Ensure the rule has a key defined
     if (!rule.key) {
-        console.warn(`[RuleProc] Cannot execute rule ${ruleId}: Missing 'key' property.`);
-        return false;
+      console.warn(`[RuleProc] Cannot execute rule ${ruleId}: Missing 'key' property.`);
+      return false;
     }
 
     try {
-        let actionSent = false;
-        // --- PartyHeal Rune Logic ---
-        if (ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL) && this.PARTY_HEAL_RUNE_ITEMS.has(rule.actionItem)) {
-            const targetMember = this._findPartyHealTarget(rule, gameState);
-            if (targetMember?.uhCoordinates) {
-                if (logExec) console.log(`[RuleProc] Executing PartyHeal Rune (${rule.actionItem}) on target ${targetMember.id} via useItemOnCoordinates (Key: ${rule.key})`);
-                useItemOnCoordinates(
-                    globalConfig.windowId,
-                    targetMember.uhCoordinates.x + getRandomNumber(0, 130), // Add randomness
-                    targetMember.uhCoordinates.y + getRandomNumber(0, 11),
-                    rule.key // The key bound to the rune/item
-                );
-                actionSent = true;
-            } else {
-                 console.warn(`[RuleProc] PartyHeal Rune execution failed for ${ruleId}: Could not find valid target member or coordinates.`);
-                 actionSent = false;
-            }
+      let actionSent = false;
+      if (ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL) && this.PARTY_HEAL_RUNE_ITEMS.has(rule.actionItem)) {
+        const targetMember = this._findPartyHealTarget(rule, gameState);
+        if (targetMember?.uhCoordinates) {
+          if (logExec) console.log(`[RuleProc] Executing PartyHeal Rune (${rule.actionItem}) on target ${targetMember.id} via useItemOnCoordinates (Key: ${rule.key})`);
+          useItemOnCoordinates(
+            globalConfig.windowId,
+            targetMember.uhCoordinates.x + getRandomNumber(0, 130),
+            targetMember.uhCoordinates.y + getRandomNumber(0, 11),
+            rule.key
+          );
+          actionSent = true;
+        } else {
+          console.warn(`[RuleProc] PartyHeal Rune execution failed for ${ruleId}: Could not find valid target member or coordinates.`);
+          actionSent = false;
         }
-        // --- ManaSync Keypress Logic ---
-        else if (ruleId.startsWith(this.RULE_PREFIX.MANA_SYNC)) {
-             // Determine pressNumber based on executionType
-             const pressNumber = executionType === 'forced' ? 1 : 1;
-             if (logExec) console.log(`[RuleProc] Executing ManaSync keypress for ${ruleId} (${rule.key}), Type: ${executionType}, Presses: ${pressNumber}`);
-             keyPressManaSync(globalConfig.windowId, rule.key, pressNumber);
-             actionSent = true;
-        }
-        // --- Standard Keypress Logic (UserRule, ActionBarItem, non-rune PartyHeal) ---
-        else {
-             if (logExec) console.log(`[RuleProc] Executing Standard keypress for ${ruleId} (${rule.key})`);
-             // Use standard keyPress for UserRule, ActionBarItem, and non-rune PartyHeal
-             keyPress(globalConfig.windowId, [rule.key], rule); // Pass rule object if keyPress needs it
-             actionSent = true;
-        }
+      } else if (ruleId.startsWith(this.RULE_PREFIX.MANA_SYNC)) {
+        const pressNumber = executionType === 'forced' ? 1 : 1;
+        if (logExec) console.log(`[RuleProc] Executing ManaSync keypress for ${ruleId} (${rule.key}), Type: ${executionType}, Presses: ${pressNumber}`);
+        keyPressManaSync(globalConfig.windowId, rule.key, pressNumber);
+        actionSent = true;
+      } else {
+        if (logExec) console.log(`[RuleProc] Executing Standard keypress for ${ruleId} (${rule.key})`);
+        keyPress(globalConfig.windowId, [rule.key], rule);
+        actionSent = true;
+      }
 
-        // Update last keypress time AND set the effective cooldown end time
-        if (actionSent) {
-            this.lastKeypressTime = now; // Keep track of the actual last press time
-
-            if (isPriorityRule) {
-                this.effectiveCooldownEndTime = now + SHORT_COOLDOWN_MS;
-                if (logExec) console.log(`[RuleProc] --> Action SENT for priority rule ${ruleId}. Setting short cooldown (until ${this.effectiveCooldownEndTime}).`);
-            } else {
-                this.effectiveCooldownEndTime = now + this.KEYPRESS_COOLDOWN_MS; // 200ms
-                if (logExec) console.log(`[RuleProc] --> Action SENT for standard rule ${ruleId}. Setting standard cooldown (until ${this.effectiveCooldownEndTime}).`);
-            }
+      if (actionSent) {
+        this.lastKeypressTime = now;
+        if (isPriorityRuleForCooldown) {
+          this.effectiveCooldownEndTime = now + SHORT_COOLDOWN_MS;
+          if (logExec) console.log(`[RuleProc] --> Action SENT for priority rule ${ruleId}. Setting short cooldown (until ${this.effectiveCooldownEndTime}).`);
+        } else {
+          this.effectiveCooldownEndTime = now + this.KEYPRESS_COOLDOWN_MS;
+          if (logExec) console.log(`[RuleProc] --> Action SENT for standard rule ${ruleId}. Setting standard cooldown (until ${this.effectiveCooldownEndTime}).`);
         }
-        return actionSent;
+      }
+      return actionSent;
 
     } catch (error) {
-        console.error(`[RuleProcessor] Error during action execution for rule ${ruleId}:`, error);
-        return false;
+      console.error(`[RuleProcessor] Error during action execution for rule ${ruleId}:`, error);
+      return false;
     }
 }
 
@@ -809,7 +867,7 @@ class RuleProcessor {
         (member) => member.isActive && member.hpPercentage != null && member.hpPercentage > 0 && member.hpPercentage <= hpTriggerPercentage
       );
     } else { // Heal SPECIFIC party member
-      const targetIndex = partyPositionIndex - 1; // Convert 1-based UI index to 0-based array index
+      const targetIndex = partyPositionIndex - 1;
       const targetMember = gameState.partyMembers?.[targetIndex];
 
       // Check if member exists, is active, and meets HP threshold (ensure HP is valid and > 0)
