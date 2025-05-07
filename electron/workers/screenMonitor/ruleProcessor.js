@@ -46,6 +46,8 @@ class RuleProcessor {
       ACTION_BAR: 'actionBarItem',
       MANA_SYNC: 'manaSync',
       PARTY_HEAL: 'healFriend',
+      ROTATION: 'rotationRule', // Assuming rotationRule might exist or be added
+      EQUIP: 'equipRule', // New prefix for equip rules
     };
 
     // Set of actionItem names that trigger 'useItemOnCoordinates' for PartyHeal rules
@@ -140,7 +142,7 @@ class RuleProcessor {
   _filterEligibleRules(now, rules, gameState) {
     const logSteps = config.logging.logRuleProcessingSteps;
     const logExec = config.logging.logRuleExecutionDetails;
-    if (logSteps) console.log(`[RuleProc] Filtering ${rules.length} non-ManaSync rules...`);
+    if (logSteps) console.log(`[RuleProc] Filtering ${rules.length} non-ManaSync/non-Rotation rules...`);
 
     let eligibleRules = rules
         .filter(rule => rule.enabled);
@@ -152,68 +154,119 @@ class RuleProcessor {
     eligibleRules = this._filterRulesNotOnDelay(now, eligibleRules);
     if (logSteps) console.log(` -> Individual/Category Delay Met: ${eligibleRules.length}`);
 
+    // PartyHeal Interval Filter
     eligibleRules = eligibleRules.filter(rule => {
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
         const timeSinceLastHeal = now - this.lastPartyHealActionTime;
         const intervalMet = timeSinceLastHeal >= this.PARTY_HEAL_MIN_INTERVAL_MS;
-        if (!intervalMet && logExec) {
-          console.log(`[RuleProc] Delay Fail (PartyHeal Interval): ${rule.id} - ${timeSinceLastHeal.toFixed(0)}ms < ${this.PARTY_HEAL_MIN_INTERVAL_MS}ms`);
-        }
+        if (!intervalMet && logExec) console.log(`[RuleProc] Delay Fail (PartyHeal Interval): ${rule.id} - ${timeSinceLastHeal.toFixed(0)}ms < ${this.PARTY_HEAL_MIN_INTERVAL_MS}ms`);
         return intervalMet;
       }
       return true;
     });
     if (logSteps) console.log(` -> Party Heal Interval Met: ${eligibleRules.length}`);
 
-    // --- NEW FILTER STEP for HealFriend (Rune) Exclusivity and Limits ---
+    // HealFriend Rune Exclusivity Filter
     eligibleRules = eligibleRules.filter(rule => {
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) && this.PARTY_HEAL_RUNE_ITEMS.has(rule.actionItem)) {
-        // This is a HealFriend RUNE rule
-        // Check only if attack CD is active, as these flags are relevant to it
         if (gameState.attackCdActive) {
             if (this.actionTakenThisAttackCooldown) {
-              if (logExec) console.log(`[RuleProc] Filter Fail (HealFriend Rune ${rule.id}): Exclusive action (ManaSync or another Heal Rune) already taken this attack cooldown.`);
+              if (logExec) console.log(`[RuleProc] Filter Fail (HealFriend Rune ${rule.id}): Exclusive action already taken this attack cooldown.`);
               return false;
             }
             if (this.healFriendRuneExecutionsThisAttackCooldown >= 2) {
-              if (logExec) console.log(`[RuleProc] Filter Fail (HealFriend Rune ${rule.id}): Max 2 executions reached this attack cooldown (${this.healFriendRuneExecutionsThisAttackCooldown}).`);
+              if (logExec) console.log(`[RuleProc] Filter Fail (HealFriend Rune ${rule.id}): Max 2 executions reached this attack cooldown.`);
               return false;
             }
         }
       }
-      return true; // Pass if not a HealFriend Rune rule or if checks pass
+      return true;
     });
     if (logSteps) console.log(` -> HealFriend (Rune) Exclusivity/Limits Met: ${eligibleRules.length}`);
-    // --- END NEW FILTER STEP ---
-
-    eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
-    if (logSteps) console.log(` -> Walking State OK: ${eligibleRules.length}`);
 
     eligibleRules = this._filterRulesByBasicConditions(eligibleRules, gameState);
     if (logSteps) console.log(` -> Basic Conditions Met: ${eligibleRules.length}`);
 
+    // THIS IS THE CRUCIAL FILTER FOR THE REPORTED ISSUE
     eligibleRules = this._filterRulesByItemAvailability(eligibleRules, gameState);
-    if (logSteps) console.log(` -> Action Item Available: ${eligibleRules.length}`);
+    if (logSteps) console.log(` -> Action Item (on screen) Available: ${eligibleRules.length}`);
 
+
+    // Equip Rule Specific Slot Conditions Filter
+    eligibleRules = eligibleRules.filter(rule => {
+        if (rule.id.startsWith(this.RULE_PREFIX.EQUIP)) {
+            if (typeof rule.actionItem !== 'string' || rule.actionItem.trim() === '' || !rule.targetSlot) {
+                 if (logExec) console.warn(`[RuleProc] Equip Rule '${rule.id}' Fail (Config): Missing actionItem or targetSlot ('${rule.targetSlot}').`);
+                 return false;
+            }
+            if (typeof rule.equipOnlyIfSlotIsEmpty !== 'boolean') {
+                if (logExec) console.warn(`[RuleProc] Equip Rule '${rule.id}' Fail (Config): equipOnlyIfSlotIsEmpty is not a boolean.`);
+                return false;
+            }
+
+            const currentItemInSlot = gameState.equippedItems?.[rule.targetSlot]; // e.g., 'stoneSkinAmulet', 'emptyAmuletSlot', or null
+            const itemKeyIntendedToEquip = rule.actionItem;
+
+            // 1. Check "equip only if slot is empty" condition IF the flag is true
+            if (rule.equipOnlyIfSlotIsEmpty) {
+                let expectedEmptyItemKey;
+                // Determine the SPECIFIC key that represents empty for this slot
+                if (rule.targetSlot === 'amulet') {
+                    expectedEmptyItemKey = 'emptyAmuletSlot'; 
+                } else if (rule.targetSlot === 'ring') {
+                    expectedEmptyItemKey = 'emptyRingSlot';
+                } else {
+                    if (logExec) console.warn(`[RuleProc] Equip Rule '${rule.id}': Cannot check for specific empty key for unknown targetSlot '${rule.targetSlot}'. Rule fails.`);
+                    return false; // Cannot proceed if we don't know what "empty" looks like
+                }
+
+                // STRICT check: Slot content must exactly match the expected empty key. null is NOT considered empty here.
+                if (currentItemInSlot !== expectedEmptyItemKey) {
+                    if (logExec) console.log(`[RuleProc] Equip Rule '${rule.id}': FAILED 'equipOnlyIfSlotIsEmpty'. Slot '${rule.targetSlot}' has '${currentItemInSlot}', strictly required '${expectedEmptyItemKey}'.`);
+                    return false; // Condition not met
+                }
+                // If we reach here, the slot has the specific empty item key.
+                if (logExec) console.log(`[RuleProc] Equip Rule '${rule.id}': PASSED 'equipOnlyIfSlotIsEmpty'. Slot '${rule.targetSlot}' correctly has '${expectedEmptyItemKey}'.`);
+            } else {
+                // Checkbox is unchecked - skip the empty slot check entirely.
+                if (logExec) console.log(`[RuleProc] Equip Rule '${rule.id}': SKIPPED empty slot check as rule.equipOnlyIfSlotIsEmpty is false.`);
+            }
+
+            // 2. Avoid re-equipping if the item we intend to equip is ALREADY in the target slot.
+            // This check applies regardless of the equipOnlyIfSlotIsEmpty flag.
+            if (currentItemInSlot === itemKeyIntendedToEquip) {
+                if (logExec) console.log(`[RuleProc] Equip Rule '${rule.id}': SKIPPING (Avoid Re-equip). Item '${itemKeyIntendedToEquip}' is already equipped in slot '${rule.targetSlot}'.`);
+                return false; 
+            }
+            
+            // If we pass relevant checks, the rule is eligible from a slot perspective.
+            if (logExec) console.log(`[RuleProc] Equip Rule '${rule.id}': All applicable slot conditions passed.`);
+            return true;
+        }
+        return true; 
+    });
+    if (logSteps) console.log(` -> Equip Slot Conditions Met: ${eligibleRules.length}`);
+
+    // PartyHeal Specific Conditions Filter
     eligibleRules = eligibleRules.filter(rule => {
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
         const friendHpMet = this._shouldHealFriend(rule, gameState);
-        if (!friendHpMet && logExec) {
-          console.log(`[RuleProc] Final Condition Fail (PartyHeal ${rule.id}): _shouldHealFriend returned false.`);
-        }
+        if (!friendHpMet && logExec) console.log(`[RuleProc] Final Condition Fail (PartyHeal ${rule.id}): _shouldHealFriend returned false.`);
         return friendHpMet;
       }
       return true;
     });
-    if (logSteps) console.log(` -> Final Conditions Met: ${eligibleRules.length}`);
+    if (logSteps) console.log(` -> Final Conditions (PartyHeal) Met: ${eligibleRules.length}`);
 
+    // Sort by priority
     eligibleRules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
     if (logSteps && eligibleRules.length > 0) {
       console.log(` -> Final Eligible & Sorted: ${eligibleRules.length} (Highest Prio: ${eligibleRules[0].id} P${eligibleRules[0].priority})`);
+    } else if (logSteps && rules.length > 0 && eligibleRules.length === 0) { // Added condition for logging when rules exist but none are eligible
+      console.log(` -> Final Eligible & Sorted: 0 (out of ${rules.length} initial)`);
     } else if (logSteps) {
-      console.log(` -> Final Eligible & Sorted: 0`);
+        console.log(` -> Final Eligible & Sorted: 0`);
     }
-
     return eligibleRules;
   }
 
@@ -265,14 +318,25 @@ class RuleProcessor {
 
   /** Filters rules based on walking state (applies to userRule/actionBarItem) */
   _filterRulesByWalkingState(rules, gameState) {
-    // Only userRules and actionBarRules have the 'isWalking' property check
+    const logExec = config.logging.logRuleExecutionDetails;
+
     return rules.filter((rule) => {
-        if (rule.id.startsWith(this.RULE_PREFIX.USER) || rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR)) {
-            // Pass if rule doesn't care about walking OR if rule requires walking and character IS walking
-            return !rule.isWalking || (rule.isWalking && gameState.isWalking);
+      // --- DEBUG LOGGING START ---
+      if (rule.id === 'ID_OF_YOUR_PROBLEMATIC_RULE') { // Replace with actual rule ID
+        console.log(`[WalkingFilterDebug] Rule: ${rule.id}, rule.isWalking: ${rule.isWalking}, gameState.isWalking: ${gameState.isWalking}`);
+        const conditionResult = !rule.isWalking || (rule.isWalking && gameState.isWalking);
+        console.log(`[WalkingFilterDebug] Condition: !(${rule.isWalking}) || ((${rule.isWalking}) && (${gameState.isWalking})) --> Result: ${conditionResult}`);
+      }
+      // --- DEBUG LOGGING END ---
+
+      if (rule.id.startsWith(this.RULE_PREFIX.USER) || rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR)) {
+        const passes = !rule.isWalking || (rule.isWalking && gameState.isWalking);
+        if (!passes && logExec) { // Log when a rule *fails* this specific filter
+          console.log(`[RuleProc] Walking State FAIL: ${rule.id} (rule.isWalking=${rule.isWalking}, gameState.isWalking=${gameState.isWalking})`);
         }
-        // HealFriend rules ignore walking state
-        return true;
+        return passes;
+      }
+      return true;
     });
   }
 
@@ -280,25 +344,29 @@ class RuleProcessor {
   _filterRulesByBasicConditions(rules, gameState) {
     const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter((rule) => {
-      const hpMet = parseMathCondition(rule.hpTriggerCondition, parseInt(rule.hpTriggerPercentage, 10), gameState.hpPercentage);
-      const manaMet = parseMathCondition(rule.manaTriggerCondition, parseInt(rule.manaTriggerPercentage, 10), gameState.manaPercentage);
-      const statusMet = areCharStatusConditionsMet(rule, gameState); // Checks rule.conditions array
-
-      let monsterMet = true;
-      // Monster count applies to userRule and actionBarItem rules
-      if (rule.id.startsWith(this.RULE_PREFIX.USER) || rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR)) {
-        // Ensure monsterNum and condition exist before parsing
+      let hpMet = true;
+      let manaMet = true;
+      let monsterMet = true; // Default true
+      
+      // HP/Mana conditions apply to USER, ACTION_BAR, EQUIP rules
+      if (rule.id.startsWith(this.RULE_PREFIX.USER) || 
+          rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR) ||
+          rule.id.startsWith(this.RULE_PREFIX.EQUIP)) { // Equip rules now check these
+        hpMet = parseMathCondition(rule.hpTriggerCondition, parseInt(rule.hpTriggerPercentage, 10), gameState.hpPercentage);
+        manaMet = parseMathCondition(rule.manaTriggerCondition, parseInt(rule.manaTriggerPercentage, 10), gameState.manaPercentage);
+        
+        // Monster count also applies to EQUIP rules
         if (rule.monsterNumCondition != null && rule.monsterNum != null) {
             monsterMet = parseMathCondition(rule.monsterNumCondition, parseInt(rule.monsterNum, 10), gameState.monsterNum);
-        } else {
-            monsterMet = true; // Default to true if fields are missing
         }
       }
+      
+      const statusMet = areCharStatusConditionsMet(rule, gameState);
 
       const allMet = hpMet && manaMet && statusMet && monsterMet;
-
       if (!allMet && logExec) {
-        console.log(`[RuleProc] Basic Condition Fail: ${rule.id} (HP=${hpMet}, Mana=${manaMet}, Status=${statusMet}, Monster=${monsterMet})`);
+        const type = rule.id.match(/^[a-zA-Z]+/)?.[0] || 'Rule';
+        console.log(`[RuleProc] ${type} '${rule.name || rule.id}' Basic Cond Fail: (HP=${hpMet}, Mana=${manaMet}, Status=${statusMet}, Monster=${monsterMet})`);
       }
       return allMet;
     });
@@ -308,22 +376,38 @@ class RuleProcessor {
   _filterRulesByItemAvailability(rules, gameState) {
     const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter(rule => {
-      // Check only rules that require an actionItem
-      if (rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR) || rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
-        const requiredItem = rule.actionItem;
-        // Rule MUST have an actionItem defined
-        if (!requiredItem) {
-           console.warn(`[RuleProc] Item Availability Fail: Rule ${rule.id} is missing required 'actionItem' field.`);
-           return false;
+      // This filter applies to rules that need to click an item on an action bar
+      if (
+        rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR) ||
+        rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) ||
+        rule.id.startsWith(this.RULE_PREFIX.EQUIP) // EQUIP rules need their actionItem (e.g. SSA icon on bar) to be visible
+      ) {
+        const requiredItemToClick = rule.actionItem;
+
+        // 1. Rule must have a valid actionItem configured.
+        if (typeof requiredItemToClick !== 'string' || requiredItemToClick.trim() === '') {
+          if (logExec) {
+            console.log(`[RuleProc] Item Availability Fail (ActionItem Not Configured): Rule ${rule.id} has an empty or invalid 'actionItem'. Rule will not execute.`);
+          }
+          return false; 
         }
-        // Check if the item is currently active in the game state
-        const itemIsActive = !!gameState.activeActionItems?.[requiredItem];
-        if (!itemIsActive && logExec) {
-            console.log(`[RuleProc] Item Availability Fail: ${rule.id} requires item '${requiredItem}' which is NOT active.`);
+
+        // 2. The configured actionItem must be currently visible on the action bar.
+        const itemIsVisibleOnActionBar = !!gameState.activeActionItems?.[requiredItemToClick];
+        if (!itemIsVisibleOnActionBar) {
+          if (logExec) {
+            console.log(`[RuleProc] Item Availability Fail (ActionItem Not Visible): Rule ${rule.id} requires actionItem '${requiredItemToClick}' to be visible on the action bar, but it's not detected.`);
+          }
+          return false; 
         }
-        return itemIsActive; // Keep rule only if item is active
+
+        // If both checks pass, the item is available for clicking.
+        if (logExec) {
+            console.log(`[RuleProc] Item Availability Check PASSED: Rule ${rule.id}, actionItem '${requiredItemToClick}' is configured and visible.`);
+        }
+        return true;
       }
-      // If the rule doesn't use actionItem (like userRule), it passes this filter
+      // If the rule type doesn't depend on an actionItem in this way, it passes this filter.
       return true;
     });
   }
@@ -634,7 +718,7 @@ class RuleProcessor {
 
       const ruleId = rule.id;
       // A forced rule shouldn't run if any mana sync already ran this CD
-      if (this.forcedManaSyncExecutedThisCooldown.has(ruleId) || this.executedManaSyncThisCooldown.has(ruleId)) {
+      if (this.executedManaSyncThisCooldown.has(ruleId) || this.forcedManaSyncExecutedThisCooldown.has(ruleId)) {
         if (logExec) console.log(`[RuleProc] --> Skipping FORCED check for ${ruleId}: Already executed (normal/forced) this CD cycle.`);
         continue;
       }

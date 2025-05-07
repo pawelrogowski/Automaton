@@ -28,6 +28,7 @@ import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js
 import { v4 as uuidv4 } from 'uuid';
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog.jsx';
 import EquipWrapper from './Equip.js';
+import GearIcon from '../assets/Stone_Skin_Amulet.gif';
 
 // Helper to clamp value between min and max
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -38,7 +39,6 @@ const Layout = () => {
   const dispatch = useDispatch();
   const { windowId, botEnabled, refreshRate: refreshRateFromRedux, windowTitle, actualFps } = useSelector((state) => state.global);
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const rules = useSelector((state) => state.healing.presets[activePresetIndex]);
 
   const location = useLocation();
   const hash = location.hash;
@@ -87,17 +87,15 @@ const Layout = () => {
       case '#actionbar':
         ruleIdPrefix = 'actionBarItem';
         break;
-      case '#rotations': // Added case for rotations
+      case '#rotations':
         ruleIdPrefix = 'rotationRule';
         break;
       case '#equip':
-        // Decide on prefix for equip rules if/when implemented
-        console.log("Equip rule adding not implemented yet.");
-        return; // Don't add a rule for equip yet
+        ruleIdPrefix = 'equipRule';
+        break;
       default:
-        console.log("Cannot add rule on current page/hash:", hash);
-        // Fallback to userRule or return, depending on desired behavior
-        ruleIdPrefix = 'userRule'; // Or return;
+        console.warn("Cannot add rule on current page/hash:", hash, "Falling back to userRule.");
+        ruleIdPrefix = 'userRule';
         break;
     }
      if (ruleIdPrefix) {

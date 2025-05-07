@@ -11,6 +11,7 @@ import PartyHealingRule from '../components/PartyHealingRule/PartyHealingRule.js
 import ActionBarRule from '../components/ActionBarRule/ActionBarRule.js';
 import ManaSyncRule from '../components/ManaSyncRule/ManaSyncRule.js';
 import SpellRotationRule from '../components/SpellRotationRule/SpellRotationRule.js';
+import EquipRule from '../components/EquipRule/EquipRule.js';
 
 export const Healing = () => {
   const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
@@ -23,27 +24,29 @@ export const Healing = () => {
   const actionBarRules = rules.filter((rule) => rule.id.includes('actionBarItem'));
   const healFriendRules = rules.filter((rule) => rule.id.includes('healFriend'));
   const rotationRules = rules.filter((rule) => rule.id.includes('rotationRule'));
+  const equipRules = rules.filter((rule) => rule.id.includes('equipRule'));
   const userRules = rules.filter(
     (rule) =>
       !rule.id.includes('manaSync') &&
       !rule.id.includes('actionBarItem') &&
       !rule.id.includes('healFriend') &&
-      !rule.id.includes('rotationRule'),
+      !rule.id.includes('rotationRule') &&
+      !rule.id.includes('equipRule'),
   );
 
   // Function to get the tooltip based on rule type
-  const getTooltipForRuleType = (ruleType) => {
-    switch (ruleType) {
+  const getTooltipForRuleType = (ruleTypeKey) => {
+    switch (ruleTypeKey) {
       case 'userRule':
         return 'Customize Rules For Conditional Execution - Potions, Spells, Dishes etc.';
       case 'actionBarItem':
         return 'Customize Rules For Action Bar Items';
       case 'manaSync':
         return 'Rules that synchronize with your attack cooldowns.';
-      case 'party':
+      case 'healFriend':
         return "Party healing rules to manage your allies' health.";
-      case 'equip':
-        return 'Equipment-related rules';
+      case 'equipRule':
+        return 'Rules for automatically equipping or unequipping items.';
       case 'rotationRule':
         return 'Define sequences of key presses with delays.';
       default:
@@ -57,28 +60,31 @@ export const Healing = () => {
       const className = index % 2 === 0 ? 'list-bg' : '';
 
       let RuleComponent;
-      let ruleType = 'userRule'; // Default
+      let ruleTypeKey = 'userRule'; // Default
 
       // Determine component based on rule ID structure
       if (rule.id.includes('manaSync')) {
         RuleComponent = ManaSyncRule;
-        ruleType = 'manaSync';
+        ruleTypeKey = 'manaSync';
       } else if (rule.id.includes('actionBarItem')) {
         RuleComponent = ActionBarRule;
-        ruleType = 'actionBarItem';
+        ruleTypeKey = 'actionBarItem';
       } else if (rule.id.includes('healFriend')) {
         RuleComponent = PartyHealingRule;
-        ruleType = 'party';
+        ruleTypeKey = 'healFriend';
       } else if (rule.id.includes('rotationRule')) {
         RuleComponent = SpellRotationRule;
-        ruleType = 'rotationRule';
+        ruleTypeKey = 'rotationRule';
+      } else if (rule.id.includes('equipRule')) {
+        RuleComponent = EquipRule;
+        ruleTypeKey = 'equipRule';
       } else {
         // Default to HealingRule for any other type (e.g., userRule)
         RuleComponent = HealingRule;
-        ruleType = 'userRule';
+        ruleTypeKey = 'userRule';
       }
 
-      const tooltip = getTooltipForRuleType(ruleType);
+      const tooltip = getTooltipForRuleType(ruleTypeKey);
 
       // Add a check to ensure the component exists before rendering
       if (!RuleComponent) {
@@ -95,28 +101,23 @@ export const Healing = () => {
   };
 
   const renderSection = (hashKey, title, rulesToRender, variant = null) => {
-    if (hashKey === '#equip') {
-      return (
-        hash === hashKey && (
-          <HighWrapper title={title} className="healing-rules-box">
-            <div>
-              <span style={{ color: '#fafafa', fontSize: '24px' }}>Coming Soon</span>
-            </div>
-          </HighWrapper>
-        )
-      );
-    }
-
-    // Determine rule type from hash for tooltip (can be simplified)
-    const sectionRuleType = hashKey.substring(1).replace('rules', 'Rule');
+    let sectionRuleTypeKey = hashKey.substring(1);
+    if (sectionRuleTypeKey === "userrules") sectionRuleTypeKey = "userRule";
+    if (sectionRuleTypeKey === "party") sectionRuleTypeKey = "healFriend";
+    if (sectionRuleTypeKey === "equip") sectionRuleTypeKey = "equipRule";
 
     return (
       hash === hashKey && (
         <HighWrapper title={title} className="healing-rules-box">
           <div>
             <RuleListWrapper
-               tooltip={getTooltipForRuleType(sectionRuleType)} // Use hash for section tooltip
-               variant={variant || (hashKey === '#actionbar' ? 'actionbar' : hashKey === '#rotations' ? 'rotations' : null)}
+               tooltip={getTooltipForRuleType(sectionRuleTypeKey)}
+               variant={variant || (hashKey === '#actionbar' ? 'actionbar' : 
+                                    hashKey === '#rotations' ? 'rotations' :
+                                    hashKey === '#manasync' ? 'manasync' :
+                                    hashKey === '#party' ? 'friends' :
+                                    hashKey === '#equip' ? 'equip' :
+                                    null)}
             >
                {/* Call renderRules directly with the filtered list */}
                {renderRules(rulesToRender)}
@@ -162,13 +163,18 @@ export const Healing = () => {
         )}
 
         {renderSection(
+          '#equip',
+          'Auto Equip Rules',
+          equipRules,
+          'equip'
+        )}
+
+        {renderSection(
           '#rotations',
           'Spell Rotation Rules',
           rotationRules,
           'rotations'
         )}
-
-        {renderSection('#equip', 'Equipment Rules', [])}
       </StyledSection>
     </StyledMain>
   );

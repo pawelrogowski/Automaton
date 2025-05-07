@@ -872,6 +872,7 @@ function runRules(fullFrameData, dynamicRegionResults) {
         // Add other slots here later (e.g., boots, armor)
     },
   };
+  // console.log(minimapChanged)
   // Get the currently active preset from the Redux state
   const currentPreset = state?.healing?.presets?.[state?.healing?.activePresetIndex];
   if (!currentPreset) {
@@ -1022,7 +1023,7 @@ async function mainLoopIteration() {
       }
 
       // --- Check if data is fresh enough to process ---
-      const STALE_DATA_THRESHOLD_MS = 16;
+      const STALE_DATA_THRESHOLD_MS = 200; // Or 100, or 150. Revert from 16.
       const timeSinceLastSuccess = lastSuccessfulFrameTime > 0 ? Date.now() - lastSuccessfulFrameTime : Infinity;
       const canProcessData = !isUsingStaleData || timeSinceLastSuccess <= STALE_DATA_THRESHOLD_MS;
 

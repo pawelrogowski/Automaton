@@ -1,5 +1,5 @@
 {
-  "name": "ideal-wave",
+  "name": "beam-hub",
   "version": "1.2.1b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.ideal-wave",
-    "productName": "Ideal Wave",
+    "appId": "com.electron.beam-hub",
+    "productName": "Beam Hub",
     "directories": {
       "output": "dist",
       "buildResources": "build"

@@ -430,6 +430,7 @@ const actionBarItems = {
     name: 'Stone Skin Amulet',
     iconName: 'Stone_Skin_Amulet',
     categories: [ 'equipment'],
+    slot: "amulet",
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -457,6 +458,7 @@ const actionBarItems = {
     name: 'Might Ring',
     iconName: 'Might_Ring',
     categories: ['equipment'],
+    slot: "ring",
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -619,6 +621,7 @@ const actionBarItems = {
     name: 'Energy Ring',
     iconName: 'Energy_Ring',
     categories: ['equipment'],
+    slot: "ring",
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
