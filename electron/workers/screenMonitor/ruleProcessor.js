@@ -154,6 +154,10 @@ class RuleProcessor {
     eligibleRules = this._filterRulesNotOnDelay(now, eligibleRules);
     if (logSteps) console.log(` -> Individual/Category Delay Met: ${eligibleRules.length}`);
 
+    // Apply the walking state filter for relevant rule types
+    eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
+    if (logSteps) console.log(` -> Walking State Met: ${eligibleRules.length}`);
+
     // PartyHeal Interval Filter
     eligibleRules = eligibleRules.filter(rule => {
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
@@ -265,7 +269,7 @@ class RuleProcessor {
     } else if (logSteps && rules.length > 0 && eligibleRules.length === 0) { // Added condition for logging when rules exist but none are eligible
       console.log(` -> Final Eligible & Sorted: 0 (out of ${rules.length} initial)`);
     } else if (logSteps) {
-        console.log(` -> Final Eligible & Sorted: 0`);
+      console.log(` -> Final Eligible & Sorted: 0`);
     }
     return eligibleRules;
   }
@@ -319,24 +323,16 @@ class RuleProcessor {
   /** Filters rules based on walking state (applies to userRule/actionBarItem) */
   _filterRulesByWalkingState(rules, gameState) {
     const logExec = config.logging.logRuleExecutionDetails;
-
     return rules.filter((rule) => {
-      // --- DEBUG LOGGING START ---
-      if (rule.id === 'ID_OF_YOUR_PROBLEMATIC_RULE') { // Replace with actual rule ID
-        console.log(`[WalkingFilterDebug] Rule: ${rule.id}, rule.isWalking: ${rule.isWalking}, gameState.isWalking: ${gameState.isWalking}`);
-        const conditionResult = !rule.isWalking || (rule.isWalking && gameState.isWalking);
-        console.log(`[WalkingFilterDebug] Condition: !(${rule.isWalking}) || ((${rule.isWalking}) && (${gameState.isWalking})) --> Result: ${conditionResult}`);
-      }
-      // --- DEBUG LOGGING END ---
 
-      if (rule.id.startsWith(this.RULE_PREFIX.USER) || rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR)) {
+        if (rule.id.startsWith(this.RULE_PREFIX.USER) || rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR)) {
         const passes = !rule.isWalking || (rule.isWalking && gameState.isWalking);
-        if (!passes && logExec) { // Log when a rule *fails* this specific filter
+        if (!passes && logExec) {
           console.log(`[RuleProc] Walking State FAIL: ${rule.id} (rule.isWalking=${rule.isWalking}, gameState.isWalking=${gameState.isWalking})`);
         }
         return passes;
       }
-      return true;
+        return true;
     });
   }
 
@@ -360,7 +356,7 @@ class RuleProcessor {
             monsterMet = parseMathCondition(rule.monsterNumCondition, parseInt(rule.monsterNum, 10), gameState.monsterNum);
         }
       }
-      
+
       const statusMet = areCharStatusConditionsMet(rule, gameState);
 
       const allMet = hpMet && manaMet && statusMet && monsterMet;
@@ -389,7 +385,7 @@ class RuleProcessor {
           if (logExec) {
             console.log(`[RuleProc] Item Availability Fail (ActionItem Not Configured): Rule ${rule.id} has an empty or invalid 'actionItem'. Rule will not execute.`);
           }
-          return false; 
+           return false;
         }
 
         // 2. The configured actionItem must be currently visible on the action bar.
@@ -397,7 +393,7 @@ class RuleProcessor {
         if (!itemIsVisibleOnActionBar) {
           if (logExec) {
             console.log(`[RuleProc] Item Availability Fail (ActionItem Not Visible): Rule ${rule.id} requires actionItem '${requiredItemToClick}' to be visible on the action bar, but it's not detected.`);
-          }
+        }
           return false; 
         }
 

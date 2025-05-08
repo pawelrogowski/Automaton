@@ -1023,7 +1023,7 @@ async function mainLoopIteration() {
       }
 
       // --- Check if data is fresh enough to process ---
-      const STALE_DATA_THRESHOLD_MS = 200; // Or 100, or 150. Revert from 16.
+      const STALE_DATA_THRESHOLD_MS = 16; // Or 100, or 150. Revert from 16.
       const timeSinceLastSuccess = lastSuccessfulFrameTime > 0 ? Date.now() - lastSuccessfulFrameTime : Infinity;
       const canProcessData = !isUsingStaleData || timeSinceLastSuccess <= STALE_DATA_THRESHOLD_MS;
 

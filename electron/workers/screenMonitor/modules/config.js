@@ -33,12 +33,12 @@ export const config = {
     logInitialization: true,     // Log steps during the initializeRegions function
     logPerformanceMetrics: false, // Toggle performance logging
     clearTerminal: false,        // Clear terminal before each iteration's log output
-    logRegionCaptureFailures: true, // Log warnings if specific regions aren't found during init
+    logRegionCaptureFailures: false, // Log warnings if specific regions aren't found during init
     // --- Screen Monitor Specific ---
     logCaptureStatus: false,     // Log getLatestFrame success/failure/stale data status
     // --- Rule Processor Specific ---
     logRuleProcessingSteps: false, // Log count of rules remaining after each filter step
-    logRuleExecutionDetails: true,// Log details when attempting/executing/failing rules (includes input simulation)
+    logRuleExecutionDetails: false,// Log details when attempting/executing/failing rules (includes input simulation)
     logActiveActionItems: false, // Log which action items are detected as active each cycle (keep this one)
     logEquippedItems: false,
   }
