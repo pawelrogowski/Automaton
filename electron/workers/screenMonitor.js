@@ -7,7 +7,7 @@ import {
   cooldownColorSequences,
   statusBarSequences,
   battleListSequences,
-  actionBarItems,
+  actionBarItems, // Object: { itemName: { sequence, direction, categories?, name? } }
   equippedItems,
 } from '../constants/index.js'; // Assuming path relative to worker file location
 
@@ -37,9 +37,8 @@ try {
     else throw new Error('x11capturePath not provided in workerData');
 } catch(e) {
     console.error("FATAL: Failed to load X11Capture native module:", e);
-    // Notify parent and exit if essential module fails
     if (parentPort) parentPort.postMessage({ fatalError: 'Failed to load X11Capture module' });
-    process.exit(1); // Exit worker if capture cannot work
+    process.exit(1);
 }
 try {
     if (findSequencesPath) ({ findSequencesNative } = require(findSequencesPath));
@@ -47,53 +46,53 @@ try {
 } catch(e) {
     console.error("FATAL: Failed to load findSequencesNative module:", e);
     if (parentPort) parentPort.postMessage({ fatalError: 'Failed to load findSequencesNative module' });
-    process.exit(1); // Exit worker if sequence finding cannot work
+    process.exit(1);
 }
 
 
 // --- State Variables ---
-let state = null; // Holds the latest Redux state received from parent
-let initialized = false; // Has the worker successfully initialized regions?
-let shouldRestart = false; // Flag to signal the main loop should re-initialize
-let dimensions = null; // Current dimensions derived from the latest valid frame { width, height }
-let lastDimensions = null; // Dimensions recorded after last successful init or resize handling
+let state = null;
+let initialized = false;
+let shouldRestart = false;
+let dimensions = null;
+let lastDimensions = null;
 
-let currentFrameData = null; // Stores the latest full frame object { width, height, data: Buffer }
-let startRegions = null; // Results from findSequencesNative for layout markers during init
-// Specific region definitions (store {x, y, width, height} relative to full window)
+let currentFrameData = null;
+let startRegions = null;
+// Specific region definitions
 let hpManaRegion = null;
 let cooldownsRegion = null;
 let statusBarRegion = null;
 let minimapRegion = null;
 let battleListRegion = null;
 let partyListRegion = null;
-let overallActionBarsRegion = null; // Bounding box for all action bars
-let amuletSlotRegion = null; // <-- Add region for amulet slot
-let ringSlotRegion = null;   // <-- Add region for ring slot
+let overallActionBarsRegion = null;
+let amuletSlotRegion = null;
+let ringSlotRegion = null;
 
-let locatedActionItems = []; // Array of { name, originalCoords, sequence, region, direction }
-let detectedAmulet = null; // <-- State for detected amulet item name
-let detectedRing = null;   // <-- State for detected ring item name
-// HP/MP bar coordinates relative to hpManaRegion's top-left
-let hpbar = null; // { x, y }
-let mpbar = null; // { x, y }
-// Minimap change detection state
+let initialActionItemsCountForNotification = 0;
+let detectedAmulet = null;
+let detectedRing = null;
+// HP/MP bar coordinates
+let hpbar = null;
+let mpbar = null;
+// Minimap change detection
 let lastMinimapData = null;
 let lastMinimapChangeTime = null;
 let minimapChanged = false;
 
 let lastDispatchedHealthPercentage = null;
 let lastDispatchedManaPercentage = null;
-let previousActionItemCount = -1; // Add state for previous action item count
-let consecutiveFrameFailures = 0; // Counter for failed frame gets
-const MAX_CONSECUTIVE_FRAME_FAILURES = 10; // Threshold to trigger restart
+let previousActionItemCount = -1;
+let consecutiveFrameFailures = 0;
+const MAX_CONSECUTIVE_FRAME_FAILURES = 10;
 
 let currentWindowId = null;
-let currentRefreshRate = null; // Add variable to track the current refresh rate
-let successfulFramesThisSecond = 0; // Counter for FPS calculation
-let lastFpsLogTime = Date.now(); // Time of the last FPS log
-let lastDispatchedFps = 0; // Track the last FPS value dispatched
-let lastSuccessfulFrameTime = 0; // Timestamp of the last successful frame capture
+let currentRefreshRate = null;
+let successfulFramesThisSecond = 0;
+let lastFpsLogTime = Date.now();
+let lastDispatchedFps = 0;
+let lastSuccessfulFrameTime = 0;
 
 
 // --- Instances ---
@@ -104,7 +103,6 @@ const ruleProcessorInstance = new RuleProcessor();
 // --- Helper Functions ---
 
 
-// Dispatch HP update to the main process
 async function dispatchHealthUpdate(percentage) {
   parentPort.postMessage({
     storeUpdate: true,
@@ -117,16 +115,15 @@ async function dispatchHealthUpdate(percentage) {
 async function dispatchManaUpdate(percentage) {
   parentPort.postMessage({
     storeUpdate: true,
-    type: 'setManaPercent', 
+    type: 'setManaPercent',
     payload: { manaPercentage: percentage },
   });
 }
 
-// Dispatch actual FPS update to the main process
 async function dispatchFpsUpdate(fps) {
   parentPort.postMessage({
     storeUpdate: true,
-    type: 'setActualFps', // New type for FPS updates
+    type: 'setActualFps',
     payload: { actualFps: fps },
   });
 }
@@ -135,22 +132,17 @@ async function dispatchFpsUpdate(fps) {
 function resetRegions() {
   hpManaRegion = null; cooldownsRegion = null; statusBarRegion = null; minimapRegion = null;
   battleListRegion = null; partyListRegion = null; overallActionBarsRegion = null;
-  amuletSlotRegion = null; // <-- Reset amulet region
-  ringSlotRegion = null;   // <-- Reset ring region
+  amuletSlotRegion = null; ringSlotRegion = null;
   currentFrameData = null; startRegions = null; hpbar = null; mpbar = null;
-  lastMinimapData = null; locatedActionItems = [];
-  detectedAmulet = null; // <-- Reset detected amulet
-  detectedRing = null;   // <-- Reset detected ring
-  // Reset dimension tracking
-  dimensions = null;
-  lastDimensions = null;
-  // Reset dispatch tracking
-  lastDispatchedHealthPercentage = null;
-  lastDispatchedManaPercentage = null;
-  previousActionItemCount = -1; // Reset previous action item count
-  consecutiveFrameFailures = 0; // Reset frame failure counter
-  lastDispatchedFps = 0; // Reset dispatched FPS on region reset
-  lastSuccessfulFrameTime = 0; // Reset successful frame timestamp
+  lastMinimapData = null;
+  initialActionItemsCountForNotification = 0;
+  detectedAmulet = null; detectedRing = null;
+  dimensions = null; lastDimensions = null;
+  lastDispatchedHealthPercentage = null; lastDispatchedManaPercentage = null;
+  previousActionItemCount = -1;
+  consecutiveFrameFailures = 0;
+  lastDispatchedFps = 0;
+  lastSuccessfulFrameTime = 0;
 }
 
 
@@ -164,9 +156,8 @@ function findBoundingRegionHelper(startSequence, endSequence, width, height) {
        return null;
   }
   try {
-      
       const result = findBoundingRect(
-          findSequencesNative, 
+          findSequencesNative,
           currentFrameData.data,
           startSequence,
           endSequence,
@@ -181,95 +172,78 @@ function findBoundingRegionHelper(startSequence, endSequence, width, height) {
 }
 
 
-// Clamp FPS value to the valid range [1, 200]
 function clampFps(fps) {
     const rate = parseInt(fps, 10);
     if (isNaN(rate)) {
         console.warn(`Invalid refreshRate received: ${fps}. Defaulting to 20.`);
-        return 20; // Default FPS if invalid
+        return 20;
     }
     return Math.max(10, Math.min(60, rate));
 }
 
 
 async function initializeRegions() {
-
   if (!state?.global?.windowId) { console.error('Cannot initialize: windowId missing.'); initialized = false; shouldRestart = true; return; }
   if (!captureInstance || !findSequencesNative) { console.error('Cannot initialize: Native module missing.'); initialized = false; shouldRestart = true; return; }
-  // Ensure refreshRate exists before proceeding
   if (typeof state?.global?.refreshRate !== 'number') { console.error('Cannot initialize: refreshRate missing or invalid.'); initialized = false; shouldRestart = true; return; }
-
 
   if (config.logging.logInitialization) console.log('[Init] Starting region initialization...');
   resetRegions();
 
-  try {
-    // --- Start Capture with FPS ---
-    try {
-      const windowId = state.global.windowId;
-      const targetFps = clampFps(state.global.refreshRate); // Clamp FPS
-      currentRefreshRate = targetFps; // Store the clamped rate
-      if (config.logging.logInitialization) console.log(`[Init] Ensuring continuous capture is started for window ${windowId} at ${targetFps} FPS...`);
-      captureInstance.startContinuousCapture(windowId, targetFps); // Pass clamped FPS
+  try { // For startContinuousCapture
+    const windowId = state.global.windowId;
+    const targetFps = clampFps(state.global.refreshRate);
+    currentRefreshRate = targetFps;
+    if (config.logging.logInitialization) console.log(`[Init] Ensuring continuous capture is started for window ${windowId} at ${targetFps} FPS...`);
+    captureInstance.startContinuousCapture(windowId, targetFps);
+    await delay(50);
+  } catch (startError) {
+     if (startError instanceof RangeError) {
+       console.error(`[Init] FATAL: Invalid targetFps provided to startContinuousCapture: ${state.global.refreshRate}. Error: ${startError.message}`);
+       if (parentPort) parentPort.postMessage({ fatalError: `Invalid refreshRate ${state.global.refreshRate}` });
+       process.exit(1);
+     }
+      console.warn(`[Init] Warning during startContinuousCapture: ${startError.message}`);
+      initialized = false; shouldRestart = true; resetRegions();
+      return;
+  }
 
-      await delay(50);
-    } catch (startError) {
-       if (startError instanceof RangeError) {
-         console.error(`[Init] FATAL: Invalid targetFps provided to startContinuousCapture: ${state.global.refreshRate}. Error: ${startError.message}`);
-         // Post fatal error to parent and exit if start fails due to RangeError
-         if (parentPort) parentPort.postMessage({ fatalError: `Invalid refreshRate ${state.global.refreshRate}` });
-         process.exit(1);
-       }
-        console.warn(`[Init] Warning during startContinuousCapture: ${startError.message}`);
-        // If starting failed for other reasons, still attempt cleanup/restart
-        initialized = false; shouldRestart = true; resetRegions();
-        return; // Stop initialization here
-    }
+  if (config.logging.logInitialization) console.log('[Init] Attempting to get initial frame for dimensions...');
+  let retries = 0; currentFrameData = null;
+  while (!currentFrameData && retries < GET_FRAME_MAX_RETRIES) {
+      currentFrameData = captureInstance.getLatestFrame();
+      if (!currentFrameData) {
+          retries++;
+          if (config.logging.logInitialization) console.log(`[Init] Initial frame not ready, retry ${retries}/${GET_FRAME_MAX_RETRIES}...`);
+          await delay(GET_FRAME_RETRY_DELAY * (retries + 1));
+      }
+  }
+  if (!currentFrameData || !currentFrameData.data) {
+      throw new Error(`Failed to get initial window frame after ${GET_FRAME_MAX_RETRIES} retries.`);
+  }
 
-    
-    if (config.logging.logInitialization) console.log('[Init] Attempting to get initial frame for dimensions...');
-    let retries = 0; currentFrameData = null;
-    while (!currentFrameData && retries < GET_FRAME_MAX_RETRIES) {
-        currentFrameData = captureInstance.getLatestFrame();
-        if (!currentFrameData) {
-            retries++;
-            if (config.logging.logInitialization) console.log(`[Init] Initial frame not ready, retry ${retries}/${GET_FRAME_MAX_RETRIES}...`);
-            await delay(GET_FRAME_RETRY_DELAY * (retries + 1)); // Exponential backoff
-        }
-    }
-    if (!currentFrameData || !currentFrameData.data) {
-        throw new Error(`Failed to get initial window frame after ${GET_FRAME_MAX_RETRIES} retries.`);
-    }
+  dimensions = { width: currentFrameData.width, height: currentFrameData.height };
+  lastDimensions = { ...dimensions };
+  if (config.logging.logInitialization) console.log(`[Init] Dimensions from first frame: ${dimensions.width}x${dimensions.height}`);
 
-    
-    dimensions = { width: currentFrameData.width, height: currentFrameData.height };
-    lastDimensions = { ...dimensions };
-    if (config.logging.logInitialization) console.log(`[Init] Dimensions from first frame: ${dimensions.width}x${dimensions.height}`);
-
-    
+  try { // Main initialization logic try block
     if (config.logging.logInitialization) console.log('[Init] Finding initial layout regions...');
-    startRegions = findSequencesNative(currentFrameData.data, regionColorSequences, null, "first"); // Use "first" mode for layout markers
+    startRegions = findSequencesNative(currentFrameData.data, regionColorSequences, null, "first");
     if (!startRegions || typeof startRegions !== 'object') {
         throw new Error('Failed to find start regions or invalid result from findSequencesNative.');
     }
     if (config.logging.logInitialization) {
         const foundKeys = Object.keys(startRegions).filter(k => startRegions[k]).join(', ');
-        // Add equipment slots to the logged keys if found
         const equipmentKeys = ['amuletSlot', 'ringSlot'].filter(k => startRegions[k]).join(', ');
         console.log(`[Init] Layout regions found: ${foundKeys}${equipmentKeys ? ', ' + equipmentKeys : ''}`);
     }
 
-    
     initializeStandardRegions();
+    initializeSpecialRegions(currentFrameData.data);
 
-    
-    initializeSpecialRegions(currentFrameData.data); 
-
-    
-    if (!hpManaRegion) { 
+    if (!hpManaRegion) {
       throw new Error('Essential region (HP/Mana) failed to initialize.');
     }
-    // Log warnings for non-critical missing regions if logging enabled
     if (config.logging.logRegionCaptureFailures) {
         if (!cooldownsRegion) console.warn('[Init] Cooldowns region failed.');
         if (!statusBarRegion) console.warn('[Init] Status bar region failed.');
@@ -277,31 +251,27 @@ async function initializeRegions() {
         if (config.captureRegions.battleList.enabled && !battleListRegion) console.warn('[Init] Battle list region failed.');
         if (config.captureRegions.partyList.enabled && !partyListRegion) console.warn('[Init] Party list region failed.');
         if (config.captureRegions.actionBars.enabled && !overallActionBarsRegion) console.warn('[Init] Action bars region failed.');
-        if (!amuletSlotRegion) console.warn('[Init] Amulet slot region failed.'); // <-- Log amulet failure
-        if (!ringSlotRegion) console.warn('[Init] Ring slot region failed.');     // <-- Log ring failure
+        if (!amuletSlotRegion) console.warn('[Init] Amulet slot region failed.');
+        if (!ringSlotRegion) console.warn('[Init] Ring slot region failed.');
     }
 
-    
     initialized = true;
     shouldRestart = false;
     if (config.logging.logInitialization) console.log('[Init] Region initialization successful.');
-    notifyInitializationStatus(); 
-    // Reset FPS counter on init/re-init
+    notifyInitializationStatus();
     successfulFramesThisSecond = 0;
     lastFpsLogTime = Date.now();
-    lastSuccessfulFrameTime = 0; // Ensure reset after potential init
+    lastSuccessfulFrameTime = 0;
 
-  } catch (error) {
+  } catch (error) { // Catch for main initialization logic
     console.error('[Init] Error during region initialization:', error);
     initialized = false;
     shouldRestart = true;
     dimensions = null; lastDimensions = null;
-    currentRefreshRate = null; // Reset refresh rate on error
+    currentRefreshRate = null;
     resetRegions();
-
-    // Stop capture if it was potentially started before the error
     if (captureInstance && state?.global?.windowId) {
-        try { captureInstance.stopContinuousCapture(); } catch (e) { /* Ignore stop errors */ }
+        try { captureInstance.stopContinuousCapture(); } catch (e) { /* Ignore */ }
     }
   }
 }
@@ -311,34 +281,26 @@ function initializeStandardRegions() {
   if (!startRegions || !dimensions) { console.warn('Cannot initialize standard regions: missing data'); return; }
   const { healthBar, manaBar, cooldownBar, cooldownBarFallback, statusBar, minimap, amuletSlot, ringSlot } = startRegions;
 
-  
   if (healthBar?.x !== undefined && manaBar?.x !== undefined) {
-    hpManaRegion = createRegion(healthBar, 94, 14); 
+    hpManaRegion = createRegion(healthBar, 94, 14);
     if (hpManaRegion) {
-        
         hpbar = { x: healthBar.x - hpManaRegion.x, y: healthBar.y - hpManaRegion.y };
         mpbar = { x: manaBar.x - hpManaRegion.x, y: manaBar.y - hpManaRegion.y };
     } else if (config.logging.logRegionCaptureFailures) console.warn('[Init] Failed to create hpManaRegion object');
   } else if (config.logging.logRegionCaptureFailures) console.warn('[Init] Health or mana bar marker coordinates missing');
 
-  
   if (cooldownBar?.x !== undefined || cooldownBarFallback?.x !== undefined) {
-    cooldownsRegion = createRegion(cooldownBar || cooldownBarFallback, 56, 4); // Assumed fixed size
+    cooldownsRegion = createRegion(cooldownBar || cooldownBarFallback, 56, 4);
   } else if (config.logging.logRegionCaptureFailures) console.warn('[Init] Cooldown bar marker coordinates missing');
 
-  
   if (statusBar?.x !== undefined) {
-    statusBarRegion = createRegion(statusBar, 104, 9); // Assumed fixed size
+    statusBarRegion = createRegion(statusBar, 104, 9);
   } else if (config.logging.logRegionCaptureFailures) console.warn('[Init] Status bar marker coordinates missing');
 
-  
   if (minimap?.x !== undefined) {
-    minimapRegion = createRegion(minimap, 106, 1); // Use 106x1 slice
+    minimapRegion = createRegion(minimap, 106, 1);
   } else if (config.logging.logRegionCaptureFailures) console.warn('[Init] Minimap marker coordinates missing');
 
-  // --- Equipment Slots ---
-  // Assuming fixed size for slots for now (e.g., 32x32 based on common UI elements)
-  // Adjust size if needed based on actual appearance
   const slotWidth = 32;
   const slotHeight = 32;
 
@@ -354,32 +316,21 @@ function initializeStandardRegions() {
 }
 
 
-function calculateItemRegion(itemConfig, coords) {
-    if (!itemConfig || !itemConfig.sequence || !coords) return null;
-    const seqLength = itemConfig.sequence.length;
-    if (seqLength === 0) return null;
-   
-    let width = (itemConfig.direction === 'horizontal') ? seqLength : 1;
-    let height = (itemConfig.direction === 'horizontal') ? 1 : seqLength;
-    
-    return { x: coords.x, y: coords.y, width: Math.max(1, width), height: Math.max(1, height) };
-}
-
-
 function initializeSpecialRegions(initialImageData) {
-  if (!initialImageData || !dimensions) { console.warn('Cannot init special regions: missing data'); return; }
-  locatedActionItems = []; 
+  if (!initialImageData || !dimensions) {
+    console.warn('Cannot init special regions: missing data');
+    initialActionItemsCountForNotification = 0;
+    return;
+  }
+  initialActionItemsCountForNotification = 0;
 
-  // --- Battle List ---
   if (config.captureRegions.battleList.enabled) {
     if(config.logging.logInitialization) console.log('[Init] Initializing battle list region...');
-    
     const region = findBoundingRegionHelper(regionColorSequences.battleListStart, regionColorSequences.battleListEnd, 169, dimensions.height);
     battleListRegion = validateRegionDimensions(region) ? region : null;
     if(config.logging.logInitialization) console.log(`[Init] Battle list region ${battleListRegion ? 'found' : 'NOT found'}.`);
   }
 
-  // --- Party List ---
   if (config.captureRegions.partyList.enabled) {
      if(config.logging.logInitialization) console.log('[Init] Initializing party list region...');
     const region = findBoundingRegionHelper(regionColorSequences.partyListStart, regionColorSequences.partyListEnd, 169, dimensions.height);
@@ -387,52 +338,34 @@ function initializeSpecialRegions(initialImageData) {
      if(config.logging.logInitialization) console.log(`[Init] Party list region ${partyListRegion ? 'found' : 'NOT found'}.`);
   }
 
-  // --- Action Bar Items ---
   if (config.captureRegions.actionBars.enabled) {
      if(config.logging.logInitialization) console.log('[Init] Initializing action bars...');
-    
-    const region = findBoundingRegionHelper(regionColorSequences.hotkeyBarBottomStart, regionColorSequences.hotkeyBarBottomEnd, dimensions.width, dimensions.height / 2); // Search bottom half
+    const region = findBoundingRegionHelper(regionColorSequences.hotkeyBarBottomStart, regionColorSequences.hotkeyBarBottomEnd, dimensions.width, dimensions.height / 2);
     overallActionBarsRegion = validateRegionDimensions(region) ? region : null;
 
     if (overallActionBarsRegion) {
         if(config.logging.logInitialization) console.log('[Init] Overall action bar region found:', overallActionBarsRegion);
-        
         try {
-            if(config.logging.logInitialization) console.log('[Init] Scanning for action items within region...');
-            
-            const initialFoundItems = findSequencesNative(initialImageData, actionBarItems, overallActionBarsRegion, "first");
+            if(config.logging.logInitialization) console.log('[Init] Scanning for action items within region for initial count...');
+            const initialFoundItemsMap = findSequencesNative(initialImageData, actionBarItems, overallActionBarsRegion, "first");
 
-            if (initialFoundItems) {
-                 for (const [name, coords] of Object.entries(initialFoundItems)) {
-                    
-                    if (coords && actionBarItems[name]) {
-                        const itemConfig = actionBarItems[name];
-                        const itemRegion = calculateItemRegion(itemConfig, coords); // Calculate item's own small region
-                        if (validateRegionDimensions(itemRegion)) {
-
-                            locatedActionItems.push({
-                                name,
-                                originalCoords: { ...coords }, 
-                                sequence: itemConfig.sequence, 
-                                region: itemRegion, 
-                                direction: itemConfig.direction || 'horizontal',
-                            });
-                        } else if (config.logging.logRegionCaptureFailures) console.warn(`[Init] Invalid region calculated for action item ${name} at`, coords);
-                    }
+            if (initialFoundItemsMap) {
+                 let count = 0;
+                 for (const itemName in initialFoundItemsMap) {
+                     if (initialFoundItemsMap[itemName]) {
+                         count++;
+                     }
                  }
-                 if(config.logging.logInitialization) console.log(`[Init] Found and stored ${locatedActionItems.length} potential action item locations.`);
+                 initialActionItemsCountForNotification = count;
+                 if(config.logging.logInitialization) console.log(`[Init] Found ${initialActionItemsCountForNotification} potential action item locations initially.`);
             } else {
-                
                  if(config.logging.logInitialization) console.log('[Init] No initial action items found in the region.');
             }
         } catch (error) {
-            
-            console.error("[Init] Error during action item scan:", error);
-            locatedActionItems = [];
+            console.error("[Init] Error during initial action item scan:", error);
             overallActionBarsRegion = null;
         }
     } else {
-        
         if(config.logging.logInitialization || config.logging.logRegionCaptureFailures) console.warn("[Init] Could not find overall action bar region.");
     }
   }
@@ -443,13 +376,13 @@ function notifyInitializationStatus() {
   const status = {
     hpMana: !!hpManaRegion, cooldowns: !!cooldownsRegion, statusBar: !!statusBarRegion, minimap: !!minimapRegion,
     battleList: !!battleListRegion, partyList: !!partyListRegion, actionBars: !!overallActionBarsRegion,
-    itemsLocated: locatedActionItems.length,
-    amuletSlot: !!amuletSlotRegion, // <-- Add amulet status
-    ringSlot: !!ringSlotRegion,     // <-- Add ring status
+    itemsLocated: initialActionItemsCountForNotification,
+    amuletSlot: !!amuletSlotRegion,
+    ringSlot: !!ringSlotRegion,
   };
- 
+
   let body = `Init: HP:${status.hpMana?'✅':'❌'} CD:${status.cooldowns?'✅':'❌'} Status:${status.statusBar?'✅':'❌'} Map:${status.minimap?'✅':'❌'} `
-            +`Equip:[Am:${status.amuletSlot?'✅':'❌'} Rg:${status.ringSlot?'✅':'❌'}] ` // <-- Add Equip section
+            +`Equip:[Am:${status.amuletSlot?'✅':'❌'} Rg:${status.ringSlot?'✅':'❌'}] `
             +`Battle:${status.battleList?'✅':'❌'} Party:${status.partyList?'✅':'❌'} Actions:${status.actionBars?'✅':'❌'}(${status.itemsLocated})`;
   parentPort.postMessage({ notification: { title: 'Monitor Status', body: body } });
 }
@@ -457,12 +390,12 @@ function notifyInitializationStatus() {
 
 function handleResizeStart(newDimensions) {
   console.warn(`Resize detected/triggered. New dimensions: ${newDimensions?.width}x${newDimensions?.height}`);
-  dimensions = newDimensions; // Update current dimensions state
-  lastDimensions = newDimensions ? { ...newDimensions } : null; // Update baseline for next check
+  dimensions = newDimensions;
+  lastDimensions = newDimensions ? { ...newDimensions } : null;
   parentPort.postMessage({ notification: { title: 'Monitor Warning', body: 'Window Size Changed - Re-initializing...' } });
-  initialized = false; // Mark as needing init
-  shouldRestart = true; // Signal main loop to re-init
-  resetRegions(); // Clear old region data
+  initialized = false;
+  shouldRestart = true;
+  resetRegions();
 }
 
 
@@ -475,7 +408,6 @@ function handleMinimapChange(fullFrameDataBuffer, minimapSearchRegion) {
   if (!fullFrameDataBuffer || !validateRegionDimensions(minimapSearchRegion)) {
       return;
   }
-
   let currentMinimapData = null;
   try {
       currentMinimapData = extractSubBuffer(fullFrameDataBuffer, minimapSearchRegion);
@@ -484,70 +416,51 @@ function handleMinimapChange(fullFrameDataBuffer, minimapSearchRegion) {
       return;
   }
 
-
   if (lastMinimapData) {
-
       const minimapIsDifferent = Buffer.compare(currentMinimapData, lastMinimapData) !== 0;
-
       if (minimapIsDifferent) {
           minimapChanged = true;
           lastMinimapChangeTime = Date.now();
       } else if (minimapChanged && lastMinimapChangeTime && (Date.now() - lastMinimapChangeTime > MINIMAP_CHANGE_INTERVAL)) {
           minimapChanged = false;
           lastMinimapChangeTime = null;
-      } 
-
+      }
   } else {
-
       minimapChanged = false;
       lastMinimapChangeTime = null;
       console.log("[Minimap] Initializing...");
   }
-
   lastMinimapData = currentMinimapData;
 }
 
-// Finds dynamic markers (cooldowns, status, action items, equipped items) in the current frame
-function processDynamicRegions(frameDataBuffer) {
-    const results = { cooldowns: {}, statusBar: {}, actionItems: {}, equipped: {} }; // Add 'equipped' to results
-    if (!frameDataBuffer || !findSequencesNative) return results; // Need buffer and native function
 
-    // Find Cooldown Markers within the defined cooldownsRegion
+function processDynamicRegions(frameDataBuffer) {
+    const results = { cooldowns: {}, statusBar: {}, actionItems: {}, equipped: {} };
+    if (!frameDataBuffer || !findSequencesNative) return results;
+
     if (config.captureRegions.cooldowns.enabled && cooldownsRegion) {
         try {
-            // Use "first" mode as we only care if the marker exists
             results.cooldowns = findSequencesNative(frameDataBuffer, cooldownColorSequences, cooldownsRegion, "first") || {};
-        } catch (e) { console.error("Error finding cooldowns:", e); }
+        } catch (e) { console.error("Error finding cooldowns:", e); results.cooldowns = {}; }
     }
 
-    // Find Status Bar Markers within the defined statusBarRegion
     if (config.captureRegions.statusBar.enabled && statusBarRegion) {
         try {
-            // Use "first" mode
             results.statusBar = findSequencesNative(frameDataBuffer, statusBarSequences, statusBarRegion, "first") || {};
-        } catch(e) { console.error("Error finding status bars:", e); }
+        } catch(e) { console.error("Error finding status bars:", e); results.statusBar = {}; }
     }
 
-    // Verify initially located Action Items within the overallActionBarsRegion
     if (config.captureRegions.actionBars.enabled && overallActionBarsRegion) {
          try {
-             // Scan for all defined action items within the container region using "first" mode
-             // This tells us which items are *currently visible* in the container
-             const currentFoundItemsMap = findSequencesNative(frameDataBuffer, actionBarItems, overallActionBarsRegion, "first") || {};
-
-             // Cross-reference with items located during initialization
-             const verifiedItems = {};
-             for (const locatedItem of locatedActionItems) {
-                 // Check if an item with the same name was found *now*
-                 const currentCoords = currentFoundItemsMap[locatedItem.name];
-                 // Check if it was found AND if its current coords match the initial coords
-                 if (currentCoords && currentCoords.x === locatedItem.originalCoords.x && currentCoords.y === locatedItem.originalCoords.y) {
-                     verifiedItems[locatedItem.name] = currentCoords; // Mark as active at its original spot
+             const rawFoundItemsMap = findSequencesNative(frameDataBuffer, actionBarItems, overallActionBarsRegion, "first") || {};
+             const filteredActionItems = {};
+             for (const itemName in rawFoundItemsMap) {
+                 if (rawFoundItemsMap[itemName]) {
+                     filteredActionItems[itemName] = rawFoundItemsMap[itemName];
                  }
              }
-             results.actionItems = verifiedItems; // Store the map of verified active items
+             results.actionItems = filteredActionItems;
 
-             // --- Notify on Action Item Count Change ---
              const currentActionItemCount = Object.keys(results.actionItems).length;
             //  if (previousActionItemCount !== -1 && currentActionItemCount !== previousActionItemCount) {
             //      parentPort.postMessage({
@@ -557,33 +470,26 @@ function processDynamicRegions(frameDataBuffer) {
             //          }
             //      });
             //  }
-             previousActionItemCount = currentActionItemCount; // Update the count for the next cycle
-             // --- End Notification Logic ---
+             previousActionItemCount = currentActionItemCount;
 
-
-             // Optional logging of active items
              if (config.logging.logActiveActionItems) {
                  const activeNames = Object.keys(results.actionItems);
                 if (activeNames.length > 0) {
-                    // 1. Group items by category
                     const groupedItems = {};
                     for (const itemName of activeNames) {
                         const itemConfig = actionBarItems[itemName];
                         if (itemConfig && itemConfig.categories) {
                             itemConfig.categories.forEach(category => {
-                                if (!groupedItems[category]) {
-                                    groupedItems[category] = [];
-                                }
+                                if (!groupedItems[category]) groupedItems[category] = [];
                                 groupedItems[category].push(itemName);
                             });
-                        } else { // Handle items possibly without categories
+                        } else {
                            const category = 'Uncategorized';
                            if (!groupedItems[category]) groupedItems[category] = [];
                            groupedItems[category].push(itemName);
                         }
                     }
 
-                    // 2. Prepare data for console.table (categories as columns)
                     const categories = Object.keys(groupedItems);
                     const maxItems = categories.length > 0 ? Math.max(...Object.values(groupedItems).map(arr => arr.length)) : 0;
                     const tableData = [];
@@ -592,209 +498,137 @@ function processDynamicRegions(frameDataBuffer) {
                         const row = {};
                         for (const category of categories) {
                             const itemKey = groupedItems[category][i];
-                            const itemName = itemKey ? actionBarItems[itemKey]?.name : '';
-                            row[category] = itemName || '';
+                            const displayName = (itemKey && actionBarItems[itemKey] && actionBarItems[itemKey].name) ? actionBarItems[itemKey].name : (itemKey || '');
+                            row[category] = displayName;
                         }
                         tableData.push(row);
                     }
 
-                    // 3. Log the table
                     console.log("[Monitor] Active Action Items by Category:");
                     if (tableData.length > 0) {
                         console.table(tableData, categories);
                     } else {
                         console.log("(None detected this cycle)");
                     }
+                } else if (previousActionItemCount > 0) {
+                     console.log("[Monitor] Active Action Items by Category: (None detected this cycle)");
                 }
              }
-         } catch(e) { console.error("Error finding/verifying action items:", e); }
+         } catch(e) {
+            console.error("Error finding action items:", e);
+            results.actionItems = {};
+        }
     }
 
-    // --- Scan Equipment Slots ---
-    // Scan Amulet Slot
     if (amuletSlotRegion && validateRegionDimensions(amuletSlotRegion)) {
         try {
-            // Search for *any* item defined in equippedItems within the amulet slot region
             const foundItems = findSequencesNative(frameDataBuffer, equippedItems, amuletSlotRegion, "first");
-            // Find the first item that was actually found (coords are not null)
             const detectedItemName = Object.keys(foundItems).find(key => foundItems[key] !== null);
-            results.equipped.amulet = detectedItemName || null; // Store name or null
-            detectedAmulet = results.equipped.amulet; // Update worker state
-
-            // Optional: Log only if the detected item changes or on the first detection
-            // if (detectedAmulet !== previousDetectedAmulet) {
-            //     console.log(`[Monitor] Detected Amulet: ${detectedAmulet || 'None'}`);
-            //     previousDetectedAmulet = detectedAmulet; // Update previous state for change detection
-            // }
-
+            results.equipped.amulet = detectedItemName || null;
+            detectedAmulet = results.equipped.amulet;
         } catch (e) { console.error("Error scanning amulet slot:", e); results.equipped.amulet = null; detectedAmulet = null; }
     } else {
-        results.equipped.amulet = null; // No region, no item
-        detectedAmulet = null;
+        results.equipped.amulet = null; detectedAmulet = null;
     }
 
-    // Scan Ring Slot
     if (ringSlotRegion && validateRegionDimensions(ringSlotRegion)) {
          try {
              const foundItems = findSequencesNative(frameDataBuffer, equippedItems, ringSlotRegion, "first");
              const detectedItemName = Object.keys(foundItems).find(key => foundItems[key] !== null);
              results.equipped.ring = detectedItemName || null;
              detectedRing = results.equipped.ring;
-
-            // Optional: Log only if the detected item changes
-            // if (detectedRing !== previousDetectedRing) {
-            //     console.log(`[Monitor] Detected Ring: ${detectedRing || 'None'}`);
-            //     previousDetectedRing = detectedRing;
-            // }
-
          } catch (e) { console.error("Error scanning ring slot:", e); results.equipped.ring = null; detectedRing = null;}
     } else {
-        results.equipped.ring = null; // No region, no item
-        detectedRing = null;
+        results.equipped.ring = null; detectedRing = null;
     }
 
-    // Log detected equipment every cycle if enabled
     if (config.logging.logEquippedItems) {
         console.log(`[Monitor] Equipment -> Amulet: ${detectedAmulet || 'None'}, Ring: ${detectedRing || 'None'}`);
     }
-    // --- End Scan Equipment Slots ---
 
     return results;
 }
 
-// Processes static data regions and calls minimap check
+
 function processCapturedData(fullFrameData, dynamicRegionResults) {
-  // Basic check: If HP/Mana region enabled but no frame, trigger restart
   if (config.captureRegions.hpMana.enabled && !fullFrameData) {
       console.warn('HP/Mana region enabled but frame capture failed. Triggering re-initialization.');
       shouldRestart = true;
-      return null; // Indicate failure/restart needed
+      return null;
   }
 
-  // Check minimap for changes if enabled
   if (config.processing.trackMinimap && minimapRegion && fullFrameData?.data) {
-       handleMinimapChange(fullFrameData.data, minimapRegion); // Pass fullFrameData.data
+       handleMinimapChange(fullFrameData.data, minimapRegion);
   }
 
-  // Return the results from dynamic region processing (cooldowns, status, actions)
   return dynamicRegionResults;
 }
 
-// Calculates HP and Mana percentages
+
 function calculateHealthAndMana(fullFrameData) {
-  // Check if necessary data is available
   if (!hpbar || !mpbar || !hpManaRegion || !fullFrameData?.data || !dimensions) {
       return { newHealthPercentage: -1, newManaPercentage: -1 };
   }
-
-  const health = calculatePercentages(
-      fullFrameData.data,      // Full buffer (with header)
-      dimensions.width,        // Full frame width
-      hpManaRegion,            // Container region (absolute coords)
-      hpbar,                   // Bar start relative to container {x, y}
-      // BAR_PIXEL_WIDTH (94) is now implicit inside calculatePercentages
-      resourceBars.healthBar   // Array of valid colors
-  );
-
-  const mana = calculatePercentages(
-      fullFrameData.data,      // Full buffer (with header)
-      dimensions.width,        // Full frame width
-      hpManaRegion,            // Container region (absolute coords)
-      mpbar,                   // Bar start relative to container {x, y}
-      // BAR_PIXEL_WIDTH (94) is now implicit inside calculatePercentages
-      resourceBars.manaBar     // Array of valid colors
-  );
-
+  const health = calculatePercentages(fullFrameData.data, dimensions.width, hpManaRegion, hpbar, resourceBars.healthBar);
+  const mana = calculatePercentages(fullFrameData.data, dimensions.width, hpManaRegion, mpbar, resourceBars.manaBar);
   return { newHealthPercentage: health, newManaPercentage: mana };
 }
 
-// Determines character status effects based on found markers
+
 function getCharacterStatus(dynamicResults) {
   const status = {};
   const currentStatusBarRegions = dynamicResults?.statusBar || {};
-  // Check if each status marker defined in constants was found
   Object.keys(statusBarSequences).forEach(key => {
       status[key] = currentStatusBarRegions[key]?.x !== undefined;
   });
   return status;
 }
 
-// Finds all battle list entries using native "all" mode
+
 function getBattleListEntries(frameDataBuffer) {
   if (!battleListRegion || !frameDataBuffer) return [];
-  if (typeof findSequencesNative !== 'function') { // Add check
+  if (typeof findSequencesNative !== 'function') {
        console.error("getBattleListEntries: findSequencesNative is not loaded!");
        return [];
   }
   try {
-      // Pass findSequencesNative as the FIRST argument
-      const entries = findAllOccurrences(
-          findSequencesNative, // <-- PASS THE FUNCTION
-          frameDataBuffer,
-          battleListSequences.battleEntry, // Pass the config directly
-          battleListRegion // Pass the search area
-      );
-      return entries; // findAllOccurrences already returns array or []
+      const entries = findAllOccurrences(findSequencesNative, frameDataBuffer, battleListSequences.battleEntry, battleListRegion);
+      return entries;
   } catch(e) {
       console.error("Error finding battle list entries:", e);
       return [];
   }
 }
 
-// Calculates HP percentage for a single party member bar
+
 function calculatePartyHp(frameDataBuffer, barRegionInPartyList) {
-    // Needs full frame, party list container, and the specific bar region (absolute coords)
     if (!frameDataBuffer || !validateRegionDimensions(partyListRegion) || !validateRegionDimensions(barRegionInPartyList)) return -1;
     try {
-        // *** CRITICAL: Review 'calculatePartyHpPercentage' function ***
-        // Ensure it handles:
-        // 1. frameDataBuffer (full buffer with header)
-        // 2. barStartIndexBytes (absolute byte offset calculated below)
-        // 3. bar width
-        // 4. HP bar color sequence definition
         const absoluteBarStartX = barRegionInPartyList.x;
         const absoluteBarStartY = barRegionInPartyList.y;
-        // Use current frame dimensions for stride calculation
         if (!dimensions) { console.warn("Cannot calculate party HP, dimensions unknown."); return -1; }
         const fullBufferWidth = dimensions.width;
         const bytesPerPixel = 3;
         const headerSize = 8;
-        // Calculate absolute byte offset from the start of the buffer's *data* section
         const barStartIndexBytesInData = (absoluteBarStartY * fullBufferWidth + absoluteBarStartX) * bytesPerPixel;
         const absoluteByteOffset = barStartIndexBytesInData + headerSize;
 
-        // Check bounds against the full buffer length
         if (absoluteByteOffset < headerSize || absoluteByteOffset >= frameDataBuffer.length) {
              console.warn(`Calculated party HP bar start index (${absoluteByteOffset}) out of bounds.`);
              return -1;
         }
-        // Pass the full buffer, let the helper extract data based on the calculated start index
-        return calculatePartyHpPercentage(
-            frameDataBuffer, // Pass the whole buffer
-            resourceBars.partyEntryHpBar,
-            absoluteByteOffset, // Absolute byte index in the buffer
-            barRegionInPartyList.width // Width of the bar to scan
-        );
+        return calculatePartyHpPercentage(frameDataBuffer, resourceBars.partyEntryHpBar, absoluteByteOffset, barRegionInPartyList.width);
     } catch (error) {
         console.error('Error calculating party HP:', error);
         return -1;
     }
 }
 
-// Checks if a party member is active based on name area markers
+
 function checkPartyMemberStatus(frameDataBuffer, nameRegionInPartyList) {
-  // Needs full frame and the absolute name region
   if (!frameDataBuffer || !validateRegionDimensions(partyListRegion) || !validateRegionDimensions(nameRegionInPartyList)) return false;
   try {
-    // Search for *any* active status marker within the specific name region
-    const statusResult = findSequencesNative(
-        frameDataBuffer,
-        PARTY_MEMBER_STATUS, // Object containing different status sequences
-        nameRegionInPartyList, // Search area
-        "first" // Mode - we only need one match
-    );
-
-    // Return true if any of the status markers were found (coords are not null)
+    const statusResult = findSequencesNative(frameDataBuffer, PARTY_MEMBER_STATUS, nameRegionInPartyList, "first");
     return statusResult && Object.values(statusResult).some(coords => coords !== null);
   } catch (error) {
     console.error('Error checking party member status:', error);
@@ -802,29 +636,22 @@ function checkPartyMemberStatus(frameDataBuffer, nameRegionInPartyList) {
   }
 }
 
-// Aggregates data for all party members
+
 function getPartyData(frameDataBuffer) {
-  // Needs party list container region and frame buffer
   if (!config.processing.handleParty || !validateRegionDimensions(partyListRegion) || !frameDataBuffer) return [];
 
   const partyData = [];
-  const approxEntryHeight = 26; // Estimated height of a party entry
-  // Calculate max entries based on container height
+  const approxEntryHeight = 26;
   const maxEntries = partyListRegion ? Math.floor(partyListRegion.height / approxEntryHeight) : 0;
   if (maxEntries <= 0) return [];
 
-  // Calculate regions for each potential entry (these will have absolute coordinates)
   const partyEntryRegions = calculatePartyEntryRegions(partyListRegion, maxEntries);
 
   for (let i = 0; i < partyEntryRegions.length; i++) {
-    const entry = partyEntryRegions[i]; // Contains { bar, name, uhCoordinates } with absolute coords
-    // Ensure both bar and name regions are valid before processing
+    const entry = partyEntryRegions[i];
     if (validateRegionDimensions(entry.bar) && validateRegionDimensions(entry.name)) {
-      // Calculate HP and check status using the full frame buffer and absolute regions
       const hpPercentage = calculatePartyHp(frameDataBuffer, entry.bar);
       const isActive = checkPartyMemberStatus(frameDataBuffer, entry.name);
-
-      // Only add member if HP calculation was successful
       if (hpPercentage >= 0) {
           partyData.push({ id: i, hpPercentage, uhCoordinates: entry.uhCoordinates, isActive });
       }
@@ -833,23 +660,19 @@ function getPartyData(frameDataBuffer) {
   return partyData;
 }
 
-// Executes the healing/support rules based on current game state
+
 function runRules(fullFrameData, dynamicRegionResults) {
   if (!fullFrameData || !dynamicRegionResults) return;
   const frameDataBuffer = fullFrameData.data;
 
-  // Calculate current player stats
   const { newHealthPercentage, newManaPercentage } = calculateHealthAndMana(fullFrameData);
-  // Get status effects, cooldowns, action items, equipped items from processed dynamic results
   const characterStatus = getCharacterStatus(dynamicRegionResults);
   const currentCooldownRegions = dynamicRegionResults.cooldowns || {};
   const activeActionItems = dynamicRegionResults.actionItems || {};
-  const equippedItemsResult = dynamicRegionResults.equipped || {}; // <-- Get equipped items result
-  // Get battle list and party data by scanning the current frame buffer
+  const equippedItemsResult = dynamicRegionResults.equipped || {};
   const battleListEntries = getBattleListEntries(frameDataBuffer);
   const partyMembers = getPartyData(frameDataBuffer);
 
-  // Update cooldown states
   if (currentCooldownRegions.attackInactive?.x !== undefined) cooldownManager.forceDeactivate('attack');
   if (currentCooldownRegions.healingInactive?.x !== undefined) cooldownManager.forceDeactivate('healing');
   if (currentCooldownRegions.supportInactive?.x !== undefined) cooldownManager.forceDeactivate('support');
@@ -857,30 +680,26 @@ function runRules(fullFrameData, dynamicRegionResults) {
   const supportCdActive = cooldownManager.updateCooldown('support', currentCooldownRegions.support?.x !== undefined);
   const attackCdActive = cooldownManager.updateCooldown('attack', currentCooldownRegions.attack?.x !== undefined);
 
-  // Prepare input object for the rule processor
   const ruleInput = {
     hpPercentage: newHealthPercentage, manaPercentage: newManaPercentage,
     healingCdActive, supportCdActive, attackCdActive,
     characterStatus,
-    monsterNum: battleListEntries.length, // Number of monsters on screen
-    isWalking: minimapChanged, // Use state updated by handleMinimapChange
-    partyMembers, // Array of party member data
-    activeActionItems, // Map of currently active action bar items { name: {x, y} }
-    equippedItems: { // <-- Add equipped items to rule input
+    monsterNum: battleListEntries.length,
+    isWalking: minimapChanged,
+    partyMembers,
+    activeActionItems,
+    equippedItems: {
         amulet: equippedItemsResult.amulet,
         ring: equippedItemsResult.ring,
-        // Add other slots here later (e.g., boots, armor)
     },
   };
-  // console.log(minimapChanged)
-  // Get the currently active preset from the Redux state
+
   const currentPreset = state?.healing?.presets?.[state?.healing?.activePresetIndex];
   if (!currentPreset) {
-      console.warn("No active healing preset found.");
-      return; // Cannot run rules without a preset
+      if (config.logging.logRuleProcessing) console.warn("No active healing preset found for rule processing.");
+      return;
   }
 
-  // Process the rules
   try {
     ruleProcessorInstance.processRules(currentPreset, ruleInput, state.global);
   } catch (error) {
@@ -888,381 +707,249 @@ function runRules(fullFrameData, dynamicRegionResults) {
   }
 }
 
-// Handles dispatching HP and Mana updates if they changed
+
 function handleHealthAndManaUpdates(fullFrameData) {
   if(!fullFrameData) return;
   const { newHealthPercentage, newManaPercentage } = calculateHealthAndMana(fullFrameData);
 
-  // Dispatch only if value is valid (>=0) and different from last dispatched value
   if (newHealthPercentage >= 0 && newHealthPercentage !== lastDispatchedHealthPercentage) {
       dispatchHealthUpdate(newHealthPercentage);
-      lastDispatchedHealthPercentage = newHealthPercentage; // Update last dispatched value
+      lastDispatchedHealthPercentage = newHealthPercentage;
   }
   if (newManaPercentage >= 0 && newManaPercentage !== lastDispatchedManaPercentage) {
       dispatchManaUpdate(newManaPercentage);
-      lastDispatchedManaPercentage = newManaPercentage; // Update last dispatched value
+      lastDispatchedManaPercentage = newManaPercentage;
   }
 }
 
-// --- Main Loop ---
+
 async function mainLoopIteration() {
-  // --- Clear Terminal if Configured ---
   if (config.logging.clearTerminal) {
-    // console.clear(); // This often doesn't work reliably from workers
-    console.log('\x1Bc'); // Use ANSI escape code to clear terminal
+    console.log('\x1Bc');
   }
 
-  const logPerf = config.logging.logPerformanceMetrics; // Cache the flag
-  const logCapture = config.logging.logCaptureStatus; // Cache capture status flag
+  const logPerf = config.logging.logPerformanceMetrics;
+  const logCapture = config.logging.logCaptureStatus;
   const loopStart = logPerf ? performance.now() : 0;
   let initMs = 0, frameGetMs = 0, dimCheckMs = 0, dynamicRegionsMs = 0;
   let staticProcessMs = 0, rulesMs = 0, hpManaMs = 0, totalMs = 0;
 
   try {
-    // --- Initialization Check ---
     if (needsInitialization()) {
       const initStart = logPerf ? performance.now() : 0;
       await initializeRegions();
       if (logPerf) initMs = performance.now() - initStart;
-      // If initialization failed, wait and retry on the next loop
-      if (!initialized) { await delay(1000); return; } // Exit early for this iteration
-      // Reset FPS counter and successful frame time on init/re-init
+      if (!initialized) { await delay(1000); return; }
       successfulFramesThisSecond = 0;
       lastFpsLogTime = Date.now();
-      lastSuccessfulFrameTime = 0; // Ensure reset after potential init
+      lastSuccessfulFrameTime = 0;
     }
 
-    // Proceed only if initialized
     if (initialized) {
-      // --- 1. Get Latest Frame ---
       const frameGetStart = logPerf ? performance.now() : 0;
-      if (logCapture) console.log('[ScreenMonitor] Attempting captureInstance.getLatestFrame()'); // Use config flag
+      if (logCapture) console.log('[ScreenMonitor] Attempting captureInstance.getLatestFrame()');
       const frame = captureInstance.getLatestFrame();
       if (logPerf) frameGetMs = performance.now() - frameGetStart;
 
       let isUsingStaleData = false;
-
       if (!frame || !frame.data) {
           consecutiveFrameFailures++;
           isUsingStaleData = true;
-          if (logCapture) { // Use config flag
-              console.warn(`[ScreenMonitor] getLatestFrame FAILED. Consecutive failures: ${consecutiveFrameFailures}. Will use stale data if available.`);
-          }
+          if (logCapture) console.warn(`[ScreenMonitor] getLatestFrame FAILED. Consecutive failures: ${consecutiveFrameFailures}. Will use stale data if available.`);
       } else {
-          if (logCapture) { // Use config flag
-               console.log(`[ScreenMonitor] getLatestFrame SUCCESS. Frame: ${frame.width}x${frame.height}, Length: ${frame.data?.length}`);
-          }
+          if (logCapture) console.log(`[ScreenMonitor] getLatestFrame SUCCESS. Frame: ${frame.width}x${frame.height}, Length: ${frame.data?.length}`);
           if (consecutiveFrameFailures > 0) {
-              if (logCapture) { // Use config flag
-                  console.log(`[ScreenMonitor] Resetting consecutiveFrameFailures from ${consecutiveFrameFailures} to 0.`);
-              }
+              if (logCapture) console.log(`[ScreenMonitor] Resetting consecutiveFrameFailures from ${consecutiveFrameFailures} to 0.`);
               consecutiveFrameFailures = 0;
           }
           currentFrameData = frame;
           isUsingStaleData = false;
-          lastSuccessfulFrameTime = Date.now(); // <<<<<< UPDATE TIMESTAMP ON SUCCESS
+          lastSuccessfulFrameTime = Date.now();
       }
 
       if (!currentFrameData) {
-          // Log error regardless of config flag? Or make it conditional too? Let's keep it for now.
           console.error("[ScreenMonitor] CRITICAL: No valid frame data (currentFrameData is null). Skipping cycle.");
           return;
       }
+      if (isUsingStaleData && logCapture) console.warn(`[ScreenMonitor] Using stale frame data from previous cycle.`);
 
-      if (isUsingStaleData && logCapture) { // Use config flag (and maybe only log if consecutive failures > 0?)
-          console.warn(`[ScreenMonitor] Using stale frame data from previous cycle.`);
-      }
-
-      // --- FPS Counter Logic ---
-      // Only count *successful* frames for FPS calculation
-      if (!isUsingStaleData) {
-          successfulFramesThisSecond++;
-      }
+      if (!isUsingStaleData) successfulFramesThisSecond++;
       const now = Date.now();
       if (now - lastFpsLogTime >= 1000) {
-          // Dispatch FPS update if it has changed
           if (successfulFramesThisSecond !== lastDispatchedFps) {
               dispatchFpsUpdate(successfulFramesThisSecond);
               lastDispatchedFps = successfulFramesThisSecond;
           }
-          if (config.logging.logPerformanceMetrics) {
-              console.log(`Perf: Captured FPS: ${successfulFramesThisSecond}`);
-          }
-          successfulFramesThisSecond = 0; // Reset counter
-          lastFpsLogTime = now; // Update log time
+          if (config.logging.logPerformanceMetrics) console.log(`Perf: Captured FPS: ${successfulFramesThisSecond}`);
+          successfulFramesThisSecond = 0;
+          lastFpsLogTime = now;
       }
-      // --- End FPS Counter Logic ---
 
-
-      // --- 2. Dimension Check (Using currentFrameData) ---
       const dimCheckStart = logPerf ? performance.now() : 0;
-      let dimensionsStable = true; // Assume stable initially
-      // Check dimensions of the data we are *about to process* (which might be stale)
-      if (!lastDimensions ||
-          currentFrameData.width !== lastDimensions.width ||
-          currentFrameData.height !== lastDimensions.height)
-      {
+      let dimensionsStable = true;
+      if (!lastDimensions || currentFrameData.width !== lastDimensions.width || currentFrameData.height !== lastDimensions.height) {
           console.warn(`Frame dimensions ${currentFrameData.width}x${currentFrameData.height} differ from last known ${lastDimensions?.width}x${lastDimensions?.height}. Triggering resize.`);
-          // Pass the dimensions from the (potentially stale) currentFrameData
           handleResizeStart({ width: currentFrameData.width, height: currentFrameData.height });
-          dimensionsStable = false; // Mark as unstable
+          dimensionsStable = false;
           if (captureInstance) try { captureInstance.stopContinuousCapture(); } catch(e) {/*ignore*/}
       }
       if (dimensionsStable) {
-          // Update the 'current' dimensions variable based on the processed frame
           dimensions = { width: currentFrameData.width, height: currentFrameData.height };
       }
       if (logPerf) dimCheckMs = performance.now() - dimCheckStart;
 
-      // If dimensions were not stable, skip the rest of the processing
       if (!dimensionsStable) {
-          consecutiveFrameFailures = 0; // Reset counter on resize too
-          successfulFramesThisSecond = 0;
-          lastFpsLogTime = Date.now();
+          consecutiveFrameFailures = 0; successfulFramesThisSecond = 0; lastFpsLogTime = Date.now();
           return;
       }
 
-      // --- Check if data is fresh enough to process ---
-      const STALE_DATA_THRESHOLD_MS = 16; // Or 100, or 150. Revert from 16.
+      const STALE_DATA_THRESHOLD_MS = config.staleDataThreshold || 100;
       const timeSinceLastSuccess = lastSuccessfulFrameTime > 0 ? Date.now() - lastSuccessfulFrameTime : Infinity;
       const canProcessData = !isUsingStaleData || timeSinceLastSuccess <= STALE_DATA_THRESHOLD_MS;
 
       if (canProcessData) {
-        // --- Processing Steps (only if data is fresh enough) ---
-
-        // --- 3. Process Dynamic Regions ---
         const dynamicRegionsStart = logPerf ? performance.now() : 0;
-        // Pass the data from the potentially stale currentFrameData
         const dynamicRegionResults = processDynamicRegions(currentFrameData.data);
         if (logPerf) dynamicRegionsMs = performance.now() - dynamicRegionsStart;
 
-        // --- 4. Process Static Data / Minimap ---
         const staticProcessStart = logPerf ? performance.now() : 0;
-        // Pass the potentially stale currentFrameData
         const processedStatus = processCapturedData(currentFrameData, dynamicRegionResults);
         if (logPerf) staticProcessMs = performance.now() - staticProcessStart;
 
         if (processedStatus === null || shouldRestart) {
              console.log("Processing triggered restart.");
              if (captureInstance) try { captureInstance.stopContinuousCapture(); } catch(e) {/*ignore*/}
-             consecutiveFrameFailures = 0;
-             successfulFramesThisSecond = 0;
-             lastFpsLogTime = Date.now();
-             lastSuccessfulFrameTime = 0; // Reset on restart trigger
-             return; // Exit early
+             consecutiveFrameFailures = 0; successfulFramesThisSecond = 0; lastFpsLogTime = Date.now(); lastSuccessfulFrameTime = 0;
+             return;
         }
 
-        // --- 5. Run Rules ---
         if (state?.global?.botEnabled) {
             const rulesStart = logPerf ? performance.now() : 0;
             try {
-                // Pass the potentially stale currentFrameData
                 runRules(currentFrameData, processedStatus);
             } catch (ruleError) {
                 console.error('[ScreenMonitor] CRITICAL ERROR during rule processing:', ruleError);
-                shouldRestart = true;
-                initialized = false;
-                consecutiveFrameFailures = 0;
-                successfulFramesThisSecond = 0;
-                lastFpsLogTime = Date.now();
-                lastSuccessfulFrameTime = 0; // Reset on error
+                shouldRestart = true; initialized = false; consecutiveFrameFailures = 0;
+                successfulFramesThisSecond = 0; lastFpsLogTime = Date.now(); lastSuccessfulFrameTime = 0;
                 if (captureInstance) try { captureInstance.stopContinuousCapture(); } catch(e) {/*ignore*/}
-                return; // Stop this iteration
+                return;
             }
             if (logPerf) rulesMs = performance.now() - rulesStart;
         }
 
-        // --- 6. Handle HP/Mana Updates ---
         const hpManaStart = logPerf ? performance.now() : 0;
-        // Pass the potentially stale currentFrameData
         handleHealthAndManaUpdates(currentFrameData);
         if (logPerf) hpManaMs = performance.now() - hpManaStart;
 
       } else {
-          // Data is stale (frame capture failed AND last success > 200ms ago)
-          if (logCapture) { // Log conditionally
-              console.warn(`[ScreenMonitor] Skipping processing cycle. No new frame and last successful frame was ${timeSinceLastSuccess.toFixed(0)}ms ago (>${STALE_DATA_THRESHOLD_MS}ms threshold).`);
-          }
-          // Note: We might still want to run handleHealthAndManaUpdates based on stale data
-          // if the threshold is relatively small, but for now, skipping all processing.
+          if (logCapture) console.warn(`[ScreenMonitor] Skipping processing cycle. No new frame and last successful frame was ${timeSinceLastSuccess.toFixed(0)}ms ago (>${STALE_DATA_THRESHOLD_MS}ms threshold).`);
       }
-
-    } // End if (initialized)
-
-  } catch (err) { // Outer catch for loop-level errors
+    }
+  } catch (err) {
     console.error('[ScreenMonitor] Error in main loop iteration:', err);
-    // Signal restart needed on error, clear initialized flag
-    shouldRestart = true;
-    initialized = false;
-    consecutiveFrameFailures = 0; // Reset counter
-    // Attempt to stop capture thread on error
-    if (captureInstance) try { captureInstance.stopContinuousCapture(); } catch(e) {/*ignore stop errors*/}
-    // Reset FPS counter on major loop error
-    successfulFramesThisSecond = 0;
-    lastFpsLogTime = Date.now();
-    lastSuccessfulFrameTime = 0; // Reset on major loop error
-
+    shouldRestart = true; initialized = false; consecutiveFrameFailures = 0;
+    if (captureInstance) try { captureInstance.stopContinuousCapture(); } catch(e) {/*ignore*/}
+    successfulFramesThisSecond = 0; lastFpsLogTime = Date.now(); lastSuccessfulFrameTime = 0;
   } finally {
-    // --- Log Performance Metrics ---
     if (logPerf) {
-       const loopEnd = performance.now();
-       totalMs = loopEnd - loopStart;
-       // Format numbers to 1 decimal place for readability
+       const loopEnd = performance.now(); totalMs = loopEnd - loopStart;
        const format = (ms) => ms.toFixed(1);
        console.log(
          `Perf: Total=${format(totalMs)}ms ` +
-         `[Init=${format(initMs)} ` +
-         `Frame=${format(frameGetMs)} ` +
-         `DimChk=${format(dimCheckMs)} ` +
-         `DynRg=${format(dynamicRegionsMs)} ` +
-         `StatRg=${format(staticProcessMs)} ` +
-         `Rules=${format(rulesMs)} ` +
-         `HpMana=${format(hpManaMs)}]`
+         `[Init=${format(initMs)} Frame=${format(frameGetMs)} DimChk=${format(dimCheckMs)} ` +
+         `DynRg=${format(dynamicRegionsMs)} StatRg=${format(staticProcessMs)} ` +
+         `Rules=${format(rulesMs)} HpMana=${format(hpManaMs)}]`
        );
     }
   }
 }
 
-// --- Worker Entry Point ---
 async function start() {
-  // Ensure running as a worker thread
   if (isMainThread) {
     console.error("[ScreenMonitor] This script must be run as a worker thread.");
     process.exit(1);
   }
-  // Verify essential native modules loaded
   if (!captureInstance || !findSequencesNative) {
     console.error("[ScreenMonitor] Essential native dependencies failed to load.");
-    // Notify parent about the failure
     if (parentPort) parentPort.postMessage({ fatalError: 'Missing native dependencies' });
-    process.exit(1); // Exit worker
+    process.exit(1);
   }
 
   console.log('[ScreenMonitor] Worker started successfully.');
-  lastFpsLogTime = Date.now(); // Initialize FPS log time at the very start
+  lastFpsLogTime = Date.now();
 
-  // Start the main processing loop
   while (true) {
-    const loopStart = performance.now(); // Use performance.now() for consistency if logging perf
-    await mainLoopIteration(); // Execute one cycle
+    const loopStart = performance.now();
+    await mainLoopIteration();
     const executionTime = performance.now() - loopStart;
-
-    // --- Calculate Delay ---
-    // Pass execution time and refresh rate from state to the utility function
     const delayTime = calculateDelayTime(executionTime, state?.global?.refreshRate);
-
     if (delayTime > 0) {
-        if (config.logging.logPerformanceMetrics) { // Log delay conditionally
-            // console.log(`Perf: Delaying for ${delayTime.toFixed(1)}ms`);
-        }
-        await delay(delayTime); // Wait if needed
+        await delay(delayTime);
     }
   }
 }
 
-// --- Event Listeners for Parent Communication ---
-
-// Listen for state updates from the main process
 parentPort.on('message', (message) => {
-  // Check for command first
   if (message && message.command === 'forceReinitialize') {
       console.log('[ScreenMonitor] Received forceReinitialize command. Triggering re-initialization.');
-      // Stop existing capture if it was running
       if (captureInstance && initialized) {
           try {
               captureInstance.stopContinuousCapture();
               console.log('[ScreenMonitor] Stopped capture due to forceReinitialize.');
-          } catch (e) {
-              console.error('[ScreenMonitor] Error stopping capture on forceReinitialize:', e);
-          }
+          } catch (e) { console.error('[ScreenMonitor] Error stopping capture on forceReinitialize:', e); }
       }
-      // Mark for re-initialization in the main loop
-      initialized = false;
-      shouldRestart = true; // Use existing flag to trigger initializeRegions
-      currentRefreshRate = null; // Reset refresh rate tracking
-      // state should be updated shortly after this command by the store update
-      // currentWindowId = state?.global?.windowId; // No need to set here, rely on next state update
-      resetRegions(); // Clear old region data immediately
-      return; // Don't process as a state update
+      initialized = false; shouldRestart = true; currentRefreshRate = null;
+      resetRegions();
+      return;
   }
 
-  // --- Existing state update logic ---
-  const previousWindowId = state?.global?.windowId; // Get ID from *previous* state
-  const previousRefreshRate = currentRefreshRate; // Get previously set refresh rate
-  const previousState = state; // Keep a reference to the old state for comparison
-
-  state = message; // Update local state copy (assuming message IS the new state)
+  const previousWindowId = state?.global?.windowId;
+  const previousRefreshRate = currentRefreshRate;
+  state = message;
   const newWindowId = state?.global?.windowId;
   const newRefreshRateRaw = state?.global?.refreshRate;
 
-
-  // --- Handle Window ID Change ---
   if (newWindowId && newWindowId !== previousWindowId) {
-    console.log(`[ScreenMonitor] Window ID change detected via state update: ${previousWindowId} -> ${newWindowId}. Triggering re-initialization.`);
-
-    // Stop existing capture if it was running for the previous window
-    if (captureInstance && initialized) { // Check if initialized to avoid stopping unnecessarily
+    console.log(`[ScreenMonitor] Window ID change detected: ${previousWindowId} -> ${newWindowId}. Re-initializing.`);
+    if (captureInstance && initialized) {
       try {
         captureInstance.stopContinuousCapture();
         console.log(`[ScreenMonitor] Stopped capture for old window ID ${previousWindowId}.`);
-      } catch (e) {
-        console.error(`[ScreenMonitor] Error stopping capture for old window ID ${previousWindowId}:`, e);
-      }
+      } catch (e) { console.error(`[ScreenMonitor] Error stopping capture for old window ID ${previousWindowId}:`, e); }
     }
-
-    // Mark for re-initialization in the main loop
-    initialized = false;
-    shouldRestart = true; // Use existing flag to trigger initializeRegions
-    currentWindowId = newWindowId; // Update the tracked window ID
-    currentRefreshRate = null; // Reset refresh rate, will be set on re-init
-    resetRegions(); // Clear old region data immediately to prevent using stale data
-    return; // Exit message handler early since we are restarting
+    initialized = false; shouldRestart = true; currentWindowId = newWindowId; currentRefreshRate = null;
+    resetRegions();
+    return;
   }
 
-  // --- Handle Refresh Rate Change (only if window ID didn't change and initialized) ---
   if (initialized && typeof newRefreshRateRaw === 'number') {
       const newRefreshRateClamped = clampFps(newRefreshRateRaw);
-      // Check if the *clamped* rate changed
       if (newRefreshRateClamped !== previousRefreshRate) {
           console.log(`[ScreenMonitor] Refresh rate change detected: ${previousRefreshRate} -> ${newRefreshRateClamped}. Updating target FPS.`);
           try {
               captureInstance.setTargetFPS(newRefreshRateClamped);
-              currentRefreshRate = newRefreshRateClamped; // Update the tracked rate
+              currentRefreshRate = newRefreshRateClamped;
           } catch (e) {
-              if (e instanceof RangeError) {
-                  console.error(`[ScreenMonitor] Error setting target FPS to ${newRefreshRateClamped} (from raw ${newRefreshRateRaw}): ${e.message}. Check state value.`);
-                  // Potentially notify parent or try to recover, but for now just log
-              } else {
-                   console.error(`[ScreenMonitor] Unexpected error setting target FPS:`, e);
-              }
-              // Don't update currentRefreshRate if setting failed
+              if (e instanceof RangeError) console.error(`[ScreenMonitor] Error setting target FPS to ${newRefreshRateClamped}: ${e.message}.`);
+              else console.error(`[ScreenMonitor] Unexpected error setting target FPS:`, e);
           }
       }
   }
 });
 
-// Handle worker shutdown signal
 parentPort.on('close', async () => {
   console.log('[ScreenMonitor] Parent port closed. Stopping capture and shutting down.');
-  // Ensure capture thread is stopped cleanly
   if (captureInstance) {
       try { captureInstance.stopContinuousCapture(); } catch(e) { console.error("Error stopping capture on close:", e);}
   }
-  // No Redis disconnect needed
-  process.exit(0); // Exit worker process
+  process.exit(0);
 });
 
-// --- Start the Worker ---
-start().catch(async (err) => { // Catch unhandled errors in start() or the main loop
+start().catch(async (err) => {
   console.error('[ScreenMonitor] Worker encountered fatal error:', err);
-  // Notify parent process of the fatal error
-  if (parentPort) {
-      parentPort.postMessage({ fatalError: err.message || 'Unknown fatal error in worker' });
-  }
-  // Attempt to stop capture thread before exiting
+  if (parentPort) parentPort.postMessage({ fatalError: err.message || 'Unknown fatal error in worker' });
   if (captureInstance) {
       try { captureInstance.stopContinuousCapture(); } catch(e) { console.error("Error stopping capture on fatal error:", e);}
   }
-  // No Redis disconnect needed
-  process.exit(1); // Exit worker process with error code
+  process.exit(1);
 });

@@ -64,7 +64,9 @@ const PartyHealingRule = ({ rule, className }) => {
     const allowedItemKeys = [
         'ultimateHealingRune',
         'intenseHealingRune',
-        'healFriendSpell'
+        'exuraSio',
+        'exuraGranSio',
+        'exuraGranMasRes'
     ];
     const partyHealOptions = [];
 

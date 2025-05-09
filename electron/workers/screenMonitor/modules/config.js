@@ -33,7 +33,7 @@ export const config = {
     logInitialization: true,     // Log steps during the initializeRegions function
     logPerformanceMetrics: false, // Toggle performance logging
     clearTerminal: false,        // Clear terminal before each iteration's log output
-    logRegionCaptureFailures: false, // Log warnings if specific regions aren't found during init
+    logRegionCaptureFailures: true, // Log warnings if specific regions aren't found during init
     // --- Screen Monitor Specific ---
     logCaptureStatus: false,     // Log getLatestFrame success/failure/stale data status
     // --- Rule Processor Specific ---

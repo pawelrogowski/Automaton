@@ -44,6 +44,12 @@ const DEFAULT_SLOT_MUST_BE_ITEM = getDefaultSlotMustBeItem();
 // Default for slotMustBeItemName in equipRule template
 const DEFAULT_SLOT_CONDITION = '_ANY_'; // Represents "Don't care"
 
+// Helper to validate delay (e.g., positive integer)
+const validateDelay = (value) => {
+  const num = parseInt(value, 10);
+  return isNaN(num) || num < 0 ? 0 : num;
+};
+
 const initialPreset = [
   // {
   //   id: `userRule${uuidv4()}`,
@@ -354,7 +360,7 @@ const validateRule = (rule) => {
       validated.sequence = validated.sequence.map(step => ({
           key: step.key || 'F1', // Default key
           delay: validateDelay(step.delay ?? 1000), // Validate and default delay
-          leftClick: step.leftClick ?? false // Default leftClick
+          leftClick: typeof step.leftClick === 'boolean' ? step.leftClick : false // Ensured boolean
       }));
   }
 
@@ -411,6 +417,11 @@ const healingSlice = createSlice({
               conditions: [],
               sequence: [
                   { key: 'F1', delay: 1000, leftClick: false },
+                  { key: 'F2', delay: 1000, leftClick: false },
+                  { key: 'F3', delay: 1000, leftClick: false },
+                  { key: 'F4', delay: 1000, leftClick: false },
+                  { key: 'F5', delay: 1000, leftClick: false },
+                  { key: 'F6', delay: 1000, leftClick: false },
               ],
           };
       } else if (ruleId && typeof ruleId === 'string' && ruleId.startsWith('equipRule')) {

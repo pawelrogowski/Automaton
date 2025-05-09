@@ -13,7 +13,8 @@ import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
 import momentum from '../assets/Momentum_Effect.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
 import FAQ from '../assets/FAQ.png';
-import ActionBarIcon from '../assets/The_Epic_Wisdom.gif';
+import ActionBarIcon from '../assets/action_bar.png';
+import mageHat from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
 import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
@@ -252,7 +253,7 @@ const Layout = () => {
                   ></SideBarNavButton>
                   <SideBarNavButton
                     to="/healing#rotations"
-                    img={ActionBarIcon}
+                    img={mageHat}
                     text={'Spell Rotations'}
                     imageWidth="32px"
                     tooltip="Show spell rotation rules"

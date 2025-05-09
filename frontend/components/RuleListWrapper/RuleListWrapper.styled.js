@@ -80,6 +80,16 @@ export const StyledDiv = styled.div`
   .header-actionbar-priority { width: 80px; }
   .header-actionbar-cd { width: 100px; }
 
+  /* --- Equip Variant Header Widths (Same as Action Bar) --- */
+  .header-equip-enable { width: 36px; }
+  .header-equip-item { width: 260px; }
+  .header-equip-hk { width: 60px; }
+  .header-equip-hp { width: 82px; }
+  .header-equip-mana { width: 82px; }
+  .header-equip-monster { width: 82px; }
+  .header-equip-priority { width: 80px; }
+  /* Note: .header-equip-cd can be added if needed, following actionbar's 100px */
+
   /* --- Friend Variant Header Widths - Updated --- */
   .header-friend-enable { width: 36px; }      // Match action bar enable
   .header-friend-action { width: 162px; }     // New: Match action bar item width
