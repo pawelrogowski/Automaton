@@ -286,6 +286,9 @@ const validateField = (field, value) => {
       return Math.max(-999, Math.min(999, parseInt(value, 10) || 0));
     case 'partyPosition':
       return Math.max(0, Math.min(10, parseInt(value, 10) || 0));
+    case 'delay':
+      const num = parseInt(value, 10);
+      return isNaN(num) ? 0 : Math.max(0, Math.min(86400000, num));
     default:
       return value;
   }
