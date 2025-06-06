@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { updateRule, removeRule } from '../../redux/slices/healingSlice.js';
+import { updateRule, removeRule } from '../../redux/slices/ruleSlice.js';
 import StyledSpellRotationRule from './SpellRotationRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -25,9 +25,9 @@ const validateDelay = (value) => {
 const SpellRotationRule = ({ rule, className }) => {
   const dispatch = useDispatch();
   const [showConfirm, setShowConfirm] = useState(false);
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
   const currentRule = useSelector((state) =>
-    state.healing.presets[activePresetIndex].find((r) => r.id === rule.id)
+    state.rules.presets[activePresetIndex].find((r) => r.id === rule.id)
   ) || rule;
 
   // Make handlers no-op or conditionally disabled if needed, but overlay blocks interaction anyway

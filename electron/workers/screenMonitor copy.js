@@ -273,7 +273,7 @@ async function main() {
 
               // Calculate HP percentage using direct offset in the main party list image
               const barStartIndex = (barRegion.y - partyListRegion.y) * partyListRegion.width + (barRegion.x - partyListRegion.x);
-              const hpPercentage = calculatePartyHpPercentage(capturedData.partyList, resourceBars.partyEntryHpBar, barStartIndex * 3, 130);
+              const hppc = calculatePartyHpPercentage(capturedData.partyList, resourceBars.partyEntryHpBar, barStartIndex * 3, 130);
 
               // Create proper buffer for name status checking
               const nameStartIndex = (nameRegion.y - partyListRegion.y) * partyListRegion.width + (nameRegion.x - partyListRegion.x);
@@ -287,9 +287,9 @@ async function main() {
                 Object.keys(partyMemberStatusSequences.active || {}).length > 0 ||
                 Object.keys(partyMemberStatusSequences.activeHover || {}).length > 0;
 
-              if (hpPercentage >= 0) {
+              if (hppc >= 0) {
                 partyData.push({
-                  hpPercentage,
+                  hppc,
                   uhCoordinates: partyEntryRegions[i].uhCoordinates,
                   isActive,
                 });
@@ -298,15 +298,15 @@ async function main() {
           }
 
           // Process rules if bot is enabled
-          if (global.botEnabled) {
+          if (global.isBotEnabled) {
             await processRules(
               healing.presets[healing.activePresetIndex],
               {
-                hpPercentage: newHealthPercentage,
-                manaPercentage: newManaPercentage,
-                healingCdActive: cooldownManager.updateCooldown('healing', cooldownBarRegions.healing?.x !== undefined),
-                supportCdActive: cooldownManager.updateCooldown('support', cooldownBarRegions.support?.x !== undefined),
-                attackCdActive: cooldownManager.updateCooldown('attack', cooldownBarRegions.attack?.x !== undefined),
+                hppc: newHealthPercentage,
+                mppc: newManaPercentage,
+                healingCd: cooldownManager.updateCooldown('healing', cooldownBarRegions.healing?.x !== undefined),
+                supportCd: cooldownManager.updateCooldown('support', cooldownBarRegions.support?.x !== undefined),
+                attackCd: cooldownManager.updateCooldown('attack', cooldownBarRegions.attack?.x !== undefined),
                 characterStatus: characterStatusUpdates,
                 monsterNum: battleListEntries.length,
                 isWalking: minimapChanged,
@@ -321,7 +321,7 @@ async function main() {
             parentPort.postMessage({
               storeUpdate: true,
               type: 'setHealthPercent',
-              payload: { hpPercentage: newHealthPercentage },
+              payload: { hppc: newHealthPercentage },
             });
             lastDispatchedHealthPercentage = newHealthPercentage;
           }
@@ -330,7 +330,7 @@ async function main() {
             parentPort.postMessage({
               storeUpdate: true,
               type: 'setManaPercent',
-              payload: { manaPercentage: newManaPercentage },
+              payload: { mppc: newManaPercentage },
             });
             lastDispatchedManaPercentage = newManaPercentage;
           }

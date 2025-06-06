@@ -35,8 +35,8 @@ const DEFAULT_INFERRED_SLOT_FOR_EQUIP = actionBarItemsData[DEFAULT_EQUIP_ACTION_
 
 // Get a default item name from equippedItems (e.g., emptyAmuletSlot)
 const getDefaultSlotMustBeItem = () => {
-    if (actionBarItemsData.emptyAmuletSlot) return 'emptyAmuletSlot'; // Assuming equippedItems might have this, or use a known key
-    const firstEquippedItemKey = Object.keys(equippedItems).find(key => key.toLowerCase().includes('empty')); // Prioritize an "empty" state
+    if (actionBarItemsData.emptyAmuletSlot) return 'Empty'; // Assuming equippedItems might have this, or use a known key
+    const firstEquippedItemKey = Object.keys(equippedItems).find(key => key.toLowerCase().includes('Empty')); // Prioritize an "empty" state
     return firstEquippedItemKey || Object.keys(equippedItems)[0] || '';
 }
 const DEFAULT_SLOT_MUST_BE_ITEM = getDefaultSlotMustBeItem();
@@ -51,159 +51,6 @@ const validateDelay = (value) => {
 };
 
 const initialPreset = [
-  // {
-  //   id: `userRule${uuidv4()}`,
-  //   name: `Exura`,
-  //   enabled: false,
-  //   category: 'Healing',
-  //   key: 'F1',
-  //   hpTriggerCondition: '<=',
-  //   hpTriggerPercentage: 80,
-  //   manaTriggerCondition: '>',
-  //   manaTriggerPercentage: 5,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '>=',
-  //   priority: 10,
-  //   delay: 1000,
-  //   isWalking: false,
-  //   conditions: [],
-  // },
-  // {
-  //   id: `userRule${uuidv4()}`,
-  //   name: `ManaPot`,
-  //   enabled: false,
-  //   category: 'Potion',
-  //   key: 'F12',
-  //   hpTriggerCondition: '>',
-  //   hpTriggerPercentage: 0,
-  //   manaTriggerCondition: '<=',
-  //   manaTriggerPercentage: 15,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '>=',
-  //   priority: 10,
-  //   delay: 1000,
-  //   isWalking: false,
-  //   conditions: [],
-  // },
-  // {
-  //   id: `userRule${uuidv4()}`,
-  //   name: `Mana0Mob`,
-  //   enabled: false,
-  //   category: 'Potion',
-  //   key: 'F12',
-  //   hpTriggerCondition: '>',
-  //   hpTriggerPercentage: 0,
-  //   manaTriggerCondition: '<=',
-  //   manaTriggerPercentage: 85,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '=',
-  //   priority: 0,
-  //   delay: 1000,
-  //   isWalking: false,
-  //   conditions: [],
-  // },
-  // {
-  //   id: `userRule${uuidv4()}`,
-  //   name: `Haste`,
-  //   enabled: false,
-  //   category: 'Support',
-  //   key: 'F4',
-  //   hpTriggerCondition: '>',
-  //   hpTriggerPercentage: 0,
-  //   manaTriggerCondition: '>=',
-  //   manaTriggerPercentage: 5,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '>=',
-  //   priority: 1,
-  //   delay: 1000,
-  //   isWalking: true,
-  //   conditions: [
-  //     {
-  //       name: 'hasted',
-  //       value: false,
-  //     },
-  //     {
-  //       name: 'inProtectedZone',
-  //       value: false,
-  //     },
-  //   ],
-  // },
-  // {
-  //   id: `actionBarItem${uuidv4()}`,
-  //   name: `ActionBarRule${uuidv4()}`,
-  //   enabled: false,
-  //   actionItem: "exuraVita",
-  //   key: 'F4',
-  //   hpTriggerCondition: '>',
-  //   hpTriggerPercentage: 0,
-  //   manaTriggerCondition: '>=',
-  //   manaTriggerPercentage: 5,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '>=',
-  //   priority: 0,
-  //   isWalking: false,
-  //   conditions: [
-  //   ],
-  // },
-  // {
-  //   id: `manaSync${uuidv4()}`,
-  //   name: `ManaPot`,
-  //   category: "Potion",
-  //   enabled: false,
-  //   key: 'F12',
-  //   hpTriggerCondition: '>=',
-  //   hpTriggerPercentage: 1,
-  //   manaTriggerCondition: '<=',
-  //   manaTriggerPercentage: 80,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '>=',
-  //   priority: 0,
-  //   conditions: [],
-  // },
-  // {
-  //   id: `healFriend${uuidv4()}`,
-  //   name: 'UH Friend',
-  //   enabled: false,
-  //   actionItem: 'ultimateHealingRune',
-  //   key: 'T',
-  //   friendHpTriggerPercentage: '50',
-  //   priority: '9',
-  //   requireAttackCooldown: false,
-  //   partyPosition: '0',
-  //   conditions: [],
-  // },
-  // {
-  //   id: `rotationRule${uuidv4()}`,
-  //   name: 'Example Rotation',
-  //   enabled: false,
-  //   repeat: true,
-  //   modifierKey: '',
-  //   activationKey: 'F1',
-  //   priority: 0,
-  //   conditions: [],
-  //   sequence: [
-  //     { key: 'F1', delay: 1000, leftClick: false },
-  //     { key: 'F2', delay: 1500, leftClick: false },
-  //   ],
-  // },
-  // {
-  //   id: `equipRule${uuidv4()}`,
-  //   name: 'New Equip Rule',
-  //   enabled: false,
-  //   actionItem: DEFAULT_EQUIP_ACTION_ITEM,
-  //   key: 'F5',
-  //   targetSlot: DEFAULT_INFERRED_SLOT_FOR_EQUIP,
-  //   equipOnlyIfSlotIsEmpty: true,
-  //   hpTriggerCondition: '<=',
-  //   hpTriggerPercentage: 60,
-  //   manaTriggerCondition: '>',
-  //   manaTriggerPercentage: 0,
-  //   monsterNum: 0,
-  //   monsterNumCondition: '>=',
-  //   priority: 5,
-  //   delay: 250,
-  //   conditions: [],
-  // },
 ];
 
 const initialState = {
@@ -370,8 +217,8 @@ const validateRule = (rule) => {
   return validated;
 };
 
-const healingSlice = createSlice({
-  name: 'healing',
+const ruleSlice = createSlice({
+  name: 'rules',
   initialState,
   reducers: {
     addRule: (state, action) => {
@@ -617,6 +464,6 @@ export const {
   setState,
   sortRulesBy,
   copyPreset,
-} = healingSlice.actions;
+} = ruleSlice.actions;
 
-export default healingSlice;
+export default ruleSlice;

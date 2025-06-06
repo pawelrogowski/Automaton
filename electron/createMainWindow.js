@@ -37,7 +37,7 @@ const updateTrayIcon = () => {
   if (!state.windowId) {
     iconPath = ICON_PATHS.white;
   } else {
-    iconPath = state.botEnabled ? ICON_PATHS.green : ICON_PATHS.red;
+    iconPath = state.isBotEnabled ? ICON_PATHS.green : ICON_PATHS.red;
   }
 
   const icon = nativeImage.createFromPath(iconPath);
@@ -143,7 +143,7 @@ const createTray = () => {
   const state = store.getState().global;
   let initialIconPath = ICON_PATHS.white;
   if (state.windowId) {
-    initialIconPath = state.botEnabled ? ICON_PATHS.green : ICON_PATHS.red;
+    initialIconPath = state.isBotEnabled ? ICON_PATHS.green : ICON_PATHS.red;
   }
 
   tray = new Tray(initialIconPath);
@@ -207,11 +207,11 @@ export const createMainWindow = () => {
     resizable: false,
     alwaysOnTop: true,
     transparent: false,
-    webPreferences: { devTools: false, nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
+    webPreferences: { devTools: true, nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
   });
 
   // if (process.env.NODE_ENV !== 'production') {
-    // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools();
   // }
 
   mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
@@ -258,7 +258,7 @@ export const getMainWindow = () => mainWindow;
 
 // Subscribe to store changes
 store.subscribe(() => {
-  const { notificationsEnabled, windowId, botEnabled } = store.getState().global;
+  const { notificationsEnabled, windowId, isBotEnabled } = store.getState().global;
   isNotificationEnabled = notificationsEnabled;
 
   if (tray) {

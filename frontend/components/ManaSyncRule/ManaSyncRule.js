@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js'; // Use the full list
-import { removeRule, updateRule, updateCondition } from '../../redux/slices/healingSlice.js';
+import { removeRule, updateRule, updateCondition } from '../../redux/slices/ruleSlice.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 import StyledDiv from './ManaSyncRule.styled.js'; // Use new styled component
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
@@ -37,9 +37,9 @@ const ManaSyncRule = ({ rule, className }) => {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
   const currentRule = useSelector((state) =>
-    state.healing.presets[activePresetIndex]?.find((r) => r.id === rule.id),
+    state.rules.presets[activePresetIndex]?.find((r) => r.id === rule.id),
   );
 
   const conditionOptions = [

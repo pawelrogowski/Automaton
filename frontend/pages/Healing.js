@@ -14,9 +14,9 @@ import SpellRotationRule from '../components/SpellRotationRule/SpellRotationRule
 import EquipRule from '../components/EquipRule/EquipRule.js';
 
 export const Healing = () => {
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const rules = useSelector((state) => state.healing.presets[activePresetIndex]);
-  const { hpPercentage, manaPercentage } = useSelector((state) => state.gameState);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
+  const rules = useSelector((state) => state.rules.presets[activePresetIndex]);
+  const { hppc, mppc } = useSelector((state) => state.gameState);
   const location = useLocation();
   const hash = location.hash;
 
@@ -131,7 +131,7 @@ export const Healing = () => {
   return (
     <StyledMain>
       <StyledSection>
-        <StatBars hpPercentage={hpPercentage} manaPercentage={manaPercentage} />
+        <StatBars hppc={hppc} mppc={mppc} />
 
         {/* Sections now pass the filtered rules directly */}
         {renderSection(

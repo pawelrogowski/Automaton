@@ -21,6 +21,18 @@ const regionColorSequences = {
       [36, 36, 36],
     ],
   },
+  minimapFull: {
+    direction: 'horizontal',
+    offset: { x: -117, y: -20 },
+    sequence: [
+      [113, 113, 113],
+      [199, 199, 199],
+      [199, 199, 199],
+      [199, 199, 199],
+      [70, 70, 70],
+      [36, 36, 36],
+    ],
+  },
   cooldownBar: {
     direction: 'horizontal',
     offset: { x: -154, y: 8 },
@@ -83,6 +95,19 @@ const regionColorSequences = {
       [112, 112, 113],
     ],
   },
+  bootsSlot: {
+    direction: 'horizontal',
+    offset: { x: -63, y: -36 },
+    sequence: [
+      [41, 42, 42],
+      [28, 28, 29],
+      [44, 45, 45],
+      [40, 40, 41],
+      [44, 44, 44],
+      [46, 46, 46],
+      [112, 112, 113],
+    ],
+  },
   // weaponSlot: {
   //   direction: 'horizontal',
   //   offset: { x: -100, y: -58 },
@@ -96,6 +121,33 @@ const regionColorSequences = {
   //     [112, 112, 113],
   //   ],
   // },
+  chatOn: {
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [192, 192, 192],
+      [108, 108, 108],
+      [110, 110, 110],
+      [192, 192, 192],
+      [161, 161, 161],
+      [175, 175, 175],
+      [185, 185, 185],
+      [81, 81, 81],
+    ],
+  },
+  chatOff: {
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [174, 174, 174],
+      [183, 183, 183],
+      [136, 136, 136],
+      [174, 174, 174],
+      [183, 183, 183],
+      [128, 128, 128],
+      [62, 62, 62],
+    ],
+  },
 
   hotkeyBarBottomStart: {
     direction: 'horizontal',
@@ -174,7 +226,6 @@ const regionColorSequences = {
       [56, 56, 56],
     ],
   },
-
   partyListEnd: {
     direction: 'horizontal',
     offset: { x: -7, y: 0 },
@@ -183,6 +234,38 @@ const regionColorSequences = {
       [78, 78, 78],
       [104, 104, 104],
       [67, 67, 67],
+    ],
+  },
+  playerListStart: {
+    direction: 'horizontal',
+    offset: { x: 11, y: 17 },
+    sequence: [
+      [135, 86, 41],
+      [159, 136, 40],
+      [75, 74, 55],
+      [61, 61, 61],
+      [128, 193, 84],
+      [128, 193, 84],
+    ],
+  },
+  playerListEnd: {
+    direction: 'horizontal',
+    offset: { x: -137, y: 0 },
+    sequence: [
+      [67, 67, 67],
+      [78, 78, 78],
+      [104, 104, 104],
+      [67, 67, 67],
+    ],
+  },
+  onlineMarker: {
+    direction: 'vertical',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [118, 54, 54],
+      [74, 74, 75],
+      [72, 72, 72],
+      [68, 66, 99],
     ],
   },
 };

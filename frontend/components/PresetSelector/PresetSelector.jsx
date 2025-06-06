@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setActivePresetIndex, copyPreset } from '../../redux/slices/healingSlice';
+import { setActivePresetIndex, copyPreset } from '../../redux/slices/ruleSlice';
 import styled from 'styled-components';
 import { PresetButton } from '../PresetButton/PresetButton';
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
@@ -15,8 +15,8 @@ const PresetSelectorWrapper = styled.div`
 
 const PresetSelector = () => {
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const presets = useSelector((state) => state.healing.presets);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
+  const presets = useSelector((state) => state.rules.presets);
 
   // State for managing the confirmation dialog
   const [showConfirm, setShowConfirm] = useState(false);

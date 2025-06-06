@@ -5,6 +5,8 @@ import { dirname, resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { showNotification } from './notificationHandler.js';
+import { createLogger } from './utils/logger.js';
+const log = createLogger();
 
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
@@ -43,14 +45,14 @@ class WorkerManager {
     }
 
     // X11 utilities paths
-    this.paths.x11capture = path.join(this.paths.utils, 'x11capture.node');
+    this.paths.x11capture = path.join(this.paths.utils, 'x11RegionCapture.node');
     this.paths.keypress = path.join(this.paths.utils, 'keypress.node');
     this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
     // this.paths.windowInfo = path.join(this.paths.utils, 'windowinfo.node');
     this.paths.findSequences = path.join(this.paths.utils, 'findSequences.node');
 
     if (!app.isPackaged) {
-      console.log('Initialized paths:', this.paths);
+      log('info', '[Worker Manager] Paths initialized:', this.paths);
     }
   }
 
@@ -63,7 +65,7 @@ class WorkerManager {
 
   async clearRestartLockWithTimeout(name) {
     const timeout = setTimeout(() => {
-      console.warn(`Force clearing restart lock for ${name} after timeout`);
+      log('warn', `[Worker Manager] Force clearing restart lock: ${name}`);
       this.resetRestartState(name);
     }, RESTART_LOCK_TIMEOUT);
 
@@ -76,10 +78,10 @@ class WorkerManager {
   }
 
   handleWorkerError(name, error) {
-    console.error(`Worker ${name} encountered an error:`, error);
+    log('error', `[Worker Manager] Worker error: ${name}`, error);
     if (!this.restartLocks.get(name)) {
       this.restartWorker(name).catch((err) => {
-        console.error(`Failed to restart worker ${name} after error:`, err);
+        log('error', `[Worker Manager] Restart failed after error: ${name}`, err);
       });
     }
   }
@@ -88,7 +90,7 @@ class WorkerManager {
     const attempts = this.restartAttempts.get(name) || 0;
 
     if (code !== 0 && !this.restartLocks.get(name) && attempts < MAX_RESTART_ATTEMPTS) {
-      console.error(`Worker ${name} exited with code ${code}, attempt ${attempts + 1}/${MAX_RESTART_ATTEMPTS}`);
+      log('error', `[Worker Manager] Worker exited: ${name}, code ${code}, attempt ${attempts + 1}/${MAX_RESTART_ATTEMPTS}`);
       this.workers.delete(name);
 
       setTimeout(
@@ -100,35 +102,45 @@ class WorkerManager {
         RESTART_COOLDOWN * (attempts + 1),
       );
     } else if (attempts >= MAX_RESTART_ATTEMPTS) {
-      console.error(`Maximum restart attempts reached for worker ${name}`);
+      log('error', `[Worker Manager] Max restart attempts reached: ${name}`);
       this.resetRestartState(name);
     } else {
       this.workers.delete(name);
     }
   }
 
-  async handleWorkerMessage(message) {
+  handleWorkerMessage(message) {
     if (message.notification) {
       const { title, body } = message.notification;
       showNotification(title, body);
     }
 
     // Handle specific game state updates from workers
-    if (message.storeUpdate && message.type === 'setHealthPercent') {
+    // {{change 1: Add case for the new combined update action type}}
+    if (message.storeUpdate && message.type === 'gameState/updateGameStateFromMonitorData') {
+        setGlobalState(message.type, message.payload); // Dispatch the payload directly
+    }
+    // {{end change 1}}
+    else if (message.storeUpdate && message.type === 'setHealthPercent') {
+      // {{change 2: Keep for backwards compatibility or remove if no longer used elsewhere}}
       setGlobalState('gameState/setHealthPercent', message.payload);
     } else if (message.storeUpdate && message.type === 'setManaPercent') {
+      // {{change 3: Keep for backwards compatibility or remove if no longer used elsewhere}}
       setGlobalState('gameState/setManaPercent', message.payload);
-    // Add case for the new actual FPS update
-    } else if (message.storeUpdate && message.type === 'setActualFps') {
-      setGlobalState('global/setActualFps', message.payload.actualFps); // Update global slice
+      // Add case for the new actual FPS update
     } else if (message.storeUpdate) {
-      console.warn('[WorkerManager] Received storeUpdate message with unrecognized type or missing payload:', message);
+      log('warn', '[Worker Manager] Unrecognized storeUpdate:', message);
+    }
+    // Handle messages from the luaVMWorker
+    if (message.type === 'scriptResult' || message.type === 'scriptError') {
+        // TODO: Handle the result/error, potentially update the Redux store
+        // setGlobalState('lua/scriptResult', message); // Example dispatch
     }
   }
 
   startWorker(name) {
     if (this.workers.has(name)) {
-      console.warn(`Worker ${name} already exists`);
+      log('warn', `[Worker Manager] Worker already exists: ${name}`);
       return this.workers.get(name);
     }
 
@@ -140,7 +152,6 @@ class WorkerManager {
           x11capturePath: this.paths.x11capture,
           keypressPath: this.paths.keypress,
           useItemOnPath: this.paths.useItemOn,
-          // windowInfoPath: this.paths.windowInfo,
           findSequencesPath: this.paths.findSequences,
         },
       });
@@ -153,14 +164,14 @@ class WorkerManager {
       this.workers.set(name, worker);
       return worker;
     } catch (error) {
-      console.error(`Failed to start worker ${name}:`, error);
+      log('error', `[Worker Manager] Failed to start worker: ${name}`, error);
       return null;
     }
   }
 
   async restartWorker(name) {
     if (this.restartLocks.get(name)) {
-      console.log(`Restart already in progress for worker ${name}`);
+      log('info', `[Worker Manager] Restart in progress: ${name}`);
       return null;
     }
 
@@ -186,7 +197,7 @@ class WorkerManager {
       }
       return newWorker;
     } catch (error) {
-      console.error(`Error during worker ${name} restart:`, error);
+      log('error', `[Worker Manager] Error during restart: ${name}`, error);
       this.resetRestartState(name);
     } finally {
       setTimeout(() => {
@@ -201,7 +212,7 @@ class WorkerManager {
       try {
         await worker.terminate();
       } catch (error) {
-        console.error(`Error terminating worker ${name}:`, error);
+        log('error', `[Worker Manager] Error terminating worker: ${name}`, error);
       }
       this.workers.delete(name);
       this.workerPaths.delete(name);
@@ -225,16 +236,26 @@ class WorkerManager {
     const state = store.getState();
     const { windowId } = state.global;
 
-    // Start screenMonitor if needed (e.g., first launch or after a crash)
-    if (windowId && !this.workers.has('screenMonitor')) {
-      console.log('Starting screenMonitor worker for window ID:', windowId);
-      const worker = this.startWorker('screenMonitor');
-      if (worker) {
-        // Add a small delay before sending initial state
-        setTimeout(() => {
-          worker.postMessage(state);
-        }, 100);
+    if (windowId) {
+      if (!this.workers.has('screenMonitor')) {
+        log('info', '[Worker Manager] Starting screenMonitor for window ID:', windowId);
+        const worker = this.startWorker('screenMonitor');
+        if (worker) {
+          setTimeout(() => {
+            worker.postMessage(state);
+          }, 100);
+        }
       }
+
+      // if (!this.workers.has('rawCapture')) {
+      //   console.log('Starting rawCapture worker for window ID:', windowId);
+      //   const worker = this.startWorker('rawCapture');
+      //   if (worker) {
+      //     setTimeout(() => {
+      //       worker.postMessage(state);
+      //     }, 100);
+      //   }
+      // }
     }
 
     // Update existing workers
@@ -243,10 +264,32 @@ class WorkerManager {
         worker.postMessage(state);
       }
     }
+
+    // Handle Lua script execution requests
+    const luaState = state.lua;
+    const luaWorker = this.workers.get('luaVMWorker');
+
+    if (luaState && luaState.scripts && luaWorker) {
+      // Find scripts marked for execution
+      const scriptsToExecute = luaState.scripts.filter(script => script.execute);
+
+      scriptsToExecute.forEach(script => {
+        log('info', `[Worker Manager] Requesting execution of Lua script: ${script.name} (${script.id})`);
+        // Send script to worker for execution
+        luaWorker.postMessage({ type: 'executeScript', scriptId: script.id, code: script.code });
+
+        // Immediately update state to reflect execution request and set status to running
+        // Dispatching directly in the main process store
+        store.dispatch({ type: 'lua/setScriptStatus', payload: { id: script.id, status: 'running' } });
+        store.dispatch({ type: 'lua/updateScript', payload: { id: script.id, updates: { execute: false } } });
+      });
+    }
   }
 
   initialize(app, cwd) {
     this.setupPaths(app, cwd);
+    // Start the Lua VM worker on initialization
+    this.startWorker('luaVMWorker');
     store.subscribe(this.handleStoreUpdate);
 
     app.on('before-quit', () => this.stopAllWorkers());

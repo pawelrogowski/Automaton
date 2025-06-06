@@ -3,14 +3,10 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   windowTitle: 'Press Alt+W on focused tibia window to attach bot',
-  streamerMode: true,
   windowId: null,
-  windowPos: { x: 0, y: 0 },
-  botEnabled: false,
-  refreshRate: 20,
+  isBotEnabled: false,
+  refreshRate: 32,
   notificationsEnabled: true,
-  activePresetIndex: 0,
-  actualFps: 0,
 };
 
 const globalSlice = createSlice({
@@ -26,8 +22,8 @@ const globalSlice = createSlice({
         state.actualFps = 0;
       }
     },
-    setIsBotEnabled: (state, action) => {
-      state.botEnabled = action.payload;
+    setIsisBotEnabled: (state, action) => {
+      state.isBotEnabled = action.payload;
     },
     setRefreshRate: (state, action) => {
       state.refreshRate = Math.max(action.payload, 0);
@@ -35,20 +31,14 @@ const globalSlice = createSlice({
     toggleNotifications: (state) => {
       state.notificationsEnabled = !state.notificationsEnabled;
     },
-    toggleBotEnabled: (state) => {
-      state.botEnabled = !state.botEnabled;
-    },
-    setActivePresetIndex: (state, action) => {
-      state.activePresetIndex = action.payload;
-    },
-    setActualFps: (state, action) => {
-      state.actualFps = action.payload;
+    toggleisBotEnabled: (state) => {
+      state.isBotEnabled = !state.isBotEnabled;
     },
     setState: (state, action) => {
       const newState = { ...state };
 
       Object.keys(newState).forEach((key) => {
-        if (!['windowId', 'windowPos', 'botEnabled', 'actualFps'].includes(key)) {
+        if (!['windowId', 'isBotEnabled', 'actualFps'].includes(key)) {
           newState[key] = action.payload[key];
         }
       });
@@ -57,22 +47,17 @@ const globalSlice = createSlice({
     },
   },
 
-  setWindowPos: (state, action) => {
-    state.windowPos = action.payload;
-  },
+
 });
 
 export const {
   setWindowTitle,
   setWindowId,
-  setIsBotEnabled,
+  setIsisBotEnabled,
   setRefreshRate,
-  setWindowPos,
   toggleNotifications,
-  toggleBotEnabled,
+  toggleisBotEnabled,
   setState,
-  setActivePresetIndex,
-  setActualFps,
 } = globalSlice.actions;
 
 export default globalSlice;

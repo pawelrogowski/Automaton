@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { StyledDiv } from './RuleListWrapper.styled.js';
-import { sortRulesBy } from '../../redux/slices/healingSlice.js';
+import { sortRulesBy } from '../../redux/slices/ruleSlice.js';
 import { useDispatch } from 'react-redux';
 
 const RuleListWrapper = ({ children, variant }) => {

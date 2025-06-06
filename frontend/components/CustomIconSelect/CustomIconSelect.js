@@ -313,6 +313,8 @@ import Whirlwind_ThrowIcon from '../../assets/actionBarItems/Whirlwind_Throw.gif
 import Wild_GrowthIcon from '../../assets/actionBarItems/Wild_Growth.gif';
 import Wound_CleansingIcon from '../../assets/actionBarItems/Wound_Cleansing.gif';
 import Wrath_Of_NatureIcon from '../../assets/actionBarItems/Wrath_Of_Nature.gif';
+import Soft_BootsIcon from '../../assets/actionBarItems/Soft_Boots.gif';
+import Blank_RuneIcon from '../../assets/actionBarItems/Blank_Rune.gif';
 
 // --- Create Icon Map ---
 // Map the iconName strings (keys) to the imported variables (values)
@@ -617,6 +619,8 @@ const iconMap = {
   Wild_Growth: Wild_GrowthIcon,
   Wound_Cleansing: Wound_CleansingIcon,
   Wrath_Of_Nature: Wrath_Of_NatureIcon,
+  Soft_Boots: Soft_BootsIcon,
+  Blank_Rune: Blank_RuneIcon,
 };
 
 // Helper function now uses the map defined above

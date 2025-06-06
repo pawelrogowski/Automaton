@@ -16,10 +16,11 @@ import FAQ from '../assets/FAQ.png';
 import ActionBarIcon from '../assets/action_bar.png';
 import mageHat from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
-import { setIsBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
+import { setIsisBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
-import { addRule, addHealFriendRule, addManaSyncRule } from '../redux/slices/healingSlice.js';
+// Import addRule here or adjust handleAddRule if it's specific to Healing
+import { addRule, addHealFriendRule, addManaSyncRule } from '../redux/slices/ruleSlice.js';
 const { saveRules, loadRules } = window.electron;
 import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import CustomCheckbox from '../components/CustomCheckbox/CustomCheckbox.js';
@@ -30,6 +31,15 @@ import { v4 as uuidv4 } from 'uuid';
 import ConfirmDialog from '../components/ConfirmDialog/ConfirmDialog.jsx';
 import EquipWrapper from './Equip.js';
 import GearIcon from '../assets/Stone_Skin_Amulet.gif';
+import GameState from './GameState.js'; // Import the new GameState component
+import tibia from '../assets/tibia.svg'; // Using tibia icon as placeholder for now
+
+// Import the new LuaScripts page component
+import LuaScripts from './LuaScripts.js';
+// Placeholder icon for Lua Scripts - replace with a proper one later
+// import luaIcon from '../assets/actionBarItems/Anatomy_Book.gif'; // Incorrect path
+import luaIcon from '../assets/Anatomy_Book.gif'; // Correct path
+
 
 // Helper to clamp value between min and max
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -38,8 +48,8 @@ const DEBOUNCE_DELAY = 250; // milliseconds to wait after slider stops moving
 
 const Layout = () => {
   const dispatch = useDispatch();
-  const { windowId, botEnabled, refreshRate: refreshRateFromRedux, windowTitle, actualFps } = useSelector((state) => state.global);
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const { windowId, isBotEnabled, refreshRate: refreshRateFromRedux, windowTitle } = useSelector((state) => state.global);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
 
   const location = useLocation();
   const hash = location.hash;
@@ -51,22 +61,27 @@ const Layout = () => {
   // Ref to store the debounce timeout ID
   const debounceTimeoutRef = useRef(null);
 
+  // Redirect to default hash on Healing page load if no hash exists
   useEffect(() => {
-    console.log(location);
     if (location.pathname === '/healing' && location.hash === '') {
       navigate('/healing#actionbar', { replace: true });
-      // Blur the focused element after navigation
       document.activeElement?.blur();
     }
+     // Redirect to default hash on Lua Scripts page load if no hash exists
+     if (location.pathname === '/luascripts' && location.hash === '') {
+         navigate('/luascripts#persistent', { replace: true });
+         document.activeElement?.blur();
+     }
   }, [location, navigate]);
 
-  useEffect(() => {
-    if (location.pathname === '/') {
-      navigate('/healing#actionbar', { replace: true });
-      // Blur the focused element after navigation
-      document.activeElement?.blur();
-    }
-  }, [navigate, location]);
+    // Redirect root path to default healing page
+    useEffect(() => {
+        if (location.pathname === '/') {
+            navigate('/healing#actionbar', { replace: true });
+            document.activeElement?.blur();
+        }
+    }, [navigate, location]);
+
 
   // Update local state if Redux state changes externally
   useEffect(() => {
@@ -74,6 +89,9 @@ const Layout = () => {
   }, [refreshRateFromRedux]);
 
   const handleAddRule = () => {
+      // This function seems specific to the Healing/Rules page structure.
+      // It might need adjustment or duplication for Lua scripts if adding rules
+      // through a similar button structure on the Lua page.
     let ruleIdPrefix;
     switch (hash) {
       case '#userrules':
@@ -148,6 +166,14 @@ const Layout = () => {
               imageWidth="22px"
               tooltip="Automation Section - Add/Remove custom rules."
             ></NavButton>
+             {/* Add the new button for Lua Scripts */}
+            <NavButton
+              to="/luascripts"
+              text="Lua Scripts"
+              img={luaIcon} // Use the imported Lua icon
+              imageWidth="32px"
+              tooltip="Manage Lua Scripts"
+            ></NavButton>
             <NavButton
               to="/hotkeys"
               text="Hotkeys"
@@ -155,12 +181,19 @@ const Layout = () => {
               imageWidth="32px"
               tooltip="Hotkeys Section - Overview of key combination to controll the bot."
             ></NavButton>
-            {/* <NavButton to="/faq" text="FAQ" img={FAQ} imageWidth="32px" tooltip="Frequently Asked Questions"></NavButton>
-            <NavButton to="/about" text="About" img={anatomyBook} imageWidth="32px" tooltip="About Tibia Automaton Page."></NavButton> */}
+             {/* Add the button for Game State */}
+            <NavButton
+              to="/gameState"
+              text="Game State"
+              img={tibia} // Use the imported icon
+              imageWidth="32px"
+              tooltip="View the current game state data"
+            ></NavButton>
           </Header>
           <div className="side-main">
             <SidebarWrapper className="aside">
-              {location.pathname === '/' || location.pathname.includes('/healing') ? (
+              {/* Conditional rendering for sidebar content based on route */}
+              {location.pathname.includes('/healing') && (
                 <>
                   <div className="button-container">
                     <button className="add-button" type="button" onMouseDown={handleAddRule} tooltip="Add a new rule to selected section">
@@ -193,14 +226,14 @@ const Layout = () => {
                   <div
                     className="checkbox-wrapper"
                     onClick={() => {
-                      dispatch(setIsBotEnabled(!botEnabled));
+                      dispatch(setIsisBotEnabled(!isBotEnabled));
                     }}
                     tooltip="Enable/Disable global rule precessing (alt+e)"
                   >
                     <CustomCheckbox
-                      checked={botEnabled}
+                      checked={isBotEnabled}
                       onChange={() => {
-                        dispatch(setIsBotEnabled(!botEnabled));
+                        dispatch(setIsisBotEnabled(!isBotEnabled));
                       }}
                       disabled={windowId === null}
                       width={18}
@@ -208,7 +241,7 @@ const Layout = () => {
                     />
                     <span
                       onClick={() => {
-                        dispatch(setIsBotEnabled(!botEnabled));
+                        dispatch(setIsisBotEnabled(!isBotEnabled));
                       }}
                     >
                       Enable (alt+e)
@@ -257,36 +290,68 @@ const Layout = () => {
                     text={'Spell Rotations'}
                     imageWidth="32px"
                     tooltip="Show spell rotation rules"
-                  ></SideBarNavButton>
+                    ></SideBarNavButton>
+                  </>
+               )}
 
-                  {/* --- Refresh Rate Slider --- */}
-                  <div className="slider-container" tooltip={`Adjust screen capture rate: ${displayedRate} FPS`}>
-                    <label htmlFor="refreshRateSlider">Target Refresh Rate ({displayedRate} FPS)</label>
-                    <input
-                      type="range"
-                      id="refreshRateSlider"
-                      min="10"
-                      max="60"
-                      step="1"
-                      value={displayedRate}
-                      onChange={handleRefreshRateChange}
-                      disabled={windowId === null}
-                    />
-                    {/* Display Actual FPS */}
-                    {windowId !== null && (
-                      <span style={{ fontSize: '11px', color: '#aaa', display: 'block', textAlign: 'center', marginTop: '2px' }}>
-                        Actual: {actualFps} FPS
-                      </span>
-                    )}
-                  </div>
-                  {/* --- End Refresh Rate Slider --- */}
-                </>
-              ) : null}
+                {/* Sidebar links for Lua Scripts page */}
+               {location.pathname.includes('/luascripts') && (
+                 <>
+                   <SideBarNavButton
+                     to="/luascripts#persistent"
+                     img={luaIcon} // Use the imported Lua icon
+                     text={'Persistent'}
+                     imageWidth="32px"
+                     tooltip="Manage persistent Lua scripts"
+                   ></SideBarNavButton>
+                    <SideBarNavButton
+                     to="/luascripts#hotkey"
+                     img={hotkey} // Reusing hotkey icon for hotkey scripts
+                     text={'Hotkey'}
+                     imageWidth="32px"
+                     tooltip="Manage hotkey Lua scripts"
+                   ></SideBarNavButton>
+                 </>
+               )}
+
+
+              {location.pathname === '/gameState' && (
+                 <>
+                   <SideBarNavButton
+                     to="/gameState#gameState"
+                     img={tibia} // Use the imported icon
+                     text={'Game State'}
+                     imageWidth="32px"
+                     tooltip="View the current game state slice"
+                   ></SideBarNavButton>
+                   <SideBarNavButton
+                     to="/gameState#globalState"
+                     img={tibia} // Use the imported icon
+                     text={'Global State'}
+                     imageWidth="32px"
+                     tooltip="View the current global state slice"
+                   ></SideBarNavButton>
+                   <SideBarNavButton
+                     to="/gameState#rules"
+                     img={tibia} // Use the imported icon
+                     text={'Rule State'}
+                     imageWidth="32px"
+                     tooltip="View the current healing/rule state slice"
+                   ></SideBarNavButton>
+                 </>
+              )}
+
+
             </SidebarWrapper>
             <div className="main-content">
               <div className="routes-wrapper">
                 <Routes>
                   <Route path="/healing" element={<Healing />} />
+                  {/* Add the new route for Lua Scripts */}
+                   <Route path="/luascripts" element={<LuaScripts />} />
+                  {/* Add the new route for Game State */}
+                  {/* Modify the GameState route to handle hash for different slices */}
+                  <Route path="/gameState" element={<GameState />} />
                   <Route
                     path="/hotkeys"
                     element={

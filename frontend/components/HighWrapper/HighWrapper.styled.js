@@ -11,6 +11,8 @@ export const StyledDiv = styled.div`
   flex-direction: column;
   padding: 5px;
   padding-top: 20px;
+  max-height: 498px;
+  overflow-y: auto;
 
   .blackbox {
     border-left: solid black 1px;

@@ -1,5 +1,8 @@
 import { getMainWindow } from '../createMainWindow.js';
 import setGlobalState from '../setGlobalState.js';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger({ info: true, error: true, warn: true });
 
 import { createRequire } from 'module';
 import path from 'path';
@@ -52,12 +55,12 @@ export const selectActiveWindow = async () => {
 
     const screenMonitorWorker = workerManager.workers.get('screenMonitor');
     if (screenMonitorWorker) {
-      console.log('[windowSelection] Sending forceReinitialize command to screenMonitor');
+      log('info', '[windowSelection] Sending forceReinitialize command to screenMonitor');
       screenMonitorWorker.postMessage({ command: 'forceReinitialize' });
     }
 
   } catch (error) {
-    console.error(`Error getting active window ID: ${error}`);
+    log('error', '[windowSelection] Error getting active window ID: ' + error);
   }
 };
 

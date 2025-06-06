@@ -1,4 +1,4 @@
-
+.*
 # Optional npm cache directory
 .npm
 
@@ -58,3 +58,4 @@ bun.lockb
 
 node_modules
 .electron-obfuscated
+package-lock.json

@@ -6,7 +6,7 @@ import {
   toggleManaShieldRequired,
   toggleUseRune,
   toggleAttackCooldownRequired,
-} from '../../redux/slices/healingSlice.js';
+} from '../../redux/slices/ruleSlice.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
 import ListSelect from '../ListSelect/ListSelect.js';
@@ -18,7 +18,7 @@ import HighWrapper from '../HighWrapper/HighWrapper.js';
 const HealFriendControls = () => {
   const dispatch = useDispatch();
   const healFriendRule = useSelector((state) =>
-    state.healing.presets[state.healing.activePresetIndex].find((rule) => rule.id === 'healFriend'),
+    state.rules.presets[state.rules.activePresetIndex].find((rule) => rule.id === 'healFriend'),
   );
 
   const handleHealFriendToggle = () => {

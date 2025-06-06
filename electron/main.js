@@ -7,10 +7,12 @@ import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import workerManager from './workerManager.js';
 import { getLinuxHardwareId } from './hardwareId.js';
+import { createLogger } from './utils/logger.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
+const log = createLogger();
 
 let loginWindow;
 
@@ -40,14 +42,16 @@ const createLoginWindow = () => {
 // Application initialization
 app.whenReady().then(async () => {
   try {
-    createLoginWindow();
-    ipcMain.on('login-success', () => {
-      if (loginWindow && !loginWindow.isDestroyed()) {
-        loginWindow.close();
-      }
-      workerManager.initialize(app, cwd);
-      createMainWindow();
-    });
+    // createLoginWindow();
+    // ipcMain.on('login-success', () => {
+    //   if (loginWindow && !loginWindow.isDestroyed()) {
+    //     loginWindow.close();
+    //   }
+
+    //   createMainWindow();
+    // });
+    createMainWindow();
+    workerManager.initialize(app, cwd);
   } catch (error) {
     console.error('[Main] FATAL: Error during application startup:', error);
     dialog.showErrorBox(
@@ -59,14 +63,12 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', async () => {
-  console.log('[Main] Preparing to quit application...');
-  console.log('[Main] Closing store connection...');
   try {
   } catch (error) {
-    console.error('[Main] Error closing store connection:', error);
+    log('error', `[Main] ${error}`);
   }
   unregisterGlobalShortcuts();
-  console.log('[Main] Application cleanup finished.');
+  log('info', '[Main] Application cleanup finished.');
 });
 
 app.on('window-all-closed', () => {

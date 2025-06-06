@@ -32,12 +32,12 @@ export const filterRulesByConditions = (rules, directGameState) =>
       parseMathCondition(
         rule.hpTriggerCondition,
         parseInt(rule.hpTriggerPercentage, 10),
-        directGameState.hpPercentage,
+        directGameState.hppc,
       ) &&
       parseMathCondition(
         rule.manaTriggerCondition,
         parseInt(rule.manaTriggerPercentage, 10),
-        directGameState.manaPercentage,
+        directGameState.mppc,
       ) &&
       areCharStatusConditionsMet(rule, directGameState) &&
       parseMathCondition(

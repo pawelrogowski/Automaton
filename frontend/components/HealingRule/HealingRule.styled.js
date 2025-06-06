@@ -124,7 +124,7 @@ const StyledDiv = styled.div`
 
   .input-percent,
   .input-monster-num {
-    font-family: joystix !important;
+    font-family: monospace;
     width: 48px;
 
     border-top-left-radius: 0;
@@ -141,7 +141,7 @@ const StyledDiv = styled.div`
   }
   .input-percent-select,
   .input-monster-num-condition {
-    font-family: joystix !important;
+    font-family: monospace;
     padding: 0;
     width: 46px;
     appearance: none;

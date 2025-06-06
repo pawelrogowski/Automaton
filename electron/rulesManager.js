@@ -5,9 +5,11 @@ import { showNotification } from './notificationHandler.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import throttle from 'lodash/throttle.js';
+import { createLogger } from './utils/logger.js';
 
 const userDataPath = app.getPath('userData');
 const autoLoadFilePath = path.join(userDataPath, 'autoLoadRules.json');
+const log = createLogger();
 
 export const saveRulesToFile = async (callback) => {
   try {
@@ -17,15 +19,13 @@ export const saveRulesToFile = async (callback) => {
     });
 
     if (!result.canceled && result.filePath) {
-      const filePath = result.filePath.endsWith('.json')
-        ? result.filePath
-        : `${result.filePath}.json`;
+      const filePath = result.filePath.endsWith('.json') ? result.filePath : `${result.filePath}.json`;
       await fs.writeFile(filePath, JSON.stringify(store.getState(), null, 2));
       showNotification(`📥 Saved | ${path.basename(filePath)}`);
     }
     callback();
   } catch (err) {
-    console.error('Failed to save state:', err);
+    log('error', `[Rule Manager] ${err}`);
     showNotification('❌ Failed to save state');
     callback();
   }
@@ -43,14 +43,14 @@ export const loadRulesFromFile = async (callback) => {
       const content = await fs.readFile(result.filePaths[0], 'utf8');
       const loadedState = JSON.parse(content);
 
-      setGlobalState('healing/setState', loadedState.healing);
+      setGlobalState('rules/setState', loadedState.rules);
       setGlobalState('global/setState', loadedState.global);
 
       showNotification(`📤 Loaded | ${path.basename(result.filePaths[0])}`);
     }
     callback();
   } catch (err) {
-    console.error('Failed to load state:', err);
+    log('error', `[Rule Manager] ${err}`);
     showNotification('❌ Failed to load state');
     callback();
   }
@@ -62,12 +62,12 @@ const autoSaveRules = throttle(
       const state = store.getState();
       if (Object.keys(state).length > 0) {
         await fs.writeFile(autoLoadFilePath, JSON.stringify(state, null, 2));
-        // console.log('Auto-saved rules successfully to:', autoLoadFilePath);
+        log('info', `[Auto Save] success`);
       } else {
-        console.log('Skipped auto-save: State is empty');
+        log('warn', `[Auto Save] skipped - state is empty`);
       }
     } catch (error) {
-      console.error('Failed to auto-save rules:', error);
+      log('error', `[Auto Save] ${error}`);
     }
   },
   1000,
@@ -81,18 +81,17 @@ export const autoLoadRules = async () => {
     const loadedState = JSON.parse(content);
 
     if (Object.keys(loadedState).length > 0) {
-      setGlobalState('healing/setState', loadedState.healing);
+      setGlobalState('rules/setState', loadedState.rules);
       setGlobalState('global/setState', loadedState.global);
-
-      console.log('Auto-loaded rules successfully from:', autoLoadFilePath);
+      log('info', `[Rule Manager] auto load success`);
     } else {
-      console.log('Skipped auto-load: Saved state is empty');
+      log('warn', 'skipped - state is empty');s
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
-      console.log('No auto-save file found. Starting with default state.');
+      log('warn', 'No auto-save file found');
     } else {
-      console.error('Failed to auto-load rules:', error);
+      log('error', `Auto Load - ${error}`);
     }
   }
 };
@@ -109,14 +108,14 @@ const isObjectChanged = (newObj, prevObj) => {
 };
 
 store.subscribe(() => {
-  const { healing, global } = store.getState();
+  const { rules, global } = store.getState();
 
-  const healingChanged = isObjectChanged(healing, previousHealingState);
+  const healingChanged = isObjectChanged(rules, previousHealingState);
   const globalChanged = isObjectChanged(global, previousGlobalState);
 
   if (healingChanged || globalChanged) {
     autoSaveRules();
-    previousHealingState = healingChanged ? { ...healing } : previousHealingState;
+    previousHealingState = healingChanged ? { ...rules } : previousHealingState;
     previousGlobalState = globalChanged ? { ...global } : previousGlobalState;
   }
 });

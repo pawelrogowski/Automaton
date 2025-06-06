@@ -5,7 +5,7 @@ import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import { removeRule, updateCondition, updateRule } from '../../redux/slices/healingSlice.js';
+import { removeRule, updateCondition, updateRule } from '../../redux/slices/ruleSlice.js';
 import StyledDiv from './PartyHealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -17,8 +17,8 @@ const PartyHealingRule = ({ rule, className }) => {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
-  const currentRule = useSelector((state) => state.healing.presets[activePresetIndex]?.find((r) => r.id === rule.id));
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
+  const currentRule = useSelector((state) => state.rules.presets[activePresetIndex]?.find((r) => r.id === rule.id));
 
   const handleStatusConditionChange = (status, value) => {
     if (currentRule) {

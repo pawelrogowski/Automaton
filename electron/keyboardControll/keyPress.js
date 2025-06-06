@@ -51,7 +51,7 @@ export const keyPressManaSync = async (windowId, key, pressNumber = 1) => {
 
   // Handle remaining presses with delays
   for (let i = 1; i < pressNumber; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await keypress.sendKey(parseInt(windowId), key);
   }
 };
