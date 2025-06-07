@@ -338,6 +338,13 @@ const Layout = () => {
                      imageWidth="32px"
                      tooltip="View the current healing/rule state slice"
                    ></SideBarNavButton>
+                    <SideBarNavButton
+                     to="/gameState#luaState"
+                     img={tibia} // Use the imported icon
+                     text={'Lua State'}
+                     imageWidth="32px"
+                     tooltip="View the current Lua state slice"
+                   ></SideBarNavButton>
                  </>
               )}
 

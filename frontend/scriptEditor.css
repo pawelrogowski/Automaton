@@ -1,0 +1,88 @@
+/* /home/orimorfus/Documents/Automaton/frontend/scriptEditor.css */
+
+body {
+    margin: 0;
+    padding: 10px;
+    background-color: #2e2e2e;
+    color: #ffffff;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 20px); /* Account for padding */
+    overflow: hidden; /* Prevent body scroll */
+}
+
+.editor-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 10px; /* Space between elements */
+}
+
+.header-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    margin: 0px;
+}
+
+.script-name-input {
+    flex-grow: 1;
+    padding: 0 5px;
+    font-size: 1.2em;
+    background-color: #3c3c3c;
+    color: #ffffff;
+    border: 1px solid #555;
+}
+
+#monaco-editor-container {
+    flex-grow: 1; /* Allow editor to take up available space */
+    border: 1px solid #555;
+}
+
+.button-row {
+    display: flex;
+    justify-content: flex-end; /* Align buttons to the right */
+    gap: 10px;
+}
+
+.save-button,
+.remove-button {
+    padding: 10px;
+    cursor: pointer;
+    color: white;
+    border: none;
+    border-radius: 4px;
+}
+
+.save-button {
+    background-color: #007acc;
+}
+
+.save-button:hover {
+    background-color: #005f8f;
+}
+
+.remove-button {
+    background-color: #cc3333;
+}
+
+.remove-button:hover {
+    background-color: #a02828;
+}
+
+.enabled-checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: auto; /* Push to the left */
+}
+
+/* Optional: Style for the checkbox itself if needed */
+/*
+.enabled-checkbox-container input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+*/

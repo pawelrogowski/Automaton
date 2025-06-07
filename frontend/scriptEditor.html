@@ -1,0 +1,40 @@
+<!-- /home/orimorfus/Documents/Automaton/frontend/scriptEditor.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+  http-equiv="Content-Security-Policy"
+  content="default-src * 'self' data: blob: filesystem: about:;
+          script-src * 'self' data: blob: filesystem: about:;
+          style-src * 'self' 'unsafe-inline' data: blob: filesystem: about:;
+          worker-src * 'self' blob: filesystem: about:;"
+/>
+    <title>Script Editor</title>
+    <link rel="stylesheet" href="./scriptEditor.css">
+  </head>
+  <body>
+    <div class="editor-container">
+        <div class="header-row">
+            <h2>Editing Script: </h2>
+            <input type="text" id="script-name-input" class="script-name-input" />
+            <div class="enabled-checkbox-container">
+                <label for="enabled-checkbox">Enabled:</label>
+                <input type="checkbox" id="enabled-checkbox">
+            </div>
+        </div>
+
+        <div id="monaco-editor-container"></div> <!-- Container for Monaco Editor -->
+
+        <div class="button-row">
+            <button id="remove-script-button" class="remove-button">Remove Script</button>
+            <button id="save-script-button" class="save-button">Save Script</button>
+        </div>
+    </div>
+
+    <!-- Load the Monaco Editor loader -->
+    <script src="./monaco-editor/min/vs/loader.js"></script>
+    <!-- Load the plain JavaScript entry point -->
+    <script src="./scriptEditorEntry.js"></script>
+  </body>
+</html>

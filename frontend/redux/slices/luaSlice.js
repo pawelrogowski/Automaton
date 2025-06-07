@@ -1,5 +1,4 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { v4 as uuidv4 } from 'uuid';
 
 const initialState = {
   persistentScripts: [], // Array to hold persistent Lua script objects
@@ -22,9 +21,10 @@ const luaSlice = createSlice({
      * @param {string | null} [action.payload.hotkey=null] - The hotkey string for hotkey scripts.
      */
     addScript: (state, action) => {
-      const { name, code, type, enabled = false, hotkey = null } = action.payload;
+      // The ID is now generated in the main process before dispatching this action
+      const { id, name, code, type, enabled = false, hotkey = null } = action.payload;
       const newScript = {
-        id: uuidv4(),
+        id, // Use the ID provided in the action payload
         name: name || 'New Script',
         code: code || '',
       };

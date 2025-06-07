@@ -19,6 +19,8 @@ const GameState = () => {
       case '#gameState':
       default:
         return state.gameState; // Default to gameState if hash is not recognized or empty
+      case '#luaState': // Add case for luaState
+        return state.lua; // Return lua state slice
     }
   });
 
@@ -32,6 +34,8 @@ const GameState = () => {
       case '#gameState':
       default:
         return 'Game State';
+      case '#luaState': // Add case for luaState
+        return "Lua Scripts"; // Return lua state slice
     }
   };
 

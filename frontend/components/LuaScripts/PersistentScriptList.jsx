@@ -1,25 +1,29 @@
 // /home/orimorfus/Documents/Automaton/frontend/components/LuaScripts/PersistentScriptList.jsx
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { togglePersistentScript, removeScript } from '../../redux/slices/luaSlice.js'; // Assuming you'll add removeScript back
+import { addScript, togglePersistentScript, removeScript } from '../../redux/slices/luaSlice'; // Import addScript
 import { v4 as uuidv4 } from 'uuid'; // Assuming you'll need to add scripts
-import StyledList from './ScriptList.styled.js'; // We will create a styled component for lists
+import StyledList from './ScriptList.styled'; // We will create a styled component for lists
+
+// Assuming window.electron.ipcRenderer is available via preload.js
+const { ipcRenderer } = window.electron;
 
 const PersistentScriptList = () => {
   const dispatch = useDispatch();
   const persistentScripts = useSelector((state) => state.lua.persistentScripts);
 
-  // Placeholder functions for adding/editing/removing
+  // Function for adding persistent script
    const handleAddScript = () => {
-       const newScript = {
+       const newScriptDetails = {
+           id: uuidv4(), // Generate a unique ID for the script
             name: `New Persistent Script ${persistentScripts.length + 1}`,
             code: '-- Your Lua code here',
-            type: 'persistent',
+            type: 'persistent', // Specify the type
             enabled: false,
        };
-       // Dispatch an action to add the script (assuming you add this reducer back)
-       // dispatch(addScript(newScript));
-       console.log("Add persistent script clicked", newScript); // Placeholder
+       // Dispatch the action to add the new script with the generated ID to the Redux store
+       dispatch(addScript(newScriptDetails));
+       // Note: The ID is generated in the renderer process, and the action is dispatched directly.
    };
 
   const handleToggleEnabled = (id) => {
@@ -29,6 +33,13 @@ const PersistentScriptList = () => {
    const handleRemoveScript = (id) => {
        // Dispatch an action to remove the script
        dispatch(removeScript(id));
+   };
+
+   // Function to request opening a new editor window for the script
+   const handleEditScript = (scriptId) => {
+       console.log(`Requesting edit window for script ID: ${scriptId}`);
+       // Send a message to the main process to open the editor window
+       ipcRenderer.send('open-script-editor', scriptId);
    };
 
   return (
@@ -42,7 +53,8 @@ const PersistentScriptList = () => {
             <button onClick={() => handleToggleEnabled(script.id)}>
               {script.enabled ? 'Disable' : 'Enable'}
             </button>
-             <button onClick={() => console.log(`Edit script ${script.id}`)}>Edit</button> {/* Placeholder */}
+            {/* Update Edit button to call handleEditScript with script.id */}
+            <button onClick={() => handleEditScript(script.id)}>Edit</button>
             <button onClick={() => handleRemoveScript(script.id)}>Remove</button>
           </li>
         ))}
