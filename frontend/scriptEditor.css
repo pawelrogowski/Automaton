@@ -23,8 +23,37 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 14px;
+    font-size: 10px;
     margin: 0px;
+}
+
+/* Style for the new settings row */
+.settings-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    margin: 0px;
+     /* Hide by default */
+}
+
+.settings-row label {
+    white-space: nowrap; /* Prevent labels from wrapping */
+}
+
+.settings-row input[type="number"] {
+     width: 60px; /* Smaller width for number inputs */
+}
+
+.loop-settings {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.settings-input {
+    width: 100px;
+     /* Hide by default */
 }
 
 .script-name-input {
@@ -41,6 +70,30 @@ body {
     border: 1px solid #555;
 }
 
+/* Style for the new log container */
+.log-container {
+    height: 150px; /* Fixed height for the log area */
+    overflow-y: auto; /* Add scroll if logs exceed height */
+    background-color: #1e1e1e; /* Dark background for logs */
+    border: 1px solid #555;
+    padding: 5px;
+    font-size: 12px;
+     font-family: monospace; /* Monospace font for code/logs */
+}
+
+.log-container h4 {
+    margin-top: 0;
+    margin-bottom: 5px;
+    color: #ccc;
+}
+
+.log-container pre {
+    margin: 0;
+    white-space: pre-wrap; /* Wrap long lines */
+    word-wrap: break-word; /* Break words if needed */
+}
+
+
 .button-row {
     display: flex;
     justify-content: flex-end; /* Align buttons to the right */
@@ -48,7 +101,8 @@ body {
 }
 
 .save-button,
-.remove-button {
+.remove-button,
+.execute-button { /* Add execute-button here */
     padding: 10px;
     cursor: pointer;
     color: white;
@@ -71,6 +125,15 @@ body {
 .remove-button:hover {
     background-color: #a02828;
 }
+
+.execute-button { /* Style for the execute button */
+    background-color: #4CAF50; /* Green */
+}
+
+.execute-button:hover {
+    background-color: #45a049;
+}
+
 
 .enabled-checkbox-container {
     display: flex;

@@ -16,15 +16,27 @@
   <body>
     <div class="editor-container">
         <div class="header-row">
-            <h2>Editing Script: </h2>
             <input type="text" id="script-name-input" class="script-name-input" />
-            <div class="enabled-checkbox-container">
-                <label for="enabled-checkbox">Enabled:</label>
-                <input type="checkbox" id="enabled-checkbox">
+
+             <!-- New div for persistent script settings -->
+            <div id="persistent-settings" class="settings-row" style="display: none;">
+                <div class="loop-settings">
+                    <label for="loop-min">Min Delay (ms):</label> <!-- Added labels for clarity -->
+                    <input type="number" id="loop-min" class="settings-input" value="1000" min="0">
+                    <label for="loop-max">Max Delay (ms):</label> <!-- Added labels for clarity -->
+                    <input type="number" id="loop-max" class="settings-input" value="5000" min="0">
+                </div>
             </div>
         </div>
 
+
         <div id="monaco-editor-container"></div> <!-- Container for Monaco Editor -->
+
+         <!-- Add a log display area -->
+        <div class="log-container">
+            <h4>Script Output:</h4>
+            <pre id="script-log"></pre> <!-- Use <pre> to preserve whitespace/newlines -->
+        </div>
 
         <div class="button-row">
             <button id="remove-script-button" class="remove-button">Remove Script</button>

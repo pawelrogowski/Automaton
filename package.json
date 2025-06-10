@@ -1,5 +1,5 @@
 {
-  "name": "port",
+  "name": "smart_zone_sys_stack",
   "version": "1.3.4b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.port",
-    "productName": "Port",
+    "appId": "com.electron.smart_zone_sys_stack",
+    "productName": "Smart Zone Sys Stack",
     "directories": {
       "output": "dist",
       "buildResources": "build"

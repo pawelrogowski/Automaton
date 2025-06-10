@@ -1,3 +1,4 @@
+// /home/orimorfus/Documents/Automaton/electron/ipcListeners.js
 import { ipcMain, BrowserWindow } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,7 +9,7 @@ import { registerGlobalShortcuts } from './globalShortcuts.js';
 import { getMainWindow } from './createMainWindow.js';
 import luaSlice from '../frontend/redux/slices/luaSlice.js'; // Import the luaSlice
 import setGlobalState from './setGlobalState.js';
-const { updateScript } = luaSlice.actions; // Destructure updateScript from the slice's actions
+const { updateScript, removeScript } = luaSlice.actions; // Destructure actions from the slice
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -52,9 +53,19 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
 
     // Find the script data from the Redux store
     const state = store.getState();
-    console.log("lua state:", state.lua)
-    const scriptToEdit = state.lua.persistentScripts.find(s => s.id === scriptId) ||
-                         state.lua.hotkeyScripts.find(s => s.id === scriptId);
+    console.log("lua state:", state.lua);
+
+    let scriptToEdit = state.lua.persistentScripts.find(s => s.id === scriptId);
+    let scriptType = null;
+
+    if (scriptToEdit) {
+        scriptType = 'persistent';
+    } else {
+        scriptToEdit = state.lua.hotkeyScripts.find(s => s.id === scriptId);
+        if (scriptToEdit) {
+            scriptType = 'hotkey';
+        }
+    }
 
     if (!scriptToEdit) {
         console.error(`Script with ID ${scriptId} not found.`);
@@ -62,6 +73,9 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
         event.sender.send('script-editor-error', `Script with ID ${scriptId} not found.`);
         return;
     }
+
+    // **Add the type property to the script object before sending it**
+    const scriptDataToSend = { ...scriptToEdit, type: scriptType };
 
     // Prevent opening multiple editor windows for the same script (optional but good practice)
     // You could maintain a map of scriptId to editorWindow instance
@@ -96,11 +110,12 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
     editorWindow.loadFile(editorHtmlPath);
     // Optional: Send the script data to the new window once it's ready
     // And ensure dev tools open after content loads
-    editorWindow.webContents.on('did-finish-load', () => {
-        editorWindow.webContents.send('load-script-data', scriptToEdit);
-        // Open developer tools for debugging after content loads
-        editorWindow.webContents.openDevTools();
-    });
+        editorWindow.webContents.on('did-finish-load', () => {
+            // Send the scriptDataToSend object which now includes the type
+            editorWindow.webContents.send('load-script-data', scriptDataToSend);
+            // Open developer tools for debugging after content loads
+            editorWindow.webContents.openDevTools();
+        });
 
     // Add error handling for the web contents
     editorWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -114,12 +129,35 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
     });
 
 
+
     // Handle window close (optional cleanup)
     editorWindow.on('closed', () => {
         console.log(`Script editor window closed for script ID: ${scriptId}`);
     // Clean up any references if you were tracking multiple windows
     });
 });
+
+// Handle the request to remove a script
+ipcMain.on('remove-script', (event, scriptId) => {
+    console.log(`Received remove request for script ID: ${scriptId}`);
+    if (typeof removeScript === 'function') {
+        try {
+            // Use setGlobalState to dispatch in main process and sync with renderer
+            setGlobalState(removeScript.type, scriptId);
+            console.log(`Script ID: ${scriptId} removed from main store.`);
+            // Optional: Send a confirmation back to the editor window (if needed)
+            // event.sender.send('script-removed-confirmation', scriptId);
+        } catch (error) {
+            console.error('Error dispatching removeScript in main process:', error);
+            // Optional: Send an error back to the editor window (if needed)
+            // event.sender.send('script-remove-error', { id: scriptId, error: error.message });
+        }
+    } else {
+        console.error('Error: removeScript is not a function in main process.', typeof removeScript);
+        // event.sender.send('script-remove-error', { id: scriptId, error: 'Internal error: Could not dispatch remove action.' });
+    }
+});
+
 
 // New IPC listener to handle saving script content from the editor window
 ipcMain.on('save-script-content', (event, { id, updates }) => {

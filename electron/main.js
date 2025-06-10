@@ -1,3 +1,4 @@
+// /home/orimorfus/Documents/Automaton/electron/main.js
 import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';

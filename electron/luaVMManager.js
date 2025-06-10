@@ -1,4 +1,3 @@
-import { LuaFactory } from 'wasmoon';
 
 let lua;
 
