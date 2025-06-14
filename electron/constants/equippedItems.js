@@ -1,6 +1,6 @@
 const equippedItems = {
     emptyRingSlot: {
-      name: 'EmptyRingSlot',
+      name: 'Empty',
       direction: 'horizontal',
       offset: { x: 0, y: 0 },
       sequence: [
@@ -13,7 +13,7 @@ const equippedItems = {
       ],
     },
     emptyAmuletSlot: {
-      name: 'EmptyAmuletSlot',
+      name: 'Empty',
       direction: 'horizontal',
       offset: { x: 0, y: 0 },
       sequence: [
@@ -27,8 +27,30 @@ const equippedItems = {
 
       ],
     },
+    emptyBootsSlot: {
+      name: 'Empty',
+      direction: 'horizontal',
+      offset: { x: 0, y: 0 },
+      sequence: [
+        [76, 78, 81],
+        [61, 64, 66],
+        [61, 64, 66],
+        [52, 54, 57],
+      ],
+    },
+    softBoots: {
+      name: 'Soft Boots',
+      direction: 'horizontal',
+      offset: { x: 0, y: 0 },
+      sequence: [
+        [36, 9, 93],
+        [119, 92, 176],
+        [115, 88, 172],
+        [79, 52, 136],
+      ],
+    },
     mightRing: {
-      name: 'MightRing',
+      name: 'Might Ring',
       direction: 'horizontal',
       offset: { x: 0, y: 0 },
       sequence: [
@@ -39,7 +61,7 @@ const equippedItems = {
       ],
     },
     stoneSkinAmulet: {
-      name: 'StoneSkinAmulet',
+      name: 'Stone Skin Amulet',
       direction: 'horizontal',
       offset: { x: 0, y: 0 },
       sequence: [
@@ -51,7 +73,7 @@ const equippedItems = {
       ],
     },
     energyRing: {
-      name: 'EnergyRing',
+      name: 'Energy Ring',
       direction: 'horizontal',
       offset: { x: 0, y: 0 },
       sequence: [
@@ -61,6 +83,16 @@ const equippedItems = {
         [0, 0, 0],
         [0, 0, 0],
 
+      ],
+    },
+    lifeRing: {
+      name: 'Life Ring',
+      direction: 'horizontal',
+      offset: { x: 0, y: 0 },
+      sequence: [
+        [91, 206, 68],
+        [175, 253, 171],
+        [60, 137, 45],
       ],
     },
 }

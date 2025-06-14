@@ -21,7 +21,7 @@ const StyledDiv = styled.div`
     border-radius: 22px;
     border-top: 1px solid #2c2c2c;
     border-left: 1px solid #2c2c2c;
-    border-bottom: 1px solid #757676;
+    border-bottom: 1px solid #2c2c2c;
     border-right: 1px solid #2c2c2c;
     height: 16px;
     width: 100%;

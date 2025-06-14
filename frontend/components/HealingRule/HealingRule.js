@@ -4,7 +4,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import { removeRule, updateCondition, updateRule } from '../../redux/slices/healingSlice.js';
+import { removeRule, updateCondition, updateRule } from '../../redux/slices/ruleSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -15,9 +15,9 @@ const HealingRule = ({ rule, className }) => {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
   const currentRule = useSelector((state) =>
-    state.healing.presets[activePresetIndex].find((r) => r.id === rule.id),
+    state.rules.presets[activePresetIndex].find((r) => r.id === rule.id),
   );
 
   const handleStatusConditionChange = (status, value) => {

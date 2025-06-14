@@ -6,19 +6,50 @@ const StyledSpellRotationRule = styled.div`
   padding: 12px 10px;     // Add some vertical padding
   border-bottom: 1px solid #3a3a3a; // Darker border between rules
   background-color: #2c2c2c; // Slightly different dark grey maybe?
-
-  // Remove background image if it was applied here or in a parent
-  background-image: none;
+  // background-image: none;
+  position: relative; // Needed for absolute positioning of the overlay
+  overflow: hidden; // Prevent rotated text from spilling out visually if needed
 
   &:last-child {
     border-bottom: none; // No border for the last rule in the list
   }
+
+  // --- Styles for the Coming Soon Overlay ---
+  .coming-soon-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(40, 40, 40, 0.85); // Darker, more opaque overlay
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10; // Ensure overlay is on top
+    pointer-events: auto; // Block clicks to underlying elements
+    cursor: not-allowed; // Indicate non-interactivity
+
+    span {
+      color: rgba(180, 180, 180, 0.7); // Slightly muted text color
+      font-size: 2.8em; // Larger font size
+      font-weight: bold;
+      text-align: center;
+      transform: rotate(-30deg); // Diagonal rotation
+      border: 3px dashed rgba(100, 100, 100, 0.5); // Optional dashed border
+      padding: 15px 30px; // Padding around text
+      user-select: none; // Prevent text selection
+      white-space: nowrap; // Keep "Coming Soon" on one line
+    }
+  }
+  // --- End Overlay Styles ---
 
   .rule-controls-top {
     display: flex;
     align-items: center;
     gap: 10px; // Adjust gap
     margin-bottom: 12px;
+    // Apply reduced opacity to controls when overlay is active (optional visual cue)
+    // opacity: 0.5; // Apply this if you want controls visible but faded
   }
 
   .control-group { // Group checkbox and label

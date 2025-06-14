@@ -9,9 +9,9 @@ export const OPTIONS = {
     Others: 50,
   },
   cooldownStateMapping: {
-    Healing: 'healingCdActive',
-    Support: 'supportCdActive',
-    Attack: 'attackCdActive',
+    Healing: 'healingCd',
+    Support: 'supportCd',
+    Attack: 'attackCd',
   },
   logsEnabled: false,
 };

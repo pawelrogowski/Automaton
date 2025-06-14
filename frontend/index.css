@@ -1,26 +1,7 @@
-@font-face {
-  font-family: 'joystix';
-  src: url('./assets/fonts/joystix.otf') format('opentype');
-}
-@font-face {
-  font-family: 'retro';
-  src: url('./assets/fonts/Retro\ Gaming.ttf') format('truetype');
-}
-@font-face {
-  font-family: 'Poppins';
-  src: url('./assets/fonts/Poppins-Regular.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'bb';
-  src: url('./assets/fonts/ByteBounce.ttf') format('truetype');
-}
-/* set default font */
 * {
   font-family:
-    joystix,
-    retro,
-    bb,
-    Poppins,
+    'Inter',
+    monospace,
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
@@ -40,15 +21,18 @@
     Geneva,
     Verdana,
     sans-serif;
-  font-weight: 400;
-  user-select: none;
+    font-weight: 400;
+    user-select: none;
+}
+.data-key-pair {
+  font-family: monospace !important;
 }
 input,
 textarea {
   user-select: text;
-  background-color: #292929;
+  background-color: transparent;
   outline: none;
-  color: #b9b9b9;
+  color: #fafafa;
 }
 /* Remove default padding */
 ul[class],
@@ -83,21 +67,16 @@ html:focus-within {
   display: none;
 }
 
-* {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
-}
-/* Set core body defaults */
+
 body {
-  width: 100vw;
-  min-height: 100vh;
   text-rendering: optimizeSpeed;
   line-height: 1.5;
   overflow-x: hidden;
-  background: transparent;
+  background: rgb(15, 16, 17);
+  border: 1px solid rgba( 255, 255, 255, 0.18 );
+  height: 100vh;
 }
 
-/* Remove list styles on ul, ol elements with a class attribute */
 ul[class],
 ol[class] {
   list-style: none;

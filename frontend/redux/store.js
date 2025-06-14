@@ -1,7 +1,8 @@
 import { configureStore } from '@reduxjs/toolkit';
 import globalSlice from './slices/globalSlice.js';
-import healingSlice from './slices/healingSlice.js';
+import ruleSlice from './slices/ruleSlice.js';
 import gameStateSlice from './slices/gameStateSlice.js';
+import luaSlice from './slices/luaSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
   if (action.origin !== 'backend') {
@@ -17,7 +18,8 @@ const store = configureStore({
   reducer: {
     global: globalSlice.reducer,
     gameState: gameStateSlice.reducer,
-    healing: healingSlice.reducer,
+    rules: ruleSlice.reducer,
+    lua: luaSlice.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });

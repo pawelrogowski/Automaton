@@ -88,6 +88,36 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './frontend/index.html',
     }),
+    new CopyWebpackPlugin({
+        patterns: [
+            // Existing patterns...
+            {
+                from: 'node_modules/monaco-editor/min/vs',
+                to: 'monaco-editor/min/vs'
+            }
+        ]
+    }),
+    new HtmlWebpackPlugin({
+      template: './frontend/scriptEditor.html',
+      filename: 'scriptEditor.html', // Output script editor html to dist
+      inject: false, // Prevent webpack from injecting bundles automatically
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: 'node_modules/monaco-editor/min/vs',
+          to: 'monaco-editor/min/vs',
+        },
+        {
+            from: './frontend/scriptEditorEntry.js',
+            to: 'scriptEditorEntry.js'
+        },
+         {
+            from: './frontend/scriptEditor.css',
+            to: 'scriptEditor.css'
+        }
+      ],
+    }),
     new CompressionPlugin({
       algorithm: 'gzip',
       test: /\.js$|\.css$|\.html$/,
@@ -101,7 +131,7 @@ module.exports = {
       new TerserPlugin({
         terserOptions: {
           compress: {
-            drop_console: true,
+            drop_console: false,
           },
           mangle: true,
           output: {

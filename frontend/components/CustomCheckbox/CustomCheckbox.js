@@ -14,7 +14,6 @@ const CustomCheckbox = ({
 
   const checkedIconSrc = useRunningIcon ? runningManIcon : null;
 
-  console.log(`CustomCheckbox (${uniqueId}): useRunningIcon=${useRunningIcon}, checkedIconSrc=${checkedIconSrc}`);
 
   return (
     <TibiaCheckbox

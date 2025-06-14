@@ -1,6 +1,6 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { removeCondition, updateCondition } from '../../redux/slices/healingSlice.js';
+import { removeCondition, updateCondition } from '../../redux/slices/ruleSlice.js';
 import {
   StyledList,
   StyledListItem,
@@ -46,12 +46,12 @@ const characterStatusImages = {
   rooted,
 };
 
-const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
+const CharacterStatusConditions = ({ ruleId, onStatusConditionChange, className }) => {
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.healing.activePresetIndex);
+  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
   const statusConditions = useSelector(
     (state) =>
-      state.healing.presets[activePresetIndex].find((r) => r.id === ruleId)?.conditions || [],
+      state.rules.presets[activePresetIndex].find((r) => r.id === ruleId)?.conditions || [],
   );
 
   const handleClick = (status) => {
@@ -76,7 +76,7 @@ const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
   };
 
   return (
-    <StyledList>
+    <StyledList className={className}>
       {Object.keys(characterStatusImages).map((status) => {
         const condition = statusConditions.find((c) => c.name === status);
         const checked = condition ? condition.value : null;

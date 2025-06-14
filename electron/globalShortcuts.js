@@ -11,7 +11,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
+import { createLogger } from './utils/logger.js';
 
+const log = createLogger();
 const debounceTime = 25;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,9 +25,9 @@ let isEnabled = false;
 store.subscribe(() => {
   const state = store.getState();
   const { global } = state;
-  const { windowId, botEnabled } = global;
+  const { windowId, isBotEnabled } = global;
   windId = windowId;
-  isEnabled = botEnabled;
+  isEnabled = isBotEnabled;
 });
 
 const soundCache = new Map();
@@ -52,8 +54,8 @@ const debouncedSelectActiveWindow = debounce(() => {
   }, 100);
 }, debounceTime);
 
-const debouncedToggleBotEnabled = debounce(() => {
-  setGlobalState('global/toggleBotEnabled');
+const debouncedToggleisBotEnabled = debounce(() => {
+  setGlobalState('global/toggleisBotEnabled');
   if (isEnabled) {
     showNotification('🟢 Enabled');
     playSound('enable.wav');
@@ -75,14 +77,14 @@ const debouncedToggleMainWindowVisibility = debounce(() => {
 }, debounceTime);
 
 const switchToPreset = debounce((presetIndex) => {
-  setGlobalState('healing/setActivePresetIndex', presetIndex);
+  setGlobalState('rules/setActivePresetIndex', presetIndex);
 }, debounceTime);
 
 export const registerGlobalShortcuts = () => {
   try {
-    console.log('registering global shortucts');
+    log('info', '[Global Shortcuts] registering');
     globalShortcut.register('Alt+W', debouncedSelectActiveWindow);
-    globalShortcut.register('Alt+E', debouncedToggleBotEnabled);
+    globalShortcut.register('Alt+E', debouncedToggleisBotEnabled);
     globalShortcut.register('Alt+V', debouncedToggleMainWindowVisibility);
 
     for (let i = 0; i < 5; i++) {
@@ -90,9 +92,9 @@ export const registerGlobalShortcuts = () => {
       const debouncedSwitchToPreset = debounce(() => switchToPreset(i), debounceTime);
       globalShortcut.register(presetKey, debouncedSwitchToPreset);
     }
-    console.log('registered global shortucts');
+    log('info', '[Global Shortcuts] registered');
   } catch (error) {
-    console.error('Failed to register global shortcuts:', error);
+    log('error', `[Global Shortcuts] ${error}`);
   }
 };
 
@@ -100,6 +102,6 @@ export const unregisterGlobalShortcuts = () => {
   try {
     globalShortcut.unregisterAll();
   } catch (error) {
-    console.error('Failed to unregister global shortcuts:', error);
+    log('error', `[Global Shortcuts] ${error}`);
   }
 };

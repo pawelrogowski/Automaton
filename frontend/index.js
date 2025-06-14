@@ -21,11 +21,6 @@ ipcRenderer.on('state-update', (_, update) => {
   }
 });
 
-const theme = {
-  colors: {
-    primary: '#000',
-  },
-};
 
 const App = () => {
   return (

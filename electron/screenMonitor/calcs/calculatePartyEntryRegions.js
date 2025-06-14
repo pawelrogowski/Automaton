@@ -11,8 +11,8 @@ export const calculatePartyEntryRegions = (partyListStart, entryCount) => {
       name: {
         x: partyListStart.x + 1,
         y: partyListStart.y + i * 26,
-        width: 6,
-        height: 5,
+        width: 15,
+        height: 6,
       },
       uhCoordinates: {
         x: partyListStart.x,

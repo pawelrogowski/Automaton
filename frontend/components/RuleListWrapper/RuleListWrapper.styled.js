@@ -1,18 +1,15 @@
 import styled from 'styled-components';
-import tibiaBg from '../../assets/tibiaBg.webp';
 
 export const StyledDiv = styled.div`
   width: 100%;
-  background: #414141;
   height: auto;
-  border-top: 1px solid #181818;
-  border-left: 1px solid #181818;
-  border-right: 1px solid #7d7d7d;
-  border-bottom: 1px solid #7d7d7d;
   min-height: 260.5px;
   min-width: 681px;
   position: relative;
-
+  // & * {
+  //   background: transparent !important;
+  //   border: none !important;
+  // }
   .header {
     display: flex;
     background-color: #373737;
@@ -57,7 +54,7 @@ export const StyledDiv = styled.div`
      min-width: 10px; /* Prevent collapsing */
      margin-left: 0; /* Reset any potential margin */
       &:hover { filter: none; }
-      
+
    }
 
   /* --- Default/UserRule/ManaSync Variant Header Widths --- */
@@ -79,6 +76,16 @@ export const StyledDiv = styled.div`
   .header-actionbar-monster { width: 82px; } /* Split original 164px */
   .header-actionbar-priority { width: 80px; }
   .header-actionbar-cd { width: 100px; }
+
+  /* --- Equip Variant Header Widths (Same as Action Bar) --- */
+  .header-equip-enable { width: 36px; }
+  .header-equip-item { width: 260px; }
+  .header-equip-hk { width: 60px; }
+  .header-equip-hp { width: 82px; }
+  .header-equip-mana { width: 82px; }
+  .header-equip-monster { width: 82px; }
+  .header-equip-priority { width: 80px; }
+  /* Note: .header-equip-cd can be added if needed, following actionbar's 100px */
 
   /* --- Friend Variant Header Widths - Updated --- */
   .header-friend-enable { width: 36px; }      // Match action bar enable
@@ -104,5 +111,6 @@ export const StyledDiv = styled.div`
     height: calc(100% - 24px); /* Adjust based on actual header height + margin */
     max-height: 420px; /* Ensure it fits within the box */
     overflow-y: scroll;
+    gap: 8px;
   }
 `;

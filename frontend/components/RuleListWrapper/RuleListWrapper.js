@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { StyledDiv } from './RuleListWrapper.styled.js';
-import { sortRulesBy } from '../../redux/slices/healingSlice.js';
+import { sortRulesBy } from '../../redux/slices/ruleSlice.js';
 import { useDispatch } from 'react-redux';
 
 const RuleListWrapper = ({ children, variant }) => {
@@ -25,6 +25,19 @@ const RuleListWrapper = ({ children, variant }) => {
             <div className="header-item header-actionbar-monster" tooltip="Number of Monsters" onMouseDown={() => dispatch(sortRulesBy(['monsterNum', 'priority']))}>Monster#</div>
             {/* End Separated Headers */}
             <div className="header-item header-actionbar-priority" tooltip="Rule priority - shared across all rules!" onMouseDown={() => dispatch(sortRulesBy(['priority']))}>Priority</div>
+          </>
+        );
+      case 'equip':
+        return (
+          <>
+            {/* Equip Headers - Same as Action Bar */}
+            <div className="header-item header-equip-enable" tooltip="Enable rule" onMouseDown={() => dispatch(sortRulesBy(['enabled', 'priority']))}>•</div>
+            <div className="header-item header-equip-item" tooltip="Select Equipment Item" onMouseDown={() => dispatch(sortRulesBy(['actionItem', 'priority']))}>Action</div>
+            <div className="header-item header-equip-hk" tooltip="Edit rule hotkey" onMouseDown={() => dispatch(sortRulesBy(['key', 'priority']))}>HK</div>
+            <div className="header-item header-equip-hp" tooltip="Your HP Percentage" onMouseDown={() => dispatch(sortRulesBy(['hpTriggerPercentage', 'priority']))}>Health %</div>
+            <div className="header-item header-equip-mana" tooltip="Your MP Percentage" onMouseDown={() => dispatch(sortRulesBy(['manaTriggerPercentage', 'priority']))}>Mana %</div>
+            <div className="header-item header-equip-monster" tooltip="Number of Monsters" onMouseDown={() => dispatch(sortRulesBy(['monsterNum', 'priority']))}>Monster#</div>
+            <div className="header-item header-equip-priority" tooltip="Rule priority - shared across all rules!" onMouseDown={() => dispatch(sortRulesBy(['priority']))}>Priority</div>
           </>
         );
       case 'friends':

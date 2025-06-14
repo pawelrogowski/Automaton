@@ -1,16 +1,9 @@
 import styled from 'styled-components';
-import tibiaBg from '../assets/tibiaBg.webp';
 
 const StyledMain = styled.main`
   display: flex;
   flex-direction: column;
-  background-image: url(${tibiaBg});
-  background-repeat: repeat;
-  display: flex;
-  flex-direction: column;
-
-  display: flex;
-  flex-direction: column;
+/* 
   .healing-enable-checkbox {
     display: flex;
     align-items: center;
@@ -18,14 +11,6 @@ const StyledMain = styled.main`
     top: -1px;
     left: 1px;
     position: absolute;
-  }
-  .header-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    h2 {
-      font-size: 26px;
-    }
   }
   .mana-sync-column {
     display: flex;
@@ -194,6 +179,6 @@ const StyledMain = styled.main`
         height: 100%;
       }
     }
-  }
+  } */
 `;
 export default StyledMain;
