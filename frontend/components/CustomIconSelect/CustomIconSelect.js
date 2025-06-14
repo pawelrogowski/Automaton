@@ -1,4 +1,3 @@
-// frontend/components/CustomIconSelect/CustomIconSelect.js
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
@@ -11,8 +10,6 @@ import {
   SearchInput
 } from './CustomIconSelect.styled.js';
 
-// --- Import ALL potential icons ---
-// Adjust path '../../assets/actionBarItems/' if needed
 import fallbackIconImport from '../../assets/actionBarItems/Tile_Highlight_Effect.gif'; // Assuming this is the fallback icon
 import Amulet_Of_TheurgyIcon from '../../assets/actionBarItems/Amulet_Of_Theurgy.gif';
 import Animate_DeadIcon from '../../assets/actionBarItems/Animate_Dead.gif';
@@ -668,9 +665,9 @@ const CustomIconSelect = ({
   // Focus search input when dropdown opens
   useEffect(() => {
     if (isOpen) {
-       setActiveIndex(-1);
-       // Ensure ref exists before trying to focus
-       setTimeout(() => searchInputRef.current?.focus(), 0);
+      setActiveIndex(-1);
+      // Ensure ref exists before trying to focus
+      setTimeout(() => searchInputRef.current?.focus(), 0);
     }
   }, [isOpen]);
 
@@ -695,19 +692,19 @@ const CustomIconSelect = ({
 
     // Use Object.values safely
     Object.values(options).forEach(items => {
-        // Ensure items is an array
-        if (Array.isArray(items)) {
-             items.forEach(item => {
-                 // Ensure item and item.label are valid before accessing
-                 const label = typeof item?.label === 'string' ? item.label : '';
-                 if (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm)) {
-                     // Only push valid items
-                     if (item && typeof item.value !== 'undefined') {
-                         flatList.push({ ...item, label }); // Ensure label is the potentially corrected one
-                     }
-                 }
-             });
-        }
+      // Ensure items is an array
+      if (Array.isArray(items)) {
+        items.forEach(item => {
+          // Ensure item and item.label are valid before accessing
+          const label = typeof item?.label === 'string' ? item.label : '';
+          if (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm)) {
+            // Only push valid items
+            if (item && typeof item.value !== 'undefined') {
+              flatList.push({ ...item, label }); // Ensure label is the potentially corrected one
+            }
+          }
+        });
+      }
     });
     return flatList;
   }, [options, searchTerm]); // Keep dependencies
@@ -716,21 +713,21 @@ const CustomIconSelect = ({
     // Add safety checks
     if (!options || typeof options !== 'object') return {};
 
-     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-     const filtered = {};
-     Object.entries(options).forEach(([category, items]) => {
-        if (Array.isArray(items)) { // Check if items is an array
-             const matchingItems = items.filter(item => {
-                const label = typeof item?.label === 'string' ? item.label : '';
-                // Ensure item is valid before checking label
-                return item && (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm));
-             });
-             if (matchingItems.length > 0) {
-                 filtered[category] = matchingItems;
-             }
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    const filtered = {};
+    Object.entries(options).forEach(([category, items]) => {
+      if (Array.isArray(items)) { // Check if items is an array
+        const matchingItems = items.filter(item => {
+          const label = typeof item?.label === 'string' ? item.label : '';
+          // Ensure item is valid before checking label
+          return item && (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm));
+        });
+        if (matchingItems.length > 0) {
+          filtered[category] = matchingItems;
         }
-     });
-     return filtered;
+      }
+    });
+    return filtered;
   };
 
   const renderedOptions = getRenderedOptions();
@@ -746,10 +743,10 @@ const CustomIconSelect = ({
   const toggleDropdown = () => {
     const nextIsOpen = !isOpen;
     setIsOpen(nextIsOpen);
-     if (!nextIsOpen) { // If closing
-         setSearchTerm('');
-         setActiveIndex(-1);
-     }
+    if (!nextIsOpen) { // If closing
+      setSearchTerm('');
+      setActiveIndex(-1);
+    }
   };
 
   const handleSearchChange = (event) => {
@@ -764,66 +761,66 @@ const CustomIconSelect = ({
     if (event.target === searchInputRef.current && event.key === ' ') {
       // Do nothing here, allowing the default action.
     } else if (isOpen) { // Process other keys only if the dropdown is open
-        // Use the safe flattenedOptions length
-        const count = flattenedOptions.length;
-        // Prevent errors if count is 0
-        if (count === 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter')) {
-            event.preventDefault();
-            return;
-        }
+      // Use the safe flattenedOptions length
+      const count = flattenedOptions.length;
+      // Prevent errors if count is 0
+      if (count === 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter')) {
+        event.preventDefault();
+        return;
+      }
 
-        switch (event.key) {
-          case 'ArrowDown':
-            event.preventDefault();
-            setActiveIndex((prevIndex) => (prevIndex + 1) % count);
-            break;
+      switch (event.key) {
+        case 'ArrowDown':
+          event.preventDefault();
+          setActiveIndex((prevIndex) => (prevIndex + 1) % count);
+          break;
 
-          case 'ArrowUp':
-            event.preventDefault();
-            setActiveIndex((prevIndex) => (prevIndex - 1 + count) % count);
-            break;
+        case 'ArrowUp':
+          event.preventDefault();
+          setActiveIndex((prevIndex) => (prevIndex - 1 + count) % count);
+          break;
 
-          case 'Enter':
-            event.preventDefault();
-            // Ensure activeIndex is valid and flattenedOptions[activeIndex] exists
-            if (activeIndex >= 0 && activeIndex < count && flattenedOptions[activeIndex]) {
-              handleOptionClick(flattenedOptions[activeIndex].value);
-            } else if (activeIndex === -1 && count > 0 && flattenedOptions[0]) {
-              // Ensure first option exists
-              handleOptionClick(flattenedOptions[0].value);
-            }
-            break;
+        case 'Enter':
+          event.preventDefault();
+          // Ensure activeIndex is valid and flattenedOptions[activeIndex] exists
+          if (activeIndex >= 0 && activeIndex < count && flattenedOptions[activeIndex]) {
+            handleOptionClick(flattenedOptions[activeIndex].value);
+          } else if (activeIndex === -1 && count > 0 && flattenedOptions[0]) {
+            // Ensure first option exists
+            handleOptionClick(flattenedOptions[0].value);
+          }
+          break;
 
-          case 'Escape':
-            event.preventDefault();
-            setIsOpen(false);
-            setSearchTerm('');
-            setActiveIndex(-1);
-            break;
+        case 'Escape':
+          event.preventDefault();
+          setIsOpen(false);
+          setSearchTerm('');
+          setActiveIndex(-1);
+          break;
 
-           case 'Tab':
-             // Allow tabbing out, close dropdown
-             setIsOpen(false);
-             setSearchTerm('');
-             setActiveIndex(-1);
-             break;
+        case 'Tab':
+          // Allow tabbing out, close dropdown
+          setIsOpen(false);
+          setSearchTerm('');
+          setActiveIndex(-1);
+          break;
 
-          default:
-            // Reset active index if typing in search while an item is highlighted
-            if (event.target === searchInputRef.current && activeIndex !== -1) {
-               // Only reset if it's a character input, not modifier keys etc.
-               if (event.key.length === 1) setActiveIndex(-1);
-            }
-            break;
-        }
+        default:
+          // Reset active index if typing in search while an item is highlighted
+          if (event.target === searchInputRef.current && activeIndex !== -1) {
+            // Only reset if it's a character input, not modifier keys etc.
+            if (event.key.length === 1) setActiveIndex(-1);
+          }
+          break;
+      }
     } // End of isOpen check
   };
 
   // --- Assign ref to active item ---
   const assignActiveRef = (el, index) => {
-     if (index === activeIndex) {
-        activeItemRef.current = el;
-     }
+    if (index === activeIndex) {
+      activeItemRef.current = el;
+    }
   };
 
   return (
@@ -847,59 +844,59 @@ const CustomIconSelect = ({
           $isOpen={isOpen}
         >
           <SearchInputWrapper>
-             <input
-                ref={searchInputRef}
-                type="text"
-                className="search-input"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={handleSearchChange}
-                onClick={(e) => e.stopPropagation()}
-                aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
-             />
+            <input
+              ref={searchInputRef}
+              type="text"
+              className="search-input"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              onClick={(e) => e.stopPropagation()}
+              aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
+            />
           </SearchInputWrapper>
 
           {noResults ? (
-             <OptionItem as="div" className="no-results">No results found</OptionItem>
+            <OptionItem as="div" className="no-results">No results found</OptionItem>
           ) : (
-             (() => {
-               let flatIndex = -1;
-               // Ensure renderedOptions is an object before trying to map
-               return typeof renderedOptions === 'object' && renderedOptions !== null ? Object.entries(renderedOptions).map(([category, items]) => (
-            <React.Fragment key={category}>
-              <CategoryHeader as="div">{category.charAt(0).toUpperCase() + category.slice(1)}</CategoryHeader>
-                    {/* Ensure items is an array */}
-                   {Array.isArray(items) ? items.map((item) => {
-                     // Ensure item is valid before trying to render
-                     if (!item || typeof item.value === 'undefined') return null;
+            (() => {
+              let flatIndex = -1;
+              // Ensure renderedOptions is an object before trying to map
+              return typeof renderedOptions === 'object' && renderedOptions !== null ? Object.entries(renderedOptions).map(([category, items]) => (
+                <React.Fragment key={category}>
+                  <CategoryHeader as="div">{category.charAt(0).toUpperCase() + category.slice(1)}</CategoryHeader>
+                  {/* Ensure items is an array */}
+                  {Array.isArray(items) ? items.map((item) => {
+                    // Ensure item is valid before trying to render
+                    if (!item || typeof item.value === 'undefined') return null;
 
-                     flatIndex = flattenedOptions.findIndex(flatItem => flatItem?.value === item.value);
-                     // Ensure flatIndex is found
-                     if (flatIndex === -1) return null;
+                    flatIndex = flattenedOptions.findIndex(flatItem => flatItem?.value === item.value);
+                    // Ensure flatIndex is found
+                    if (flatIndex === -1) return null;
 
-                     const isActive = flatIndex === activeIndex;
-                     const itemIconSrc = getIconSrc(item.value, allItemsData, fallbackIconImport); // Use helper
+                    const isActive = flatIndex === activeIndex;
+                    const itemIconSrc = getIconSrc(item.value, allItemsData, fallbackIconImport); // Use helper
 
-                     return (
-                <OptionItem
-                  key={item.value}
-                         ref={(el) => isActive && assignActiveRef(el, flatIndex)}
-                         className={isActive ? 'active' : ''}
-                  onClick={() => handleOptionClick(item.value)}
-                  role="option"
-                         aria-selected={item.value === value} // Mark current selection
-                         id={`${id}-option-${flatIndex}`} // Use safe id
-                       >
-                         {/* Use itemIconSrc */}
-                         {itemIconSrc && <img src={itemIconSrc} alt="" />}
-                         {/* Ensure label is a string */}
-                         <span>{typeof item.label === 'string' ? item.label : ''}</span>
-                </OptionItem>
-                     );
-                   }) : null}
-            </React.Fragment>
-               )) : null; // Return null if renderedOptions is not an object
-             })()
+                    return (
+                      <OptionItem
+                        key={item.value}
+                        ref={(el) => isActive && assignActiveRef(el, flatIndex)}
+                        className={isActive ? 'active' : ''}
+                        onClick={() => handleOptionClick(item.value)}
+                        role="option"
+                        aria-selected={item.value === value} // Mark current selection
+                        id={`${id}-option-${flatIndex}`} // Use safe id
+                      >
+                        {/* Use itemIconSrc */}
+                        {itemIconSrc && <img src={itemIconSrc} alt="" />}
+                        {/* Ensure label is a string */}
+                        <span>{typeof item.label === 'string' ? item.label : ''}</span>
+                      </OptionItem>
+                    );
+                  }) : null}
+                </React.Fragment>
+              )) : null; // Return null if renderedOptions is not an object
+            })()
           )}
         </OptionsList>
       )}

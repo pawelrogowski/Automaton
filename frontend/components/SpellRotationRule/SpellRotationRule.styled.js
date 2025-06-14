@@ -6,7 +6,7 @@ const StyledSpellRotationRule = styled.div`
   padding: 12px 10px;     // Add some vertical padding
   border-bottom: 1px solid #3a3a3a; // Darker border between rules
   background-color: #2c2c2c; // Slightly different dark grey maybe?
-  background-image: none;
+  // background-image: none;
   position: relative; // Needed for absolute positioning of the overlay
   overflow: hidden; // Prevent rotated text from spilling out visually if needed
 

@@ -1,5 +1,5 @@
 import styled from 'styled-components';
-import tibiaBg from '../../assets/tibiaBg.webp';
+
 const StyledDiv = styled.div`
   position: relative;
   display: flex;
@@ -225,7 +225,7 @@ const StyledDiv = styled.div`
        text-align: center;
        padding: 0 1px;
   }
- 
+
   .
   /* Apply the classes above to the correct inputs in HealingRule.js if they aren't already specific */
 

@@ -1,18 +1,15 @@
 import styled from 'styled-components';
-import tibiaBg from '../../assets/tibiaBg.webp';
 
 export const StyledDiv = styled.div`
   width: 100%;
-  background: #414141;
   height: auto;
-  border-top: 1px solid #181818;
-  border-left: 1px solid #181818;
-  border-right: 1px solid #7d7d7d;
-  border-bottom: 1px solid #7d7d7d;
   min-height: 260.5px;
   min-width: 681px;
   position: relative;
-
+  // & * {
+  //   background: transparent !important;
+  //   border: none !important;
+  // }
   .header {
     display: flex;
     background-color: #373737;
@@ -57,7 +54,7 @@ export const StyledDiv = styled.div`
      min-width: 10px; /* Prevent collapsing */
      margin-left: 0; /* Reset any potential margin */
       &:hover { filter: none; }
-      
+
    }
 
   /* --- Default/UserRule/ManaSync Variant Header Widths --- */
@@ -114,5 +111,6 @@ export const StyledDiv = styled.div`
     height: calc(100% - 24px); /* Adjust based on actual header height + margin */
     max-height: 420px; /* Ensure it fits within the box */
     overflow-y: scroll;
+    gap: 8px;
   }
 `;

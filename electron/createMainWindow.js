@@ -19,15 +19,12 @@ const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
 const ICON_PATHS = {
-  white: path.join(dirname, './icons/whiteSkull.png'),
-  green: path.join(dirname, './icons/greenSkull.png'),
-  red: path.join(dirname, './icons/redSkull.png'),
+  white: path.join(dirname, './icons/white_dot.png'),
+  green: path.join(dirname, './icons/green_dot.png'),
+  red: path.join(dirname, './icons/red_dot.png'),
   app: path.join(dirname, './icons/automaton.png'),
 };
 
-/**
- * Updates the tray icon based on the current state
- */
 const updateTrayIcon = () => {
   if (!tray) return;
 
@@ -44,9 +41,7 @@ const updateTrayIcon = () => {
   tray.setImage(icon);
 };
 
-/**
- * Toggles the visibility of the tray icon.
- */
+
 export const toggleTrayVisibility = () => {
   isTrayVisible = !isTrayVisible;
   if (isTrayVisible) {
@@ -136,9 +131,6 @@ const buildAppMenu = () => {
   return Menu.buildFromTemplate(template);
 };
 
-/**
- * Creates and sets up the system tray.
- */
 const createTray = () => {
   const state = store.getState().global;
   let initialIconPath = ICON_PATHS.white;
@@ -150,14 +142,10 @@ const createTray = () => {
   tray.setToolTip('Click to show/hide the bot');
   tray.setContextMenu(buildTrayContextMenu());
 
-  // Add left-click event handler
   tray.on('click', toggleMainWindowVisibility);
 };
 
-/**
- * Handles the window close event.
- * @param {Electron.Event} event - The close event
- */
+
 const handleWindowClose = async (event) => {
   if (event) event.preventDefault();
   if (!shouldClose) {
@@ -190,34 +178,23 @@ const closeAppFromTray = async () => {
   }
 };
 
-/**
- * Creates the main application window.
- */
 export const createMainWindow = () => {
   mainWindow = new BrowserWindow({
-    height: 633,
-    width: 1046,
-    maxWidth: 1046,
-    minWidth: 1046,
-    minHeight: 633,
-    maxHeight: 633,
+    minWidth: 1200,
+    minHeight: 640,
+    height: 640,
+    width: 1200,
+    resizable: false,
     icon: ICON_PATHS.app,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    resizable: false,
     alwaysOnTop: true,
-    transparent: false,
-    webPreferences: { devTools: true, nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
+    webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
   });
 
-  // if (process.env.NODE_ENV !== 'production') {
-    mainWindow.webContents.openDevTools();
-  // }
+  mainWindow.webContents.openDevTools();
 
   mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
-
-  createTray();
-  Menu.setApplicationMenu(buildAppMenu());
 
   mainWindow.on('closed', async () => {
     mainWindow = null;
@@ -226,6 +203,8 @@ export const createMainWindow = () => {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
+    createTray();
+    Menu.setApplicationMenu(buildAppMenu());
   });
 
   mainWindow.on('show', () => {
@@ -239,9 +218,7 @@ export const createMainWindow = () => {
   });
 };
 
-/**
- * Toggles the visibility of the main window.
- */
+
 export const toggleMainWindowVisibility = () => {
   if (mainWindow.isVisible()) {
     mainWindow.hide();
@@ -250,13 +227,6 @@ export const toggleMainWindowVisibility = () => {
   }
 };
 
-/**
- * Returns the main window instance.
- * @returns {Electron.BrowserWindow|null} The main window instance
- */
-export const getMainWindow = () => mainWindow;
-
-// Subscribe to store changes
 store.subscribe(() => {
   const { notificationsEnabled, windowId, isBotEnabled } = store.getState().global;
   isNotificationEnabled = notificationsEnabled;
@@ -269,3 +239,5 @@ store.subscribe(() => {
   // Update the application menu
   Menu.setApplicationMenu(buildAppMenu());
 });
+
+export const getMainWindow = () => mainWindow;

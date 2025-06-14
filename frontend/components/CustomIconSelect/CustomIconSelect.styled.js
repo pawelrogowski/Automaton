@@ -1,13 +1,12 @@
-// Create file: frontend/components/CustomIconSelect/CustomIconSelect.styled.js
 import styled from 'styled-components';
 
-const ROW_HEIGHT = '38px'; // Define a variable for the new row height (32px icon + padding)
-const ICON_SIZE = '32px'; // Define icon size variable
+const ROW_HEIGHT = '38px';
+const ICON_SIZE = '32px';
 
 export const SelectWrapper = styled.div`
   position: relative;
-  width: 100%; /* Make wrapper fill its container */
-  height: ${ROW_HEIGHT}; // Use variable
+  width: 100%;
+  height: ${ROW_HEIGHT};
   font-size: 11px;
   color: #d3d3d3;
 `;
@@ -16,33 +15,32 @@ export const SelectTrigger = styled.button`
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  width: 100%; /* Ensure trigger fills the wrapper */
+  width: 100%;
   height: 100%;
-  padding: 0 ;
-  background: #414141;
-  border-top: 1px solid #16181d;
-  border-left: 1px solid #79797930;
-  border-bottom: 1px solid #79797930;
-  border-right: 1px solid #16181d;
+  padding: 0;
   cursor: pointer;
   outline: none;
-  text-align: left; /* Ensure text aligns left */
-  overflow: hidden; /* Hide overflow */
-  white-space: nowrap; /* Prevent wrapping */
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  user-select: none;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease-in-out;
 
-  background-image: none !important;
-  &::before, &::after { content: none !important; display: none !important; }
-
+  padding-left: 4px;
   &:hover {
-    filter: brightness(1.1);
+    background: rgba(255, 255, 255, 0.15);
   }
 
-  &:focus { /* Optional focus */ }
 
   /* Styles for the icon inside the trigger */
   .trigger-icon {
-    width: ${ICON_SIZE}; // Use variable
-    height: ${ICON_SIZE}; // Use variable
+    width: ${ICON_SIZE};
+    height: ${ICON_SIZE};
     margin-right: 6px;
     object-fit: contain;
     flex-shrink: 0;
@@ -59,65 +57,82 @@ export const SelectTrigger = styled.button`
 `;
 
 export const OptionsList = styled.ul`
-  position: absolute; /* ADDED BACK - Needed for dropdown behavior */
-  top: 100%; /* ADDED BACK - Position below the trigger */
-  left: 0; /* ADDED BACK - Align with the trigger's left edge */
-  width: max-content;
-  /* min-width: 180px; */ /* Consider adding a min-width if needed */
-  max-height: 300px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #363636;
-  border: 1px solid #797979;
+
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  background: rgba(44, 44, 44, 0.95);
+
+
   list-style: none;
   padding: 0;
   margin: 0;
-  z-index: 1000; // Keep high z-index
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
 
-  /* display: ${props => props.$isOpen ? 'block' : 'none'}; */ /* This logic is handled by conditional rendering in the component */
+
+  /* Scrollbar styles */
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
 `;
 
-// Wrapper for the search input - NEEDS EXPORT
 export const SearchInputWrapper = styled.div`
-   padding: 4px 8px; /* Padding around the input */
-   background-color: #414141;
-   border-bottom: 1px solid #555;
+   padding: 4px 8px;
+   background-color: rgba(44, 44, 44, 0.95);
    position: sticky;
    top: 0;
    z-index: 1;
-   box-sizing: border-box; /* Ensure padding doesn't affect outer dimensions */
+   box-sizing: border-box;
 `;
 
-// Style for the search input itself - NEEDS EXPORT
 export const SearchInput = styled.input`
-   display: block; /* Ensure it behaves like a block element */
-   width: 100%; /* Take full width of the parent wrapper */
+   display: block;
+   width: 100%;
    padding: 4px 6px;
    font-size: 11px;
    line-height: 1;
    color: #d3d3d3;
-   background-color: #505050 !important; /* FORCED background color */
-   border: 1px solid #797979;
+   background-color: rgba(0,0,0,0.3) !important;
+   border: 1px solid rgba(255, 255, 255, 0.1);
    border-radius: 2px;
-   outline: none !important; /* FORCED outline removal */
-   box-sizing: border-box; /* Crucial for width: 100% */
+   outline: none !important;
+   box-sizing: border-box;
 
-   /* Override default browser styles if necessary */
    appearance: none;
    -webkit-appearance: none;
 
    &:focus {
-     border-color: #a0a0a0; /* Keep border focus color */
-     outline: none !important; /* Ensure outline stays removed on focus */
+     border-color: rgba(255, 255, 255, 0.3);
+     outline: none !important;
    }
 
-   /* Placeholder text color */
    &::placeholder {
      color: #a0a0a0;
-     opacity: 1; /* Firefox */
+     opacity: 1;
    }
-   &::-ms-input-placeholder { /* Edge <= 18 */
+   &::-ms-input-placeholder {
      color: #a0a0a0;
    }
 `;
@@ -125,39 +140,34 @@ export const SearchInput = styled.input`
 export const OptionItem = styled.li`
   display: flex;
   align-items: center;
-  /* Adjust padding for taller items */
-  padding: 3px 12px; /* Reduced vertical padding slightly */
-  /* Set min-height to accommodate icon + padding */
+  padding: 3px 12px;
   min-height: ${ROW_HEIGHT};
   cursor: pointer;
   white-space: nowrap;
-  outline: none; /* Remove potential focus outline if managing manually */
+  outline: none;
+  transition: background-color 0.1s ease-in-out;
+  background-color: transparent; // {{change 2: Ensure default background is transparent}}
 
-  &:hover, &.active { /* Style both hover and keyboard active state */
-    background-color: #555;
-    color: #fff; /* Example: change text color too */
+  &:hover, &.active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
 
-     /* Ensure child span also inherits color if needed */
      span {
        color: #fff;
      }
   }
 
-  /* &.active { // If you want a distinct style only for keyboard focus
-      border: 1px dotted yellow; // Example
-  } */
-
   img {
-    width: ${ICON_SIZE}; // Use variable
-    height: ${ICON_SIZE}; // Use variable
+    width: ${ICON_SIZE};
+    height: ${ICON_SIZE};
     margin-right: 8px;
     object-fit: contain;
-    flex-shrink: 0; // Prevent shrinking
+    flex-shrink: 0;
   }
 
   span {
     font-size: 11px;
-    color: #d3d3d3; /* Default color */
+    color: #d3d3d3;
   }
 
   &.no-results {
@@ -165,7 +175,7 @@ export const OptionItem = styled.li`
      color: #a0a0a0;
      cursor: default;
      &:hover, &.active {
-       background-color: transparent; /* No hover/active effect */
+       background-color: transparent;
      }
   }
 `;
@@ -176,8 +186,8 @@ export const CategoryHeader = styled.li`
   color: #a0a0a0;
   font-size: 10px;
   text-transform: uppercase;
-  border-bottom: 1px solid #555;
-  margin: 2px 0; // Adjust margin if needed
-  cursor: default; /* Not clickable */
-  background-color: #363636; /* Ensure background matches list */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 2px 0;
+  cursor: default;
+  background-color: rgba(44, 44, 44, 0.95);
 `;

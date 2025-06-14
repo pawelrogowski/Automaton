@@ -1,11 +1,7 @@
 import styled from 'styled-components';
-import tibiaBgDark from '../../assets/tibiaBgDark.webp';
 
 export const StyledDiv = styled.div`
-  border-top: 2px solid #2c2c2c;
-  border-left: 2px solid #2c2c2c;
-  border-bottom: 2px solid #757676;
-  border-right: 2px solid #757676;
+  border-radius: 10px;
   padding: 1px;
   display: flex;
   flex-direction: column;
@@ -17,7 +13,6 @@ export const StyledDiv = styled.div`
     display: flex;
     justify-content: center;
     align-items: center;
-    background-image: url(${tibiaBgDark});
     background-repeat: repeat;
     border-bottom: 1px solid black;
     line-height: 1;

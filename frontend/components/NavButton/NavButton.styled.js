@@ -7,18 +7,15 @@ export const StyledLink = styled(NavLink)`
   padding: 8px 12px;
   text-decoration: none;
   color: inherit;
-  border-top: 1px solid rgba(117, 117, 118, 0.8);
-  border-left: 1px solid rgba(117, 117, 118, 0.8);
-  border-bottom: 1px solid rgba(44, 44, 44, 0.8);
-  border-right: 1px solid rgba(44, 44, 44, 0.8);
+  border-radius: 10px;
+  border: 1px solid rgba( 255, 255, 255, 0.18 );
 
   ${({ $isActive }) =>
     $isActive &&
     `
-    border-top: 1px solid rgba(44, 44, 44, 0.8);
-    border-left: 1px solid rgba(44, 44, 44, 0.8);
-    border-bottom: 1px solid rgba(117, 117, 118, 0.8);
-    border-right: 1px solid rgba(117, 117, 118, 0.8);
+background: rgba( 255, 255, 255, 0.15 );
+border-radius: 10px;
+border: 1px solid rgba( 255, 255, 255, 0.18 );
   `}
 
   img {
@@ -28,7 +25,6 @@ export const StyledLink = styled(NavLink)`
   > span {
     text-align: center;
     color: #fafafa;
-    font-size 27px;
     padding: 0 18px;
   }
 `;

@@ -1,6 +1,4 @@
 import styled from 'styled-components';
-import tibiaBgDark from '../../assets/tibiaBgDark.webp';
-import tibiaBg from '../../assets/tibiaBg.webp';
 
 const StyledNav = styled.nav`
   display: flex;
@@ -10,10 +8,7 @@ const StyledNav = styled.nav`
   position: fixed;
   top: 0;
   justify-content: center;
-  background-image: url(${tibiaBgDark});
-  border-left: 2px solid #717171;
-  border-right: 2px solid #717171;
-  border-top: 2px solid #717171;
+
   ul {
     list-style: none;
     display: flex;
@@ -28,20 +23,8 @@ const StyledNav = styled.nav`
       padding: 4px 15px 1px 4px;
       text-decoration: none;
       transition: color 200ms;
-      color: rgb(175, 175, 175);
-      border-top: 2px solid #757575;
-      border-left: 2px solid #757575;
-      border-bottom: 2px solid #757575;
-      border-right: 2px solid #757575;
-      background-image: url(${tibiaBgDark});
       background-repeat: repeat;
       text-shadow: -1px -1px 0px rgba(0, 0, 0, 1);
-      &:active {
-        border-top: 2px solid #757575;
-        border-left: 2px solid #757575;
-        border-bottom: none;
-        border-right: 2px solid #757575;
-      }
     }
   }
   .character-name {

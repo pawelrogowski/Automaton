@@ -1,121 +1,131 @@
 import styled from 'styled-components';
-import tibiaBg from '../../assets/tibiaBg.webp';
-import tibiaBgDark from '../../assets/tibiaBgDark.webp';
 
 export const StyledDiv = styled.div`
   z-index: 1000;
   width: 100vw;
   height: 100vh;
-  position: absolute;
+  position: fixed; /* Use fixed for full viewport coverage */
   top: 0;
   left: 0;
   display: flex;
   justify-content: center;
   align-items: center;
+  backdrop-filter: blur(8px); /* Subtle blur */
+  background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent overlay */
 
-  > div {
+  > div { /* Main dialog container */
     position: relative;
-    background: url(${tibiaBgDark});
-    background-repeat: repeat;
-    width: 245px;
-    height: 131px;
-    border-top: solid 2px rgb(120, 120, 120);
-    border-left: solid 2px rgb(120, 120, 120);
-    border-bottom: solid 2px rgb(39, 39, 39);
-    border-right: solid 2px rgb(39, 39, 39);
-    padding-top: 14px;
-    > .title-text {
-      position: absolute;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      top: 1px;
-      left: 1px;
-      background: url(${tibiaBgDark});
-      width: 100%;
-      height: 14px;
-      margin-left: auto;
-      margin-right: auto;
-      border-right: solid 2px rgb(39, 39, 39);
-      border-bottom: solid 1px rgb(39, 39, 39);
-      color: rgb(120, 120, 120);
-      font-size: 11px;
-      line-height: 1;
-      letter-spacing: -0.2px;
-    }
-    > div {
-      width: 100%;
-      height: 100%;
-      background: url(${tibiaBg});
-      display: flex;
-      justify-content: center;
-      background: url(${tibiaBgDark});
-      padding: 0 0px 1px 0px;
-      /* border-left: solid 2px rgb(61, 61, 61);
-      border-bottom: solid 2px rgb(61, 61, 61);
-      border-right: solid 2px rgb(61, 61, 61); */
-      > .inner-border-wrapper {
-        background: url(${tibiaBg});
-        padding: 11px 12px;
-        width: 100%;
-        height: 100%;
-        border-right: solid 1px rgb(120, 120, 120);
-        border-bottom: solid 1px rgb(120, 120, 120);
-        border-right: solid 1px rgb(39, 39, 39);
-        > .content-wrapper {
-          display: flex;
-          flex-direction: column;
+    width: 400px; /* Adjusted width */
+    height: auto; /* Auto height based on content */
+    padding: 20px; /* Increased padding */
+    background-color: rgba(255, 255, 255, 0.15); /* Lighter background */
+    backdrop-filter: blur(10px); /* Glassmorphic blur */
+    border-radius: 15px; /* More rounded corners */
+    border: 1px solid rgba(255, 255, 255, 0.2); /* Lighter border */
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* Add shadow */
+    display: flex;
+    flex-direction: column;
+    gap: 20px; /* Space between title and content */
 
-          > .top-content {
-            height: 55px;
-            border-bottom: solid 1px rgb(39, 39, 39);
-            > p {
-              font-size: 11px;
-              color: rgb(180, 180, 180);
-            }
-          }
-          > .bot-content {
-            display: flex;
-            width: 100%;
-            border-top: solid 1px rgb(120, 120, 120);
-            > div {
-              padding-top: 8px;
-              display: flex;
-              flex-direction: row;
-              gap: 5px;
-              height: 31;
-              margin-left: auto;
-            }
-          }
-        }
+
+    > .title-text {
+      position: static; /* Removed absolute positioning */
+      display: block; /* Use block for natural flow */
+      width: 100%;
+      height: auto;
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      border: none; /* Remove border */
+      color: #e0e0e0; /* Lighter color */
+      font-size: 18px; /* Increased font size */
+      font-weight: bold; /* Bold title */
+      text-align: center; /* Center title text */
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    > div { /* Content wrapper */
+      width: 100%;
+      height: auto; /* Auto height */
+      background: transparent;
+      padding: 0; /* Remove padding */
+      border: none; /* Remove borders */
+      display: flex;
+      flex-direction: column; /* Ensure column layout */
+      gap: 15px; /* Space between content sections */
+
+      > .inner-border-wrapper {
+         /* Remove this wrapper or repurpose if needed. Keeping minimal changes for now. */
+         /* If removed, adjust padding/margins on content-wrapper directly */
+         background: transparent;
+         padding: 0; /* Remove padding */
+         border: none; /* Remove borders */
+         width: 100%;
+         height: auto;
+         > .content-wrapper {
+           display: flex;
+           flex-direction: column;
+           gap: 15px; /* Space between top and bottom content */
+
+           > .top-content {
+             height: auto; /* Auto height */
+             border-bottom: none; /* Remove border */
+             > p {
+               font-size: 14px; /* Increased font size */
+               color: #cccccc; /* Lighter color */
+               text-align: center; /* Center text */
+               margin: 0; /* Remove default margin */
+             }
+           }
+           > .bot-content {
+             display: flex;
+             width: 100%;
+             border-top: none; /* Remove border */
+             justify-content: center; /* Center buttons */
+             > div { /* Button container */
+               padding-top: 0; /* Remove padding */
+               display: flex;
+               flex-direction: row;
+               gap: 10px; /* Increased gap */
+               height: auto; /* Auto height */
+               margin: 0 auto; /* Center the button container */
+             }
+           }
+         }
       }
     }
   }
+
   .confirm-button {
-    background-repeat: repeat;
-    height: 22px;
-    padding: 3px;
-    text-align: center;
+    /* {{change 1}} */
+    background: rgba(255, 255, 255, 0.1); /* Semi-transparent background */
+    border: 1px solid rgba(255, 255, 255, 0.3); /* Subtle border */
+    border-radius: 8px; /* Rounded corners */
+    padding: 8px 16px; /* Increased padding */
+    color: #e0e0e0; /* Light text color */
+    font-size: 14px; /* Slightly larger font */
+    transition: all 0.3s ease; /* Smooth transition */
+    backdrop-filter: blur(5px); /* Button specific blur */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+
     display: flex;
     justify-content: center;
     align-items: center;
-    color: rgb(180, 180, 180);
-    background: url(${tibiaBg});
-    border-top: 1px solid #757676;
-    border-left: 1px solid #757676;
-    border-bottom: 1px solid #2c2c2c;
-    border-right: 1px solid #2c2c2c;
-    font-size: 11px;
+    min-width: 80px; /* Adjusted min-width */
+    text-align: center;
 
-    &:active {
-      background: url(${tibiaBgDark});
-      border-top: 1px solid #2c2c2c;
-      border-left: 1px solid #2c2c2c;
-      border-bottom: 1px solid #757676;
-      border-right: 1px solid #757676;
-    }
+
     &:hover {
+      background: rgba(255, 255, 255, 0.2); /* Lighter on hover */
+      border-color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
     }
+
+    &:active {
+      background: rgba(255, 255, 255, 0.1); /* Slightly darker when active */
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3); /* Inset shadow */
+    }
+    /* {{end}} */
   }
 `;

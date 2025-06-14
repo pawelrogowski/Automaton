@@ -1,31 +1,22 @@
 import { NavLink } from 'react-router-dom';
 import styled from 'styled-components';
-import tibiaBg from '../../assets/tibiaBg.webp';
-
 export const StyledLink = styled(NavLink)`
   display: flex;
   align-items: center;
   padding: 0 4px;
   text-decoration: none;
-  color: inherit;
+  color: ${({ $isActive }) => ($isActive ? '#fafafa' : '#757676')};
   height: 36px;
   width: 100%;
-  border-top: 1px solid rgba(117, 117, 118, 0.8);
-  border-left: 1px solid rgba(117, 117, 118, 0.8);
-  border-bottom: 1px solid rgba(44, 44, 44, 0.8);
-  border-right: 1px solid rgba(44, 44, 44, 0.8);
-  background: url(${tibiaBg});
-  background-repeat: repeat;
-  position: relative; /* Needed for positioning the ::after pseudo-element */
+  position: relative; 
+
+  background: ${({ $isActive }) => ($isActive ? '#2b2b2b' : 'transparent')};
+  border-radius: 6px;
+  border: 1px solid rgba( 255, 255, 255, 0.18 );
 
   ${({ $isActive }) =>
     $isActive &&
     `
-    border-top: 1px solid rgba(44, 44, 44, 0.8);
-    border-left: 1px solid rgba(44, 44, 44, 0.8);
-    border-bottom: 1px solid rgba(117, 117, 118, 0.8);
-    border-right: 1px solid rgba(117, 117, 118, 0.8);
-
     &::after {
       content: '';
       position: absolute;

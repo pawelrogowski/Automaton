@@ -30,7 +30,7 @@ const luaSlice = createSlice({
         code,
         type,
         enabled = false,
-        loopMin = 100, 
+        loopMin = 100,
         loopMax = 200,
         hotkey = null,
       } = action.payload;
@@ -60,28 +60,28 @@ const luaSlice = createSlice({
      * @param {string} action.payload.message - The log message.
      */
     addLogEntry: (state, action) => {
-        const { id, message } = action.payload;
-        // Find the script in either list
-        const script = state.persistentScripts.find(s => s.id === id) ||
-                       state.hotkeyScripts.find(s => s.id === id);
+      const { id, message } = action.payload;
+      // Find the script in either list
+      const script = state.persistentScripts.find(s => s.id === id) ||
+        state.hotkeyScripts.find(s => s.id === id);
 
-        if (script) {
-            // Ensure log is an array
-            if (!Array.isArray(script.log)) {
-                 script.log = [];
-            }
-            script.log.push(message); // Add the message to the log array
-            // Optional: Limit log history size
-            const MAX_LOG_SIZE = 100; // Define a max size
-            if (script.log.length > MAX_LOG_SIZE) {
-                script.log.splice(0, script.log.length - MAX_LOG_SIZE); // Remove oldest entries
-            }
-        } else if (id === 'script-snippet') {
-             // Log snippet messages to console for now, they are forwarded via IPC to editor
+      if (script) {
+        // Ensure log is an array
+        if (!Array.isArray(script.log)) {
+          script.log = [];
         }
-        else {
-            console.warn('Attempted to add log to unknown script ID:', id);
+        script.log.push(message); // Add the message to the log array
+        // Optional: Limit log history size
+        const MAX_LOG_SIZE = 100; // Define a max size
+        if (script.log.length > MAX_LOG_SIZE) {
+          script.log.splice(0, script.log.length - MAX_LOG_SIZE); // Remove oldest entries
         }
+      } else if (id === 'script-snippet') {
+        // Log snippet messages to console for now, they are forwarded via IPC to editor
+      }
+      else {
+        console.warn('Attempted to add log to unknown script ID:', id);
+      }
     },
 
     /**
@@ -92,12 +92,12 @@ const luaSlice = createSlice({
      * @param {string} action.payload - The ID of the script to clear logs for.
      */
     clearScriptLog: (state, action) => {
-        const scriptId = action.payload;
-        const script = state.persistentScripts.find(s => s.id === scriptId) ||
-                       state.hotkeyScripts.find(s => s.id === scriptId);
-        if (script) {
-            script.log = [];
-        }
+      const scriptId = action.payload;
+      const script = state.persistentScripts.find(s => s.id === scriptId) ||
+        state.hotkeyScripts.find(s => s.id === scriptId);
+      if (script) {
+        script.log = [];
+      }
     },
 
 
@@ -128,17 +128,17 @@ const luaSlice = createSlice({
       const persistentIndex = state.persistentScripts.findIndex(script => script.id === id);
       if (persistentIndex !== -1) {
         state.persistentScripts[persistentIndex] = {
-            ...state.persistentScripts[persistentIndex],
-            ...updates,
-             // Ensure log is preserved unless explicitly updated (not currently planned)
-            log: state.persistentScripts[persistentIndex].log // Keep existing log
+          ...state.persistentScripts[persistentIndex],
+          ...updates,
+          // Ensure log is preserved unless explicitly updated (not currently planned)
+          log: state.persistentScripts[persistentIndex].log // Keep existing log
         };
         // Ensure loopMin/loopMax are numbers if updated
         if (updates.hasOwnProperty('loopMin')) {
-            state.persistentScripts[persistentIndex].loopMin = Number(updates.loopMin);
+          state.persistentScripts[persistentIndex].loopMin = Number(updates.loopMin);
         }
-         if (updates.hasOwnProperty('loopMax')) {
-            state.persistentScripts[persistentIndex].loopMax = Number(updates.loopMax);
+        if (updates.hasOwnProperty('loopMax')) {
+          state.persistentScripts[persistentIndex].loopMax = Number(updates.loopMax);
         }
 
         return; // Found and updated, exit
@@ -148,10 +148,10 @@ const luaSlice = createSlice({
       const hotkeyIndex = state.hotkeyScripts.findIndex(script => script.id === id);
       if (hotkeyIndex !== -1) {
         state.hotkeyScripts[hotkeyIndex] = {
-            ...state.hotkeyScripts[hotkeyIndex],
-            ...updates,
-             // Ensure log is preserved unless explicitly updated
-            log: state.hotkeyScripts[hotkeyIndex].log // Keep existing log
+          ...state.hotkeyScripts[hotkeyIndex],
+          ...updates,
+          // Ensure log is preserved unless explicitly updated
+          log: state.hotkeyScripts[hotkeyIndex].log // Keep existing log
         };
         return; // Found and updated, exit
       }
@@ -166,47 +166,40 @@ const luaSlice = createSlice({
      * @param {string} action.payload - The ID of the persistent script to toggle.
      */
     togglePersistentScript: (state, action) => {
-        const scriptIdToToggle = action.payload;
-        const script = state.persistentScripts.find(script => script.id === scriptIdToToggle);
-        if (script) {
-            script.enabled = !script.enabled;
-             // Optional: Add a log entry indicating the state change
-             const status = script.enabled ? 'Enabled' : 'Disabled';
-             script.log.push(`[Status] Script ${status}`);
-              const MAX_LOG_SIZE = 100; // Define a max size
-            if (script.log.length > MAX_LOG_SIZE) {
-                script.log.splice(0, script.log.length - MAX_LOG_SIZE); // Remove oldest entries
-            }
+      const scriptIdToToggle = action.payload;
+      const script = state.persistentScripts.find(script => script.id === scriptIdToToggle);
+      if (script) {
+        script.enabled = !script.enabled;
+        // Optional: Add a log entry indicating the state change
+        const status = script.enabled ? 'Enabled' : 'Disabled';
+        script.log.push(`[Status] Script ${status}`);
+        const MAX_LOG_SIZE = 100; // Define a max size
+        if (script.log.length > MAX_LOG_SIZE) {
+          script.log.splice(0, script.log.length - MAX_LOG_SIZE); // Remove oldest entries
         }
+      }
     },
 
-    /**
-     * Replaces the entire scripts state. Useful for loading saved scripts.
-     * @param {object} state - The current state.
-     * @param {object} action - The action object.
-     * @param {{ persistentScripts: Array<object>, hotkeyScripts: Array<object> }} action.payload - Object containing arrays of persistent and hotkey script objects.
-     */
-    loadScripts: (state, action) => {
-        // Ensure loaded scripts have a log array and default loop values if missing (for older saved data)
-        state.persistentScripts = action.payload?.persistentScripts.map(script => ({
-            ...script,
-            log: script.log || [],
-            loopMin: script.loopMin !== undefined ? script.loopMin : 1000,
-            loopMax: script.loopMax !== undefined ? script.loopMax : 5000,
-        })) || [];
-        state.hotkeyScripts = action.payload?.hotkeyScripts.map(script => ({ ...script, log: script.log || [] })) || [];
+    setState: (state, action) => {
+      const newState = { ...state };
+
+      Object.keys(newState).forEach((key) => {
+        newState[key] = action.payload[key];
+      });
+
+      return newState;
     },
   },
 });
 
 export const {
-    addScript,
-    addLogEntry,
-    removeScript,
-    updateScript,
-    togglePersistentScript,
-    loadScripts,
-    clearScriptLog, 
+  addScript,
+  addLogEntry,
+  removeScript,
+  updateScript,
+  togglePersistentScript,
+  setState,
+  clearScriptLog,
 } = luaSlice.actions;
 
 export default luaSlice;

@@ -1,271 +1,246 @@
-import React, { useCallback, useState, useEffect, useMemo } from 'react';
-import PropTypes from 'prop-types';
+import React, { useCallback, useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
 import { removeRule, updateCondition, updateRule } from '../../redux/slices/ruleSlice.js';
-import StyledDiv from './PartyHealingRule.styled.js';
-import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
-import ListInput from '../ListInput/ListInput.js';
-import ListSelect from '../ListSelect/ListSelect.js';
+
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
 import CustomIconSelect from '../CustomIconSelect/CustomIconSelect.js';
+import CustomSwitch from '../CustomSwitch/CustomSwitch.js';
+import CustomSelect from '../CustomSelect/CustomSelect.js';
+
+import { PartyHealingRuleWrapper } from './PartyHealingRule.styled.js';
 
 const PartyHealingRule = ({ rule, className }) => {
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [show_confirm, set_show_confirm] = useState(false);
+  const [is_expanded, set_is_expanded] = useState(false);
 
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
-  const currentRule = useSelector((state) => state.rules.presets[activePresetIndex]?.find((r) => r.id === rule.id));
+  const active_preset_index = useSelector((state) => state.rules.activePresetIndex);
+  const current_rule = useSelector((state) => state.rules.presets[active_preset_index]?.find((r) => r.id === rule.id));
 
-  const handleStatusConditionChange = (status, value) => {
-    if (currentRule) {
-      dispatch(updateCondition({ id: currentRule.id, condition: status, value }));
+  const handle_status_condition_change = (status, value) => {
+    if (current_rule) {
+      dispatch(updateCondition({ id: current_rule.id, condition: status, value }));
     }
   };
 
-  const handleRemoveRule = () => {
-    setShowConfirm(true);
+  const handle_remove_rule = () => {
+    set_show_confirm(true);
   };
 
-  const handleConfirm = () => {
-    if (currentRule?.id) {
-      dispatch(removeRule(currentRule.id));
-      setShowConfirm(false);
+  const handle_confirm = () => {
+    if (current_rule?.id) {
+      dispatch(removeRule(current_rule.id));
+      set_show_confirm(false);
     } else {
-      console.warn("Cannot remove rule: currentRule or currentRule.id is missing.");
-      setShowConfirm(false);
+      set_show_confirm(false);
     }
   };
 
-  const handleCancel = () => {
-    setShowConfirm(false);
+  const handle_cancel = () => {
+    set_show_confirm(false);
   };
 
-  const handleFieldChange = useCallback(
+  const handle_toggle_expand = () => {
+    set_is_expanded(!is_expanded);
+  };
+
+  const handle_field_change = useCallback(
     (field) => (event) => {
-      let value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
-      // Ensure numeric fields are stored as numbers if applicable, especially for the new select
-      if (['partyPosition', 'friendHpTriggerPercentage', 'priority', 'delay'].includes(field)) {
-         value = Number(value);
-      }
-      if (currentRule?.id) {
-        dispatch(updateRule({ id: currentRule.id, field, value }));
+      let value;
+      if (event.target.type === 'checkbox') {
+        value = event.target.checked;
       } else {
-        console.warn("Cannot update rule: currentRule or currentRule.id is missing.");
+        value = event.target.value;
+      }
+
+      if (['partyPosition', 'friendHpTriggerPercentage', 'priority'].includes(field)) {
+        value = Number(value);
+      }
+      if (current_rule?.id) {
+        dispatch(updateRule({ id: current_rule.id, field, value }));
       }
     },
-    [dispatch, currentRule?.id],
+    [dispatch, current_rule?.id],
   );
 
-  const groupedIconOptions = useMemo(() => {
-    const allowedItemKeys = [
-        'ultimateHealingRune',
-        'intenseHealingRune',
-        'exuraSio',
-        'exuraGranSio',
-        'exuraGranMasRes'
-    ];
-    const partyHealOptions = [];
+  const condition_options = [
+    { value: '<=', label: '≤' },
+    { value: '<', label: '<' },
+    { value: '=', label: '=' },
+    { value: '>', label: '>' },
+    { value: '>=', label: '≥' },
+    { value: '!=', label: '≠' },
+  ];
 
-    allowedItemKeys.forEach(key => {
-        if (actionBarItemsData[key]) {
-            partyHealOptions.push({
-                value: key,
-                label: actionBarItemsData[key].name,
-            });
-        } else {
-            console.warn(`PartyHealingRule: Action item key "${key}" not found in actionBarItemsData.`);
-        }
+  const party_position_options = useMemo(() => {
+    const options = [{ value: 0, label: 'All' }];
+    for (let i = 1; i <= 20; i++) {
+      options.push({ value: i, label: `${i}` });
+    }
+    return options;
+  }, []);
+
+
+  const grouped_icon_options = useMemo(() => {
+    const allowed_item_keys = [
+      'ultimateHealingRune',
+      'intenseHealingRune',
+      'healFriendSpell',
+      'exuraSio',
+      'exuraGranSio',
+      'exuraGranMasRes'
+    ];
+    const party_heal_options = [];
+
+    allowed_item_keys.forEach(key => {
+      if (actionBarItemsData[key]) {
+        party_heal_options.push({
+          value: key,
+          label: actionBarItemsData[key].name,
+        });
+      }
     });
 
-    partyHealOptions.sort((a, b) => a.label.localeCompare(b.label));
+    party_heal_options.sort((a, b) => a.label.localeCompare(b.label));
 
     return {
-      'Party Heal Actions': partyHealOptions,
+      'Party Heal Actions': party_heal_options,
     };
   }, []);
 
-  if (!currentRule) {
-    console.warn(`PartyHealingRule: Rule with ID ${rule.id} not found in preset ${activePresetIndex}.`);
+  if (!current_rule) {
     return null;
   }
 
-  const ruleActionItem = useMemo(() => {
-      const allowedKeys = ['ultimateHealingRune', 'intenseHealingRune', 'healFriendSpell'];
-      if (currentRule.actionItem && allowedKeys.includes(currentRule.actionItem)) {
-         return currentRule.actionItem;
-      }
-      return 'ultimateHealingRune';
-   }, [currentRule.actionItem]);
+  const rule_action_item = current_rule.actionItem || 'ultimateHealingRune';
+  const rule_key = current_rule.key || 'F1';
+  const rule_party_position = current_rule.partyPosition ?? 0;
+  const rule_friend_hp_trigger_condition = current_rule.friendHpTriggerCondition || '<=';
+  const rule_friend_hp_trigger_percentage = current_rule.friendHpTriggerPercentage ?? 50;
+  const rule_priority = current_rule.priority ?? 0;
+  const rule_require_attack_cooldown = !!current_rule.requireAttackCooldown;
 
-  const ruleKey = currentRule.key || 'F1';
-  const ruleRequireAttackCooldown = currentRule.requireAttackCooldown ?? false;
-  const rulePartyPosition = currentRule.partyPosition ?? 0;
-  const ruleFriendHpTriggerPercentage = currentRule.friendHpTriggerPercentage ?? 50;
-  const rulePriority = currentRule.priority ?? 0;
-  const ruleDelay = currentRule.delay ?? 150;
-
-  const selectedItemData = actionBarItemsData[ruleActionItem];
-  const selectedItemName = selectedItemData?.name || ruleActionItem;
 
   return (
     <>
-      {showConfirm && (
+      {show_confirm && (
         <ConfirmDialog
           title="Remove Rule Confirmation"
           text="Are you sure you want to delete this rule?"
-          onConfirm={handleConfirm}
-          onCancel={handleCancel}
+          onConfirm={handle_confirm}
+          onCancel={handle_cancel}
         />
       )}
-      <StyledDiv className={className} $running={currentRule.enabled}>
-        <details>
-          <CharacterStatusConditions ruleId={rule.id} onStatusConditionChange={handleStatusConditionChange} />
-          <summary
-            onKeyDown={(e) => {
-              if (e.target.classList.contains('search-input')) {
-                if (e.code === 'Space') e.stopPropagation();
-                return;
-              }
-              if (e.code === 'Space' || e.code === 'Enter') {
-                const isSelectTrigger = !!e.target.closest(`#${`party-action-item-select-${rule.id}`}-trigger`);
-                if (!isSelectTrigger && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
-                  e.preventDefault();
-                }
-              }
+      <PartyHealingRuleWrapper className={className} $running={current_rule.enabled}>
+        <div className='row1'>
+          <CustomSwitch
+            className="rule-input-enable-checkbox__custom-checkbox"
+            checked={current_rule.enabled}
+            onChange={handle_field_change('enabled')}
+          />
+          <CustomIconSelect
+            id={`party-action-item-select-${rule.id}`}
+            value={rule_action_item}
+            options={grouped_icon_options}
+            allItemsData={actionBarItemsData}
+            onChange={(selectedOptionValue) => {
+              dispatch(updateRule({ id: current_rule.id, field: 'actionItem', value: selectedOptionValue }))
             }}
+          />
+          <CustomSelect
+            className="hotkey-input h38"
+            id="key"
+            value={rule_key}
+            options={keyboardKeys}
+            onChange={handle_field_change('key')}
+          />
+
+          <CustomSelect
+            className="party-position-select h38"
+            id="partyPosition"
+            value={rule_party_position}
+            options={party_position_options}
+            onChange={handle_field_change('partyPosition')}
+            title="Party Member Index (All = All Members)"
+          />
+
+          <CustomSwitch
+            label="Wait ATK"
+            checked={rule_require_attack_cooldown}
+            onChange={handle_field_change('requireAttackCooldown')}
+            title="Wait for Attack Cooldown before executing"
+          />
+
+          <button type="button" className="button-expand" onClick={handle_toggle_expand} $is_expanded={is_expanded}>
+            {is_expanded ? '▲' : '▼'}
+          </button>
+
+          <button
+            className="button-remove"
+            type="button"
+            onClick={handle_remove_rule}
+            aria-label="remove-rule"
           >
-            <CustomCheckbox checked={currentRule.enabled} onChange={handleFieldChange('enabled')} width={38} height={38} />
+            ×
+          </button>
 
-            <div className="action-item-wrapper" title={selectedItemName}>
-              <CustomIconSelect
-                id={`party-action-item-select-${rule.id}`}
-                value={ruleActionItem}
-                options={groupedIconOptions}
-                allItemsData={actionBarItemsData}
-                onChange={(selectedOptionValue) => {
-                  if (selectedOptionValue !== undefined && selectedOptionValue !== null) {
-                    dispatch(updateRule({ id: currentRule.id, field: 'actionItem', value: selectedOptionValue }))
-                  } else {
-                    console.warn("CustomIconSelect onChange triggered with undefined/null value.");
-                  }
-                }}
+        </div>
+        {is_expanded && (
+          <div className='row2'>
+            <div className='input-group'>
+              <label className='label-text'>Friend HP Trigger</label>
+              <div className='input-row'>
+                <CustomSelect
+                  id="friendHpTriggerCondition"
+                  value={rule_friend_hp_trigger_condition}
+                  options={condition_options}
+                  onChange={handle_field_change('friendHpTriggerCondition')}
+                  className="h38"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  id="friendHpTriggerPercentage"
+                  value={rule_friend_hp_trigger_percentage}
+                  onChange={handle_field_change('friendHpTriggerPercentage')}
+                  placeholder="0"
+                  className="h38 percent-input"
+                />
+              </div>
+            </div>
+
+            <div className='input-group'>
+              <label className='label-text' >Priority</label>
+              <input
+                type="number"
+                min="-999"
+                max="999"
+                id="priority"
+                value={rule_priority}
+                onChange={handle_field_change('priority')}
+                placeholder="Priority"
+                className="h38 priority-input"
               />
             </div>
 
-            <ListSelect
-              className="input input-hotkey"
-              id="key"
-              value={ruleKey}
-              onChange={handleFieldChange('key')}
-            >
-              {keyboardKeys.map((key) => (
-                <option key={key.value} value={key.value}>
-                  {key.label}
-                </option>
-              ))}
-            </ListSelect>
-
-            <div className="checkbox-container checkbox-require-atk" title="Wait for Attack Cooldown before executing rule">
-              <CustomCheckbox
-                checked={ruleRequireAttackCooldown}
-                onChange={handleFieldChange('requireAttackCooldown')}
-                width={83}
-                height={38}
-                useWaitIcon={true}
-              />
-            </div>
-
-            <ListSelect
-              className="input input-party-position"
-              id="partyPosition"
-              value={rulePartyPosition}
-              onChange={handleFieldChange('partyPosition')}
-              title="Party Member Index (All = All Members)"
-            >
-              <option value={0}>All</option>
-              {Array.from({ length: 20 }, (_, i) => i + 1).map((position) => (
-                <option key={position} value={position}>
-                  {position}
-                </option>
-              ))}
-            </ListSelect>
-
-            <ListSelect className="input input-percent-select" id="hpTriggerCondition" disabled={true} value="≤" title="Friend HP must be ≤ this value">
-              <option value="<=">{'≤'}</option>
-            </ListSelect>
-            <ListInput
-              className="input input-percent"
-              type="number"
-              min="1"
-              max="100"
-              step="1"
-              id="friendHpTriggerPercentage"
-              value={ruleFriendHpTriggerPercentage}
-              onChange={handleFieldChange('friendHpTriggerPercentage')}
-              placeholder="HP %"
-              title="Friend HP %"
+            <CharacterStatusConditions
+              ruleId={rule.id}
+              onStatusConditionChange={handle_status_condition_change}
+              className='conditions'
             />
+          </div>
+        )}
 
-            <ListInput
-              type="number"
-              className="input input-priority"
-              id="priority"
-              value={rulePriority}
-              onChange={handleFieldChange('priority')}
-              min="-999"
-              max="999"
-              placeholder="Priority"
-              title="Rule Priority"
-            />
 
-            {/* <ListInput
-              type="number"
-              className="input input-delay"
-              id="delay"
-              value={ruleDelay}
-              onChange={handleFieldChange('delay')}
-              placeholder="CD (ms)"
-              min="25"
-              step="25"
-              title="Custom Cooldown (ms)"
-            /> */}
-
-            <button type="button" className="rule-button button-expand" style={{ pointerEvents: 'none' }}>
-              ▾
-            </button>
-            <button className="remove-rule-button rule-button" type="button" onMouseDown={handleRemoveRule} aria-label="remove-rule">
-              ×
-            </button>
-          </summary>
-        </details>
-      </StyledDiv>
+      </PartyHealingRuleWrapper >
     </>
   );
-};
-
-PartyHealingRule.propTypes = {
-  rule: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string,
-    enabled: PropTypes.bool,
-    actionItem: PropTypes.string,
-    key: PropTypes.string,
-    conditions: PropTypes.arrayOf(PropTypes.object),
-    requireAttackCooldown: PropTypes.bool,
-    friendHpTriggerPercentage: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    partyPosition: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    priority: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    delay: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    isWalking: PropTypes.bool,
-    hpTriggerPercentage: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    manaTriggerPercentage: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    monsterNum: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  }).isRequired,
-  className: PropTypes.string,
 };
 
 export default PartyHealingRule;

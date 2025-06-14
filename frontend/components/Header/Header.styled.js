@@ -3,10 +3,6 @@ import styled from 'styled-components';
 const StyledHeader = styled.header`
   width: 100%;
   height: 36px;
-  border-bottom: solid 1px rgb(113, 113, 113);
-  border-right: solid 1px rgb(113, 113, 113);
-  border-top: solid 1px rgb(0, 0, 0);
-  border-left: solid 1px rgb(0, 0, 0);
   display: flex;
   flex-direction: row;
   justify-content: space-evenly;

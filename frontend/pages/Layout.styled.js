@@ -1,57 +1,21 @@
 import styled from 'styled-components';
-import tibiaBg from '../assets/tibiaBg.webp';
-import tibiaBgDark from '../assets/tibiaBgDark.webp';
 
 const StyledDiv = styled.div`
   display: flex;
   flex-direction: column;
-  /* background-image: url(${tibiaBg});
-  background-repeat: repeat; */
-  border-top: 2px solid #757676;
-  border-left: 2px solid #757676;
-  border-bottom: 2px solid #2c2c2c;
-  border-right: 2px solid #2c2c2c;
+  padding: 12px 12px;
+  height: 100vh;
+  overflow-x: hidden;
 
   .side-main {
     display: flex;
     flex-direction: row;
-    background-image: url(${tibiaBg});
-    gap: 5px;
+    gap: 12px;
+    height: 100%;
   }
   .aside {
     height: 517px;
     width: 195px;
-  }
-  > .title {
-    width: calc(100vw -1px);
-    height: 15px;
-    font-size: 14px;
-    color: #909090;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background-image: url(${tibiaBgDark});
-    background-repeat: repeat;
-    border-bottom: 1px solid #292a29;
-    line-height: 1;
-  }
-  > .helper-wrapper {
-    background-image: url(${tibiaBg});
-    background-repeat: repeat;
-    /* border-top: 2px solid #757676; */
-    border-left: 1px solid #343434;
-    border-bottom: 1px solid #343434;
-    border-right: 1px solid #343434;
-    padding: 0;
-    margin: 0;
-    display: block;
-  }
-  .helper-wrapper2 {
-    padding: 12px 12px;
-    /* border-top: 2px solid #757676; */
-    border-left: 1px solid #2b2c2c;
-    border-bottom: 1px solid #2b2c2c;
-    border-right: 1px solid #5f6161;
   }
   .main-content {
     padding: 5px 0px 5px 0px;
@@ -88,21 +52,16 @@ const StyledDiv = styled.div`
     width: 100%;
     button {
       color: #fafafa;
-      background: url(${tibiaBg});
+      background: transparent;
       background-repeat: repeat;
       font-size: 11px;
       cursor: pointer;
-      border-top: 1px solid rgba(117, 117, 118, 0.8);
-      border-left: 1px solid rgba(117, 117, 118, 0.8);
-      border-bottom: 1px solid rgba(44, 44, 44, 0.8);
-      border-right: 1px solid rgba(44, 44, 44, 0.8);
+      border-radius: 10px;
+      border: 1px solid rgba( 255, 255, 255, 0.18 );
 
       &:active {
-        border-top: 1px solid rgba(44, 44, 44, 0.8);
-        border-left: 1px solid rgba(44, 44, 44, 0.8);
-        border-bottom: 1px solid rgba(117, 117, 118, 0.8);
-        border-right: 1px solid rgba(117, 117, 118, 0.8);
-        background: url(${tibiaBgDark});
+        border-radius: 10px;
+        border: 1px solid rgba( 255, 255, 255, 0.18 );
       }
     }
   }

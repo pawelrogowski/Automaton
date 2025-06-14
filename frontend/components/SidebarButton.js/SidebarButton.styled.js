@@ -1,6 +1,4 @@
 import styled from 'styled-components';
-import tibiaBG from '../../assets/tibiaBg.webp';
-import tibiaBGDark from '../../assets/tibiaBgDark.webp';
 
 export const StyledButton = styled.button`
   display: flex;
@@ -14,7 +12,7 @@ export const StyledButton = styled.button`
   border-left: 1px solid rgba(117, 117, 118, 0.8);
   border-bottom: 1px solid rgba(44, 44, 44, 0.8);
   border-right: 1px solid rgba(44, 44, 44, 0.8);
-  background: url(${tibiaBG});
+  background: transparent;
   background-repeat: repeat;
 
   &:active {
@@ -22,14 +20,14 @@ export const StyledButton = styled.button`
     border-left: 1px solid rgba(44, 44, 44, 0.8);
     border-bottom: 1px solid rgba(117, 117, 118, 0.8);
     border-right: 1px solid rgba(117, 117, 118, 0.8);
-    background: url(${tibiaBGDark});
+    background: transparent;
   }
   &.active {
     border-top: 1px solid rgba(44, 44, 44, 0.8);
     border-left: 1px solid rgba(44, 44, 44, 0.8);
     border-bottom: 1px solid rgba(117, 117, 118, 0.8);
     border-right: 1px solid rgba(117, 117, 118, 0.8);
-    background: url(${tibiaBGDark});
+    background: transparent;
   }
   img {
     width: 12px;

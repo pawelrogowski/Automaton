@@ -46,7 +46,7 @@ const characterStatusImages = {
   rooted,
 };
 
-const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
+const CharacterStatusConditions = ({ ruleId, onStatusConditionChange, className }) => {
   const dispatch = useDispatch();
   const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
   const statusConditions = useSelector(
@@ -76,7 +76,7 @@ const CharacterStatusConditions = ({ ruleId, onStatusConditionChange }) => {
   };
 
   return (
-    <StyledList>
+    <StyledList className={className}>
       {Object.keys(characterStatusImages).map((status) => {
         const condition = statusConditions.find((c) => c.name === status);
         const checked = condition ? condition.value : null;

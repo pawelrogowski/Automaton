@@ -1,24 +1,19 @@
 import styled from 'styled-components';
-import tibiaBG from '../../assets/tibiaBg.webp';
-import tibiaBGDark from '../../assets/tibiaBgDark.webp';
-
 export const StyledButton = styled.button`
-  background-repeat: repeat;
   height: 32px;
-  width: 100%;
+  width: 32px;
   text-align: center;
   display: flex;
   justify-content: center;
   align-items: center;
   color: ${(props) => (props.active ? '#fafafa' : '#757676')};
-  background: ${(props) => (props.active ? `url(${tibiaBGDark})` : `url(${tibiaBG})`)};
-  border-top: 1px solid ${(props) => (props.active ? '#2c2c2c' : '#757676')};
-  border-left: 1px solid ${(props) => (props.active ? '#2c2c2c' : '#757676')};
-  border-bottom: 1px solid ${(props) => (props.active ? '#757676' : '#2c2c2c')};
-  border-right: 1px solid ${(props) => (props.active ? '#757676' : '#2c2c2c')};
+  background: ${(props) => (props.active ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)')};
+  border-radius: 50%;
+  border: 1px solid rgba( 255, 255, 255, 0.18 );
   font-size: 11px;
 
   &:hover {
     cursor: pointer;
+    background-color: rgba(255, 255, 255, 0.1);
   }
 `;

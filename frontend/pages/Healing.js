@@ -1,5 +1,5 @@
 import React from 'react';
-import {useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import HealingRule from '../components/HealingRule/HealingRule.js';
 import StyledMain from './Healing.styled.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
@@ -14,18 +14,18 @@ import SpellRotationRule from '../components/SpellRotationRule/SpellRotationRule
 import EquipRule from '../components/EquipRule/EquipRule.js';
 
 export const Healing = () => {
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
-  const rules = useSelector((state) => state.rules.presets[activePresetIndex]);
+  const active_preset_index = useSelector((state) => state.rules.activePresetIndex);
+  const rules = useSelector((state) => state.rules.presets[active_preset_index]);
   const { hppc, mppc } = useSelector((state) => state.gameState);
   const location = useLocation();
   const hash = location.hash;
 
-  const manaSyncRules = rules.filter((rule) => rule.id.includes('manaSync'));
-  const actionBarRules = rules.filter((rule) => rule.id.includes('actionBarItem'));
-  const healFriendRules = rules.filter((rule) => rule.id.includes('healFriend'));
-  const rotationRules = rules.filter((rule) => rule.id.includes('rotationRule'));
-  const equipRules = rules.filter((rule) => rule.id.includes('equipRule'));
-  const userRules = rules.filter(
+  const mana_sync_rules = rules.filter((rule) => rule.id.includes('manaSync'));
+  const action_bar_rules = rules.filter((rule) => rule.id.includes('actionBarItem'));
+  const heal_friend_rules = rules.filter((rule) => rule.id.includes('healFriend'));
+  const rotation_rules = rules.filter((rule) => rule.id.includes('rotationRule'));
+  const equip_rules = rules.filter((rule) => rule.id.includes('equipRule'));
+  const user_rules = rules.filter(
     (rule) =>
       !rule.id.includes('manaSync') &&
       !rule.id.includes('actionBarItem') &&
@@ -34,57 +34,28 @@ export const Healing = () => {
       !rule.id.includes('equipRule'),
   );
 
-  // Function to get the tooltip based on rule type
-  const getTooltipForRuleType = (ruleTypeKey) => {
-    switch (ruleTypeKey) {
-      case 'userRule':
-        return 'Customize Rules For Conditional Execution - Potions, Spells, Dishes etc.';
-      case 'actionBarItem':
-        return 'Customize Rules For Action Bar Items';
-      case 'manaSync':
-        return 'Rules that synchronize with your attack cooldowns.';
-      case 'healFriend':
-        return "Party healing rules to manage your allies' health.";
-      case 'equipRule':
-        return 'Rules for automatically equipping or unequipping items.';
-      case 'rotationRule':
-        return 'Define sequences of key presses with delays.';
-      default:
-        return 'Customize rules for conditional execution';
-    }
-  };
 
-  const renderRules = (rulesToRender) => {
-    return rulesToRender.map((rule, index) => {
-      // console.log('Rendering rule with ID:', rule.id, 'for hash:', hash); // More detailed log if needed
-      const className = index % 2 === 0 ? 'list-bg' : '';
+  const render_rules = (rules_to_render) => {
+    return rules_to_render.map((rule, index) => {
+      const class_name = index % 2 === 0 ? 'list-bg' : '';
 
       let RuleComponent;
-      let ruleTypeKey = 'userRule'; // Default
 
       // Determine component based on rule ID structure
       if (rule.id.includes('manaSync')) {
         RuleComponent = ManaSyncRule;
-        ruleTypeKey = 'manaSync';
       } else if (rule.id.includes('actionBarItem')) {
         RuleComponent = ActionBarRule;
-        ruleTypeKey = 'actionBarItem';
       } else if (rule.id.includes('healFriend')) {
         RuleComponent = PartyHealingRule;
-        ruleTypeKey = 'healFriend';
       } else if (rule.id.includes('rotationRule')) {
         RuleComponent = SpellRotationRule;
-        ruleTypeKey = 'rotationRule';
       } else if (rule.id.includes('equipRule')) {
         RuleComponent = EquipRule;
-        ruleTypeKey = 'equipRule';
       } else {
         // Default to HealingRule for any other type (e.g., userRule)
         RuleComponent = HealingRule;
-        ruleTypeKey = 'userRule';
       }
-
-      const tooltip = getTooltipForRuleType(ruleTypeKey);
 
       // Add a check to ensure the component exists before rendering
       if (!RuleComponent) {
@@ -93,37 +64,18 @@ export const Healing = () => {
       }
 
       return (
-        // Pass tooltip to the rule component if it accepts it, otherwise wrap or ignore
-        <RuleComponent key={rule.id} rule={rule} className={className} tooltip={tooltip}>
+        <RuleComponent key={rule.id} rule={rule} className={class_name}>
         </RuleComponent>
       );
     });
   };
 
-  const renderSection = (hashKey, title, rulesToRender, variant = null) => {
-    let sectionRuleTypeKey = hashKey.substring(1);
-    if (sectionRuleTypeKey === "userrules") sectionRuleTypeKey = "userRule";
-    if (sectionRuleTypeKey === "party") sectionRuleTypeKey = "healFriend";
-    if (sectionRuleTypeKey === "equip") sectionRuleTypeKey = "equipRule";
-
+  const render_section = (hash_key, title, rules_to_render) => {
     return (
-      hash === hashKey && (
-        <HighWrapper title={title} className="healing-rules-box">
-          <div>
-            <RuleListWrapper
-               tooltip={getTooltipForRuleType(sectionRuleTypeKey)}
-               variant={variant || (hashKey === '#actionbar' ? 'actionbar' : 
-                                    hashKey === '#rotations' ? 'rotations' :
-                                    hashKey === '#manasync' ? 'manasync' :
-                                    hashKey === '#party' ? 'friends' :
-                                    hashKey === '#equip' ? 'equip' :
-                                    null)}
-            >
-               {/* Call renderRules directly with the filtered list */}
-               {renderRules(rulesToRender)}
-            </RuleListWrapper>
-          </div>
-        </HighWrapper>
+      hash === hash_key && (
+        <>
+          {render_rules(rules_to_render)}
+        </>
       )
     );
   };
@@ -134,46 +86,40 @@ export const Healing = () => {
         <StatBars hppc={hppc} mppc={mppc} />
 
         {/* Sections now pass the filtered rules directly */}
-        {renderSection(
+        {render_section(
           '#userrules',
           'Rules',
-          userRules
-          // Default variant uses 'default' headers
+          user_rules
         )}
 
-        {renderSection(
+        {render_section(
           '#actionbar',
           'Action Bar Rules',
-          actionBarRules,
-          'actionbar' // Pass 'actionbar' variant
+          action_bar_rules
         )}
 
-        {renderSection(
+        {render_section(
           '#manasync',
           'Attack-Sync Rules',
-          manaSyncRules,
-          'manasync' // --- Pass 'manasync' variant ---
+          mana_sync_rules
         )}
 
-        {renderSection(
+        {render_section(
           '#party',
           'Party Heal Rules',
-          healFriendRules,
-          'friends' // Pass 'friends' variant
+          heal_friend_rules
         )}
 
-        {renderSection(
+        {render_section(
           '#equip',
           'Auto Equip Rules',
-          equipRules,
-          'equip'
+          equip_rules
         )}
 
-        {renderSection(
+        {render_section(
           '#rotations',
           'Spell Rotation Rules',
-          rotationRules,
-          'rotations'
+          rotation_rules
         )}
       </StyledSection>
     </StyledMain>
