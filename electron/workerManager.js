@@ -7,6 +7,7 @@ import setGlobalState from './setGlobalState.js';
 import { showNotification } from './notificationHandler.js';
 import { createLogger } from './utils/logger.js';
 import { BrowserWindow } from 'electron';
+import { playSound } from './globalShortcuts.js';
 const log = createLogger();
 
 const MAX_RESTART_ATTEMPTS = 5;
@@ -26,7 +27,9 @@ class WorkerManager {
     this.restartLocks = new Map();
     this.restartAttempts = new Map();
     this.restartTimeouts = new Map();
-    this.lastEnabledPersistentScripts = []; // Store the last list sent to the worker
+    // We will now send the full state, so we need to track the last *full* state sent to the Lua worker
+    this.lastSentLuaState = null; // This is still needed to track state for Lua worker restart logic
+
 
     this.paths = {
       utils: null,
@@ -123,59 +126,53 @@ class WorkerManager {
         log('warn', '[Worker Manager] Received storeUpdate message without type.', message);
       }
     }
-    // Handle messages specifically from the luaVMWorker
-    else if (message.type === 'scriptResult' || message.type === 'scriptError') {
-         // Mute internal log
-         // log('info', `[Worker Manager] Lua script execution finished for ID: ${message.scriptId}`, message.success ? 'Success' : 'Error');
 
-         // Always add the result/error as a log entry in the store
-         const logMessage = message.success ? `[Execution Result] Success` : `[Execution Error] ${message.error}`;
-         setGlobalState('lua/addLogEntry', { id: message.scriptId, message: logMessage });
+    else if (message.type === 'scriptError') {
+      const logMessage = message.error;
+      setGlobalState('lua/addLogEntry', { id: message.scriptId, message: logMessage });
 
-
-         // Forward the result/error message to all renderer windows
-         const { scriptId } = message; // Get scriptId from message
-         const allWindows = BrowserWindow.getAllWindows();
-         allWindows.forEach(win => {
-             if (!win.isDestroyed()) {
-                 win.webContents.send('script-log-update', { scriptId, message: logMessage });
-             }
-         });
+      const { scriptId } = message; // Get scriptId from message
+      const allWindows = BrowserWindow.getAllWindows();
+      allWindows.forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('script-log-update', { scriptId, message: logMessage });
+        }
+      });
 
     } else if (message.type === 'luaPrint') {
-        const { scriptId, message: logMessage } = message;
-        if (scriptId && logMessage !== undefined) {
-            setGlobalState('lua/addLogEntry', { id: scriptId, message: logMessage });
+      const { scriptId, message: logMessage } = message;
+      if (scriptId && logMessage !== undefined) {
+        setGlobalState('lua/addLogEntry', { id: scriptId, message: logMessage });
 
-            // Forward the log message to all renderer windows
-            const allWindows = BrowserWindow.getAllWindows();
-            allWindows.forEach(win => {
-                if (!win.isDestroyed()) {
-                    win.webContents.send('script-log-update', { scriptId, message: logMessage });
-                }
-            });
-        } else {
-            log('warn', '[Worker Manager] Received incomplete luaPrint message:', message);
-        }
+        const allWindows = BrowserWindow.getAllWindows();
+        allWindows.forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('script-log-update', { scriptId, message: logMessage });
+          }
+        });
+      } else {
+        log('warn', '[Worker Manager] Received incomplete luaPrint message:', message);
+      }
     } else if (message.type === 'luaStatusUpdate') {
-        const { scriptId, message: statusMessage } = message;
-        if (scriptId && statusMessage !== undefined) {
-            // Dispatch the status update as a log entry
-            setGlobalState('lua/addLogEntry', { id: scriptId, message: statusMessage });
+      const { scriptId, message: statusMessage } = message;
+      if (scriptId && statusMessage !== undefined) {
+        setGlobalState('lua/addLogEntry', { id: scriptId, message: statusMessage });
 
-            // Forward the status message to all renderer windows
-            const allWindows = BrowserWindow.getAllWindows();
-            allWindows.forEach(win => {
-                if (!win.isDestroyed()) {
-                    win.webContents.send('script-log-update', { scriptId, message: statusMessage });
-                }
-            });
-        } else {
-             log('warn', '[Worker Manager] Received incomplete luaStatusUpdate message:', message);
-        }
+        const allWindows = BrowserWindow.getAllWindows();
+        allWindows.forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('script-log-update', { scriptId, message: statusMessage });
+          }
+        });
+      } else {
+        log('warn', '[Worker Manager] Received incomplete luaStatusUpdate message:', message);
+      }
 
+    } else if (message.type === 'play_alert') {
+      log('info', '[Worker Manager] Received play_alert message from worker.');
+      playSound('alert.wav');
     } else {
-        // Handle other types of messages if necessary
+      // Handle other types of messages if necessary
     }
   }
 
@@ -204,22 +201,19 @@ class WorkerManager {
 
       this.workers.set(name, worker);
       // Post initial state once worker is ready, after a small delay
-        setTimeout(() => {
-            const initialState = store.getState();
-            // Send the full initial state object directly to non-Lua workers
-            if (name !== 'luaVMWorker') {
-                worker.postMessage(initialState);
-            } else {
-                // For Lua worker, send specific initial messages
-                 const enabledPersistentScripts = initialState.lua.persistentScripts.filter(script => script.enabled)
-                    .map(({ id, code, loopMin, loopMax }) => ({ id, code, loopMin, loopMax }));
-                 worker.postMessage({ type: 'updatePersistentScripts', scripts: enabledPersistentScripts });
-                 this.lastEnabledPersistentScripts = enabledPersistentScripts;
+      setTimeout(() => {
+        const initialState = store.getState();
+        // {{change 1}}
+        // Send full initial state to luaVMWorker wrapped in a message object
+        if (name === 'luaVMWorker') {
+          worker.postMessage({ type: 'initialState', state: initialState });
+          this.lastSentLuaState = initialState; // Track for lua worker
+        } else {
+          // Send raw initial state object to other workers
+          worker.postMessage(initialState);
+        }
 
-                 // Also send initial game state specifically to Lua worker
-                 worker.postMessage({ type: 'initialState', state: { gameState: initialState.gameState } });
-            }
-        }, WORKER_INIT_DELAY);
+      }, WORKER_INIT_DELAY);
 
 
       return worker;
@@ -252,18 +246,15 @@ class WorkerManager {
       await new Promise((resolve) => setTimeout(resolve, WORKER_INIT_DELAY));
       const reduxState = store.getState();
 
-      // Send the full latest state object directly to non-Lua workers
-      if (name !== 'luaVMWorker') {
-           newWorker.postMessage(reduxState);
-       } else {
-           // For Lua worker, send specific messages
-            const enabledPersistentScripts = reduxState.lua.persistentScripts.filter(script => script.enabled)
-                .map(({ id, code, loopMin, loopMax }) => ({ id, code, loopMin, loopMax }));
-            newWorker.postMessage({ type: 'updatePersistentScripts', scripts: enabledPersistentScripts });
-            this.lastEnabledPersistentScripts = enabledPersistentScripts;
-             // Also send latest game state specifically to Lua worker
-            newWorker.postMessage({ type: 'stateUpdate', state: { gameState: reduxState.gameState } });
-       }
+      // {{change 2}}
+      // Send full latest state to luaVMWorker wrapped in a message object
+      if (name === 'luaVMWorker') {
+        newWorker.postMessage({ type: 'stateUpdate', state: reduxState });
+        this.lastSentLuaState = reduxState; // Track for lua worker
+      } else {
+        // Send raw latest state object to other workers
+        newWorker.postMessage(reduxState);
+      }
 
       return newWorker;
     } catch (error) {
@@ -306,58 +297,97 @@ class WorkerManager {
     const state = store.getState();
     const { windowId } = state.global;
 
-    // Handle starting screenMonitor worker based on windowId presence
     if (windowId) {
       if (!this.workers.has('screenMonitor')) {
         log('info', '[Worker Manager] Starting screenMonitor for window ID:', windowId);
         this.startWorker('screenMonitor');
       }
     } else {
-        // If windowId is no longer present, stop screenMonitor
-        if (this.workers.has('screenMonitor')) {
-             log('info', '[Worker Manager] Stopping screenMonitor as window ID is no longer set.');
-             this.stopWorker('screenMonitor');
-        }
+      if (this.workers.has('screenMonitor')) {
+        log('info', '[Worker Manager] Stopping screenMonitor as window ID is no longer set.');
+        this.stopWorker('screenMonitor');
+      }
     }
 
 
-    // Update existing workers with the latest state (except the luaVMWorker which gets specific updates)
+    // Update existing workers with the latest state
     for (const [name, worker] of this.workers) {
-       if (name !== 'luaVMWorker' && !this.restartLocks.get(name)) {
-            // Send the full state object directly
-            worker.postMessage(state);
+      if (!this.restartLocks.get(name)) {
+        // {{change 3}}
+        // Send full latest state to luaVMWorker wrapped in a message object
+        if (name === 'luaVMWorker') {
+          // Check if a restart is needed based on script changes before sending state
+          const currentEnabledPersistentScripts = state.lua.persistentScripts.filter(script => script.enabled)
+            .map(({ id, name, code, loopMin, loopMax }) => ({ id, name, code, loopMin, loopMax })); // Include name for logging
+
+          const lastEnabledPersistentScripts = this.lastSentLuaState?.lua?.persistentScripts.filter(script => script.enabled)
+            .map(({ id, name, code, loopMin, loopMax }) => ({ id, name, code, loopMin, loopMax })) || [];
+
+          let luaWorkerNeedsRestart = false;
+          const lastEnabledMap = new Map(lastEnabledPersistentScripts.map(script => [script.id, script]));
+          const currentEnabledMap = new Map(currentEnabledPersistentScripts.map(script => [script.id, script]));
+
+          // Check for scripts that were enabled but are now disabled
+          for (const [scriptId, lastScript] of lastEnabledMap.entries()) {
+            if (!currentEnabledMap.has(scriptId)) {
+              log('info', `[Worker Manager] Detected disabled persistent script: ${lastScript.name} (${scriptId}). Restarting luaVMWorker.`);
+              luaWorkerNeedsRestart = true;
+              break;
+            }
+          }
+
+          // If no restart needed yet, check for changes in code or settings of scripts that remain enabled
+          if (!luaWorkerNeedsRestart) {
+            for (const currentScript of currentEnabledPersistentScripts) {
+              const lastScript = lastEnabledMap.get(currentScript.id);
+              if (lastScript) {
+                // Script was enabled before and is still enabled, check if details changed
+                if (lastScript.code !== currentScript.code ||
+                  lastScript.loopMin !== currentScript.loopMin ||
+                  lastScript.loopMax !== currentScript.loopMax) {
+                  log('info', `[Worker Manager] Detected change in enabled persistent script: ${currentScript.name} (${currentScript.id}). Restarting luaVMWorker.`);
+                  luaWorkerNeedsRestart = true;
+                  break; // Found a script that needs restart
+                }
+              } else {
+                // A new script was enabled. This also requires a restart.
+                log('info', `[Worker Manager] Detected new enabled persistent script: ${currentScript.name} (${currentScript.id}). Restarting luaVMWorker.`);
+                luaWorkerNeedsRestart = true;
+                break;
+              }
+            }
+          }
+
+          // Store the current full state for the next comparison, regardless of restart
+          this.lastSentLuaState = state;
+
+
+          if (luaWorkerNeedsRestart) {
+            // Restart the entire luaVMWorker
+            // restartWorker will fetch the latest state and send it to the new worker
+            this.restartWorker('luaVMWorker');
+          } else {
+            // If no worker restart is needed, send the full state update message
+            worker.postMessage({ type: 'stateUpdate', state: state });
+            // log('info', '[Worker Manager] Full state update sent to luaVMWorker.'); // Mute internal log
+          }
+        } else {
+          // Send raw latest state object to other workers
+          worker.postMessage(state);
         }
-    }
-
-    const luaWorker = this.workers.get('luaVMWorker');
-    if (luaWorker && !this.restartLocks.get('luaVMWorker')) {
-         const currentEnabledPersistentScripts = state.lua.persistentScripts.filter(script => script.enabled)
-              .map(({ id, code, loopMin, loopMax }) => ({ id, code, loopMin, loopMax }));
-
-         const currentEnabledString = JSON.stringify(currentEnabledPersistentScripts);
-         const lastEnabledString = JSON.stringify(this.lastEnabledPersistentScripts);
-
-         if (currentEnabledString !== lastEnabledString) {
-              // Mute this log if you find it too noisy, as status updates are sent to frontend
-              log('info', '[Worker Manager] Enabled persistent scripts list changed. Updating luaVMWorker.');
-              luaWorker.postMessage({ type: 'updatePersistentScripts', scripts: currentEnabledPersistentScripts });
-              this.lastEnabledPersistentScripts = currentEnabledPersistentScripts;
-         }
-
-         // Always send the latest game state specifically to the Lua worker
-         luaWorker.postMessage({ type: 'stateUpdate', state: { gameState: state.gameState } });
+      }
     }
   }
 
   initialize(app, cwd) {
     this.setupPaths(app, cwd);
-    // Start the Lua VM worker on initialization
     this.startWorker('luaVMWorker');
+    // screenMonitor is started by handleStoreUpdate when windowId is set
     store.subscribe(this.handleStoreUpdate);
 
     app.on('before-quit', () => this.stopAllWorkers());
     app.on('will-quit', () => this.stopAllWorkers());
-    // app.on('window-all-closed', () => this.stopAllWorkers()); // May not want to stop if main window closes but other windows (like editor) are open
+    app.on('window-all-closed', () => this.stopAllWorkers());
   }
 }
 

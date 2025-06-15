@@ -12,9 +12,7 @@ const iconPath = path.join(__dirnamePath, 'icons', 'greenSkull.png');
 
 store.subscribe(() => {
   const state = store.getState();
-  const { global } = state;
-  const { notificationsEnabled } = global;
-  notiEnabled = notificationsEnabled;
+  notiEnabled = state.global.notificationsEnabled;
 });
 
 const createIconImage = () => {

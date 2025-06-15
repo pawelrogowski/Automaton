@@ -32,7 +32,7 @@ store.subscribe(() => {
 
 const soundCache = new Map();
 
-const playSound = (filePath) => {
+export const playSound = (filePath) => {
   const asarPath = path.join(__dirname, 'sounds', filePath);
   if (soundCache.has(filePath)) {
     const cachedPath = soundCache.get(filePath);

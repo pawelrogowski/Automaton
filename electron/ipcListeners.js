@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import store from './store.js';
 import { saveRulesToFile, loadRulesFromFile, autoLoadRules } from './rulesManager.js';
-import { registerGlobalShortcuts } from './globalShortcuts.js';
+import { playSound, registerGlobalShortcuts } from './globalShortcuts.js';
 import { getMainWindow } from './createMainWindow.js';
 import luaSlice from '../frontend/redux/slices/luaSlice.js'; // Import the luaSlice
 import setGlobalState from './setGlobalState.js';
@@ -16,35 +16,35 @@ const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
 ipcMain.on('state-change', (_, serializedAction) => {
-  try {
-    const action = JSON.parse(serializedAction);
-    if (action.origin === 'renderer') {
-      store.dispatch(action);
+    try {
+        const action = JSON.parse(serializedAction);
+        if (action.origin === 'renderer') {
+            store.dispatch(action);
+        }
+    } catch (error) {
+        console.error('Error dispatching action in main process:', error);
     }
-  } catch (error) {
-    console.error('Error dispatching action in main process:', error);
-  }
 });
 
 ipcMain.on('save-rules', async () => {
-  const mainWindow = getMainWindow();
-  mainWindow.minimize();
-  await saveRulesToFile(() => {
-    mainWindow.restore();
-  });
+    const mainWindow = getMainWindow();
+    mainWindow.minimize();
+    await saveRulesToFile(() => {
+        mainWindow.restore();
+    });
 });
 
 ipcMain.handle('load-rules', async () => {
-  const mainWindow = getMainWindow();
-  mainWindow.minimize();
-  await loadRulesFromFile(() => {
-    mainWindow.restore();
-  });
+    const mainWindow = getMainWindow();
+    mainWindow.minimize();
+    await loadRulesFromFile(() => {
+        mainWindow.restore();
+    });
 });
 
 ipcMain.on('renderer-ready', () => {
-  autoLoadRules();
-  registerGlobalShortcuts();
+    autoLoadRules();
+    registerGlobalShortcuts();
 });
 
 // Handle the request to open the script editor window
@@ -100,7 +100,7 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
             contextIsolation: true,
             preload: preloadPath, // Use the same preload script
             // Pass script data to the new window (this is one way, could also use IPC after window is ready)
-             additionalArguments: [`--script-id=${scriptId}`]
+            additionalArguments: [`--script-id=${scriptId}`]
         },
     });
 
@@ -110,12 +110,12 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
     editorWindow.loadFile(editorHtmlPath);
     // Optional: Send the script data to the new window once it's ready
     // And ensure dev tools open after content loads
-        editorWindow.webContents.on('did-finish-load', () => {
-            // Send the scriptDataToSend object which now includes the type
-            editorWindow.webContents.send('load-script-data', scriptDataToSend);
-            // Open developer tools for debugging after content loads
-            editorWindow.webContents.openDevTools();
-        });
+    editorWindow.webContents.on('did-finish-load', () => {
+        // Send the scriptDataToSend object which now includes the type
+        editorWindow.webContents.send('load-script-data', scriptDataToSend);
+        // Open developer tools for debugging after content loads
+        editorWindow.webContents.openDevTools();
+    });
 
     // Add error handling for the web contents
     editorWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
@@ -133,7 +133,7 @@ ipcMain.on('open-script-editor', (event, scriptId) => {
     // Handle window close (optional cleanup)
     editorWindow.on('closed', () => {
         console.log(`Script editor window closed for script ID: ${scriptId}`);
-    // Clean up any references if you were tracking multiple windows
+        // Clean up any references if you were tracking multiple windows
     });
 });
 

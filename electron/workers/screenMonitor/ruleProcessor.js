@@ -197,14 +197,14 @@ class RuleProcessor {
           let expectedEmptyItemKey;
           // {{change 1}}
           if (rule.targetSlot === 'amulet') {
-              expectedEmptyItemKey = 'Empty';
+            expectedEmptyItemKey = 'Empty';
           } else if (rule.targetSlot === 'ring') {
-              expectedEmptyItemKey = 'Empty';
+            expectedEmptyItemKey = 'Empty';
           } else if (rule.targetSlot === 'boots') { // Add check for boots slot
-              expectedEmptyItemKey = 'Empty';
+            expectedEmptyItemKey = 'Empty';
           } else {
-               // If targetSlot is none of the handled types, this condition cannot be met correctly.
-               return false;
+            // If targetSlot is none of the handled types, this condition cannot be met correctly.
+            return false;
           }
           if (currentItemInSlot !== expectedEmptyItemKey) {
             return false;
@@ -633,7 +633,7 @@ class RuleProcessor {
       } else {
         // 'standard' rules: userRule, equipRule, actionBarItem (non-rune party heal)
         if (logExec) console.log(`[RuleProc] Executing Standard keypress for ${ruleId} (Key: ${rule.key})`);
-        keyPress(globalConfig.windowId, [rule.key], rule); // V1 call for standard
+        keyPress(globalConfig.windowId, rule.key, rule); // V1 call for standard
         actionSent = true;
       }
 
