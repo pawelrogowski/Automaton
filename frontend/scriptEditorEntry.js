@@ -34,7 +34,6 @@ let monacoEditor = null; // Variable to hold the Monaco Editor instance
 let currentScriptId = null;
 let scriptLogElement = null; // Element to display logs
 let currentScriptType = null; // Store script type to show/hide settings
-const SNIPPET_SCRIPT_ID = 'script-snippet'; // Must match the ID used in workerManager
 
 document.addEventListener('DOMContentLoaded', () => {
     const scriptNameInput = document.getElementById('script-name-input');
@@ -171,8 +170,8 @@ require.config({ paths: { 'vs': './monaco-editor/min/vs' } });
 
     // Listen for log messages specific to the currently edited script or snippets
      ipcRenderer.on('script-log-update', (event, { scriptId, message }) => {
-        // Only display logs if they match the currently edited script ID or the snippet ID
-        if (currentScriptId === scriptId || scriptId === SNIPPET_SCRIPT_ID) {
+        // Only display logs if they match the currently edited script ID
+        if (currentScriptId === scriptId) {
             if (scriptLogElement) {
                 scriptLogElement.textContent += message + '\n';
                  // Keep scrolled to the bottom

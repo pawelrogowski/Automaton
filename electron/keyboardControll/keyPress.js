@@ -16,3 +16,11 @@ export const keyPressManaSync = async (windowId, key, pressNumber = 1) => {
     await keypress.sendKey(parseInt(windowId), key);
   }
 };
+
+export const keyPressType = (windowId, str, delayMs = 10, finishWithEnter = false) => {
+  keypress.type(parseInt(windowId), str, delayMs, finishWithEnter);
+};
+
+export const keyPressRotate = (windowId) => {
+  keypress.rotate(parseInt(windowId));
+};

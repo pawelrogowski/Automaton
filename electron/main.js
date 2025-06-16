@@ -6,9 +6,9 @@ import path from 'path';
 import { createMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
-import workerManager from './workerManager.js';
 import { getLinuxHardwareId } from './hardwareId.js';
 import { createLogger } from './utils/logger.js';
+import workerManager from './workerManager.js'; // Keep this import, it's still needed for initialization
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);

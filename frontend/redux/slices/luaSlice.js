@@ -76,10 +76,7 @@ const luaSlice = createSlice({
         if (script.log.length > MAX_LOG_SIZE) {
           script.log.splice(0, script.log.length - MAX_LOG_SIZE); // Remove oldest entries
         }
-      } else if (id === 'script-snippet') {
-        // Log snippet messages to console for now, they are forwarded via IPC to editor
-      }
-      else {
+      } else {
         console.warn('Attempted to add log to unknown script ID:', id);
       }
     },
