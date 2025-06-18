@@ -1,9 +1,11 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { createLogger } from '../../../electron/utils/logger.js';
+const logger = createLogger({ info: true, error: true, debug: true });
 
 const initialState = {
   hppc: null,
   mppc: null,
-  isLoggedIn: false, 
+  isLoggedIn: false,
   isChatOff: false,
   healingCd: false,
   supportCd: false,
@@ -42,6 +44,7 @@ const initialState = {
     whiteSkull: false,
     redSkull: false,
   },
+  playerMinimapPosition: { x: null, y: null, z: null }, // New state for player position
 };
 
 const ITEM_DIMENSION = 34; // Each item is 34x34 pixels
@@ -73,6 +76,7 @@ const gameStateSlice = createSlice({
         equippedItems,
         isLoggedIn,
         isChatOff,
+        playerMinimapPosition, // Add playerMinimapPosition to destructuring
       } = action.payload;
 
       // Update fields if they are provided in the payload
@@ -81,24 +85,24 @@ const gameStateSlice = createSlice({
       if (healingCd !== undefined) state.healingCd = healingCd;
       if (supportCd !== undefined) state.supportCd = supportCd;
       if (attackCd !== undefined) state.attackCd = attackCd;
-      
+
       if (characterStatus !== undefined) {
-         // Merge characterStatus to avoid overwriting other potential status fields
-         for (const key in characterStatus) {
-           if (Object.prototype.hasOwnProperty.call(characterStatus, key)) {
-             state.characterStatus[key] = characterStatus[key];
-           }
-         }
+        // Merge characterStatus to avoid overwriting other potential status fields
+        for (const key in characterStatus) {
+          if (Object.prototype.hasOwnProperty.call(characterStatus, key)) {
+            state.characterStatus[key] = characterStatus[key];
+          }
+        }
       }
-      
+
       if (monsterNum !== undefined) state.monsterNum = monsterNum;
       if (isWalking !== undefined) state.isWalking = isWalking;
-      
+
       if (partyMembers !== undefined) {
         state.partyMembers = partyMembers;
         state.partyNum = partyMembers.length; // Update partyNum based on the array
       }
-      
+
       // --- LOGIC TO PROCESS activeActionItems AND ADD 'position' KEY ---
       if (activeActionItems !== undefined) {
         const processedActionItems = {};
@@ -122,7 +126,7 @@ const gameStateSlice = createSlice({
         state.activeActionItems = processedActionItems;
       }
       // --- END activeActionItems PROCESSING ---
-      
+
       if (equippedItems !== undefined) {
         // Merge equippedItems to avoid overwriting other potential equipped fields
         for (const key in equippedItems) {
@@ -131,14 +135,18 @@ const gameStateSlice = createSlice({
           }
         }
       }
-      
+
       if (isLoggedIn !== undefined) state.isLoggedIn = isLoggedIn;
       if (isChatOff !== undefined) state.isChatOff = isChatOff;
+      if (playerMinimapPosition !== undefined) {
+        // logger('debug', `[gameStateSlice] updateGameStateFromMonitorData: Updating playerMinimapPosition with:`, playerMinimapPosition);
+        state.playerMinimapPosition = playerMinimapPosition;
+      }
     },
     sethealingCd: (state, action) => {
       // Note: This reducer seems to have a typo 'rulesCd' instead of 'healingCd'
       // Assuming it should update healingCd based on the name.
-      state.healingCd = action.payload.healingCd; 
+      state.healingCd = action.payload.healingCd;
     },
     setsupportCd: (state, action) => {
       state.supportCd = action.payload.supportCd;
@@ -165,10 +173,23 @@ const gameStateSlice = createSlice({
       // unless used very carefully.
       return action.payload;
     },
+    setPlayerMinimapPosition: (state, action) => {
+      // logger('info', `[gameStateSlice] setPlayerMinimapPosition received payload:`, action.payload);
+      state.playerMinimapPosition = action.payload;
+    },
   },
 });
 
-export const { updateGameStateFromMonitorData, setHealthPercent, setManaPercent, sethealingCd, setCharacterStatus, setMonsterNum, setPartyNum, setState } =
-  gameStateSlice.actions;
+export const {
+  updateGameStateFromMonitorData,
+  setHealthPercent,
+  setManaPercent,
+  sethealingCd,
+  setCharacterStatus,
+  setMonsterNum,
+  setPartyNum,
+  setState,
+  setPlayerMinimapPosition, // Export the new action
+} = gameStateSlice.actions;
 
 export default gameStateSlice;

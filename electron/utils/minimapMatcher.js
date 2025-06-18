@@ -1,406 +1,208 @@
+// This class is responsible for finding a small, captured minimap image within the full, pre-processed map of an entire game floor.
+// On startup, it loads the game's color palette and the pre-processed map index. It then constructs a complete,
+// in-memory representation of the map floor, not as colors, but as a giant 2D array of palette indices.
+// To do this, it reads each pre-processed `.bin` tile file, unpacks its 4-bit indexed data into an 8-bit array,
+// and copies it into the correct position in the main map buffer.
+// The `findPosition` method then takes a small, packed minimap sample, unpacks it, and performs a highly-efficient
+// search for that sequence of indices within the main map data, skipping known "water" pixels to improve accuracy.
+
 import fs from 'fs/promises';
 import path from 'path';
-import { PNG } from 'pngjs';
+import { createLogger } from './logger.js';
 
-// Define the base path to the Tibia minimap data
-const TIBIA_MINIMAP_BASE_PATH = path.join(
-  process.env.HOME || process.env.USERPROFILE,
-  '.local',
-  'share',
-  'CipSoft GmbH',
-  'Tibia',
-  'packages',
-  'Tibia',
-  'minimap',
-);
-// Define the path to the combined maps directory
-const COMBINED_MAPS_PATH = path.join(TIBIA_MINIMAP_BASE_PATH, 'combined_maps');
-// Define the path to the original tiles directory (still needed to discover overall dimensions)
-const ORIGINAL_TILES_PATH = TIBIA_MINIMAP_BASE_PATH;
+const logger = createLogger({ info: true, error: true, debug: false });
 
-const TILE_SIZE = 256; // Pixels per tile dimension (used for overall dimension calculation from tiles)
-const CAPTURED_MINIMAP_WIDTH = 106; // Width of the captured minimap
-const CAPTURED_MINIMAP_HEIGHT = 109; // Height of the captured minimap
-const PLAYER_RELATIVE_X = 53; // Player's X coordinate relative to the top-left of the captured minimap
-const PLAYER_RELATIVE_Y = 54; // Player's Y coordinate relative to the top-left of the captured minimap
-const MASK_X_START = 51; // X coordinate of the top-left corner of the mask area in the captured minimap
-const MASK_Y_START = 52; // Y coordinate of the top-left corner of the mask area in the captured minimap
-const MASK_SIZE = 6; // Size of the square mask area
-const MIN_MATCH_PERCENTAGE = 98; // Minimum similarity percentage required for a match (increased for a more confident match)
-const PERFECT_MATCH_PERCENTAGE = 100; // Percentage for a perfect match to stop searching
-const LOG_MATCH_THRESHOLD = 50; // Percentage threshold for logging intermediate matches
+const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
+const TARGET_Z_LEVEL = 7; // Currently focusing on ground floor
 
-// Function to build the mask for the captured minimap
-// Returns a 2D array where true indicates a masked pixel
-function buildCapturedMinimapMask() {
-  const mask = Array(CAPTURED_MINIMAP_HEIGHT)
-    .fill(null)
-    .map(() => Array(CAPTURED_MINIMAP_WIDTH).fill(false));
-  for (let y = 0; y < MASK_SIZE; y++) {
-    for (let x = 0; x < MASK_SIZE; x++) {
-      if (MASK_Y_START + y < CAPTURED_MINIMAP_HEIGHT && MASK_X_START + x < CAPTURED_MINIMAP_WIDTH) {
-        mask[MASK_Y_START + y][MASK_X_START + x] = true;
-      }
-    }
+class MinimapMatcher {
+  constructor() {
+    this.mapData = null; // Will store the UNPACKED (Uint8Array) indices of the entire Z-level
+    this.mapIndex = null;
+    this.palette = null;
+    this.waterColorIndex = -1; // The index of the water color in the palette
+    this.mapWidth = 0;
+    this.mapHeight = 0;
+    this.isLoaded = false;
+    this.lastKnownPosition = { x: null, y: null, z: null };
+    this.minMatchPercentage = 0.98; // Require a very high match percentage for indexed data
   }
-  return mask;
-}
 
-const capturedMinimapMask = buildCapturedMinimapMask(); // Pre-calculate the mask
-
-// Function to load a combined minimap image for a specific floor
-// Returns an object with the RGB buffer, width, and height of the combined map
-async function loadCombinedMinimap(z) {
-  const filename = `floor_${z}.png`;
-  const filepath = path.join(COMBINED_MAPS_PATH, filename);
-
-  try {
-    const data = await fs.readFile(filepath);
-    return new Promise((resolve, reject) => {
-      const png = new PNG({ filterType: 4 });
-      png.parse(data, (err, data) => {
-        if (err) {
-          console.error(`[MinimapMatcher] Error parsing combined PNG map ${filepath}:`, err);
-          return reject(err);
-        }
-        // PNGJS data is RGBA, convert to RGB buffer
-        const rgbBuffer = Buffer.alloc(data.width * data.height * 3);
-        for (let i = 0; i < data.data.length; i += 4) {
-          const rgbIndex = (i / 4) * 3;
-          rgbBuffer[rgbIndex] = data.data[i]; // R
-          rgbBuffer[rgbIndex + 1] = data.data[i + 1]; // G
-          rgbBuffer[rgbIndex + 2] = data.data[i + 2]; // B
-        }
-        resolve({ buffer: rgbBuffer, width: data.width, height: data.height });
-      });
-    });
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      console.error(`[MinimapMatcher] Error loading combined PNG map ${filepath}:`, error);
-    } else {
-      console.warn(`[MinimapMatcher] Combined map file not found: ${filepath}`);
+  async loadMapData() {
+    if (this.isLoaded) {
+      logger('info', 'Minimap data already loaded.');
+      return;
     }
-    return null; // Return null if file does not exist or other error
-  }
-}
 
-// Function to discover the overall minimap dimensions by scanning the original tiles directory
-// Returns an object with min/max x, y (absolute coordinates) of the map extent, or null if no tiles are found.
-// This is used to understand the scale and origin of the combined map.
-async function discoverOverallMinimapDimensions() {
-  let minX = Infinity,
-    maxX = -Infinity;
-  let minY = Infinity,
-    maxY = -Infinity;
-  let foundTiles = false;
+    const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${TARGET_Z_LEVEL}`);
+    const indexFilePath = path.join(zLevelDir, 'index.json');
+    const paletteFilePath = path.join(PREPROCESSED_BASE_DIR, 'palette.json');
 
-  try {
-    // Check if the original tiles directory exists
     try {
-      await fs.access(ORIGINAL_TILES_PATH);
-    } catch (error) {
-      console.warn(
-        `[MinimapMatcher] Original minimap tiles directory not found at ${ORIGINAL_TILES_PATH}. Cannot determine overall map dimensions from tiles.`,
+      // 1. Load the color palette and find the index for the water color
+      logger('info', `Loading palette from: ${paletteFilePath}`);
+      const paletteFileContent = await fs.readFile(paletteFilePath, 'utf8');
+      this.palette = JSON.parse(paletteFileContent);
+      this.waterColorIndex = this.palette.findIndex(
+        (c) => c.r === WATER_COLOR_RGB.r && c.g === WATER_COLOR_RGB.g && c.b === WATER_COLOR_RGB.b,
       );
-      return null;
+      if (this.waterColorIndex === -1) {
+        logger('warn', 'Water color RGB not found in the palette.');
+      } else {
+        logger('info', `Water color identified at palette index: ${this.waterColorIndex}`);
+      }
+
+      // 2. Load the map index
+      logger('info', `Loading map index from: ${indexFilePath}`);
+      const indexFileContent = await fs.readFile(indexFilePath, 'utf8');
+      this.mapIndex = JSON.parse(indexFileContent);
+      if (!this.mapIndex?.tiles?.length) throw new Error('Map index is empty or malformed.');
+
+      // 3. Calculate map dimensions and create a single large buffer for UNPACKED indices
+      const tileWidth = 256,
+        tileHeight = 256;
+      this.mapWidth = this.mapIndex.maxX - this.mapIndex.minX + tileWidth;
+      this.mapHeight = this.mapIndex.maxY - this.mapIndex.minY + tileHeight;
+      this.mapData = new Uint8Array(this.mapWidth * this.mapHeight);
+      logger('info', `Calculated map dimensions: ${this.mapWidth}x${this.mapHeight}. Allocated memory for unpacked indices.`);
+
+      // 4. Load each tile, unpack it, and place it in the large buffer
+      for (const tile of this.mapIndex.tiles) {
+        const tileFilePath = path.join(zLevelDir, tile.file);
+        const tileBufferWithHeader = await fs.readFile(tileFilePath);
+        const tileWidthFromHeader = tileBufferWithHeader.readUInt32LE(0);
+        const tileHeightFromHeader = tileBufferWithHeader.readUInt32LE(4);
+        const bitsPerPixel = tileBufferWithHeader.readUInt32LE(8);
+        const packedTileData = tileBufferWithHeader.subarray(12);
+
+        if (bitsPerPixel !== 4) {
+          logger('warn', `Skipping tile ${tile.file}: Expected 4 bits per pixel, got ${bitsPerPixel}.`);
+          continue;
+        }
+
+        // Unpack the 4-bit data into an 8-bit array for easy access
+        const unpackedTileIndices = new Uint8Array(tileWidthFromHeader * tileHeightFromHeader);
+        for (let i = 0; i < packedTileData.length; i++) {
+          const byte = packedTileData[i];
+          const p1Index = i * 2;
+          const p2Index = i * 2 + 1;
+          unpackedTileIndices[p1Index] = byte >> 4; // First pixel is in the high 4 bits
+          if (p2Index < unpackedTileIndices.length) {
+            unpackedTileIndices[p2Index] = byte & 0x0f; // Second pixel is in the low 4 bits
+          }
+        }
+
+        // Copy the unpacked tile data into the main map buffer
+        const relativeX = tile.x - this.mapIndex.minX;
+        const relativeY = tile.y - this.mapIndex.minY;
+        for (let y = 0; y < tileHeightFromHeader; y++) {
+          const sourceStart = y * tileWidthFromHeader;
+          const sourceEnd = sourceStart + tileWidthFromHeader;
+          const destinationStart = (relativeY + y) * this.mapWidth + relativeX;
+          this.mapData.set(unpackedTileIndices.subarray(sourceStart, sourceEnd), destinationStart);
+        }
+      }
+
+      this.isLoaded = true;
+      logger('info', 'All minimap data loaded and unpacked into memory.');
+    } catch (error) {
+      logger('error', `Failed to load minimap data: ${error.message}`);
+      this.isLoaded = false;
     }
+  }
 
-    const files = await fs.readdir(ORIGINAL_TILES_PATH);
+  /**
+   * Finds the minimap image within the loaded map data by matching palette indices.
+   * @param {Buffer} packedMinimapData - The 4-bit PACKED image data of the minimap.
+   * @param {number} minimapWidth - The width of the minimap image.
+   * @param {number} minimapHeight - The height of the minimap image.
+   * @returns {{x: number, y: number, z: number, confidence: number}|null} The absolute coordinates if a match is found.
+   */
+  findPosition(packedMinimapData, minimapWidth, minimapHeight) {
+    if (!this.isLoaded) return null;
 
-    const tilePattern = /^Minimap_Color_(\d+)_(\d+)_(\d+)\.png$/;
-
-    for (const file of files) {
-      const match = file.match(tilePattern);
-      if (match) {
-        foundTiles = true;
-        const x = parseInt(match[1], 10);
-        const y = parseInt(match[2], 10);
-        // We don't need Z for overall X/Y dimensions from tiles
-
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
+    // 1. Unpack the incoming minimap data into an array of indices
+    const pixelCount = minimapWidth * minimapHeight;
+    const unpackedMinimap = new Uint8Array(pixelCount);
+    for (let i = 0; i < packedMinimapData.length; i++) {
+      const byte = packedMinimapData[i];
+      const p1Index = i * 2;
+      const p2Index = i * 2 + 1;
+      unpackedMinimap[p1Index] = byte >> 4;
+      if (p2Index < unpackedMinimap.length) {
+        unpackedMinimap[p2Index] = byte & 0x0f;
       }
     }
 
-    if (foundTiles) {
-      // Calculate the overall dimensions in pixels based on the tile ranges
-      // The max X and Y from file names are the top-left corners of the last tiles.
-      // To get the full extent, we add TILE_SIZE.
-      const overallWidth = maxX - minX + TILE_SIZE;
-      const overallHeight = maxY - minY + TILE_SIZE;
-      console.log(
-        `[MinimapMatcher] Discovered overall map dimensions from tiles: Absolute X range ${minX}-${maxX + TILE_SIZE - 1}, Y range ${minY}-${maxY + TILE_SIZE - 1}. Overall pixel dimensions: ${overallWidth}x${overallHeight}`,
-      );
-      return { minX, maxX, minY, maxY, overallWidth, overallHeight };
-    } else {
-      console.warn(
-        `[MinimapMatcher] No original minimap tile files found in ${ORIGINAL_TILES_PATH}. Cannot determine overall map dimensions.`,
-      );
-      return null;
+    // 2. Calculate match thresholds
+    let totalPixelsToMatch = 0;
+    for (let i = 0; i < unpackedMinimap.length; i++) {
+      if (unpackedMinimap[i] !== this.waterColorIndex) {
+        totalPixelsToMatch++;
+      }
     }
-  } catch (error) {
-    console.error(`[MinimapMatcher] Error scanning original minimap directory ${ORIGINAL_TILES_PATH}:`, error);
+    const allowedMismatches = Math.floor(totalPixelsToMatch * (1 - this.minMatchPercentage));
+
+    // 3. Define the search function
+    const searchArea = (startX, startY, endX, endY) => {
+      let bestMatch = { x: 0, y: 0, mismatches: Infinity };
+
+      for (let y = startY; y <= endY - minimapHeight; y++) {
+        for (let x = startX; x <= endX - minimapWidth; x++) {
+          let mismatches = 0;
+          for (let my = 0; my < minimapHeight; my++) {
+            for (let mx = 0; mx < minimapWidth; mx++) {
+              const minimapIndex = unpackedMinimap[my * minimapWidth + mx];
+              if (minimapIndex === this.waterColorIndex) continue; // Skip water pixels
+
+              const mapIndex = this.mapData[(y + my) * this.mapWidth + (x + mx)];
+              if (minimapIndex !== mapIndex) {
+                mismatches++;
+              }
+              if (mismatches > allowedMismatches || mismatches >= bestMatch.mismatches) {
+                // Early exit if we're already worse than the allowed threshold or the best match found so far
+                break;
+              }
+            }
+            if (mismatches > allowedMismatches || mismatches >= bestMatch.mismatches) break;
+          }
+
+          if (mismatches < bestMatch.mismatches) {
+            bestMatch = { x, y, mismatches };
+          }
+        }
+      }
+      return bestMatch.mismatches <= allowedMismatches ? bestMatch : null;
+    };
+
+    // 4. Execute search (localized first, then full scan if needed)
+    let foundMatch = null;
+    const searchRadius = 200;
+    if (this.lastKnownPosition.x !== null) {
+      const sx = Math.max(0, this.lastKnownPosition.x - searchRadius);
+      const sy = Math.max(0, this.lastKnownPosition.y - searchRadius);
+      const ex = Math.min(this.mapWidth, this.lastKnownPosition.x + searchRadius);
+      const ey = Math.min(this.mapHeight, this.lastKnownPosition.y + searchRadius);
+      foundMatch = searchArea(sx, sy, ex, ey);
+    }
+
+    if (!foundMatch) {
+      foundMatch = searchArea(0, 0, this.mapWidth, this.mapHeight);
+    }
+
+    // 5. Process and return result
+    if (foundMatch) {
+      const confidence = 1 - foundMatch.mismatches / totalPixelsToMatch;
+      this.lastKnownPosition = { x: foundMatch.x, y: foundMatch.y, z: TARGET_Z_LEVEL };
+
+      const absoluteX = foundMatch.x + this.mapIndex.minX + Math.floor(minimapWidth / 2);
+      const absoluteY = foundMatch.y + this.mapIndex.minY + Math.floor(minimapHeight / 2);
+
+      return { x: absoluteX, y: absoluteY, z: TARGET_Z_LEVEL, confidence };
+    }
+
     return null;
   }
 }
 
-// Function to compare captured minimap buffer with a specific portion of a larger map buffer
-// Applies the mask to the captured minimap pixels
-// mapOffsetX, mapOffsetY are the coordinates in the LARGER MAP BUFFER
-// that the top-left of the captured minimap (0,0) is being aligned to.
-// Returns a similarity percentage (0-100)
-function compareMinimapWithPortion(capturedMinimapBuffer, mapBufferInfo, mapOffsetX, mapOffsetY) {
-  if (!capturedMinimapBuffer || !mapBufferInfo || !mapBufferInfo.buffer) {
-    return 0;
-  }
-
-  const { buffer: mapBuffer, width: mapWidth, height: mapHeight } = mapBufferInfo;
-  const bytesPerPixel = 3;
-  let matchingPixels = 0;
-  let comparedPixels = 0;
-
-  // Add a flag to log pixel data only for high similarity matches
-  const logPixelData = false; // Set to true to enable detailed pixel logging on high match
-  let loggedPixels = 0;
-  const MAX_LOG_PIXELS = 10; // Limit detailed pixel logging
-
-  for (let y = 0; y < CAPTURED_MINIMAP_HEIGHT; y++) {
-    for (let x = 0; x < CAPTURED_MINIMAP_WIDTH; x++) {
-      // Check if the current pixel in the captured minimap is within the masked area
-      if (capturedMinimapMask[y][x]) {
-        continue; // Skip masked pixels
-      }
-
-      // Calculate corresponding coordinates in the larger map buffer
-      // This is where the captured minimap pixel (x,y) aligns with in the map buffer.
-      const mapCoordX = mapOffsetX + x;
-      const mapCoordY = mapOffsetY + y;
-
-      // Ensure map coordinates are within the valid bounds of the larger map
-      if (mapCoordX < 0 || mapCoordX >= mapWidth || mapCoordY < 0 || mapCoordY >= mapHeight) {
-        // This captured minimap pixel does not overlap with the current portion of the map being compared
-        continue;
-      }
-
-      const capturedIndex = (y * CAPTURED_MINIMAP_WIDTH + x) * bytesPerPixel;
-      const mapIndex = (mapCoordY * mapWidth + mapCoordX) * bytesPerPixel;
-
-      // Ensure indices are within buffer bounds (should be covered by the coordinate checks, but double-checking)
-      if (capturedIndex + 2 >= capturedMinimapBuffer.length || mapIndex + 2 >= mapBuffer.length) {
-        // console.warn("[MinimapMatcher] Index out of bounds during comparison, skipping pixel.");
-        continue;
-      }
-
-      comparedPixels++;
-
-      const capturedR = capturedMinimapBuffer[capturedIndex];
-      const capturedG = capturedMinimapBuffer[capturedIndex + 1];
-      const capturedB = capturedMinimapBuffer[capturedIndex + 2];
-
-      const mapR = mapBuffer[mapIndex];
-      const mapG = mapBuffer[mapIndex + 1];
-      const mapB = mapBuffer[mapIndex + 2];
-
-      // Compare RGB values
-      if (capturedR === mapR && capturedG === mapG && capturedB === mapB) {
-        matchingPixels++;
-      } else if (logPixelData && loggedPixels < MAX_LOG_PIXELS) {
-        // Log differing pixels for debugging
-        console.log(
-          `[MinimapMatcher] Diff pixel at Captured(${x},${y}) Map(${mapCoordX},${mapCoordY}): Captured RGB(${capturedR},${capturedG},${capturedB}) Map RGB(${mapR},${mapG},${mapB})`,
-        );
-        loggedPixels++;
-      }
-    }
-  }
-
-  const matchPercentage = comparedPixels === 0 ? 0 : (matchingPixels / comparedPixels) * 100;
-
-  // If a high percentage match is found, log some pixel data
-  if (logPixelData && matchPercentage >= MIN_MATCH_PERCENTAGE) {
-    console.log(`[MinimapMatcher] High match (${matchPercentage.toFixed(2)}%) found. Logging first ${MAX_LOG_PIXELS} differing pixels.`);
-    // The differing pixels are logged within the loop above
-  }
-
-  return matchPercentage;
-}
-
-// This function is exported with the name expected by rawCapture.js for testing.
-// It now implements matching against the combined map for floor 7.
-// Returns an array containing the single 100% match object with estimated player coordinates if found, otherwise an empty array.
-export async function findMatchingMinimapTilesBruteForce(capturedMinimapBuffer) {
-  if (!capturedMinimapBuffer) {
-    console.error('[MinimapMatcher] Invalid captured minimap buffer for matching.');
-    return [];
-  }
-
-  const targetFloor = 7; // We are focusing on floor 7
-
-  console.log(`[MinimapMatcher] Starting search for matching location on combined map for floor ${targetFloor}`);
-
-  // Load the combined map for the target floor
-  const combinedMapInfo = await loadCombinedMinimap(targetFloor);
-
-  if (!combinedMapInfo) {
-    console.error(`[MinimapMatcher] Could not load combined map for floor ${targetFloor}. Cannot perform matching.`);
-    return [];
-  }
-
-  // Discover overall map dimensions from original tiles to relate combined map pixels to absolute coordinates
-  // This is done only once to get the origin (minX, minY) of the combined map in absolute coordinates.
-  const overallDimensions = await discoverOverallMinimapDimensions();
-
-  if (!overallDimensions) {
-    console.error('[MinimapMatcher] Could not discover overall minimap dimensions. Cannot calculate absolute coordinates.');
-    return [];
-  }
-
-  // The top-left pixel (0,0) of the combined map image corresponds to the overall minX and minY discovered from tiles.
-  const combinedMapAbsOriginX = overallDimensions.minX;
-  const combinedMapAbsOriginY = overallDimensions.minY;
-
-  // Log first 5 pixels of the captured minimap buffer for debugging
-  const bytesPerPixel = 3;
-  let logMsg = '[MinimapMatcher] Captured Minimap Buffer (first 5 pixels):';
-  const pixelsToLog = Math.min(5, capturedMinimapBuffer.length / bytesPerPixel);
-  for (let i = 0; i < pixelsToLog; i++) {
-    const index = i * bytesPerPixel;
-    logMsg += ` Pixel ${i}: RGB(${capturedMinimapBuffer[index]},${capturedMinimapBuffer[index + 1]},${capturedMinimapBuffer[index + 2]})`;
-  }
-  console.log(logMsg);
-
-  // Log first 5 pixels of the loaded combined map buffer for debugging
-  let combinedMapLogMsg = `[MinimapMatcher] Combined Map Buffer (floor ${targetFloor}, first 5 pixels):`;
-  const combinedMapPixelsToLog = Math.min(5, combinedMapInfo.buffer.length / bytesPerPixel);
-  for (let i = 0; i < combinedMapPixelsToLog; i++) {
-    const index = i * bytesPerPixel;
-    combinedMapLogMsg += ` Pixel ${i}: RGB(${combinedMapInfo.buffer[index]},${combinedMapInfo.buffer[index + 1]},${combinedMapInfo.buffer[index + 2]})`;
-  }
-  console.log(combinedMapLogMsg);
-
-  // Iterate through all possible top-left offsets within the combined map
-  // where the captured minimap's top-left could align.
-  const maxCombinedMapOffsetX = combinedMapInfo.width - CAPTURED_MINIMAP_WIDTH;
-  const maxCombinedMapOffsetY = combinedMapInfo.height - CAPTURED_MINIMAP_HEIGHT;
-
-  if (maxCombinedMapOffsetX < 0 || maxCombinedMapOffsetY < 0) {
-    console.error('[MinimapMatcher] Combined map is smaller than the captured minimap. Cannot perform matching.');
-    return [];
-  }
-
-  console.log(`[MinimapMatcher] Searching within combined map offsets: X: 0-${maxCombinedMapOffsetX}, Y: 0-${maxCombinedMapOffsetY}`);
-
-  for (let combinedMapOffsetY = 0; combinedMapOffsetY <= maxCombinedMapOffsetY; combinedMapOffsetY++) {
-    for (let combinedMapOffsetX = 0; combinedMapOffsetX <= maxCombinedMapOffsetX; combinedMapOffsetX++) {
-      const matchPercentage = compareMinimapWithPortion(
-        // Use the generic compare function
-        capturedMinimapBuffer,
-        combinedMapInfo,
-        combinedMapOffsetX,
-        combinedMapOffsetY,
-      );
-
-      // Log matches above the threshold
-      if (matchPercentage >= LOG_MATCH_THRESHOLD) {
-        console.log(
-          `[MinimapMatcher] Match found at combined map offset ${combinedMapOffsetX},${combinedMapOffsetY} with ${matchPercentage.toFixed(2)}% similarity.`,
-        );
-      }
-
-      if (matchPercentage >= PERFECT_MATCH_PERCENTAGE) {
-        console.log(
-          `[MinimapMatcher] PERFECT match found at combined map offset ${combinedMapOffsetX},${combinedMapOffsetY} with ${matchPercentage.toFixed(2)}% similarity.`,
-        );
-
-        // Calculate player's absolute coordinates
-        // Player's absolute X = Combined map absolute origin X + offset within combined map where minimap top-left aligns + player's relative X in captured minimap
-        const playerAbsX = combinedMapAbsOriginX + combinedMapOffsetX + PLAYER_RELATIVE_X;
-        const playerAbsY = combinedMapAbsOriginY + combinedMapOffsetY + PLAYER_RELATIVE_Y;
-        const playerAbsZ = targetFloor; // Player is on the floor of the combined map
-
-        console.log(`[MinimapMatcher] Estimated Player Absolute Coordinates: X=${playerAbsX}, Y=${playerAbsY}, Z=${playerAbsZ}`);
-
-        // Return the first perfect match found immediately
-        return [
-          {
-            combinedMapOffsetX: combinedMapOffsetX, // X offset within the combined map where minimap top-left aligns
-            combinedMapOffsetY: combinedMapOffsetY, // Y offset within the combined map where minimap top-left aligns
-            similarity: matchPercentage,
-            playerAbsX: playerAbsX,
-            playerAbsY: playerAbsY,
-            playerAbsZ: playerAbsZ,
-          },
-        ];
-      }
-    }
-  }
-
-  console.log(
-    `[MinimapMatcher] Search complete on combined map for floor ${targetFloor}. No perfect match (${PERFECT_MATCH_PERCENTAGE}%) found.`,
-  );
-  return []; // Return empty array if no perfect match is found
-}
-
-// Function to discover the available minimap tile ranges by scanning the original tiles directory
-// Returns an object with min/max x, y (absolute coordinates) of the map extent, or null if no tiles are found.
-// This is used to understand the scale and origin of the combined map.
-async function discoverOverallMinimapDimensions() {
-  let minX = Infinity,
-    maxX = -Infinity;
-  let minY = Infinity,
-    maxY = -Infinity;
-  let foundTiles = false;
-
-  try {
-    // Check if the original tiles directory exists
-    try {
-      await fs.access(ORIGINAL_TILES_PATH);
-    } catch (error) {
-      console.warn(
-        `[MinimapMatcher] Original minimap tiles directory not found at ${ORIGINAL_TILES_PATH}. Cannot determine overall map dimensions from tiles.`,
-      );
-      return null;
-    }
-
-    const files = await fs.readdir(ORIGINAL_TILES_PATH);
-
-    const tilePattern = /^Minimap_Color_(\d+)_(\d+)_(\d+)\.png$/;
-
-    for (const file of files) {
-      const match = file.match(tilePattern);
-      if (match) {
-        foundTiles = true;
-        const x = parseInt(match[1], 10);
-        const y = parseInt(match[2], 10);
-        // We don't need Z for overall X/Y dimensions from tiles
-
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    }
-
-    if (foundTiles) {
-      // Calculate the overall dimensions in pixels based on the tile ranges
-      // The max X and Y from file names are the top-left corners of the last tiles.
-      // To get the full extent, we add TILE_SIZE.
-      const overallWidth = maxX - minX + TILE_SIZE;
-      const overallHeight = maxY - minY + TILE_SIZE;
-      console.log(
-        `[MinimapMatcher] Discovered overall map dimensions from tiles: Absolute X range ${minX}-${maxX + TILE_SIZE - 1}, Y range ${minY}-${maxY + TILE_SIZE - 1}. Overall pixel dimensions: ${overallWidth}x${overallHeight}`,
-      );
-      return { minX, maxX, minY, maxY, overallWidth, overallHeight };
-    } else {
-      console.warn(
-        `[MinimapMatcher] No original minimap tile files found in ${ORIGINAL_TILES_PATH}. Cannot determine overall map dimensions.`,
-      );
-      return null;
-    }
-  } catch (error) {
-    console.error(`[MinimapMatcher] Error scanning original minimap directory ${ORIGINAL_TILES_PATH}:`, error);
-    return null;
-  }
-}
+export const minimapMatcher = new MinimapMatcher();

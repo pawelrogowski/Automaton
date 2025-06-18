@@ -341,6 +341,19 @@ class WorkerManager {
       }
     }
 
+    // Handle minimapMonitor worker lifecycle
+    if (windowId) {
+      if (!this.workers.has('minimapMonitor')) {
+        log('info', '[Worker Manager] Starting minimapMonitor for window ID:', windowId);
+        this.startWorker('minimapMonitor');
+      }
+    } else {
+      if (this.workers.has('minimapMonitor')) {
+        log('info', '[Worker Manager] Stopping minimapMonitor as window ID is no longer set.');
+        this.stopWorker('minimapMonitor');
+      }
+    }
+
     // Manage individual luaScriptWorkers
     const activeScriptIds = new Set(currentEnabledPersistentScripts.map((script) => script.id));
     const runningScriptWorkerIds = new Set(
