@@ -14,6 +14,7 @@ const logger = createLogger({ info: true, error: true, debug: false });
 
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
 const TARGET_Z_LEVEL = 7; // Currently focusing on ground floor
+const WATER_COLOR_RGB = { r: 51, g: 102, b: 153 }; // The RGB value for water pixels we'll ignore
 
 class MinimapMatcher {
   constructor() {
@@ -116,12 +117,12 @@ class MinimapMatcher {
    * @param {Buffer} packedMinimapData - The 4-bit PACKED image data of the minimap.
    * @param {number} minimapWidth - The width of the minimap image.
    * @param {number} minimapHeight - The height of the minimap image.
+   * @param {{isCancelled: boolean}} cancellationToken - An object to signal cancellation.
    * @returns {{x: number, y: number, z: number, confidence: number}|null} The absolute coordinates if a match is found.
    */
-  findPosition(packedMinimapData, minimapWidth, minimapHeight) {
+  findPosition(packedMinimapData, minimapWidth, minimapHeight, cancellationToken) {
     if (!this.isLoaded) return null;
 
-    // 1. Unpack the incoming minimap data into an array of indices
     const pixelCount = minimapWidth * minimapHeight;
     const unpackedMinimap = new Uint8Array(pixelCount);
     for (let i = 0; i < packedMinimapData.length; i++) {
@@ -134,7 +135,6 @@ class MinimapMatcher {
       }
     }
 
-    // 2. Calculate match thresholds
     let totalPixelsToMatch = 0;
     for (let i = 0; i < unpackedMinimap.length; i++) {
       if (unpackedMinimap[i] !== this.waterColorIndex) {
@@ -143,24 +143,28 @@ class MinimapMatcher {
     }
     const allowedMismatches = Math.floor(totalPixelsToMatch * (1 - this.minMatchPercentage));
 
-    // 3. Define the search function
     const searchArea = (startX, startY, endX, endY) => {
       let bestMatch = { x: 0, y: 0, mismatches: Infinity };
 
       for (let y = startY; y <= endY - minimapHeight; y++) {
+        // --- MODIFICATION: Check for cancellation once per row ---
+        if (cancellationToken.isCancelled) {
+          logger('debug', 'Search cancelled by new frame.');
+          return null;
+        }
+
         for (let x = startX; x <= endX - minimapWidth; x++) {
           let mismatches = 0;
           for (let my = 0; my < minimapHeight; my++) {
             for (let mx = 0; mx < minimapWidth; mx++) {
               const minimapIndex = unpackedMinimap[my * minimapWidth + mx];
-              if (minimapIndex === this.waterColorIndex) continue; // Skip water pixels
+              if (minimapIndex === this.waterColorIndex) continue;
 
               const mapIndex = this.mapData[(y + my) * this.mapWidth + (x + mx)];
               if (minimapIndex !== mapIndex) {
                 mismatches++;
               }
               if (mismatches > allowedMismatches || mismatches >= bestMatch.mismatches) {
-                // Early exit if we're already worse than the allowed threshold or the best match found so far
                 break;
               }
             }
@@ -175,7 +179,6 @@ class MinimapMatcher {
       return bestMatch.mismatches <= allowedMismatches ? bestMatch : null;
     };
 
-    // 4. Execute search (localized first, then full scan if needed)
     let foundMatch = null;
     const searchRadius = 200;
     if (this.lastKnownPosition.x !== null) {
@@ -186,18 +189,21 @@ class MinimapMatcher {
       foundMatch = searchArea(sx, sy, ex, ey);
     }
 
+    // --- MODIFICATION: Check for cancellation between localized and full search ---
+    if (cancellationToken.isCancelled) return null;
+
     if (!foundMatch) {
       foundMatch = searchArea(0, 0, this.mapWidth, this.mapHeight);
     }
 
-    // 5. Process and return result
+    // --- MODIFICATION: Final check before returning ---
+    if (cancellationToken.isCancelled) return null;
+
     if (foundMatch) {
       const confidence = 1 - foundMatch.mismatches / totalPixelsToMatch;
       this.lastKnownPosition = { x: foundMatch.x, y: foundMatch.y, z: TARGET_Z_LEVEL };
-
       const absoluteX = foundMatch.x + this.mapIndex.minX + Math.floor(minimapWidth / 2);
       const absoluteY = foundMatch.y + this.mapIndex.minY + Math.floor(minimapHeight / 2);
-
       return { x: absoluteX, y: absoluteY, z: TARGET_Z_LEVEL, confidence };
     }
 

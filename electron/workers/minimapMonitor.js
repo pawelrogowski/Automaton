@@ -1,15 +1,15 @@
 // This worker script continuously monitors a specific region of the game window to capture the minimap.
 // On startup, it loads a pre-generated `palette.json` to understand the minimap's exact color scheme.
-// In a loop, it captures the minimap as raw RGB pixel data. It then converts this RGB data into a
-// highly optimized 4-bit indexed format, where each pixel is represented by a 4-bit number (its index
-// in the palette). Two pixels are packed into a single byte. This converted, compact data is then
-// passed to the `minimapMatcher` to find the player's current position on the full game map.
-// The raw RGB data is also sent to the main thread for potential UI display.
+// In a loop, it captures the minimap as raw RGB pixel data. To prevent wasting CPU cycles on stale data,
+// it uses a "cancellation token" system. When a new frame of data is captured, it signals any ongoing
+// search from the previous frame to be cancelled. It then converts the new RGB data into a highly optimized
+// 4-bit indexed format and starts a new search, passing it a new token. This ensures the application is
+// always processing the most up-to-date information and remains highly responsive.
 
 import { parentPort, workerData } from 'worker_threads';
 import { createRequire } from 'module';
-import fs from 'fs/promises'; // <-- ADDED: For reading the palette file
-import path from 'path'; // <-- ADDED: For building the palette file path
+import fs from 'fs/promises';
+import path from 'path';
 import { regionColorSequences } from '../constants/index.js';
 import { createLogger } from '../utils/logger.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
@@ -32,9 +32,9 @@ try {
 const TARGET_FPS = 10;
 const MINIMAP_WIDTH = 106;
 const MINIMAP_HEIGHT = 109;
-const PALETTE_PATH = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json'); // <-- ADDED
+const PALETTE_PATH = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json');
 
-const logger = createLogger({ info: true, error: true });
+const logger = createLogger({ info: true, error: true, debug: false });
 
 let state = null;
 let initialized = false;
@@ -45,11 +45,12 @@ let currentWindowId = null;
 
 const captureInstance = X11RegionCapture ? new X11RegionCapture() : null;
 
-// --- NEW: Color palette map for fast lookups ---
+// --- Cancellation Token for the search task ---
+let currentSearchToken = null;
 let colorToIndexMap = null;
 
 /**
- * --- NEW: Converts a raw RGB buffer to the packed 4-bit indexed format ---
+ * Converts a raw RGB buffer to the packed 4-bit indexed format.
  * @param {Buffer} rgbBuffer The raw RGB pixel data (3 bytes per pixel).
  * @param {number} width The width of the image.
  * @param {number} height The height of the image.
@@ -64,12 +65,11 @@ function convertRgbTo4BitPacked(rgbBuffer, width, height) {
   const packedData = Buffer.alloc(Math.ceil(pixelCount / 2));
   let packedDataIndex = 0;
 
-  // Process two pixels (6 bytes of RGB data) in each iteration
   for (let i = 0; i < pixelCount * 3; i += 6) {
     const r1 = rgbBuffer[i],
       g1 = rgbBuffer[i + 1],
       b1 = rgbBuffer[i + 2];
-    const index1 = colorToIndexMap.get(`${r1},${g1},${b1}`) ?? 0; // Default to index 0 if color is unknown
+    const index1 = colorToIndexMap.get(`${r1},${g1},${b1}`) ?? 0;
 
     let index2 = 0;
     if (i + 3 < rgbBuffer.length) {
@@ -85,11 +85,11 @@ function convertRgbTo4BitPacked(rgbBuffer, width, height) {
   return packedData;
 }
 
-// (The rest of the functions like resetRegions, addAndTrackRegion, initializeRegions are unchanged)
 function resetRegions() {
   minimapFullRegionDef = null;
   regionBuffers.clear();
 }
+
 function addAndTrackRegion(name, x, y, width, height) {
   const regionConfig = { regionName: name, winX: x, winY: y, regionWidth: width, regionHeight: height };
   try {
@@ -104,6 +104,7 @@ function addAndTrackRegion(name, x, y, width, height) {
     return null;
   }
 }
+
 async function initializeRegions() {
   if (!state?.global?.windowId) {
     initialized = false;
@@ -111,6 +112,7 @@ async function initializeRegions() {
     logger('warn', 'Window ID not available, cannot initialize regions. Restarting...');
     return;
   }
+
   resetRegions();
   let initialFullFrameResult = null;
   try {
@@ -128,9 +130,11 @@ async function initializeRegions() {
     resetRegions();
     return;
   }
+
   const estimatedMaxSize = 2560 * 1600 * 3 + 8;
   const fullWindowBuffer = Buffer.alloc(estimatedMaxSize);
   initialFullFrameResult = captureInstance.getFullWindowImageData(fullWindowBuffer);
+
   if (!initialFullFrameResult?.success) {
     logger('error', `Failed to get initial full window frame. Result: ${JSON.stringify(initialFullFrameResult)}`);
     initialized = false;
@@ -138,6 +142,7 @@ async function initializeRegions() {
     resetRegions();
     return;
   }
+
   try {
     const foundMinimapFull = findSequencesNative(fullWindowBuffer, { minimapFull: regionColorSequences.minimapFull }, null, 'first');
     if (foundMinimapFull?.minimapFull?.x !== undefined) {
@@ -184,6 +189,10 @@ async function mainLoopIteration() {
   const loopStartTime = Date.now();
   try {
     if ((!initialized && state?.global?.windowId) || shouldRestart) {
+      if (currentSearchToken) {
+        currentSearchToken.isCancelled = true;
+        currentSearchToken = null;
+      }
       await initializeRegions();
       if (!initialized) {
         logger('warn', 'Initialization failed, resetting regions and waiting for next loop.');
@@ -197,55 +206,75 @@ async function mainLoopIteration() {
       if (regionBufferInfo) {
         const regionResult = captureInstance.getRegionRgbData('minimapFullRegion', regionBufferInfo.buffer);
 
-        // --- MODIFIED: This block handles a successful capture ---
         if (regionResult?.success && regionResult.width > 0 && regionResult.height > 0) {
+          // 1. Cancel any previous, still-running search.
+          if (currentSearchToken) {
+            currentSearchToken.isCancelled = true;
+          }
+
+          // 2. Create a new token for this search.
+          const searchToken = { isCancelled: false };
+          currentSearchToken = searchToken;
+
           regionBufferInfo.width = regionResult.width;
           regionBufferInfo.height = regionResult.height;
           regionBufferInfo.timestamp = regionResult.captureTimestampUs;
-
           const imageData = regionBufferInfo.buffer.subarray(8, regionResult.width * regionResult.height * 3 + 8);
           const { width, height } = regionResult;
-
-          // Convert the captured RGB data to the packed 4-bit format for matching
           const packedMinimapData = convertRgbTo4BitPacked(imageData, width, height);
 
-          // Find position using the new packed format
-          // NOTE: minimapMatcher.findPosition must be updated to handle this new data format.
-          const position = minimapMatcher.findPosition(packedMinimapData, width, height);
+          // 3. Pass the token to the findPosition function.
+          const position = await minimapMatcher.findPosition(packedMinimapData, width, height, searchToken);
 
-          if (position) {
-            parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload: position });
-            logger('info', `Player position found: X=${position.x}, Y=${position.y}, Z=${position.z}`);
+          // 4. Only process the result if our token wasn't cancelled by a newer frame.
+          if (!searchToken.isCancelled) {
+            currentSearchToken = null; // Mark this search as complete.
+
+            if (position) {
+              parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload: position });
+              logger('info', `Player position found: X=${position.x}, Y=${position.y}, Z=${position.z}`);
+            } else {
+              parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload: { x: null, y: null, z: null } });
+              logger('warn', 'Player position not found on minimap (or search was cancelled).');
+            }
           } else {
-            parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload: { x: null, y: null, z: null } });
-            logger('warn', 'Player position not found on minimap.');
+            logger('debug', 'Search result ignored as it was cancelled by a newer frame.');
           }
 
-          // Also post the raw image data for UI display if needed
           parentPort.postMessage({ type: 'minimapFullData', imageData, width, height, timestamp: regionResult.captureTimestampUs });
         } else {
           logger('warn', `Failed to capture minimapFullRegion data. Result: ${JSON.stringify(regionResult)}`);
-          // Note: The fallback logic for failed captures could also be updated to use conversion,
-          // but for simplicity, we'll focus on the primary success path for now.
         }
       } else {
-        logger('error', '[Worker] regionBufferInfo not found for "minimapFullRegion". This indicates a configuration problem.');
+        logger('error', '[Worker] regionBufferInfo not found for "minimapFullRegion".');
         shouldRestart = true;
         initialized = false;
       }
     }
-    // (Rest of the loop logic for restarts, etc. remains the same)
   } catch (err) {
-    // ...
+    logger('error', `Fatal error in mainLoopIteration: ${err.message}`, err);
+    shouldRestart = true;
+    initialized = false;
+    currentSearchToken = null;
+    if (captureInstance) {
+      try {
+        captureInstance.stopMonitorInstance();
+        logger('info', 'Stopped monitor instance due to fatal error.');
+      } catch (e) {
+        logger('error', `Error stopping monitor instance after fatal error: ${e.message}`);
+      }
+    }
   } finally {
-    // ...
+    const loopExecutionTime = Date.now() - loopStartTime;
+    const delayTime = calculateDelayTime(loopExecutionTime, TARGET_FPS);
+    if (delayTime > 0) {
+      await delay(delayTime);
+    }
   }
 }
 
 async function start() {
   logger('info', 'Minimap monitor worker started.');
-
-  // --- NEW: Load the color palette on startup ---
   try {
     const paletteData = JSON.parse(await fs.readFile(PALETTE_PATH, 'utf-8'));
     colorToIndexMap = new Map();
@@ -259,13 +288,12 @@ async function start() {
     process.exit(1);
   }
 
-  await minimapMatcher.loadMapData(); // Load map data once on startup
+  await minimapMatcher.loadMapData();
   while (true) {
     await mainLoopIteration();
   }
 }
 
-// (The parentPort listeners for 'message' and 'close' remain unchanged)
 parentPort.on('message', (message) => {
   if (message && message.command === 'forceReinitialize') {
     logger('info', 'Received forceReinitialize command.');
@@ -303,8 +331,12 @@ parentPort.on('message', (message) => {
     return;
   }
 });
+
 parentPort.on('close', async () => {
   logger('info', 'Minimap monitor worker closing.');
+  if (currentSearchToken) {
+    currentSearchToken.isCancelled = true;
+  }
   if (captureInstance) {
     try {
       captureInstance.stopMonitorInstance();
@@ -316,6 +348,7 @@ parentPort.on('close', async () => {
   resetRegions();
   process.exit(0);
 });
+
 start().catch(async (err) => {
   logger('error', `Worker fatal error: ${err.message}`, err);
   if (parentPort) parentPort.postMessage({ fatalError: err.message || 'Unknown fatal error in worker' });
