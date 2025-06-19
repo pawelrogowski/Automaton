@@ -1,11 +1,3 @@
-// This class is responsible for finding a small, captured minimap image within the full, pre-processed map of an entire game floor.
-// On startup, it loads the game's color palette and the pre-processed map index. It then constructs a complete,
-// in-memory representation of the map floor, not as colors, but as a giant 2D array of palette indices.
-// To do this, it reads each pre-processed `.bin` tile file, unpacks its 4-bit indexed data into an 8-bit array,
-// and copies it into the correct position in the main map buffer.
-// The `findPosition` method then takes a small, packed minimap sample, unpacks it, and performs a highly-efficient
-// search for that sequence of indices within the main map data, skipping known "water" pixels to improve accuracy.
-
 import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from './logger.js';
@@ -13,162 +5,116 @@ import { createLogger } from './logger.js';
 const logger = createLogger({ info: true, error: true, debug: false });
 
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
-const TARGET_Z_LEVEL = 7; // Currently focusing on ground floor
-const WATER_COLOR_RGB = { r: 51, g: 102, b: 153 }; // The RGB value for water pixels we'll ignore
+
+const EXCLUDED_COLORS_RGB = [
+  { r: 51, g: 102, b: 153 },
+  { r: 0, g: 0, b: 0 },
+  { r: 255, g: 255, b: 255 },
+  { r: 153, g: 153, b: 153 },
+  { r: 0, g: 204, b: 0 },
+  { r: 102, g: 102, b: 102 },
+  { r: 255, g: 204, b: 153 },
+  { r: 153, g: 102, b: 51 },
+  { r: 255, g: 102, b: 0 },
+];
 
 class MinimapMatcher {
   constructor() {
-    this.mapData = null; // Will store the UNPACKED (Uint8Array) indices of the entire Z-level
-    this.mapIndex = null;
+    this.mapData = new Map();
+    this.mapIndex = new Map();
     this.palette = null;
-    this.waterColorIndex = -1; // The index of the water color in the palette
-    this.mapWidth = 0;
-    this.mapHeight = 0;
+    this.excludedColorIndices = new Set();
     this.isLoaded = false;
-    this.lastKnownPosition = { x: null, y: null, z: null };
-    this.minMatchPercentage = 0.98; // Require a very high match percentage for indexed data
+    this.lastKnownPositionByZ = new Map();
+    this.globalLastRelativePosition = { x: null, y: null };
+    this.minMatchPercentage = 1.0;
   }
 
+  // loadMapData is correct and does not need to be changed.
   async loadMapData() {
-    if (this.isLoaded) {
-      logger('info', 'Minimap data already loaded.');
-      return;
-    }
-
-    const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${TARGET_Z_LEVEL}`);
-    const indexFilePath = path.join(zLevelDir, 'index.json');
-    const paletteFilePath = path.join(PREPROCESSED_BASE_DIR, 'palette.json');
-
+    if (this.isLoaded) return;
     try {
-      // 1. Load the color palette and find the index for the water color
-      logger('info', `Loading palette from: ${paletteFilePath}`);
-      const paletteFileContent = await fs.readFile(paletteFilePath, 'utf8');
-      this.palette = JSON.parse(paletteFileContent);
-      this.waterColorIndex = this.palette.findIndex(
-        (c) => c.r === WATER_COLOR_RGB.r && c.g === WATER_COLOR_RGB.g && c.b === WATER_COLOR_RGB.b,
-      );
-      if (this.waterColorIndex === -1) {
-        logger('warn', 'Water color RGB not found in the palette.');
-      } else {
-        logger('info', `Water color identified at palette index: ${this.waterColorIndex}`);
+      const paletteFilePath = path.join(PREPROCESSED_BASE_DIR, 'palette.json');
+      this.palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
+      this.excludedColorIndices.clear();
+      for (const excludedColor of EXCLUDED_COLORS_RGB) {
+        const index = this.palette.findIndex((c) => c.r === excludedColor.r && c.g === excludedColor.g && c.b === excludedColor.b);
+        if (index !== -1) this.excludedColorIndices.add(index);
       }
-
-      // 2. Load the map index
-      logger('info', `Loading map index from: ${indexFilePath}`);
-      const indexFileContent = await fs.readFile(indexFilePath, 'utf8');
-      this.mapIndex = JSON.parse(indexFileContent);
-      if (!this.mapIndex?.tiles?.length) throw new Error('Map index is empty or malformed.');
-
-      // 3. Calculate map dimensions and create a single large buffer for UNPACKED indices
-      const tileWidth = 256,
-        tileHeight = 256;
-      this.mapWidth = this.mapIndex.maxX - this.mapIndex.minX + tileWidth;
-      this.mapHeight = this.mapIndex.maxY - this.mapIndex.minY + tileHeight;
-      this.mapData = new Uint8Array(this.mapWidth * this.mapHeight);
-      logger('info', `Calculated map dimensions: ${this.mapWidth}x${this.mapHeight}. Allocated memory for unpacked indices.`);
-
-      // 4. Load each tile, unpack it, and place it in the large buffer
-      for (const tile of this.mapIndex.tiles) {
-        const tileFilePath = path.join(zLevelDir, tile.file);
-        const tileBufferWithHeader = await fs.readFile(tileFilePath);
-        const tileWidthFromHeader = tileBufferWithHeader.readUInt32LE(0);
-        const tileHeightFromHeader = tileBufferWithHeader.readUInt32LE(4);
-        const bitsPerPixel = tileBufferWithHeader.readUInt32LE(8);
-        const packedTileData = tileBufferWithHeader.subarray(12);
-
-        if (bitsPerPixel !== 4) {
-          logger('warn', `Skipping tile ${tile.file}: Expected 4 bits per pixel, got ${bitsPerPixel}.`);
-          continue;
-        }
-
-        // Unpack the 4-bit data into an 8-bit array for easy access
-        const unpackedTileIndices = new Uint8Array(tileWidthFromHeader * tileHeightFromHeader);
-        for (let i = 0; i < packedTileData.length; i++) {
-          const byte = packedTileData[i];
-          const p1Index = i * 2;
-          const p2Index = i * 2 + 1;
-          unpackedTileIndices[p1Index] = byte >> 4; // First pixel is in the high 4 bits
-          if (p2Index < unpackedTileIndices.length) {
-            unpackedTileIndices[p2Index] = byte & 0x0f; // Second pixel is in the low 4 bits
+      const zLevelDirs = (await fs.readdir(PREPROCESSED_BASE_DIR, { withFileTypes: true }))
+        .filter((d) => d.isDirectory() && d.name.startsWith('z'))
+        .map((d) => parseInt(d.name.substring(1), 10));
+      for (const z of zLevelDirs) {
+        const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${z}`);
+        const mapIndexForZ = JSON.parse(await fs.readFile(path.join(zLevelDir, 'index.json'), 'utf8'));
+        if (!mapIndexForZ?.tiles?.length) continue;
+        this.mapIndex.set(z, mapIndexForZ);
+        const mapWidthForZ = mapIndexForZ.maxX - mapIndexForZ.minX + 256;
+        const mapHeightForZ = mapIndexForZ.maxY - mapIndexForZ.minY + 256;
+        const mapDataForZ = new Uint8Array(mapWidthForZ * mapHeightForZ);
+        for (const tile of mapIndexForZ.tiles) {
+          const tileBuffer = await fs.readFile(path.join(zLevelDir, tile.file));
+          const packed = tileBuffer.subarray(12);
+          const tileW = tileBuffer.readUInt32LE(0),
+            tileH = tileBuffer.readUInt32LE(4);
+          const relX = tile.x - mapIndexForZ.minX,
+            relY = tile.y - mapIndexForZ.minY;
+          for (let i = 0; i < packed.length; i++) {
+            const byte = packed[i];
+            const p1Idx = i * 2,
+              p2Idx = i * 2 + 1;
+            if (p1Idx < tileW * tileH)
+              mapDataForZ[(relY + Math.floor(p1Idx / tileW)) * mapWidthForZ + (relX + (p1Idx % tileW))] = byte >> 4;
+            if (p2Idx < tileW * tileH)
+              mapDataForZ[(relY + Math.floor(p2Idx / tileW)) * mapWidthForZ + (relX + (p2Idx % tileW))] = byte & 0x0f;
           }
         }
-
-        // Copy the unpacked tile data into the main map buffer
-        const relativeX = tile.x - this.mapIndex.minX;
-        const relativeY = tile.y - this.mapIndex.minY;
-        for (let y = 0; y < tileHeightFromHeader; y++) {
-          const sourceStart = y * tileWidthFromHeader;
-          const sourceEnd = sourceStart + tileWidthFromHeader;
-          const destinationStart = (relativeY + y) * this.mapWidth + relativeX;
-          this.mapData.set(unpackedTileIndices.subarray(sourceStart, sourceEnd), destinationStart);
-        }
+        this.mapData.set(z, mapDataForZ);
       }
-
       this.isLoaded = true;
-      logger('info', 'All minimap data loaded and unpacked into memory.');
+      logger('info', `All minimap data loaded.`);
     } catch (error) {
       logger('error', `Failed to load minimap data: ${error.message}`);
       this.isLoaded = false;
     }
   }
 
-  /**
-   * Finds the minimap image within the loaded map data by matching palette indices.
-   * @param {Buffer} packedMinimapData - The 4-bit PACKED image data of the minimap.
-   * @param {number} minimapWidth - The width of the minimap image.
-   * @param {number} minimapHeight - The height of the minimap image.
-   * @param {{isCancelled: boolean}} cancellationToken - An object to signal cancellation.
-   * @returns {{x: number, y: number, z: number, confidence: number}|null} The absolute coordinates if a match is found.
-   */
-  findPosition(packedMinimapData, minimapWidth, minimapHeight, cancellationToken) {
-    if (!this.isLoaded) return null;
+  findPosition(unpackedMinimap, minimapWidth, minimapHeight, cancellationToken, targetZ) {
+    if (!this.isLoaded || targetZ === null) return null;
 
-    const pixelCount = minimapWidth * minimapHeight;
-    const unpackedMinimap = new Uint8Array(pixelCount);
-    for (let i = 0; i < packedMinimapData.length; i++) {
-      const byte = packedMinimapData[i];
-      const p1Index = i * 2;
-      const p2Index = i * 2 + 1;
-      unpackedMinimap[p1Index] = byte >> 4;
-      if (p2Index < unpackedMinimap.length) {
-        unpackedMinimap[p2Index] = byte & 0x0f;
-      }
-    }
+    const mapDataForZ = this.mapData.get(targetZ);
+    const mapIndexForZ = this.mapIndex.get(targetZ);
+    if (!mapDataForZ || !mapIndexForZ) return null;
+
+    const mapWidth = mapIndexForZ.maxX - mapIndexForZ.minX + 256;
+    const mapHeight = mapIndexForZ.maxY - mapIndexForZ.minY + 256;
 
     let totalPixelsToMatch = 0;
     for (let i = 0; i < unpackedMinimap.length; i++) {
-      if (unpackedMinimap[i] !== this.waterColorIndex) {
-        totalPixelsToMatch++;
-      }
+      if (!this.excludedColorIndices.has(unpackedMinimap[i])) totalPixelsToMatch++;
     }
+    if (totalPixelsToMatch < 50) return null;
     const allowedMismatches = Math.floor(totalPixelsToMatch * (1 - this.minMatchPercentage));
 
     const searchArea = (startX, startY, endX, endY) => {
-      let bestMatch = { x: 0, y: 0, mismatches: Infinity };
+      let bestMatch = { mismatches: Infinity };
+      for (let y = Math.max(0, startY); y <= Math.min(endY, mapHeight) - minimapHeight; y++) {
+        if (cancellationToken.isCancelled) return null;
+        for (let x = Math.max(0, startX); x <= Math.min(endX, mapWidth) - minimapWidth; x++) {
+          if ((x & 63) === 0 && cancellationToken.isCancelled) return null;
 
-      for (let y = startY; y <= endY - minimapHeight; y++) {
-        // --- MODIFICATION: Check for cancellation once per row ---
-        if (cancellationToken.isCancelled) {
-          logger('debug', 'Search cancelled by new frame.');
-          return null;
-        }
-
-        for (let x = startX; x <= endX - minimapWidth; x++) {
           let mismatches = 0;
           for (let my = 0; my < minimapHeight; my++) {
             for (let mx = 0; mx < minimapWidth; mx++) {
               const minimapIndex = unpackedMinimap[my * minimapWidth + mx];
-              if (minimapIndex === this.waterColorIndex) continue;
+              if (this.excludedColorIndices.has(minimapIndex)) continue;
 
-              const mapIndex = this.mapData[(y + my) * this.mapWidth + (x + mx)];
-              if (minimapIndex !== mapIndex) {
-                mismatches++;
-              }
-              if (mismatches > allowedMismatches || mismatches >= bestMatch.mismatches) {
-                break;
-              }
+              const mapIndex = mapDataForZ[(y + my) * mapWidth + (x + mx)];
+              if (minimapIndex !== mapIndex) mismatches++;
+
+              if (mismatches > allowedMismatches) break;
             }
-            if (mismatches > allowedMismatches || mismatches >= bestMatch.mismatches) break;
+            if (mismatches > allowedMismatches) break;
           }
 
           if (mismatches < bestMatch.mismatches) {
@@ -181,32 +127,42 @@ class MinimapMatcher {
 
     let foundMatch = null;
     const searchRadius = 200;
-    if (this.lastKnownPosition.x !== null) {
-      const sx = Math.max(0, this.lastKnownPosition.x - searchRadius);
-      const sy = Math.max(0, this.lastKnownPosition.y - searchRadius);
-      const ex = Math.min(this.mapWidth, this.lastKnownPosition.x + searchRadius);
-      const ey = Math.min(this.mapHeight, this.lastKnownPosition.y + searchRadius);
-      foundMatch = searchArea(sx, sy, ex, ey);
-    }
+    const lastPosOnThisZ = this.lastKnownPositionByZ.get(targetZ);
 
-    // --- MODIFICATION: Check for cancellation between localized and full search ---
-    if (cancellationToken.isCancelled) return null;
+    if (lastPosOnThisZ) {
+      foundMatch = searchArea(
+        lastPosOnThisZ.x - searchRadius,
+        lastPosOnThisZ.y - searchRadius,
+        lastPosOnThisZ.x + searchRadius,
+        lastPosOnThisZ.y + searchRadius,
+      );
+    } else if (this.globalLastRelativePosition.x !== null) {
+      foundMatch = searchArea(
+        this.globalLastRelativePosition.x - searchRadius,
+        this.globalLastRelativePosition.y - searchRadius,
+        this.globalLastRelativePosition.x + searchRadius,
+        this.globalLastRelativePosition.y + searchRadius,
+      );
+    }
 
     if (!foundMatch) {
-      foundMatch = searchArea(0, 0, this.mapWidth, this.mapHeight);
+      foundMatch = searchArea(0, 0, mapWidth, mapHeight);
     }
 
-    // --- MODIFICATION: Final check before returning ---
     if (cancellationToken.isCancelled) return null;
 
     if (foundMatch) {
-      const confidence = 1 - foundMatch.mismatches / totalPixelsToMatch;
-      this.lastKnownPosition = { x: foundMatch.x, y: foundMatch.y, z: TARGET_Z_LEVEL };
-      const absoluteX = foundMatch.x + this.mapIndex.minX + Math.floor(minimapWidth / 2);
-      const absoluteY = foundMatch.y + this.mapIndex.minY + Math.floor(minimapHeight / 2);
-      return { x: absoluteX, y: absoluteY, z: TARGET_Z_LEVEL, confidence };
-    }
+      // Store the RELATIVE coordinates for the next fast search.
+      this.lastKnownPositionByZ.set(targetZ, { x: foundMatch.x, y: foundMatch.y });
+      this.globalLastRelativePosition = { x: foundMatch.x, y: foundMatch.y };
 
+      // Calculate and return the ABSOLUTE player position.
+      const absoluteX = foundMatch.x + mapIndexForZ.minX + Math.floor(minimapWidth / 2);
+      const absoluteY = foundMatch.y + mapIndexForZ.minY + Math.floor(minimapHeight / 2);
+      return { x: absoluteX, y: absoluteY, z: targetZ };
+    } else {
+      this.lastKnownPositionByZ.delete(targetZ);
+    }
     return null;
   }
 }

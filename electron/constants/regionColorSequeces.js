@@ -21,6 +21,18 @@ const regionColorSequences = {
       [36, 36, 36],
     ],
   },
+  minimapFloorIndicatorColumn: {
+    direction: 'horizontal',
+    offset: { x: 33, y: 25 },
+    sequence: [
+      [113, 113, 113],
+      [199, 199, 199],
+      [199, 199, 199],
+      [199, 199, 199],
+      [70, 70, 70],
+      [36, 36, 36],
+    ],
+  },
   minimapFull: {
     direction: 'horizontal',
     offset: { x: -117, y: -20 },

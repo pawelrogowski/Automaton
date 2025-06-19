@@ -5,3 +5,4 @@ export { default as statusBarSequences } from './statusBarSequences.js';
 export { default as resourceBars } from './resourceBars.js';
 export { default as actionBarItems } from './actionBarItems.js';
 export { default as equippedItems } from './equippedItems.js';
+export { default as floorLevelIndicators } from './floorLevelIndicators.js';

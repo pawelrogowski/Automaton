@@ -54,9 +54,11 @@ export const selectActiveWindow = async () => {
     setGlobalState('global/setWindowId', windowId);
 
     const screenMonitorWorkerEntry = workerManager.workers.get('screenMonitor');
+    const minimapMonitorWorkerEntry = workerManager.workers.get('minimapMonitor');
     if (screenMonitorWorkerEntry && screenMonitorWorkerEntry.worker) {
-      log('info', '[windowSelection] Sending forceReinitialize command to screenMonitor');
+      log('info', '[windowSelection] Sending forceReinitialize command to workers');
       screenMonitorWorkerEntry.worker.postMessage({ command: 'forceReinitialize' });
+      minimapMonitorWorkerEntry.worker.postMessage({ command: 'forceReinitialize' });
     }
   } catch (error) {
     log('error', '[windowSelection] Error getting active window ID: ' + error);
