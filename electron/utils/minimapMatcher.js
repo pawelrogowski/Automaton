@@ -49,6 +49,7 @@ class MinimapMatcher {
       const palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
 
       const landmarkData = new Map();
+      const fullMapData = new Map(); // <<<--- ADDED: To hold the new single map.bin data
 
       const zLevelDirs = (await fs.readdir(PREPROCESSED_BASE_DIR, { withFileTypes: true }))
         .filter((d) => d.isDirectory() && d.name.startsWith('z'))
@@ -57,6 +58,7 @@ class MinimapMatcher {
       for (const z of zLevelDirs) {
         const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${z}`);
         try {
+          // --- Load Landmarks (existing logic) ---
           const landmarkBuffer = await fs.readFile(path.join(zLevelDir, 'landmarks.bin'));
           const landmarks = [];
           const landmarkEntrySize = 8 + LANDMARK_PATTERN_BYTES;
@@ -72,11 +74,26 @@ class MinimapMatcher {
           logger('warn', `No landmarks.bin found for Z=${z}. This floor will use fallback search only.`);
           landmarkData.set(z, []);
         }
+
+        // --- ADDED: Load the single map.bin and its index for fallback search ---
+        try {
+          const index = JSON.parse(await fs.readFile(path.join(zLevelDir, 'index.json'), 'utf8'));
+          const mapBuffer = await fs.readFile(path.join(zLevelDir, index.mapFile));
+          fullMapData.set(z, {
+            buffer: mapBuffer,
+            minX: index.minX,
+            minY: index.minY,
+          });
+        } catch (e) {
+          logger('warn', `Could not load map.bin or index.json for Z=${z}. Fallback search will be unavailable.`);
+        }
+        // --- END OF ADDED BLOCK ---
       }
 
       // Sync data to the native module once on load
       this.nativeMatcher.palette = palette;
       this.nativeMatcher.landmarkData = Object.fromEntries(landmarkData);
+      this.nativeMatcher.fullMapData = Object.fromEntries(fullMapData); // <<<--- ADDED: Pass new map data to native module
       this.nativeMatcher.isLoaded = true;
       this.isLoaded = true;
 
