@@ -49,34 +49,37 @@ void MinimapMatcher::PaletteSetter(const Napi::CallbackInfo& info, const Napi::V
 Napi::Value MinimapMatcher::PaletteGetter(const Napi::CallbackInfo& info) { return this->palette.Value(); }
 
 // This is the single, correct implementation for the map-based approach.
+
+
 void MinimapMatcher::LandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value) {
     Napi::Object obj = value.As<Napi::Object>();
     Napi::Array keys = obj.GetPropertyNames();
     this->landmarkData.clear();
-
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         Napi::Value key_value = keys.Get(i);
         std::string key_str = key_value.As<Napi::String>().Utf8Value();
         int z_level = std::stoi(key_str);
-
         Napi::Array landmarksArray = obj.Get(key_value).As<Napi::Array>();
-        std::map<std::vector<uint8_t>, NativeLandmark> nativeLandmarkMap;
-
+        // --- CHANGED: Use the new LandmarkMap alias (unordered_map) ---
+        LandmarkMap nativeLandmarkMap;
         for (uint32_t j = 0; j < landmarksArray.Length(); ++j) {
             Napi::Object lm_js = landmarksArray.Get(j).As<Napi::Object>();
             Napi::Buffer<uint8_t> pattern_buffer = lm_js.Get("pattern").As<Napi::Buffer<uint8_t>>();
-            std::vector<uint8_t> pattern_vec = NapiBufferToVector(pattern_buffer);
-
+            // --- CHANGED: Create a std::string key directly from the buffer ---
+            // This is much more efficient than creating an intermediate std::vector.
+            LandmarkPattern pattern_key(
+                reinterpret_cast<const char*>(pattern_buffer.Data()),
+                pattern_buffer.Length()
+            );
             NativeLandmark nativeLm;
             nativeLm.x = lm_js.Get("x").As<Napi::Number>().Int32Value();
             nativeLm.y = lm_js.Get("y").As<Napi::Number>().Int32Value();
-
-            nativeLandmarkMap[pattern_vec] = nativeLm;
+            // Insert into our new unordered_map
+            nativeLandmarkMap[pattern_key] = nativeLm;
         }
         this->landmarkData[z_level] = std::move(nativeLandmarkMap);
     }
 }
-// *** THE DUPLICATED BLOCK HAS BEEN REMOVED FROM HERE ***
 
 Napi::Value MinimapMatcher::LandmarkDataGetter(const Napi::CallbackInfo& info) { return Napi::String::New(info.Env(), "Landmark data is stored natively."); }
 
@@ -139,28 +142,31 @@ void PositionFinderWorker::OnError(const Napi::Error& e) {
     deferred.Reject(e.Value());
 }
 
-
-// This is the single, correct implementation for the map-based search.
 void PositionFinderWorker::Execute() {
     auto start_time = std::chrono::high_resolution_clock::now();
-    std::string searchMethod = "none";
 
+    // --- Initial checks and setup ---
     auto z_it = this->matcherInstance->landmarkData.find(targetZ);
     if (z_it == this->matcherInstance->landmarkData.end() || z_it->second.empty()) {
-        searchMethod = "fallback_no_landmarks";
+        this->searchMethod = "fallback_no_landmarks";
         auto end_time = std::chrono::high_resolution_clock::now();
         this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
         return;
     }
 
-    const auto& landmarkMapForZ = z_it->second;
-    searchMethod = "landmark_map_lookup";
+    const auto& landmarkMapForZ = z_it->second; // This is now a reference to the unordered_map
+    this->searchMethod = "landmark_map_lookup";
     int halfLandmark = this->matcherInstance->LANDMARK_SIZE / 2;
 
+    // --- OPTIMIZATION: Pre-allocate the probe pattern string ONCE outside the loop ---
+    MinimapMatcher::LandmarkPattern probePattern(this->matcherInstance->LANDMARK_PATTERN_BYTES, '\0');
+    // Get a non-const pointer to the string's internal buffer for fast writing.
+    char* probePatternData = probePattern.data();
+
+    // --- Main search loop ---
     for (int y = halfLandmark; y < minimapHeight - halfLandmark; ++y) {
         if (this->wasCancelled) { return; }
         for (int x = halfLandmark; x < minimapWidth - halfLandmark; ++x) {
-            std::vector<uint8_t> probePattern(this->matcherInstance->LANDMARK_PATTERN_BYTES);
             bool isClean = true;
             for (int my = 0; my < this->matcherInstance->LANDMARK_SIZE; ++my) {
                 for (int mx = 0; mx < this->matcherInstance->LANDMARK_SIZE; ++mx) {
@@ -169,12 +175,14 @@ void PositionFinderWorker::Execute() {
                         isClean = false;
                         break;
                     }
-                    probePattern[my * this->matcherInstance->LANDMARK_SIZE + mx] = liveIndex;
+                    // --- OPTIMIZATION: Write directly into the string's buffer ---
+                    probePatternData[my * this->matcherInstance->LANDMARK_SIZE + mx] = static_cast<char>(liveIndex);
                 }
                 if (!isClean) break;
             }
 
             if (isClean) {
+                // --- THE PAYOFF: This is now a fast O(1) hash table lookup! ---
                 auto lm_it = landmarkMapForZ.find(probePattern);
                 if (lm_it != landmarkMapForZ.end()) {
                     const NativeLandmark& foundLandmark = lm_it->second;
@@ -188,20 +196,19 @@ void PositionFinderWorker::Execute() {
                     this->resultPosition.mapViewX = mapViewX;
                     this->resultPosition.mapViewY = mapViewY;
 
-                    this->searchMethod = searchMethod;
                     auto end_time = std::chrono::high_resolution_clock::now();
                     this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
-                    return;
+                    return; // Position found, exit immediately.
                 }
             }
         }
     }
 
-    searchMethod = "fallback_no_match";
+    // --- If loop finishes without finding a match ---
+    this->searchMethod = "fallback_no_match";
     auto end_time = std::chrono::high_resolution_clock::now();
     this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
 }
-// *** THE DUPLICATED BLOCK HAS BEEN REMOVED FROM HERE ***
 
 void PositionFinderWorker::OnOK() {
     Napi::Env env = Env();

@@ -5,7 +5,6 @@ import path from 'path';
 import { regionColorSequences, floorLevelIndicators } from '../constants/index.js';
 import { createLogger } from '../utils/logger.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
-// [FIX 1] Correctly import the MinimapMatcher class, not an instance.
 import { MinimapMatcher } from '../utils/minimapMatcher.js';
 
 const paths = workerData?.paths || {};
@@ -13,12 +12,12 @@ const logger = createLogger({ info: true, error: true, debug: false });
 
 const require = createRequire(import.meta.url);
 
-// [FIX 2] Use the correct property names from the 'paths' object passed in workerData.
 const x11capturePath = paths.x11capture;
 const findSequencesPath = paths.findSequences;
 const minimapMatcherPath = paths.minimapMatcher;
 
 let X11RegionCapture, findSequencesNative, minimapMatcher;
+let paletteData = null;
 
 try {
   if (!paths.x11capture || !paths.findSequences || !paths.minimapMatcher) {
@@ -34,18 +33,18 @@ try {
   else process.exit(1);
 }
 
-const TARGET_FPS = 10;
+const TARGET_FPS = 60;
 const MINIMAP_WIDTH = 106;
 const MINIMAP_HEIGHT = 109;
 const PALETTE_PATH = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json');
 
+let colorToIndexMap = null;
 let state = null;
 let initialized = false;
 let shouldRestart = false;
 let minimapFullRegionDef = null;
 let minimapFloorIndicatorColumnRegionDef = null;
 let regionBuffers = new Map();
-let colorToIndexMap = null;
 const captureInstance = new X11RegionCapture();
 
 // --- Helper Functions (unpack4BitData, resetRegions, addAndTrackRegion)
@@ -79,6 +78,33 @@ function addAndTrackRegion(name, x, y, width, height) {
   } catch (e) {
     logger('error', `Failed to add/track region ${name}: ${e.message}`);
     return null;
+  }
+}
+
+async function initializePalette() {
+  if (paletteData) {
+    logger('debug', 'Palette data already cached.');
+    return;
+  }
+
+  try {
+    logger('info', 'Loading and caching palette data for the first time...');
+    const palettePath = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json');
+    const paletteFile = await fs.readFile(palettePath, 'utf8');
+    paletteData = JSON.parse(paletteFile);
+
+    // Also create the optimized map at the same time
+    colorToIndexMap = new Map();
+    paletteData.forEach((color, index) => {
+      const intKey = (color.r << 16) | (color.g << 8) | color.b;
+      colorToIndexMap.set(intKey, index);
+    });
+
+    logger('info', 'Palette data successfully loaded and processed.');
+  } catch (error) {
+    logger('error', 'CRITICAL: Failed to load palette.json.', error);
+    // Rethrow to stop the worker from starting in a broken state
+    throw error;
   }
 }
 
@@ -159,28 +185,35 @@ async function mainLoopIteration() {
 
       const minimapEntry = regionData.minimapFullRegion;
       if (minimapEntry && detectedZ !== null) {
-        // --- NON-BLOCKING SEARCH LOGIC ---
-
-        // 1. Prepare data (this is very fast)
         const { data, width, height } = minimapEntry;
         const rgbData = data.subarray(8);
         const packedMinimapData = Buffer.alloc(Math.ceil((width * height) / 2));
-        for (let i = 0; i < width * height * 3; i += 6) {
+
+        // --- THIS IS THE CORRECTED LOOP ---
+        const pixelCount = width * height;
+        for (let i = 0; i < pixelCount * 3; i += 6) {
+          // --- First pixel ---
           const r1 = rgbData[i],
             g1 = rgbData[i + 1],
             b1 = rgbData[i + 2];
-          const index1 = colorToIndexMap.get(`${r1},${g1},${b1}`) ?? 0;
+          // Calculate the integer key, matching how the map was created.
+          const key1 = (r1 << 16) | (g1 << 8) | b1;
+          const index1 = colorToIndexMap.get(key1) ?? 0;
+
+          // --- Second pixel ---
           let index2 = 0;
           if (i + 3 < rgbData.length) {
             const r2 = rgbData[i + 3],
               g2 = rgbData[i + 4],
               b2 = rgbData[i + 5];
-            index2 = colorToIndexMap.get(`${r2},${g2},${b2}`) ?? 0;
+            const key2 = (r2 << 16) | (g2 << 8) | b2;
+            index2 = colorToIndexMap.get(key2) ?? 0;
           }
+
+          // Pack the two 4-bit indices into a single byte.
           packedMinimapData[i / 6] = (index1 << 4) | index2;
         }
         const unpackedMinimap = unpack4BitData(packedMinimapData, width, height);
-
         // 2. Fire and forget: Start the search, don't await it.
         // The matcher class handles cancelling the previous search automatically.
         minimapMatcher
@@ -220,17 +253,14 @@ async function mainLoopIteration() {
 async function start() {
   logger('info', 'Minimap monitor worker started.');
   try {
+    await initializePalette();
     await minimapMatcher.loadMapData();
-    const palette = JSON.parse(await fs.readFile(PALETTE_PATH, 'utf-8'));
-    colorToIndexMap = new Map();
-    palette.forEach((color, index) => {
-      colorToIndexMap.set(`${color.r},${color.g},${color.b}`, index);
-    });
+
     while (true) {
       await mainLoopIteration();
     }
   } catch (err) {
-    logger('error', `Worker fatal error: ${err.message}`, err);
+    logger('error', `Worker fatal error during startup: ${err.message}`, err);
     if (parentPort) parentPort.postMessage({ fatalError: err.message });
     process.exit(1);
   }

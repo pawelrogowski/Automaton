@@ -1,11 +1,14 @@
+// minimapMatcher.h
+
 #ifndef MINIMAP_MATCHER_H
 #define MINIMAP_MATCHER_H
 
 #include <napi.h>
 #include <vector>
-#include <string>
+#include <string>        // <--- ADDED
 #include <set>
 #include <map>
+#include <unordered_map> // <--- ADDED
 #include <atomic>
 
 // --- Forward Declarations ---
@@ -32,7 +35,14 @@ public:
     int LANDMARK_SIZE;
     int LANDMARK_PATTERN_BYTES;
     std::set<int> liveNoiseIndices;
-    std::map<int, std::map<std::vector<uint8_t>, NativeLandmark>> landmarkData;
+
+    // --- NEW: Type aliases for clarity and easy modification ---
+    using LandmarkPattern = std::string;
+    using LandmarkMap = std::unordered_map<LandmarkPattern, NativeLandmark>;
+
+    // --- CHANGED: Use the new, faster unordered_map ---
+    std::map<int, LandmarkMap> landmarkData;
+
     PositionFinderWorker* activeWorker; // Pointer to an incomplete type is allowed
 
 private:
@@ -54,4 +64,4 @@ private:
     std::vector<Napi::Reference<Napi::Object>> EXCLUDED_COLORS_RGB;
 };
 
-#endif // MINIMAP_MATCHER_H
+#endif 

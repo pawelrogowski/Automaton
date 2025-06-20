@@ -36,7 +36,12 @@ CFLAGS_C_Debug :=
 CFLAGS_CC_Debug := \
 	-fno-rtti \
 	-fno-strict-aliasing \
-	-std=gnu++17
+	-std=gnu++17 \
+	-std=c++17 \
+	-O3 \
+	-flto \
+	-fvisibility=hidden \
+	-march=native
 
 INCS_Debug := \
 	-I/home/orimorfus/.cache/node-gyp/22.14.0/include/node \
@@ -80,7 +85,12 @@ CFLAGS_C_Release :=
 CFLAGS_CC_Release := \
 	-fno-rtti \
 	-fno-strict-aliasing \
-	-std=gnu++17
+	-std=gnu++17 \
+	-std=c++17 \
+	-O3 \
+	-flto \
+	-fvisibility=hidden \
+	-march=native
 
 INCS_Release := \
 	-I/home/orimorfus/.cache/node-gyp/22.14.0/include/node \
@@ -122,11 +132,13 @@ $(obj).$(TOOLSET)/$(TARGET)/%.o: $(obj)/%.cc FORCE_DO_CMD
 LDFLAGS_Debug := \
 	-pthread \
 	-rdynamic \
+	-flto \
 	-m64
 
 LDFLAGS_Release := \
 	-pthread \
 	-rdynamic \
+	-flto \
 	-m64
 
 LIBS :=
