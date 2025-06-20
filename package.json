@@ -75,6 +75,7 @@
     "lodash": "^4.17.21",
     "modern-normalize": "^2.0.0",
     "monaco-editor": "^0.52.2",
+    "node-addon-api": "^8.4.0",
     "node-loader": "^2.0.0",
     "node-valkey": "^1.0.3",
     "path-browserify": "^1.0.1",

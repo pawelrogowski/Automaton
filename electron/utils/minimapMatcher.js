@@ -1,11 +1,14 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from './logger.js';
+import { createRequire } from 'module';
 
 const logger = createLogger({ info: true, error: true, debug: false });
+const require = createRequire(import.meta.url);
 
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
-
+const LANDMARK_SIZE = 7;
+const LANDMARK_PATTERN_BYTES = LANDMARK_SIZE * LANDMARK_SIZE;
 const EXCLUDED_COLORS_RGB = [
   { r: 51, g: 102, b: 153 },
   { r: 0, g: 0, b: 0 },
@@ -19,152 +22,113 @@ const EXCLUDED_COLORS_RGB = [
 ];
 
 class MinimapMatcher {
-  constructor() {
-    this.mapData = new Map();
-    this.mapIndex = new Map();
-    this.palette = null;
-    this.excludedColorIndices = new Set();
+  constructor(nativeModulePath) {
+    if (!nativeModulePath) {
+      throw new Error('MinimapMatcher: nativeModulePath is required.');
+    }
+    try {
+      const { MinimapMatcher: NativeMinimapMatcher } = require(nativeModulePath);
+      this.nativeMatcher = new NativeMinimapMatcher({
+        LANDMARK_SIZE,
+        LANDMARK_PATTERN_BYTES,
+        EXCLUDED_COLORS_RGB,
+      });
+    } catch (error) {
+      logger('error', `Failed to load native minimap matcher module from ${nativeModulePath}: ${error.message}`);
+      throw error;
+    }
+
     this.isLoaded = false;
     this.lastKnownPositionByZ = new Map();
-    this.globalLastRelativePosition = { x: null, y: null };
-    this.minMatchPercentage = 1.0;
   }
 
-  // loadMapData is correct and does not need to be changed.
   async loadMapData() {
     if (this.isLoaded) return;
     try {
       const paletteFilePath = path.join(PREPROCESSED_BASE_DIR, 'palette.json');
-      this.palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
-      this.excludedColorIndices.clear();
-      for (const excludedColor of EXCLUDED_COLORS_RGB) {
-        const index = this.palette.findIndex((c) => c.r === excludedColor.r && c.g === excludedColor.g && c.b === excludedColor.b);
-        if (index !== -1) this.excludedColorIndices.add(index);
-      }
+      const palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
+
+      const landmarkData = new Map();
+
       const zLevelDirs = (await fs.readdir(PREPROCESSED_BASE_DIR, { withFileTypes: true }))
         .filter((d) => d.isDirectory() && d.name.startsWith('z'))
         .map((d) => parseInt(d.name.substring(1), 10));
+
       for (const z of zLevelDirs) {
         const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${z}`);
-        const mapIndexForZ = JSON.parse(await fs.readFile(path.join(zLevelDir, 'index.json'), 'utf8'));
-        if (!mapIndexForZ?.tiles?.length) continue;
-        this.mapIndex.set(z, mapIndexForZ);
-        const mapWidthForZ = mapIndexForZ.maxX - mapIndexForZ.minX + 256;
-        const mapHeightForZ = mapIndexForZ.maxY - mapIndexForZ.minY + 256;
-        const mapDataForZ = new Uint8Array(mapWidthForZ * mapHeightForZ);
-        for (const tile of mapIndexForZ.tiles) {
-          const tileBuffer = await fs.readFile(path.join(zLevelDir, tile.file));
-          const packed = tileBuffer.subarray(12);
-          const tileW = tileBuffer.readUInt32LE(0),
-            tileH = tileBuffer.readUInt32LE(4);
-          const relX = tile.x - mapIndexForZ.minX,
-            relY = tile.y - mapIndexForZ.minY;
-          for (let i = 0; i < packed.length; i++) {
-            const byte = packed[i];
-            const p1Idx = i * 2,
-              p2Idx = i * 2 + 1;
-            if (p1Idx < tileW * tileH)
-              mapDataForZ[(relY + Math.floor(p1Idx / tileW)) * mapWidthForZ + (relX + (p1Idx % tileW))] = byte >> 4;
-            if (p2Idx < tileW * tileH)
-              mapDataForZ[(relY + Math.floor(p2Idx / tileW)) * mapWidthForZ + (relX + (p2Idx % tileW))] = byte & 0x0f;
+        try {
+          const landmarkBuffer = await fs.readFile(path.join(zLevelDir, 'landmarks.bin'));
+          const landmarks = [];
+          const landmarkEntrySize = 8 + LANDMARK_PATTERN_BYTES;
+          for (let i = 0; i < landmarkBuffer.length; i += landmarkEntrySize) {
+            landmarks.push({
+              x: landmarkBuffer.readUInt32LE(i),
+              y: landmarkBuffer.readUInt32LE(i + 4),
+              pattern: landmarkBuffer.subarray(i + 8, i + landmarkEntrySize),
+            });
           }
+          landmarkData.set(z, landmarks);
+        } catch (e) {
+          logger('warn', `No landmarks.bin found for Z=${z}. This floor will use fallback search only.`);
+          landmarkData.set(z, []);
         }
-        this.mapData.set(z, mapDataForZ);
       }
+
+      // Sync data to the native module once on load
+      this.nativeMatcher.palette = palette;
+      this.nativeMatcher.landmarkData = Object.fromEntries(landmarkData);
+      this.nativeMatcher.isLoaded = true;
       this.isLoaded = true;
-      logger('info', `All minimap data loaded.`);
+
+      logger('info', `All minimap data loaded and synced to native module.`);
     } catch (error) {
       logger('error', `Failed to load minimap data: ${error.message}`);
       this.isLoaded = false;
+      this.nativeMatcher.isLoaded = false;
     }
   }
 
-  findPosition(unpackedMinimap, minimapWidth, minimapHeight, cancellationToken, targetZ) {
-    if (!this.isLoaded || targetZ === null) return null;
-
-    const mapDataForZ = this.mapData.get(targetZ);
-    const mapIndexForZ = this.mapIndex.get(targetZ);
-    if (!mapDataForZ || !mapIndexForZ) return null;
-
-    const mapWidth = mapIndexForZ.maxX - mapIndexForZ.minX + 256;
-    const mapHeight = mapIndexForZ.maxY - mapIndexForZ.minY + 256;
-
-    let totalPixelsToMatch = 0;
-    for (let i = 0; i < unpackedMinimap.length; i++) {
-      if (!this.excludedColorIndices.has(unpackedMinimap[i])) totalPixelsToMatch++;
+  /**
+   * Finds the player position asynchronously.
+   * This method returns a promise that resolves with the position or rejects on error/cancellation.
+   * It will automatically cancel any previously running search.
+   * @param {Buffer} unpackedMinimap - A buffer of 8-bit palette indices.
+   * @param {number} minimapWidth
+   * @param {number} minimapHeight
+   * @param {number} targetZ
+   * @returns {Promise<object|null>} A promise that resolves with the result object.
+   */
+  async findPosition(unpackedMinimap, minimapWidth, minimapHeight, targetZ) {
+    if (!this.isLoaded) {
+      throw new Error('MinimapMatcher is not loaded. Call loadMapData() first.');
     }
-    if (totalPixelsToMatch < 50) return null;
-    const allowedMismatches = Math.floor(totalPixelsToMatch * (1 - this.minMatchPercentage));
 
-    const searchArea = (startX, startY, endX, endY) => {
-      let bestMatch = { mismatches: Infinity };
-      for (let y = Math.max(0, startY); y <= Math.min(endY, mapHeight) - minimapHeight; y++) {
-        if (cancellationToken.isCancelled) return null;
-        for (let x = Math.max(0, startX); x <= Math.min(endX, mapWidth) - minimapWidth; x++) {
-          if ((x & 63) === 0 && cancellationToken.isCancelled) return null;
+    // The native method now handles its own cancellation and returns a promise
+    const resultPromise = this.nativeMatcher.findPosition(unpackedMinimap, minimapWidth, minimapHeight, targetZ);
 
-          let mismatches = 0;
-          for (let my = 0; my < minimapHeight; my++) {
-            for (let mx = 0; mx < minimapWidth; mx++) {
-              const minimapIndex = unpackedMinimap[my * minimapWidth + mx];
-              if (this.excludedColorIndices.has(minimapIndex)) continue;
-
-              const mapIndex = mapDataForZ[(y + my) * mapWidth + (x + mx)];
-              if (minimapIndex !== mapIndex) mismatches++;
-
-              if (mismatches > allowedMismatches) break;
-            }
-            if (mismatches > allowedMismatches) break;
-          }
-
-          if (mismatches < bestMatch.mismatches) {
-            bestMatch = { x, y, mismatches };
-          }
+    resultPromise
+      .then((result) => {
+        // Update lastKnownPositionByZ from native module if a position was found
+        if (result && result.position) {
+          this.lastKnownPositionByZ.set(targetZ, { x: result.mapViewX, y: result.mapViewY });
         }
-      }
-      return bestMatch.mismatches <= allowedMismatches ? bestMatch : null;
-    };
+      })
+      .catch((err) => {
+        // Don't pollute logs with expected cancellations
+        if (err.message !== 'Search cancelled') {
+          logger('error', `Native findPosition error: ${err.message}`);
+        }
+      });
 
-    let foundMatch = null;
-    const searchRadius = 200;
-    const lastPosOnThisZ = this.lastKnownPositionByZ.get(targetZ);
+    return resultPromise;
+  }
 
-    if (lastPosOnThisZ) {
-      foundMatch = searchArea(
-        lastPosOnThisZ.x - searchRadius,
-        lastPosOnThisZ.y - searchRadius,
-        lastPosOnThisZ.x + searchRadius,
-        lastPosOnThisZ.y + searchRadius,
-      );
-    } else if (this.globalLastRelativePosition.x !== null) {
-      foundMatch = searchArea(
-        this.globalLastRelativePosition.x - searchRadius,
-        this.globalLastRelativePosition.y - searchRadius,
-        this.globalLastRelativePosition.x + searchRadius,
-        this.globalLastRelativePosition.y + searchRadius,
-      );
-    }
-
-    if (!foundMatch) {
-      foundMatch = searchArea(0, 0, mapWidth, mapHeight);
-    }
-
-    if (cancellationToken.isCancelled) return null;
-
-    if (foundMatch) {
-      // Store the RELATIVE coordinates for the next fast search.
-      this.lastKnownPositionByZ.set(targetZ, { x: foundMatch.x, y: foundMatch.y });
-      this.globalLastRelativePosition = { x: foundMatch.x, y: foundMatch.y };
-
-      // Calculate and return the ABSOLUTE player position.
-      const absoluteX = foundMatch.x + mapIndexForZ.minX + Math.floor(minimapWidth / 2);
-      const absoluteY = foundMatch.y + mapIndexForZ.minY + Math.floor(minimapHeight / 2);
-      return { x: absoluteX, y: absoluteY, z: targetZ };
-    } else {
-      this.lastKnownPositionByZ.delete(targetZ);
-    }
-    return null;
+  /**
+   * Explicitly cancels any ongoing search.
+   */
+  cancelCurrentSearch() {
+    this.nativeMatcher.cancelSearch();
   }
 }
 
-export const minimapMatcher = new MinimapMatcher();
+export { MinimapMatcher };

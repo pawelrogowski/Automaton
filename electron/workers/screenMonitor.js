@@ -20,12 +20,18 @@ import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
 
 const require = createRequire(import.meta.url);
-const x11capturePath = workerData?.x11capturePath;
-const findSequencesPath = workerData?.findSequencesPath;
+const paths = workerData?.paths || {};
+const x11capturePath = paths.x11capture;
+const findSequencesPath = paths.findSequences;
 let X11RegionCapture = null;
 let findSequencesNative = null;
-({ X11RegionCapture } = require(x11capturePath));
-({ findSequencesNative } = require(findSequencesPath));
+try {
+  ({ X11RegionCapture } = require(x11capturePath));
+  ({ findSequencesNative } = require(findSequencesPath));
+} catch (e) {
+  parentPort.postMessage({ fatalError: `Failed to load native modules in screenMonitor: ${e.message}` });
+  process.exit(1);
+}
 
 const TARGET_FPS = 32;
 const MINIMAP_CHANGE_INTERVAL = 500;

@@ -48,6 +48,7 @@ class WorkerManager {
     this.paths.keypress = path.join(this.paths.utils, 'keypress.node');
     this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
     this.paths.findSequences = path.join(this.paths.utils, 'findSequences.node');
+    this.paths.minimapMatcher = path.join(this.paths.utils, 'minimapMatcherNative.node');
 
     if (!app.isPackaged) {
       log('info', '[Worker Manager] Paths initialized:', this.paths);
@@ -197,7 +198,8 @@ class WorkerManager {
     }
   }
 
-  startWorker(name, scriptConfig = null) {
+  startWorker(name, scriptConfig = null, paths = null) {
+    // Add paths parameter
     log('debug', `[Worker Manager] Attempting to start worker: ${name}`);
     if (this.workers.has(name)) {
       log('warn', `[Worker Manager] Worker already exists: ${name}`);
@@ -210,10 +212,7 @@ class WorkerManager {
       const worker = new Worker(workerPath, {
         name,
         workerData: {
-          x11capturePath: this.paths.x11capture,
-          keypressPath: this.paths.keypress,
-          useItemOnPath: this.paths.useItemOn,
-          findSequencesPath: this.paths.findSequences,
+          paths: paths || this.paths, // Pass the entire paths object
         },
       });
 
@@ -264,7 +263,7 @@ class WorkerManager {
       await this.stopWorker(name);
       await new Promise((resolve) => setTimeout(resolve, WORKER_INIT_DELAY));
 
-      const newWorker = this.startWorker(name, scriptConfig); // Pass scriptConfig to startWorker
+      const newWorker = this.startWorker(name, scriptConfig, this.paths); // Pass scriptConfig and paths
       if (!newWorker) {
         throw new Error(`Failed to create new worker: ${name}`);
       }
@@ -332,7 +331,7 @@ class WorkerManager {
     if (windowId) {
       if (!this.workers.has('screenMonitor')) {
         log('info', '[Worker Manager] Starting screenMonitor for window ID:', windowId);
-        this.startWorker('screenMonitor');
+        this.startWorker('screenMonitor', null, this.paths); // Pass paths
       }
     } else {
       if (this.workers.has('screenMonitor')) {
@@ -345,7 +344,7 @@ class WorkerManager {
     if (windowId) {
       if (!this.workers.has('minimapMonitor')) {
         log('info', '[Worker Manager] Starting minimapMonitor for window ID:', windowId);
-        this.startWorker('minimapMonitor');
+        this.startWorker('minimapMonitor', null, this.paths); // Pass paths
       }
     } else {
       if (this.workers.has('minimapMonitor')) {
@@ -382,7 +381,7 @@ class WorkerManager {
 
       if (!workerEntry) {
         log('info', `[Worker Manager] Starting new worker for script: ${script.name} (${script.id}).`);
-        this.startWorker(workerName, script); // Pass the full script config
+        this.startWorker(workerName, script, this.paths); // Pass the full script config and paths
       } else {
         // Check if critical script properties have changed, requiring a full worker restart
         const oldConfig = workerEntry.config;
@@ -399,7 +398,7 @@ class WorkerManager {
         } else {
           log('debug', `[Worker Manager] Worker for script ${script.id} already running. Sending state updates.`);
           // Only send state updates if no full restart is needed
-          workerEntry.worker.postMessage({ type: 'stateUpdate', state: state });
+          workerEntry.worker.postMessage({ type: 'stateUpdate', state: store.getState() });
           // No need to send updateScriptConfig if no critical changes, as the worker already has the latest config from the initial start or previous restart
         }
       }

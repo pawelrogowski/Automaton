@@ -5,27 +5,39 @@ import path from 'path';
 import { regionColorSequences, floorLevelIndicators } from '../constants/index.js';
 import { createLogger } from '../utils/logger.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
-import { minimapMatcher } from '../utils/minimapMatcher.js';
+// [FIX 1] Correctly import the MinimapMatcher class, not an instance.
+import { MinimapMatcher } from '../utils/minimapMatcher.js';
+
+const paths = workerData?.paths || {};
+const logger = createLogger({ info: true, error: true, debug: false });
 
 const require = createRequire(import.meta.url);
-const x11capturePath = workerData?.x11capturePath;
-const findSequencesPath = workerData?.findSequencesPath;
-let X11RegionCapture = null;
-let findSequencesNative = null;
+
+// [FIX 2] Use the correct property names from the 'paths' object passed in workerData.
+const x11capturePath = paths.x11capture;
+const findSequencesPath = paths.findSequences;
+const minimapMatcherPath = paths.minimapMatcher;
+
+let X11RegionCapture, findSequencesNative, minimapMatcher;
+
 try {
-  ({ X11RegionCapture } = require(x11capturePath));
-  ({ findSequencesNative } = require(findSequencesPath));
+  if (!paths.x11capture || !paths.findSequences || !paths.minimapMatcher) {
+    throw new Error('One or more native module paths are missing from workerData.');
+  }
+  ({ X11RegionCapture } = require(paths.x11capture));
+  ({ findSequencesNative } = require(paths.findSequences));
+  minimapMatcher = new MinimapMatcher(paths.minimapMatcher);
 } catch (e) {
-  parentPort.postMessage({ fatalError: `Failed to load native modules: ${e.message}` });
-  process.exit(1);
+  const errorMessage = `Failed to load native modules or initialize minimapMatcher: ${e.message}`;
+  logger('error', errorMessage);
+  if (parentPort) parentPort.postMessage({ fatalError: errorMessage });
+  else process.exit(1);
 }
 
 const TARGET_FPS = 10;
 const MINIMAP_WIDTH = 106;
 const MINIMAP_HEIGHT = 109;
 const PALETTE_PATH = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json');
-
-const logger = createLogger({ info: true, error: true, debug: false });
 
 let state = null;
 let initialized = false;
@@ -34,8 +46,9 @@ let minimapFullRegionDef = null;
 let minimapFloorIndicatorColumnRegionDef = null;
 let regionBuffers = new Map();
 let colorToIndexMap = null;
-const captureInstance = X11RegionCapture ? new X11RegionCapture() : null;
-let currentSearchToken = null;
+const captureInstance = new X11RegionCapture();
+
+// --- Helper Functions (unpack4BitData, resetRegions, addAndTrackRegion)
 
 function unpack4BitData(packedData, width, height) {
   const unpacked = new Uint8Array(width * height);
@@ -54,6 +67,7 @@ function resetRegions() {
   minimapFloorIndicatorColumnRegionDef = null;
   regionBuffers.clear();
 }
+
 function addAndTrackRegion(name, x, y, width, height) {
   const regionConfig = { regionName: name, winX: x, winY: y, regionWidth: width, regionHeight: height };
   try {
@@ -67,6 +81,7 @@ function addAndTrackRegion(name, x, y, width, height) {
     return null;
   }
 }
+
 async function initializeRegions() {
   if (!state?.global?.windowId) {
     initialized = false;
@@ -110,10 +125,7 @@ async function mainLoopIteration() {
   const loopStartTime = Date.now();
   try {
     if ((!initialized && state?.global?.windowId) || shouldRestart) {
-      if (currentSearchToken) {
-        currentSearchToken.isCancelled = true;
-        currentSearchToken = null;
-      }
+      minimapMatcher.cancelCurrentSearch();
       await initializeRegions();
       if (!initialized) {
         resetRegions();
@@ -147,13 +159,11 @@ async function mainLoopIteration() {
 
       const minimapEntry = regionData.minimapFullRegion;
       if (minimapEntry && detectedZ !== null) {
-        if (currentSearchToken) currentSearchToken.isCancelled = true;
-        const searchToken = { isCancelled: false };
-        currentSearchToken = searchToken;
+        // --- NON-BLOCKING SEARCH LOGIC ---
 
+        // 1. Prepare data (this is very fast)
         const { data, width, height } = minimapEntry;
         const rgbData = data.subarray(8);
-
         const packedMinimapData = Buffer.alloc(Math.ceil((width * height) / 2));
         for (let i = 0; i < width * height * 3; i += 6) {
           const r1 = rgbData[i],
@@ -169,27 +179,36 @@ async function mainLoopIteration() {
           }
           packedMinimapData[i / 6] = (index1 << 4) | index2;
         }
-
         const unpackedMinimap = unpack4BitData(packedMinimapData, width, height);
-        // The matcher now returns the final, absolute coordinates.
-        const position = await minimapMatcher.findPosition(unpackedMinimap, width, height, searchToken, detectedZ);
 
-        if (!searchToken.isCancelled) {
-          currentSearchToken = null;
-          if (position) {
-            parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload: position });
-          } else {
-            parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload: { x: null, y: null, z: detectedZ } });
-          }
-        }
+        // 2. Fire and forget: Start the search, don't await it.
+        // The matcher class handles cancelling the previous search automatically.
+        minimapMatcher
+          .findPosition(unpackedMinimap, width, height, detectedZ)
+          .then((result) => {
+            // 3. Handle result when it arrives. This does NOT block the mainLoop.
+            if (result && result.position) {
+              const payload = {
+                ...result.position,
+                searchTimeMs: result.performance.totalTimeMs,
+                searchMethod: result.performance.method,
+              };
+              parentPort.postMessage({ storeUpdate: true, type: 'playerMinimapPosition', payload });
+            }
+          })
+          .catch((error) => {
+            // We only care about unexpected errors, not cancellations.
+            if (error && error.message !== 'Search cancelled') {
+              logger('error', `Minimap search promise rejected: ${error.message}`);
+            }
+          });
       }
     }
   } catch (err) {
     logger('error', `Fatal error in mainLoopIteration: ${err.message}`, err);
     shouldRestart = true;
     initialized = false;
-    if (currentSearchToken) currentSearchToken.isCancelled = true;
-    currentSearchToken = null;
+    minimapMatcher.cancelCurrentSearch();
     if (captureInstance) captureInstance.stopMonitorInstance();
   } finally {
     const loopExecutionTime = Date.now() - loopStartTime;
@@ -216,13 +235,13 @@ async function start() {
     process.exit(1);
   }
 }
+
 parentPort.on('message', (message) => {
   if (message?.command === 'forceReinitialize') {
     if (captureInstance && initialized) captureInstance.stopMonitorInstance();
-    if (currentSearchToken) currentSearchToken.isCancelled = true;
+
     initialized = false;
     shouldRestart = true;
-    currentSearchToken = null;
     process.exit(0);
   }
   const previousWindowId = state?.global?.windowId;
@@ -230,14 +249,13 @@ parentPort.on('message', (message) => {
   const newWindowId = state?.global?.windowId;
   if (newWindowId && newWindowId !== previousWindowId) {
     if (captureInstance && initialized) captureInstance.stopMonitorInstance();
-    if (currentSearchToken) currentSearchToken.isCancelled = true;
+
     initialized = false;
     shouldRestart = true;
-    currentSearchToken = null;
   }
 });
+
 parentPort.on('close', () => {
-  if (currentSearchToken) currentSearchToken.isCancelled = true;
   if (captureInstance) captureInstance.stopMonitorInstance();
   process.exit(0);
 });

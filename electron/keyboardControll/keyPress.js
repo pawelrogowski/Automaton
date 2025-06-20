@@ -1,7 +1,7 @@
 import { workerData } from 'worker_threads';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const keypress = require(workerData.keypressPath);
+const keypress = require(workerData.paths.keypress);
 
 export const keyPress = (windowId, key, rule = null) => {
   keypress.sendKey(parseInt(windowId), key);
