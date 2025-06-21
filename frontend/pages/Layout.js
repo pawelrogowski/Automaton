@@ -24,11 +24,11 @@ import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js
 import { v4 as uuidv4 } from 'uuid';
 
 import GameState from './GameState.js';
+import Cavebot from './Cavebot.js'; // Import the new Cavebot component
 import tibia from '../assets/tibia.svg';
 import LuaScripts from './LuaScripts.js';
 import luaIcon from '../assets/Anatomy_Book.gif'; // Correct path
 import CustomSwitch from '../components/CustomSwitch/CustomSwitch.js';
-
 
 // Helper to clamp value between min and max
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -54,12 +54,10 @@ const Layout = () => {
   useEffect(() => {
     if (location.pathname === '/healing' && location.hash === '') {
       navigate('/healing#actionbar', { replace: true });
-
     }
     // Redirect to default hash on Lua Scripts page load if no hash exists
     if (location.pathname === '/luascripts' && location.hash === '') {
       navigate('/luascripts#persistent', { replace: true });
-
     }
   }, [location, navigate]);
 
@@ -67,10 +65,8 @@ const Layout = () => {
   useEffect(() => {
     if (location.pathname === '/') {
       navigate('/healing#actionbar', { replace: true });
-
     }
   }, [navigate, location]);
-
 
   // Update local state if Redux state changes externally
   useEffect(() => {
@@ -102,7 +98,7 @@ const Layout = () => {
         ruleIdPrefix = 'equipRule';
         break;
       default:
-        console.warn("Cannot add rule on current page/hash:", hash, "Falling back to userRule.");
+        console.warn('Cannot add rule on current page/hash:', hash, 'Falling back to userRule.');
         ruleIdPrefix = 'userRule';
         break;
     }
@@ -154,10 +150,16 @@ const Layout = () => {
           imageWidth="32px"
           tooltip="View the current game state data"
         ></NavButton>
+        <NavButton
+          to="/cavebot"
+          text="Cavebot"
+          img={automaton} // Placeholder icon
+          imageWidth="32px"
+          tooltip="Cavebot controls and minimap"
+        ></NavButton>
       </Header>
       <div className="side-main">
         <SidebarWrapper className="aside">
-
           {location.pathname.includes('/healing') && (
             <>
               <div className="button-container">
@@ -278,7 +280,6 @@ const Layout = () => {
             </>
           )}
 
-
           {location.pathname === '/gameState' && (
             <>
               <SideBarNavButton
@@ -311,8 +312,6 @@ const Layout = () => {
               ></SideBarNavButton>
             </>
           )}
-
-
         </SidebarWrapper>
         <div className="main-content">
           <div className="routes-wrapper">
@@ -323,13 +322,13 @@ const Layout = () => {
               {/* Add the new route for Game State */}
               {/* Modify the GameState route to handle hash for different slices */}
               <Route path="/gameState" element={<GameState />} />
+              <Route path="/cavebot" element={<Cavebot />} />
               <Route
                 path="/hotkeys"
                 element={
                   <ol style={{ color: '#fafafa', fontSize: '13px' }}>
                     <li>
-                      Alt+W - Select active window and reset workers. Shows window ID in notification and starts updating hp and mana
-                      values
+                      Alt+W - Select active window and reset workers. Shows window ID in notification and starts updating hp and mana values
                     </li>
                     <li>Alt+E - Toggle bot enabled/disabled state. Plays sound and shows notification</li>
                     <li>Alt+V - Toggle main window visibility (show/hide)</li>

@@ -89,13 +89,18 @@ module.exports = {
       template: './frontend/index.html',
     }),
     new CopyWebpackPlugin({
-        patterns: [
-            // Existing patterns...
-            {
-                from: 'node_modules/monaco-editor/min/vs',
-                to: 'monaco-editor/min/vs'
-            }
-        ]
+      patterns: [
+        // Existing patterns...
+        {
+          from: 'node_modules/monaco-editor/min/vs',
+          to: 'monaco-editor/min/vs',
+        },
+        // New pattern to copy preprocessed minimap resources
+        {
+          from: 'resources/preprocessed_minimaps',
+          to: 'resources/preprocessed_minimaps',
+        },
+      ],
     }),
     new HtmlWebpackPlugin({
       template: './frontend/scriptEditor.html',
@@ -109,13 +114,13 @@ module.exports = {
           to: 'monaco-editor/min/vs',
         },
         {
-            from: './frontend/scriptEditorEntry.js',
-            to: 'scriptEditorEntry.js'
+          from: './frontend/scriptEditorEntry.js',
+          to: 'scriptEditorEntry.js',
         },
-         {
-            from: './frontend/scriptEditor.css',
-            to: 'scriptEditor.css'
-        }
+        {
+          from: './frontend/scriptEditor.css',
+          to: 'scriptEditor.css',
+        },
       ],
     }),
     new CompressionPlugin({

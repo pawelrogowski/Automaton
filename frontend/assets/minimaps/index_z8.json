@@ -1,0 +1,10 @@
+{
+  "z": 8,
+  "minX": 31744,
+  "maxX": 34048,
+  "minY": 30976,
+  "maxY": 32768,
+  "mapFile": "map.bin",
+  "mapWidth": 2560,
+  "mapHeight": 2048
+}
