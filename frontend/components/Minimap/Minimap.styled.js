@@ -1,60 +1,63 @@
 import styled from 'styled-components';
 
 const StyledMinimap = styled.div`
-  /* --- The Main Fix --- */
-  /* Use Flexbox to arrange children vertically */
   display: flex;
   flex-direction: column;
-  background-color: #333; /* A dark background for the control area */
-  border: 1px solid #555;
-  border-radius: 4px; /* Optional: adds rounded corners */
-  overflow: hidden; /* Ensures canvas doesn't bleed out */
+  justify-content: center;
+  align-items: center;
+  background-color: rgb(26, 26, 26);
+  border-radius: 4px;
+  overflow: hidden;
 
   .minimap-controls {
-    /* Arrange the controls themselves horizontally */
     display: flex;
-    justify-content: space-around; /* Spreads out the items */
+    justify-content: space-between;
     align-items: center;
-    padding: 8px;
-    color: #eee; /* Light text color for contrast */
-    border-bottom: 1px solid #555; /* Separator line */
+    padding: 4px;
+    color: #fafafa;
+    border-bottom: 1px solid rgb(53, 53, 53); /* Separator line */
+    gap: 8px;
 
     button {
-      background-color: #555;
+      background-color: rgb(26, 26, 26);
       color: #fff;
-      border: 1px solid #777;
-      border-radius: 3px;
-      padding: 4px 8px;
+      border: 1px solid rgb(53, 53, 53);
+      border-radius: 4px;
+      padding: 4px;
+      width: 25px;
+      height: 25px;
       cursor: pointer;
-      font-weight: bold;
+      font-size: 11px;
 
       &:hover {
-        background-color: #666;
+        border: 1px solid rgb(80, 80, 80);
+        background-color: rgb(53, 53, 53);
       }
     }
 
     span {
-      margin: 0 10px;
-      font-family: monospace; /* Makes the number look nice */
-      font-size: 14px;
+      margin: 10px 0;
+      font-size: 11px;
     }
   }
-
-  .minimap-lock-control {
-    display: flex;
-    align-items: center;
-    gap: 6px; /* Space between checkbox and label */
-
-    label {
-      cursor: pointer;
-      font-size: 14px;
+  .minimap-mode-control {
+    > div:first-of-type {
+      border: 1px solid rgb(53, 53, 53);
+      height: 25px;
+      width: 97px;
+      background: none;
+      font-size: 12px;
+      &:hover {
+        border: 1px solid rgb(80, 80, 80);
+        background-color: rgb(53, 53, 53);
+      }
     }
-
-    input[type='checkbox'] {
-      cursor: pointer;
+    > div:nth-child(2) {
+      height: 300px;
+      width: 97px;
+      font-size: 12px;
     }
   }
-
   canvas {
     /* The canvas will automatically fill the remaining space */
     display: block; /* Removes any weird extra space below the canvas */

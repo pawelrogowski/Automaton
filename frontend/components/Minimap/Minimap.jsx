@@ -133,6 +133,7 @@ import indexZ12 from '../../assets/minimaps/index_z12.json';
 import indexZ13 from '../../assets/minimaps/index_z13.json';
 import indexZ14 from '../../assets/minimaps/index_z14.json';
 import indexZ15 from '../../assets/minimaps/index_z15.json';
+import CustomSelect from '../CustomSelect/CustomSelect.js';
 
 const minimapIndexData = {
   0: indexZ0,
@@ -166,7 +167,7 @@ const Minimap = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [currentLoadedMapImage, setCurrentLoadedMapImage] = useState(null);
 
-  const CANVAS_SIZE = 400;
+  const CANVAS_SIZE = 260;
 
   // --- MODIFIED: Effect to load the Image object when zLevel OR mapMode changes ---
   useEffect(() => {
@@ -322,53 +323,57 @@ const Minimap = () => {
   }, [zoomLevel]);
 
   const handleZChange = (delta) => {
-    setIsLockedToPlayer(false);
+    // setIsLockedToPlayer(false);
     setZLevel((prevZ) => Math.max(0, Math.min(15, prevZ + delta)));
   };
 
-  const handleLockToggle = (e) => {
-    const newLockState = e.target.checked;
-    setIsLockedToPlayer(newLockState);
+  // const handleLockToggle = (e) => {
+  //   const newLockState = e.target.checked;
+  //   setIsLockedToPlayer(newLockState);
 
-    if (newLockState) {
-      setPanOffset({ x: 0, y: 0 });
-    } else {
-      const mapIndex = minimapIndexData[zLevel];
-      if (!mapIndex) return;
+  //   if (newLockState) {
+  //     setPanOffset({ x: 0, y: 0 });
+  //   } else {
+  //     const mapIndex = minimapIndexData[zLevel];
+  //     if (!mapIndex) return;
 
-      const playerPixelX = Math.floor(playerPosition.x !== null ? playerPosition.x - mapIndex.minX : mapIndex.mapWidth / 2);
-      const playerPixelY = Math.floor(playerPosition.y !== null ? playerPosition.y - mapIndex.minY : mapIndex.mapHeight / 2);
+  //     const playerPixelX = Math.floor(playerPosition.x !== null ? playerPosition.x - mapIndex.minX : mapIndex.mapWidth / 2);
+  //     const playerPixelY = Math.floor(playerPosition.y !== null ? playerPosition.y - mapIndex.minY : mapIndex.mapHeight / 2);
 
-      setFreeModeCenter({
-        x: playerPixelX + panOffset.x,
-        y: playerPixelY + panOffset.y,
-      });
-      setPanOffset({ x: 0, y: 0 });
-    }
-  };
+  //     setFreeModeCenter({
+  //       x: playerPixelX + panOffset.x,
+  //       y: playerPixelY + panOffset.y,
+  //     });
+  //     setPanOffset({ x: 0, y: 0 });
+  //   }
+  // };
+  const mapModeOptions = [
+    { value: 'map', label: 'Map' },
+    { value: 'walkable', label: 'Walkable' },
+    { value: 'coverage', label: 'Coverage' },
+  ];
 
   return (
     <StyledMinimap>
       <div className="minimap-controls">
-        <button onClick={() => handleZChange(1)}>+</button>
-        <button onClick={() => handleZChange(-1)}>-</button>
-        <span>
-          x:{playerPosition.x} y:{playerPosition.y} z:{zLevel}
-        </span>
-        <div className="minimap-lock-control">
+        <button onClick={() => handleZChange(1)}>-</button>
+        <button onClick={() => handleZChange(-1)}>+</button>
+
+        {/* <div className="minimap-lock-control">
           <input type="checkbox" id="lock-to-player-checkbox" checked={isLockedToPlayer} onChange={handleLockToggle} />
-          <label htmlFor="lock-to-player-checkbox">Follow Player</label>
-        </div>
-        {/* --- NEW: Dropdown to switch map mode --- */}
-        <div className="minimap-mode-control">
-          <select value={mapMode} onChange={(e) => setMapMode(e.target.value)}>
-            <option value="map">Full Map</option>
-            <option value="coverage">Coverage</option>
-            <option value="walkable">Walkable</option>
-          </select>
-        </div>
+          <label htmlFor="lock-to-player-checkbox">Follow</label>
+        </div> */}
+        <CustomSelect
+          className="minimap-mode-control"
+          options={mapModeOptions}
+          value={mapMode}
+          onChange={(e) => setMapMode(e.target.value)}
+        />
       </div>
       <canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} style={{ cursor: isLockedToPlayer ? 'default' : 'grab' }}></canvas>
+      <span>
+        {playerPosition.x},{playerPosition.y},{zLevel}
+      </span>
     </StyledMinimap>
   );
 };

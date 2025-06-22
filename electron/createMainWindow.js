@@ -41,7 +41,6 @@ const updateTrayIcon = () => {
   tray.setImage(icon);
 };
 
-
 export const toggleTrayVisibility = () => {
   isTrayVisible = !isTrayVisible;
   if (isTrayVisible) {
@@ -145,7 +144,6 @@ const createTray = () => {
   tray.on('click', toggleMainWindowVisibility);
 };
 
-
 const handleWindowClose = async (event) => {
   if (event) event.preventDefault();
   if (!shouldClose) {
@@ -217,7 +215,6 @@ export const createMainWindow = () => {
     app.exit();
   });
 };
-
 
 export const toggleMainWindowVisibility = () => {
   if (mainWindow.isVisible()) {

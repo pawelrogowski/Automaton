@@ -3,6 +3,7 @@ import globalSlice from './slices/globalSlice.js';
 import ruleSlice from './slices/ruleSlice.js';
 import gameStateSlice from './slices/gameStateSlice.js';
 import luaSlice from './slices/luaSlice.js';
+import cavebotSlice from './slices/cavebotSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
   if (action.origin !== 'backend') {
@@ -20,6 +21,7 @@ const store = configureStore({
     gameState: gameStateSlice.reducer,
     rules: ruleSlice.reducer,
     lua: luaSlice.reducer,
+    cavebot: cavebotSlice.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });

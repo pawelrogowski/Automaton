@@ -2,10 +2,14 @@ import styled from 'styled-components';
 
 const StyledCavebot = styled.div`
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row; /* Arrange children horizontally */
+  gap: 10px; /* Add some space between the table and minimap */
   color: #fafafa;
-
+  width: 100%; /* Ensure it takes full width */
+  height: 100%; /* Ensure it takes full height */
+  justify-content: center; /* Center content horizontally */
+  align-items: flex-start; /* Align items to the start of the cross axis */
+  padding-top: 8px;
   h2 {
     margin-bottom: 20px;
   }
@@ -16,8 +20,9 @@ const StyledCavebot = styled.div`
     display: flex;
     justify-content: center;
     align-items: center;
-    align-self: flex-end;
+    /* Removed align-self: flex-end; as it's not needed with flex-direction: row and gap */
     overflow: hidden;
+    flex-shrink: 0; /* Prevent minimap from shrinking */
   }
 `;
 

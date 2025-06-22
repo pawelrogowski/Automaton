@@ -57,11 +57,11 @@ const StyledDiv = styled.div`
       font-size: 11px;
       cursor: pointer;
       border-radius: 10px;
-      border: 1px solid rgba( 255, 255, 255, 0.18 );
+      border: 1px solid rgba(255, 255, 255, 0.18);
 
       &:active {
         border-radius: 10px;
-        border: 1px solid rgba( 255, 255, 255, 0.18 );
+        border: 1px solid rgba(255, 255, 255, 0.18);
       }
     }
   }
@@ -140,18 +140,51 @@ const StyledDiv = styled.div`
       }
 
       &:disabled {
-          cursor: not-allowed;
-          opacity: 0.5;
+        cursor: not-allowed;
+        opacity: 0.5;
       }
 
-       &:disabled::-webkit-slider-thumb {
-           cursor: not-allowed;
-       }
-       &:disabled::-moz-range-thumb {
-           cursor: not-allowed;
-       }
+      &:disabled::-webkit-slider-thumb {
+        cursor: not-allowed;
+      }
+      &:disabled::-moz-range-thumb {
+        cursor: not-allowed;
+      }
     }
   }
   // --- End Slider Styles ---
+
+  .add-new-waypoint-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .section-title {
+    color: #fafafa;
+    font-size: 11px;
+    text-align: center;
+    margin-bottom: 5px;
+  }
+
+  .direction-radios {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 35px;
+
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fafafa;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    input[type='radio'] {
+      margin-right: 5px;
+    }
+  }
 `;
 export default StyledDiv;

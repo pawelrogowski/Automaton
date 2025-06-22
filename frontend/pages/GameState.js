@@ -10,7 +10,7 @@ const GameState = () => {
   const hash = location.hash;
 
   // Determine which state slice to display based on the hash
-  const stateToDisplay = useSelector(state => {
+  const stateToDisplay = useSelector((state) => {
     switch (hash) {
       case '#globalState':
         return state.global;
@@ -21,6 +21,8 @@ const GameState = () => {
         return state.gameState; // Default to gameState if hash is not recognized or empty
       case '#luaState': // Add case for luaState
         return state.lua; // Return lua state slice
+      case '#cavebotState': // Add case for luaState
+        return state.cavebot; // Return lua state slice
     }
   });
 
@@ -35,12 +37,14 @@ const GameState = () => {
       default:
         return 'Game State';
       case '#luaState': // Add case for luaState
-        return "Lua Scripts"; // Return lua state slice
+        return 'Lua Scripts'; // Return lua state slice
+      case '#cavebotState': // Add case for luaState
+        return 'Cavebot State'; // Return lua state slice
     }
   };
 
   return (
-    <StyledGameState >
+    <StyledGameState>
       <HighWrapper title={title()}>
         <JsonViewer
           className="Json"

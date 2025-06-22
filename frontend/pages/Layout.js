@@ -18,9 +18,11 @@ import { setIsisBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.j
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
 import { addRule } from '../redux/slices/ruleSlice.js';
+import { addWaypoint, removeWaypoint } from '../redux/slices/cavebotSlice.js';
 const { saveRules, loadRules } = window.electron;
 import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
+import SidebarButton from '../components/SidebarButton.js/SidebarButton.js';
 import { v4 as uuidv4 } from 'uuid';
 
 import GameState from './GameState.js';
@@ -39,13 +41,16 @@ const Layout = () => {
   const dispatch = useDispatch();
   const { windowId, isBotEnabled, refreshRate: refreshRateFromRedux, windowTitle } = useSelector((state) => state.global);
   const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
-
+  const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
+  const playerPosition = useSelector((state) => state.gameState.playerMinimapPosition);
   const location = useLocation();
   const hash = location.hash;
   const navigate = useNavigate();
 
   // Local state for immediate UI feedback
   const [displayedRate, setDisplayedRate] = useState(refreshRateFromRedux);
+  // State for cavebot waypoint direction
+  const [direction, setDirection] = useState('C');
 
   // Ref to store the debounce timeout ID
   const debounceTimeoutRef = useRef(null);
@@ -106,6 +111,65 @@ const Layout = () => {
       const newRuleId = `${ruleIdPrefix}${uuidv4()}`;
       dispatch(addRule(newRuleId));
     }
+  };
+
+  const handleAddWaypoint = (waypointType) => {
+    if (!playerPosition) {
+      console.error('Player position not available.');
+      return;
+    }
+
+    // Calculate new coordinates based on the selected direction
+    let { x, y, z } = playerPosition;
+    switch (direction) {
+      case 'N':
+        y -= 1;
+        break;
+      case 'S':
+        y += 1;
+        break;
+      case 'W':
+        x -= 1;
+        break;
+      case 'E':
+        x += 1;
+        break;
+      case 'NW':
+        x -= 1;
+        y -= 1;
+        break;
+      case 'NE':
+        x += 1;
+        y -= 1;
+        break;
+      case 'SW':
+        x -= 1;
+        y += 1;
+        break;
+      case 'SE':
+        x += 1;
+        y += 1;
+        break;
+      // 'C' (Center) is the default, no change needed.
+      default:
+        break;
+    }
+
+    let defaultAction = '';
+    if (waypointType === 'Action') {
+      defaultAction = 'Enter your action';
+    }
+
+    const newWaypointPayload = {
+      type: waypointType,
+      x, // Use the adjusted x
+      y, // Use the adjusted y
+      z, // z remains the same
+      range: 1,
+      action: defaultAction,
+    };
+
+    dispatch(addWaypoint(newWaypointPayload));
   };
 
   // Clean up the timeout when the component unmounts
@@ -310,6 +374,70 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current Lua state slice"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#cavebotState"
+                img={tibia} // Use the imported icon
+                text={'Cavebot State'}
+                imageWidth="32px"
+                tooltip="View the current cavebot state slice"
+              ></SideBarNavButton>
+            </>
+          )}
+
+          {location.pathname === '/cavebot' && (
+            <>
+              <div className="add-new-waypoint-section">
+                <SidebarButton text={'Node'} onClick={() => handleAddWaypoint('Node')}></SidebarButton>
+                <SidebarButton text={'Stand'} onClick={() => handleAddWaypoint('Stand')}></SidebarButton>
+                <SidebarButton text={'Shovel'} onClick={() => handleAddWaypoint('Shovel')}></SidebarButton>
+                <SidebarButton text={'Rope'} onClick={() => handleAddWaypoint('Rope')}></SidebarButton>
+                <SidebarButton text={'Machete'} onClick={() => handleAddWaypoint('Machete')}></SidebarButton>
+                <SidebarButton text={'Ladder'} onClick={() => handleAddWaypoint('Ladder')}></SidebarButton>
+                <SidebarButton text={'Use'} onClick={() => handleAddWaypoint('Use')}></SidebarButton>
+                <SidebarButton text={'Action'} onClick={() => handleAddWaypoint('Action')}></SidebarButton>
+                <SidebarButton text={'Lure'} onClick={() => handleAddWaypoint('Lure')}></SidebarButton>
+              </div>
+
+              <div className="direction-radios">
+                <label>
+                  <input type="radio" name="direction" value="NW" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="N" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="NE" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="W" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="C" defaultChecked onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="E" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="SW" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="S" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+                <label>
+                  <input type="radio" name="direction" value="SE" onChange={(e) => setDirection(e.target.value)} />
+                </label>
+              </div>
+
+              <SidebarButton
+                text={'Delete Waypoint'}
+                onClick={() => {
+                  if (selectedWaypointId) {
+                    dispatch(removeWaypoint(selectedWaypointId));
+                  } else {
+                    console.log('No waypoint selected to delete.');
+                  }
+                }}
+              ></SidebarButton>
             </>
           )}
         </SidebarWrapper>

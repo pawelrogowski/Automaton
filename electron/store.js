@@ -3,12 +3,14 @@ import globalSlice from '../frontend/redux/slices/globalSlice.js';
 import ruleSlice from '../frontend/redux/slices/ruleSlice.js';
 import gameStateSlice from '../frontend/redux/slices/gameStateSlice.js';
 import luaSlice from '../frontend/redux/slices/luaSlice.js';
+import cavebotSlice from '../frontend/redux/slices/cavebotSlice.js';
 
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
   gameState: gameStateSlice.reducer,
-  lua: luaSlice.reducer,
   rules: ruleSlice.reducer,
+  lua: luaSlice.reducer,
+  cavebot: cavebotSlice.reducer,
 });
 
 const store = configureStore({

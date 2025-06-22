@@ -4,30 +4,18 @@ export const StyledButton = styled.button`
   display: flex;
   align-items: center;
   padding: 0px 5px;
-  height: 22px;
+  height: 29px;
   text-decoration: none;
-  font-size: 11px;
+  font-size: 12px;
+  text-align: center;
+  justify-content: center;
   color: #fafafa;
-  border-top: 1px solid rgba(117, 117, 118, 0.8);
-  border-left: 1px solid rgba(117, 117, 118, 0.8);
-  border-bottom: 1px solid rgba(44, 44, 44, 0.8);
-  border-right: 1px solid rgba(44, 44, 44, 0.8);
-  background: transparent;
-  background-repeat: repeat;
-
-  &:active {
-    border-top: 1px solid rgba(44, 44, 44, 0.8);
-    border-left: 1px solid rgba(44, 44, 44, 0.8);
-    border-bottom: 1px solid rgba(117, 117, 118, 0.8);
-    border-right: 1px solid rgba(117, 117, 118, 0.8);
-    background: transparent;
-  }
-  &.active {
-    border-top: 1px solid rgba(44, 44, 44, 0.8);
-    border-left: 1px solid rgba(44, 44, 44, 0.8);
-    border-bottom: 1px solid rgba(117, 117, 118, 0.8);
-    border-right: 1px solid rgba(117, 117, 118, 0.8);
-    background: transparent;
+  border-radius: 4px;
+  border: 1px solid rgb(53, 53, 53);
+  background-color: rgb(26, 26, 26);
+  &:hover {
+    border: 1px solid rgb(80, 80, 80);
+    background-color: rgb(53, 53, 53);
   }
   img {
     width: 12px;
