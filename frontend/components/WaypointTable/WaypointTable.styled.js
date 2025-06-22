@@ -5,7 +5,6 @@ export const StyledWaypointTable = styled.div`
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  /* overflow: hidden; */
   border: 1px solid rgb(53, 53, 53);
   background-color: rgb(26, 26, 26);
   color: #fafafa;
@@ -13,39 +12,33 @@ export const StyledWaypointTable = styled.div`
   border-radius: 4px;
   overflow: hidden;
 
-  /* The main table container is StyledWaypointTable itself */
   .tbody .tr.selected {
-    background-color: rgb(0, 52, 109); // A nice highlight color
-    color: white; // Make text readable on the dark background
+    background-color: rgb(0, 52, 109);
+    color: white;
   }
   .table {
-    /* This is the div that wraps the header and body, receiving getTableProps() */
     display: flex;
     flex-direction: column;
     height: 100%;
     max-height: 470px;
   }
 
-  /* Header group */
   .thead {
-    /* This is the div that wraps the header row, added in JSX */
     background-color: rgb(26, 26, 26);
     border-bottom: 1px solid rgb(53, 53, 53);
-    flex-shrink: 0; /* Prevent header from shrinking */
+    flex-shrink: 0;
   }
 
-  /* Table body */
   .tbody {
-    /* This is the div that wraps the rows, added in JSX */
     flex-grow: 1;
-    overflow-y: auto; /* Allow vertical scrolling for body */
+    overflow-y: auto;
   }
 
   .tr {
-    /* This applies to both header rows and data rows */
     display: flex;
     width: 100%;
     border-bottom: 1px solid rgb(53, 53, 53);
+    max-height: 35.5px;
     &:hover {
       background-color: rgb(53, 53, 53);
     }
@@ -61,17 +54,16 @@ export const StyledWaypointTable = styled.div`
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
-    /* Removed position: relative; and flex-shrink: 0; as they are handled by react-table's inline styles or parent flex */
-
-    &:last-child {
-      border-right: none;
-    }
+    /* *** MODIFICATION: Added position relative *** */
+    /* This is crucial for positioning the editable inputs perfectly inside the cell */
+    position: relative;
   }
 
-  .tr.selected {
-    background-color: #007bff; /* Highlight color for selected row */
+  /* .tr.selected is defined above, this one is redundant */
+  /* .tr.selected {
+    background-color: #007bff;
     color: white;
-  }
+  } */
 
   .th {
     font-weight: bold;
@@ -109,5 +101,71 @@ export const StyledWaypointTable = styled.div`
     &:hover {
       background-color: #7a7a7a;
     }
+  }
+
+  /* --- NEW STYLES FOR EDITABLE CELLS --- */
+
+  /* General styles for all editable inputs and selects */
+  .td input,
+  .td select {
+    /* Positioning to perfectly overlay the parent TD */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+
+    /* Take over the padding from the TD */
+    padding: 8px;
+    box-sizing: border-box;
+
+    /* Reset browser defaults and apply theme */
+    background-color: rgb(35, 35, 35); /* Slightly lighter to indicate it's an input */
+    color: #fafafa;
+    font-family: monospace;
+    font-size: 11px;
+    border: none;
+    border-radius: 0;
+    outline: none; /* We will use border for focus instead */
+
+    &:focus {
+      /* Use the theme's highlight color for the focus border */
+      border: 1px solid #007bff;
+    }
+  }
+
+  /* Specific styles for the dropdown to make it look less like a default element */
+  .td select {
+    appearance: none; /* Remove default dropdown arrow on some browsers */
+  }
+
+  /* Specific styles for the container of the coordinate inputs */
+  .td .coord-editor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+    align-items: stretch; /* Make inputs fill the height of the cell */
+    padding: 4px 8px; /* Slightly less vertical padding to fit nicely */
+    gap: 4px; /* Space between the x, y, z inputs */
+    box-sizing: border-box;
+  }
+
+  /* The individual x, y, z inputs within the special editor */
+  .coord-editor input {
+    /* These inputs are in a flex container, so they don't need absolute positioning */
+    position: static;
+    flex: 1; /* Distribute width equally */
+    width: 100%; /* Required for flex to work correctly in some cases */
+    height: 100%;
+
+    /* Reset padding since the container has it */
+    padding: 0 4px;
+
+    text-align: center;
+    border-radius: 2px; /* Give them a slight rounding */
   }
 `;

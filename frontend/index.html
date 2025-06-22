@@ -4,9 +4,16 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+      content="
+        default-src 'self';
+        script-src 'self' 'sha256-OrIkn07xGH+C/JYxC2dshlhPsvGrK0yFvBPy7p1g76s=';
+        style-src 'self' 'unsafe-inline';
+      "
     />
     <title>Automaton</title>
+    <script>
+      var global = window;
+    </script>
   </head>
   <body id="root">
     <script src="./bundle.js"></script>

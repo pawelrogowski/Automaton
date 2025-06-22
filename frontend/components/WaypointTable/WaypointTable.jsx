@@ -1,14 +1,15 @@
-import React from 'react'; // We need the main React object for React.memo and React.useCallback
-import { useSelector, useDispatch } from 'react-redux';
-import { reorderWaypoints, setSelectedWaypointId } from '../../redux/slices/cavebotSlice.js';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSelector, useDispatch, shallowEqual } from 'react-redux';
+import { reorderWaypoints, setSelectedWaypointId, updateWaypoint } from '../../redux/slices/cavebotSlice.js';
 import { useTable, useBlockLayout, useResizeColumns } from 'react-table';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { useDrag, useDrop } from 'react-dnd';
+import { throttle } from 'lodash';
 import { StyledWaypointTable } from './WaypointTable.styled.js';
+import MonacoEditorModal from './MonacoEditorModal.js';
 
-// --- STEP 1: Define the Row Component OUTSIDE the main component and wrap it in React.memo ---
-// React.memo prevents this component from re-rendering if its props haven't changed.
+// --- Reusable Draggable Row Component (Unchanged but benefits from parent optimizations) ---
 const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, onMoveRow }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'row',
@@ -22,7 +23,6 @@ const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, on
     accept: 'row',
     hover: (item) => {
       if (item.index === index) return;
-      // Use the stable onMoveRow function passed from the parent
       onMoveRow(item.index, index);
       item.index = index;
     },
@@ -33,9 +33,7 @@ const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, on
       ref={(node) => drag(drop(node))}
       style={{ opacity: isDragging ? 0.5 : 1 }}
       {...row.getRowProps()}
-      // Use the isSelected prop for the className
       className={`tr ${isSelected ? 'selected' : ''}`}
-      // We can now reliably use onClick because the unnecessary re-renders are gone
       onClick={() => onSelect(row.original.id)}
     >
       {children}
@@ -43,49 +41,234 @@ const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, on
   );
 });
 
+// --- Specialized Editable Cell Components (Wrapped in React.memo) ---
+
+const EditableStringCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
+  const [value, setValue] = useState(initialValue);
+  const [isEditing, setIsEditing] = useState(false);
+  const onBlur = () => {
+    setIsEditing(false);
+    // Only update if the value has actually changed
+    if (initialValue !== value) {
+      updateMyData(original.id, { [id]: value });
+    }
+  };
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
+  if (isEditing) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={onBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onBlur();
+        }}
+        autoFocus
+        onClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+  return (
+    <div onDoubleClick={() => setIsEditing(true)} style={{ width: '100%', height: '100%' }}>
+      {value || <span> </span>}
+    </div>
+  );
+});
+
+const EditableSelectCell = React.memo(({ value: initialValue, row: { original }, column: { id, options }, updateMyData }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const onChange = (e) => {
+    updateMyData(original.id, { [id]: e.target.value });
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <select value={initialValue} onChange={onChange} onBlur={() => setIsEditing(false)} autoFocus onClick={(e) => e.stopPropagation()}>
+        {' '}
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}{' '}
+      </select>
+    );
+  }
+  return (
+    <div onDoubleClick={() => setIsEditing(true)} style={{ width: '100%', height: '100%' }}>
+      {initialValue}
+    </div>
+  );
+});
+
+const EditableNumberCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
+  const [value, setValue] = useState(initialValue);
+  const [isEditing, setIsEditing] = useState(false);
+  const onBlur = () => {
+    setIsEditing(false);
+    const parsedValue = parseInt(value, 10);
+    if (!isNaN(parsedValue) && parsedValue !== initialValue) {
+      updateMyData(original.id, { [id]: parsedValue });
+    } else {
+      setValue(initialValue);
+    }
+  };
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
+  if (isEditing) {
+    return (
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={onBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onBlur();
+        }}
+        autoFocus
+        onClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+  return (
+    <div onDoubleClick={() => setIsEditing(true)} style={{ width: '100%', height: '100%' }}>
+      {initialValue}
+    </div>
+  );
+});
+
+const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData }) => {
+  const [coords, setCoords] = useState({ x: original.x, y: original.y, z: original.z });
+  const [isEditing, setIsEditing] = useState(false);
+  const onChange = (e, coord) => setCoords((prev) => ({ ...prev, [coord]: e.target.value }));
+  const onBlurContainer = (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setIsEditing(false);
+    const updates = { x: parseInt(coords.x, 10) || 0, y: parseInt(coords.y, 10) || 0, z: parseInt(coords.z, 10) || 0 };
+    // Only dispatch if coordinates have actually changed
+    if (updates.x !== original.x || updates.y !== original.y || updates.z !== original.z) {
+      updateMyData(original.id, updates);
+    }
+  };
+  useEffect(() => {
+    setCoords({ x: original.x, y: original.y, z: original.z });
+  }, [original.x, original.y, original.z]);
+
+  if (isEditing) {
+    return (
+      <div onBlur={onBlurContainer} className="coord-editor" onClick={(e) => e.stopPropagation()}>
+        {' '}
+        <input type="number" value={coords.x} onChange={(e) => onChange(e, 'x')} autoFocus />{' '}
+        <input type="number" value={coords.y} onChange={(e) => onChange(e, 'y')} />{' '}
+        <input type="number" value={coords.z} onChange={(e) => onChange(e, 'z')} />{' '}
+      </div>
+    );
+  }
+  return (
+    <div
+      onDoubleClick={() => setIsEditing(true)}
+      style={{ width: '100%', height: '100%' }}
+    >{`${original.x}, ${original.y}, ${original.z}`}</div>
+  );
+});
+
+const ActionCell = React.memo(({ value, row: { original }, onEditAction }) => {
+  return (
+    <div onDoubleClick={() => onEditAction(original)} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
+      {' '}
+      {value ? (
+        <pre style={{ margin: 0, padding: 0, whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</pre>
+      ) : (
+        <span style={{ color: '#888' }}></span>
+      )}{' '}
+    </div>
+  );
+});
+
 // --- The Main Table Component ---
 const WaypointTable = () => {
   const dispatch = useDispatch();
-  const waypoints = useSelector((state) => state.cavebot.waypoints);
+
+  // OPTIMIZATION 1: Use shallowEqual to prevent re-renders from irrelevant state changes.
+  const waypoints = useSelector((state) => state.cavebot.waypoints, shallowEqual);
   const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
 
-  // --- STEP 2: Wrap event handlers in React.useCallback ---
-  // This ensures the functions themselves don't change on every render,
-  // which is essential for React.memo to work correctly.
-  const handleSelectRow = React.useCallback(
-    (id) => {
-      dispatch(setSelectedWaypointId(id));
-    },
-    [dispatch],
-  ); // dispatch is stable and won't change.
+  const [modalState, setModalState] = useState({ isOpen: false, waypoint: null });
 
-  const handleMoveRow = React.useCallback(
-    (dragIndex, hoverIndex) => {
-      dispatch(reorderWaypoints({ startIndex: dragIndex, endIndex: hoverIndex }));
+  const handleSelectRow = useCallback(
+    (id) => {
+      if (document.activeElement.tagName.toLowerCase() !== 'input' && document.activeElement.tagName.toLowerCase() !== 'select') {
+        dispatch(setSelectedWaypointId(id));
+      }
     },
     [dispatch],
   );
 
-  const data = React.useMemo(() => waypoints, [waypoints]);
+  // OPTIMIZATION 2: Throttle the Redux dispatch for reordering.
+  // This is the most impactful change for drag & drop performance.
+  const throttledReorder = useMemo(
+    () =>
+      throttle(
+        (dragIndex, hoverIndex) => {
+          dispatch(reorderWaypoints({ startIndex: dragIndex, endIndex: hoverIndex }));
+        },
+        100,
+        { leading: true, trailing: false },
+      ), // Fire immediately, then wait.
+    [dispatch],
+  );
 
-  const columns = React.useMemo(
+  const handleMoveRow = useCallback(
+    (dragIndex, hoverIndex) => {
+      throttledReorder(dragIndex, hoverIndex);
+    },
+    [throttledReorder],
+  );
+
+  const updateMyData = useCallback(
+    (waypointId, updates) => {
+      dispatch(updateWaypoint({ id: waypointId, updates }));
+    },
+    [dispatch],
+  );
+
+  const handleOpenModal = useCallback((waypoint) => setModalState({ isOpen: true, waypoint }), []);
+  const handleCloseModal = () => setModalState({ isOpen: false, waypoint: null });
+
+  const handleSaveModal = (newCode) => {
+    if (modalState.waypoint) {
+      updateMyData(modalState.waypoint.id, { action: newCode });
+    }
+    handleCloseModal();
+  };
+
+  // data and columns are already correctly memoized, which is great.
+  const data = useMemo(() => waypoints, [waypoints]);
+  const columns = useMemo(
     () => [
       { Header: 'ID', accessor: 'id', width: 39 },
-      { Header: 'Type', accessor: 'type', width: 67 },
       {
-        Header: 'Coordinates',
-        accessor: 'x',
-        width: 134,
-        Cell: ({ row }) => <span>{`${row.original.x}, ${row.original.y}, ${row.original.z}`}</span>,
+        Header: 'Type',
+        accessor: 'type',
+        width: 80,
+        Cell: EditableSelectCell,
+        options: ['Node', 'Stand', 'Shovel', 'Rope', 'Machete', 'Ladder', 'Use', 'Action', 'Lure'],
       },
-      { Header: 'Range', accessor: 'range', width: 51 },
-      { Header: 'Action', accessor: 'action', width: 400 },
+      { Header: 'Label', accessor: 'label', width: 75, Cell: EditableStringCell },
+      { Header: 'Coordinates', accessor: 'x', width: 134, Cell: EditableCoordinatesCell },
+      { Header: 'Range', accessor: 'range', width: 51, Cell: EditableNumberCell },
+      { Header: 'Action', accessor: 'action', width: 275, Cell: ActionCell },
     ],
     [],
   );
 
   const { getTableProps, getTableBodyProps, headerGroups, rows, prepareRow } = useTable(
-    { columns, data },
+    { columns, data, updateMyData, onEditAction: handleOpenModal },
     useBlockLayout,
     useResizeColumns,
   );
@@ -108,9 +291,7 @@ const WaypointTable = () => {
               </div>
             ))}
           </div>
-
           <div {...getTableBodyProps()} className="tbody">
-            {/* --- STEP 3: Render the memoized component with stable props --- */}
             {rows.map((row, i) => {
               prepareRow(row);
               return (
@@ -118,13 +299,10 @@ const WaypointTable = () => {
                   key={row.original.id}
                   index={i}
                   row={row}
-                  // Pass the memoized functions as props
                   onSelect={handleSelectRow}
                   onMoveRow={handleMoveRow}
-                  // Calculate the isSelected prop here
                   isSelected={selectedWaypointId === row.original.id}
                 >
-                  {/* The children are the rendered cells */}
                   {row.cells.map((cell) => (
                     <div {...cell.getCellProps()} className="td">
                       {cell.render('Cell')}
@@ -136,6 +314,12 @@ const WaypointTable = () => {
           </div>
         </div>
       </StyledWaypointTable>
+      <MonacoEditorModal
+        isOpen={modalState.isOpen}
+        initialValue={modalState.waypoint?.action || ''}
+        onClose={handleCloseModal}
+        onSave={handleSaveModal}
+      />
     </DndProvider>
   );
 };

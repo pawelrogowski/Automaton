@@ -38,7 +38,15 @@ const cavebotSlice = createSlice({
   reducers: {
     addWaypoint: (state, action) => {
       // Use the helper to ensure the payload is in the correct format
-      const newWaypoint = parseCoordinates(action.payload);
+      const parsedWaypoint = parseCoordinates(action.payload);
+
+      // *** MODIFICATION START ***
+      // Create the final waypoint object, ensuring it has a default label
+      const newWaypoint = {
+        label: '', // Default empty label for all new waypoints
+        ...parsedWaypoint,
+      };
+      // *** MODIFICATION END ***
 
       state.waypoints.push(newWaypoint);
       // Re-index waypoints after adding
@@ -47,7 +55,6 @@ const cavebotSlice = createSlice({
       });
     },
     removeWaypoint: (state, action) => {
-      // ... (no changes needed here)
       if (state.selectedWaypointId === action.payload) {
         state.selectedWaypointId = null;
       }
@@ -57,7 +64,6 @@ const cavebotSlice = createSlice({
       });
     },
     reorderWaypoints: (state, action) => {
-      // ... (no changes needed here)
       const { startIndex, endIndex } = action.payload;
       const [removed] = state.waypoints.splice(startIndex, 1);
       state.waypoints.splice(endIndex, 0, removed);
@@ -78,7 +84,7 @@ const cavebotSlice = createSlice({
       const { id, updates } = action.payload;
       const existingWaypoint = state.waypoints.find((waypoint) => waypoint.id === id);
       if (existingWaypoint) {
-        // Ensure updates are also parsed correctly if needed
+        // Ensure updates are also parsed correctly if needed for legacy formats
         const parsedUpdates = parseCoordinates(updates);
         Object.assign(existingWaypoint, parsedUpdates);
       }

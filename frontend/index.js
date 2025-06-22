@@ -8,6 +8,10 @@ import { Provider } from 'react-redux';
 import store from './redux/store.js';
 import { HashRouter as Router } from 'react-router-dom';
 import Layout from './pages/Layout.js';
+import { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
+
+loader.config({ monaco });
 
 const { ipcRenderer } = window.electron;
 
@@ -20,7 +24,6 @@ ipcRenderer.on('state-update', (_, update) => {
     store.dispatch(update);
   }
 });
-
 
 const App = () => {
   return (

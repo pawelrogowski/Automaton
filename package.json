@@ -1,5 +1,5 @@
 {
-  "name": "pure_dash",
+  "name": "flow-gate-expert-bit",
   "version": "1.3.4b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.pure_dash",
-    "productName": "Pure Dash",
+    "appId": "com.electron.flow-gate-expert-bit",
+    "productName": "Flow Gate Expert Bit",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -66,6 +66,7 @@
   "author": "feiron <pawel.rogowski.praca@gmail.com>",
   "license": "CC-BY-ND-4.0",
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@reduxjs/toolkit": "^2.0.1",
     "@textea/json-viewer": "^4.0.1",
     "ahocorasick": "^1.0.2",
@@ -125,6 +126,7 @@
     "fs-extra": "^11.3.0",
     "html-webpack-plugin": "^5.6.0",
     "javascript-obfuscator": "^4.1.1",
+    "monaco-editor-webpack-plugin": "^7.1.0",
     "prettier": "^3.1.1",
     "style-loader": "^3.3.3",
     "terser-webpack-plugin": "^5.3.10",

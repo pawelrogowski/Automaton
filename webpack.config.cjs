@@ -3,6 +3,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 const CompressionPlugin = require('compression-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 
 module.exports = {
   entry: './frontend/index.js',
@@ -85,28 +86,19 @@ module.exports = {
     ],
   },
   plugins: [
+    // Generates index.html for the React app
     new HtmlWebpackPlugin({
       template: './frontend/index.html',
     }),
-    new CopyWebpackPlugin({
-      patterns: [
-        // Existing patterns...
-        {
-          from: 'node_modules/monaco-editor/min/vs',
-          to: 'monaco-editor/min/vs',
-        },
-        // New pattern to copy preprocessed minimap resources
-        {
-          from: 'resources/preprocessed_minimaps',
-          to: 'resources/preprocessed_minimaps',
-        },
-      ],
-    }),
+
+    // Generates scriptEditor.html for the separate window
     new HtmlWebpackPlugin({
       template: './frontend/scriptEditor.html',
-      filename: 'scriptEditor.html', // Output script editor html to dist
-      inject: false, // Prevent webpack from injecting bundles automatically
+      filename: 'scriptEditor.html',
+      inject: false,
     }),
+
+    // Copies static assets, including the raw Monaco files for the non-React window
     new CopyWebpackPlugin({
       patterns: [
         {
@@ -123,6 +115,16 @@ module.exports = {
         },
       ],
     }),
+
+    // Bundles Monaco correctly for the React app
+    new MonacoWebpackPlugin({
+      languages: ['lua'],
+      // --- THIS IS THE KEY ADDITION ---
+      // Ensures worker files are loaded from a relative path, which is crucial for Electron's `file://` protocol.
+      publicPath: './',
+    }),
+
+    // Your existing compression plugin
     new CompressionPlugin({
       algorithm: 'gzip',
       test: /\.js$|\.css$|\.html$/,
