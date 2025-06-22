@@ -106,6 +106,10 @@ module.exports = {
           to: 'monaco-editor/min/vs',
         },
         {
+          from: 'resources/preprocessed_minimaps',
+          to: 'resources/preprocessed_minimaps',
+        },
+        {
           from: './frontend/scriptEditorEntry.js',
           to: 'scriptEditorEntry.js',
         },

@@ -1,6 +1,6 @@
 {
-  "name": "flow-gate-expert-bit",
-  "version": "1.3.4b",
+  "name": "fine_genius_premium_sync",
+  "version": "1.3.5b",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.flow-gate-expert-bit",
-    "productName": "Flow Gate Expert Bit",
+    "appId": "com.electron.fine_genius_premium_sync",
+    "productName": "Fine Genius Premium Sync",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -56,6 +56,7 @@
       "target": [
         "AppImage"
       ],
+      "icon": "electron/icons/automaton.png",
       "asarUnpack": "**/*.node",
       "category": "Utility"
     },
