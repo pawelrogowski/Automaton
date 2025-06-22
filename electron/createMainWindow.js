@@ -2,8 +2,7 @@ import { BrowserWindow, app, Tray, Menu, dialog, nativeImage } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { selectWindow } from './menus/windowSelection.js';
-import { loadRulesFromFile, saveRulesToFile } from './rulesManager.js';
+import { loadRulesFromFile, saveRulesToFile } from './saveManager.js';
 import { toggleNotifications } from '../frontend/redux/slices/globalSlice.js';
 import store from './store.js';
 
@@ -52,23 +51,23 @@ export const toggleTrayVisibility = () => {
   Menu.setApplicationMenu(buildAppMenu());
 };
 
+const getWindowTitle = () => store.getState().global.windowTitle;
+
 /**
  * Builds the tray context menu dynamically.
+ * Save/Load options have been removed from here.
  * @returns {Electron.Menu} The built menu
  */
 const buildTrayContextMenu = () =>
   Menu.buildFromTemplate([
     {
+      label: getWindowTitle(),
+    },
+    { type: 'separator' },
+    {
       label: 'Show/Hide',
       click: toggleMainWindowVisibility,
     },
-    { type: 'separator' },
-    { label: 'Select Window', click: selectWindow },
-
-    { type: 'separator' },
-    { label: 'Load Settings', click: loadRulesFromFile },
-    { label: 'Save Settings', click: saveRulesToFile },
-    { type: 'separator' },
     {
       label: 'Notifications',
       type: 'checkbox',
@@ -84,7 +83,8 @@ const buildTrayContextMenu = () =>
   ]);
 
 /**
- * Builds the application menu.
+ * Builds the application menu (visible with Alt key).
+ * This now contains the primary Save/Load options.
  * @returns {Electron.Menu} The built menu
  */
 const buildAppMenu = () => {
@@ -94,11 +94,16 @@ const buildAppMenu = () => {
       submenu: [
         { label: 'Show/Hide', click: toggleMainWindowVisibility },
         { type: 'separator' },
-        { label: 'Select Window', click: async () => await selectWindow() },
-
-        { type: 'separator' },
-        { label: 'Load Settings', click: loadRulesFromFile },
-        { label: 'Save Settings', click: saveRulesToFile },
+        {
+          label: 'Load Settings...',
+          click: () => loadRulesFromFile(() => {}), // Pass no-op callback
+          accelerator: 'CmdOrCtrl+O', // Standard shortcut for Open/Load
+        },
+        {
+          label: 'Save Settings As...',
+          click: () => saveRulesToFile(() => {}), // Pass no-op callback
+          accelerator: 'CmdOrCtrl+S', // Standard shortcut for Save
+        },
         { type: 'separator' },
         { label: 'Close', click: closeAppFromTray },
       ],
@@ -223,7 +228,7 @@ export const toggleMainWindowVisibility = () => {
 };
 
 store.subscribe(() => {
-  const { notificationsEnabled, windowId, isBotEnabled } = store.getState().global;
+  const { notificationsEnabled } = store.getState().global;
   isNotificationEnabled = notificationsEnabled;
 
   if (tray) {
@@ -231,7 +236,7 @@ store.subscribe(() => {
     updateTrayIcon();
   }
 
-  // Update the application menu
+  // Update the application menu whenever state changes to keep checkboxes in sync
   Menu.setApplicationMenu(buildAppMenu());
 });
 

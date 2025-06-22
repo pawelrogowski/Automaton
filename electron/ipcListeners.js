@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import store from './store.js';
-import { saveRulesToFile, loadRulesFromFile, autoLoadRules } from './rulesManager.js';
+import { saveRulesToFile, loadRulesFromFile, autoLoadRules } from './saveManager.js';
 import { playSound, registerGlobalShortcuts } from './globalShortcuts.js';
 import { getMainWindow } from './createMainWindow.js';
 import luaSlice from '../frontend/redux/slices/luaSlice.js'; // Import the luaSlice

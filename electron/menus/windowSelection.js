@@ -28,16 +28,6 @@ let selectedWindowId = null;
 
 const getWindowName = (id) => windowinfo.getName(id);
 
-export const selectWindow = async () => {
-  const pickedWindowId = windowinfo.getWindowIdByClick();
-  const winInfo = windowinfo.getAllInfo(pickedWindowId);
-  if (!winInfo.name.includes('Tibia')) {
-    return;
-  }
-  setGlobalState('global/setWindowTitle', winInfo.name);
-  setGlobalState('global/setWindowId', pickedWindowId);
-};
-
 const getActiveWindowId = () => windowinfo.getActiveWindow();
 
 export const selectActiveWindow = async () => {
