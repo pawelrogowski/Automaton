@@ -7,14 +7,14 @@ export const StyledLink = styled(NavLink)`
   padding: 8px 12px;
   text-decoration: none;
   color: inherit;
-  border-radius: 10px;
-  border: 1px solid rgba( 255, 255, 255, 0.18 );
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
 
   ${({ $isActive }) =>
     $isActive &&
     `
 background: rgba( 255, 255, 255, 0.15 );
-border-radius: 10px;
+border-radius: 4px;
 border: 1px solid rgba( 255, 255, 255, 0.18 );
   `}
 

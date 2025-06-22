@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import SidebarWrapper from '../components/SidebarWrapper/SidebarWrapper.js';
 import NavButton from '../components/NavButton/NavButton.js';
 import automaton from '../assets/cyberskull.png';
+import settings from '../assets/settings.png';
 import healParty from '../assets/actionBarItems/Ultimate_Healing_Rune.gif';
 import hotkey from '../assets/hotkey.png';
 import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
@@ -186,40 +187,41 @@ const Layout = () => {
       <Header>
         <NavButton
           to="/healing"
-          text="Automaton"
-          img={automaton}
-          imageWidth="22px"
-          tooltip="Automation Section - Add/Remove custom rules."
-        ></NavButton>
-        {/* Add the new button for Lua Scripts */}
-        <NavButton
-          to="/luascripts"
-          text="Lua Scripts"
-          img={luaIcon} // Use the imported Lua icon
-          imageWidth="32px"
-          tooltip="Manage Lua Scripts"
-        ></NavButton>
-        <NavButton
-          to="/hotkeys"
-          text="Hotkeys"
-          img={hotkey}
-          imageWidth="32px"
-          tooltip="Hotkeys Section - Overview of key combination to controll the bot."
-        ></NavButton>
-        {/* Add the button for Game State */}
-        <NavButton
-          to="/gameState"
-          text="Game State"
-          img={tibia} // Use the imported icon
-          imageWidth="32px"
-          tooltip="View the current game state data"
+          text="Healing"
+          // img={automaton}
+          // imageWidth="22px"
         ></NavButton>
         <NavButton
           to="/cavebot"
           text="Cavebot"
-          img={automaton} // Placeholder icon
-          imageWidth="32px"
-          tooltip="Cavebot controls and minimap"
+          // img={automaton} // Placeholder icon
+          // imageWidth="32px"
+        ></NavButton>
+        <NavButton
+          to="/targeting"
+          text="Targeting"
+          // img={settings}
+          // imageWidth="26px"
+        ></NavButton>
+        <NavButton
+          to="/luascripts"
+          text="Scripts"
+          // img={luaIcon}
+          //  imageWidth="32px"
+        ></NavButton>
+
+        {/* Add the button for Game State */}
+        <NavButton
+          to="/gameState"
+          text="State"
+          // img={tibia} // Use the imported icon
+          // imageWidth="32px"
+        ></NavButton>
+        <NavButton
+          to="/hotkeys"
+          text="Settings"
+          // img={settings}
+          // imageWidth="26px"
         ></NavButton>
       </Header>
       <div className="side-main">
