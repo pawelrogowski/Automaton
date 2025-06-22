@@ -120,12 +120,10 @@ const buildAppMenu = () => {
     },
   ];
 
-  if (process.env.NODE_ENV !== 'production') {
-    template.push({
-      label: 'Developer',
-      submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
-    });
-  }
+  template.push({
+    label: 'Developer',
+    submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
+  });
 
   return Menu.buildFromTemplate(template);
 };
@@ -190,7 +188,7 @@ export const createMainWindow = () => {
     webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
   });
 
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 
   mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
 

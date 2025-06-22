@@ -420,9 +420,6 @@ class WorkerManager {
   initialize(app, cwd) {
     this.setupPaths(app, cwd);
     log('info', '[Worker Manager] Initializing worker manager. Subscribing to store updates.');
-    // No longer start luaVMWorker here, it's managed by handleStoreUpdate
-    // this.startWorker('luaVMWorker');
-    // screenMonitor is started by handleStoreUpdate when windowId is set
     store.subscribe(this.handleStoreUpdate);
 
     app.on('before-quit', () => {

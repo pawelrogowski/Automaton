@@ -1,5 +1,5 @@
 {
-  "name": "fine_genius_premium_sync",
+  "name": "guard-zone",
   "version": "1.3.5b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.fine_genius_premium_sync",
-    "productName": "Fine Genius Premium Sync",
+    "appId": "com.electron.guard-zone",
+    "productName": "Guard Zone",
     "directories": {
       "output": "dist",
       "buildResources": "build"
