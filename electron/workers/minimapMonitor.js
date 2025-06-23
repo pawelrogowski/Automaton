@@ -1,8 +1,9 @@
+// minimapMonitor.js
+
 import { parentPort, workerData } from 'worker_threads';
 import { createRequire } from 'module';
-import fs from 'fs/promises';
-import path from 'path';
 import { regionColorSequences, floorLevelIndicators } from '../constants/index.js';
+import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
 import { MinimapMatcher } from '../utils/minimapMatcher.js';
@@ -32,17 +33,26 @@ try {
 const TARGET_FPS = 60;
 const MINIMAP_WIDTH = 106;
 const MINIMAP_HEIGHT = 109;
-const REPROCESS_INTERVAL_MS = 50; // <-- The new time limit
+const REPROCESS_INTERVAL_MS = 50;
+
+// --- MODIFIED: Palette initialization is now synchronous and immediate ---
+logger('info', 'Processing hardcoded palette data...');
+const colorToIndexMap = new Map();
+PALETTE_DATA.forEach((color, index) => {
+  // Use a single integer key for the fastest possible lookups in the main loop
+  const intKey = (color.r << 16) | (color.g << 8) | color.b;
+  colorToIndexMap.set(intKey, index);
+});
+logger('info', 'Palette data successfully processed.');
 
 // --- Worker State ---
-let colorToIndexMap = null;
 let state = null;
 let initialized = false;
 let shouldRestart = false;
 let regionBuffers = new Map();
 const captureInstance = new X11RegionCapture();
-let lastMinimapFrameBuffer = null; // For comparing frames to skip redundant processing
-let lastProcessTime = 0; // <-- Timestamp for the 50ms reprocessing logic
+let lastMinimapFrameBuffer = null;
+let lastProcessTime = 0;
 
 // --- Helper Functions ---
 
@@ -56,7 +66,6 @@ function addAndTrackRegion(name, x, y, width, height) {
   const regionConfig = { regionName: name, winX: x, winY: y, regionWidth: width, regionHeight: height };
   try {
     captureInstance.addRegionToMonitor(regionConfig);
-    // Buffer size for 24-bit RGB data + 8-byte header from native module
     const bufferSize = width * height * 3 + 8;
     const buffer = Buffer.alloc(bufferSize);
     regionBuffers.set(name, { buffer });
@@ -64,33 +73,6 @@ function addAndTrackRegion(name, x, y, width, height) {
   } catch (e) {
     logger('error', `Failed to add/track region ${name}: ${e.message}`);
     return null;
-  }
-}
-
-/** Loads and processes the color palette, creating an optimized map for quick lookups. */
-async function initializePalette() {
-  if (colorToIndexMap) {
-    logger('debug', 'Palette data already initialized.');
-    return;
-  }
-
-  try {
-    logger('info', 'Loading and caching palette data...');
-    const palettePath = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json');
-    const paletteFile = await fs.readFile(palettePath, 'utf8');
-    const paletteData = JSON.parse(paletteFile);
-
-    // Create an optimized map using a single integer key for faster lookups
-    colorToIndexMap = new Map();
-    paletteData.forEach((color, index) => {
-      const intKey = (color.r << 16) | (color.g << 8) | color.b;
-      colorToIndexMap.set(intKey, index);
-    });
-
-    logger('info', 'Palette data successfully loaded and processed.');
-  } catch (error) {
-    logger('error', 'CRITICAL: Failed to load palette.json.', error);
-    throw error; // Stop the worker from starting in a broken state
   }
 }
 
@@ -104,12 +86,10 @@ async function initializeRegions() {
   resetRegions();
   try {
     captureInstance.startMonitorInstance(state.global.windowId, TARGET_FPS);
-    // Use a large buffer for one-time full-screen capture to find regions
     const fullWindowBuffer = Buffer.alloc(2560 * 1600 * 3 + 8);
     const initialFullFrameResult = captureInstance.getFullWindowImageData(fullWindowBuffer);
     if (!initialFullFrameResult?.success) throw new Error('Failed to get initial frame for region finding.');
 
-    // Find and add the main minimap region
     const foundMinimapFull = findSequencesNative(fullWindowBuffer, { minimapFull: regionColorSequences.minimapFull }, null, 'first');
     if (foundMinimapFull?.minimapFull?.x !== undefined) {
       const def = createRegion(foundMinimapFull.minimapFull, MINIMAP_WIDTH, MINIMAP_HEIGHT);
@@ -118,7 +98,6 @@ async function initializeRegions() {
       }
     }
 
-    // Find and add the floor indicator region
     const foundFloorIndicator = findSequencesNative(
       fullWindowBuffer,
       { minimapFloorIndicatorColumn: regionColorSequences.minimapFloorIndicatorColumn },
@@ -145,7 +124,6 @@ async function initializeRegions() {
 
 /** Processes a single frame, finds the player position, and posts updates. */
 async function processFrame() {
-  // 1. Capture data for all tracked regions
   const regionData = {};
   for (const [regionName, bufferInfo] of regionBuffers.entries()) {
     const result = captureInstance.getRegionRgbData(regionName, bufferInfo.buffer);
@@ -154,28 +132,23 @@ async function processFrame() {
     }
   }
 
-  // 2. Check for Frame-skip Optimization
   const minimapEntry = regionData.minimapFullRegion;
-  if (!minimapEntry) return; // Can't proceed without a minimap frame
+  if (!minimapEntry) return;
 
   const currentFrameData = minimapEntry.data;
   const now = Date.now();
 
-  // Skip processing ONLY IF the frame is identical AND it's been less than 50ms since the last process.
   if (lastMinimapFrameBuffer && lastMinimapFrameBuffer.equals(currentFrameData) && now - lastProcessTime < REPROCESS_INTERVAL_MS) {
     return;
   }
 
-  // If we proceed, update the timestamp of this processing event.
   lastProcessTime = now;
 
-  // Frame is new or the time limit has passed, so update our cache for the next iteration.
   if (!lastMinimapFrameBuffer || lastMinimapFrameBuffer.length !== currentFrameData.length) {
     lastMinimapFrameBuffer = Buffer.alloc(currentFrameData.length);
   }
   currentFrameData.copy(lastMinimapFrameBuffer);
 
-  // 3. Determine current floor (Z-level)
   let detectedZ = null;
   if (regionData.minimapFloorIndicatorColumnRegion) {
     const { data } = regionData.minimapFloorIndicatorColumnRegion;
@@ -193,11 +166,10 @@ async function processFrame() {
     }
   }
 
-  if (detectedZ === null) return; // Can't search without a Z-level
+  if (detectedZ === null) return;
 
-  // 4. Convert RGB minimap data to palette indices (Efficiently)
   const { width, height } = minimapEntry;
-  const rgbData = currentFrameData.subarray(8); // Skip 8-byte header
+  const rgbData = currentFrameData.subarray(8);
   const minimapIndexData = new Uint8Array(width * height);
   const pixelCount = width * height;
 
@@ -207,10 +179,9 @@ async function processFrame() {
     const g = rgbData[pixelOffset + 1];
     const b = rgbData[pixelOffset + 2];
     const key = (r << 16) | (g << 8) | b;
-    minimapIndexData[i] = colorToIndexMap.get(key) ?? 0; // Default to index 0 if color not in palette
+    minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
   }
 
-  // 5. Asynchronously find position and post results
   minimapMatcher
     .findPosition(minimapIndexData, width, height, detectedZ)
     .then((result) => {
@@ -237,7 +208,6 @@ async function processFrame() {
 async function mainLoop() {
   const loopStartTime = Date.now();
   try {
-    // Handle re-initialization if the window ID appears or changes
     if ((!initialized && state?.global?.windowId) || shouldRestart) {
       minimapMatcher.cancelCurrentSearch();
       await initializeRegions();
@@ -248,9 +218,8 @@ async function mainLoop() {
     }
   } catch (err) {
     logger('error', `Fatal error in mainLoop: ${err.message}`, err);
-    triggerReinitialization(); // Attempt to recover by re-initializing
+    triggerReinitialization();
   } finally {
-    // Maintain the target FPS
     const loopExecutionTime = Date.now() - loopStartTime;
     const delayTime = calculateDelayTime(loopExecutionTime, TARGET_FPS);
     if (delayTime > 0) await delay(delayTime);
@@ -264,7 +233,6 @@ function triggerReinitialization() {
   }
   initialized = false;
   shouldRestart = true;
-  // IMPORTANT: Clear state on restart
   lastMinimapFrameBuffer = null;
   lastProcessTime = 0;
   minimapMatcher.cancelCurrentSearch();
@@ -274,7 +242,7 @@ function triggerReinitialization() {
 async function start() {
   logger('info', 'Minimap monitor worker started.');
   try {
-    await initializePalette();
+    // No more async palette loading, just load the map data
     await minimapMatcher.loadMapData();
 
     while (true) {

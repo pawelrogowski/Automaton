@@ -31,6 +31,13 @@ const initialState = {
   isCavebotEnabled: false,
   currentWaypointId: null,
   selectedWaypointId: null,
+  pathfinding: {
+    // New: Pathfinding feedback object
+    targetCoordinates: null,
+    distanceFromTarget: null,
+    timeToFindRouteMs: null,
+    timeOnCurrentWaypointMs: null,
+  },
 };
 
 const cavebotSlice = createSlice({
@@ -144,6 +151,10 @@ const cavebotSlice = createSlice({
         ...(action.payload || {}),
       };
     },
+    setPathfindingFeedback: (state, action) => {
+      // New reducer for pathfinding feedback
+      state.pathfinding = { ...state.pathfinding, ...action.payload };
+    },
   },
 });
 
@@ -156,6 +167,7 @@ export const {
   setSelectedWaypointId,
   updateWaypoint,
   setState,
+  setPathfindingFeedback, // Export new action
 } = cavebotSlice.actions;
 
 export default cavebotSlice;

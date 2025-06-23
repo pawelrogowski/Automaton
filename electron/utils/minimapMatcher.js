@@ -8,7 +8,11 @@ const require = createRequire(import.meta.url);
 
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
 const LANDMARK_SIZE = 7;
-const LANDMARK_PATTERN_BYTES = LANDMARK_SIZE * LANDMARK_SIZE;
+// --- KEY CHANGE #1 ---
+// The landmark pattern is now packed at 4-bits per pixel.
+// The C++ addon will now work with 25-byte keys instead of 49-byte keys.
+const LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2); // 25
+
 const EXCLUDED_COLORS_RGB = [
   { r: 51, g: 102, b: 153 },
   { r: 0, g: 0, b: 0 },
@@ -28,9 +32,10 @@ class MinimapMatcher {
     }
     try {
       const { MinimapMatcher: NativeMinimapMatcher } = require(nativeModulePath);
+      // Pass the NEW packed size to the C++ addon
       this.nativeMatcher = new NativeMinimapMatcher({
         LANDMARK_SIZE,
-        LANDMARK_PATTERN_BYTES,
+        LANDMARK_PATTERN_BYTES, // This will be 25
         EXCLUDED_COLORS_RGB,
       });
     } catch (error) {
@@ -49,7 +54,6 @@ class MinimapMatcher {
       const palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
 
       const landmarkData = new Map();
-      const fullMapData = new Map(); // <<<--- ADDED: To hold the new single map.bin data
 
       const zLevelDirs = (await fs.readdir(PREPROCESSED_BASE_DIR, { withFileTypes: true }))
         .filter((d) => d.isDirectory() && d.name.startsWith('z'))
@@ -58,42 +62,36 @@ class MinimapMatcher {
       for (const z of zLevelDirs) {
         const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${z}`);
         try {
-          // --- Load Landmarks (existing logic) ---
           const landmarkBuffer = await fs.readFile(path.join(zLevelDir, 'landmarks.bin'));
           const landmarks = [];
+
+          // --- KEY CHANGE #2 ---
+          // The size of each entry in the file is now based on the packed size.
+          // 8 bytes for x/y coordinates + 25 bytes for the packed pattern.
           const landmarkEntrySize = 8 + LANDMARK_PATTERN_BYTES;
+
           for (let i = 0; i < landmarkBuffer.length; i += landmarkEntrySize) {
             landmarks.push({
               x: landmarkBuffer.readUInt32LE(i),
               y: landmarkBuffer.readUInt32LE(i + 4),
+              // The pattern is now the 25-byte packed buffer.
               pattern: landmarkBuffer.subarray(i + 8, i + landmarkEntrySize),
             });
           }
           landmarkData.set(z, landmarks);
         } catch (e) {
-          logger('warn', `No landmarks.bin found for Z=${z}. This floor will use fallback search only.`);
+          if (e.code === 'ENOENT') {
+            logger('warn', `No landmarks.bin found for Z=${z}. Position finding will be unavailable for this floor.`);
+          } else {
+            logger('error', `Could not load landmarks.bin for Z=${z}: ${e.message}`);
+          }
           landmarkData.set(z, []);
         }
-
-        // --- ADDED: Load the single map.bin and its index for fallback search ---
-        try {
-          const index = JSON.parse(await fs.readFile(path.join(zLevelDir, 'index.json'), 'utf8'));
-          const mapBuffer = await fs.readFile(path.join(zLevelDir, index.mapFile));
-          fullMapData.set(z, {
-            buffer: mapBuffer,
-            minX: index.minX,
-            minY: index.minY,
-          });
-        } catch (e) {
-          logger('warn', `Could not load map.bin or index.json for Z=${z}. Fallback search will be unavailable.`);
-        }
-        // --- END OF ADDED BLOCK ---
       }
 
       // Sync data to the native module once on load
       this.nativeMatcher.palette = palette;
       this.nativeMatcher.landmarkData = Object.fromEntries(landmarkData);
-      this.nativeMatcher.fullMapData = Object.fromEntries(fullMapData); // <<<--- ADDED: Pass new map data to native module
       this.nativeMatcher.isLoaded = true;
       this.isLoaded = true;
 
@@ -120,18 +118,15 @@ class MinimapMatcher {
       throw new Error('MinimapMatcher is not loaded. Call loadMapData() first.');
     }
 
-    // The native method now handles its own cancellation and returns a promise
     const resultPromise = this.nativeMatcher.findPosition(unpackedMinimap, minimapWidth, minimapHeight, targetZ);
 
     resultPromise
       .then((result) => {
-        // Update lastKnownPositionByZ from native module if a position was found
         if (result && result.position) {
           this.lastKnownPositionByZ.set(targetZ, { x: result.mapViewX, y: result.mapViewY });
         }
       })
       .catch((err) => {
-        // Don't pollute logs with expected cancellations
         if (err.message !== 'Search cancelled') {
           logger('error', `Native findPosition error: ${err.message}`);
         }
