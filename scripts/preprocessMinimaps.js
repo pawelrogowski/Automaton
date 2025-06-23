@@ -17,6 +17,16 @@
 // - A full-size debug PNG showing the map areas covered by the landmark search.
 // - A full-size debug PNG of each assembled waypoint cost map.
 
+// Visual map data
+// Each file with a name of the form Minimap_Color_x_y_z.png contains the visual map data for a tile of 256×256 pixels. The coordinates in the file name look like this:
+
+// x is the absolute X coordinate of the top-left pixel of the tile. At the moment, this value ranges from 31744 (left-most tile) to 33536 (right-most tile), but this range could be extended in the future if CipSoft decides to add new areas outside the current boundaries of the map.
+// y is the absolute Y coordinate of the top-left pixel of the tile. It currently goes from 30976 (top-most tile) to 32768 (bottom-most tile).
+// z is the floor ID of the tile. 0 is the highest floor; 7 is the ground floor; 15 is the deepest underground.
+
+// Pathfinding data
+// Each file with a name of the form Minimap_WaypointCost_x_y_z.png contains the pathfinding data for a tile of 256×256 pixels. This is the map that is used for pathfinding, e.g. to calculate the fastest route to a destination when map-clicking. Each of these pixels represents the walking speed friction on a specific tile. Each of the RGB color components (in most cases R=G=B) contains the friction value at a given position. In general, the darker the color, the lower the friction value, and the higher your movement speed on that tile. There are two special cases: magenta (#FF00FF) tiles are unexplored, and yellow (#FFFF00) tiles are non-walkable.
+
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
