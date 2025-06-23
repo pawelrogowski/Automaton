@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
 import { reorderWaypoints, setSelectedWaypointId, updateWaypoint } from '../../redux/slices/cavebotSlice.js';
 import { useTable, useBlockLayout, useResizeColumns } from 'react-table';
@@ -9,8 +9,8 @@ import { throttle } from 'lodash';
 import { StyledWaypointTable } from './WaypointTable.styled.js';
 import MonacoEditorModal from './MonacoEditorModal.js';
 
-// --- Reusable Draggable Row Component (Unchanged but benefits from parent optimizations) ---
-const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, onMoveRow }) => {
+// --- Reusable Draggable Row Component ---
+const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, onMoveRow, setRef }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'row',
     item: { index },
@@ -28,9 +28,14 @@ const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, on
     },
   });
 
+  const combinedRef = (node) => {
+    setRef(node);
+    drag(drop(node));
+  };
+
   return (
     <div
-      ref={(node) => drag(drop(node))}
+      ref={combinedRef}
       style={{ opacity: isDragging ? 0.5 : 1 }}
       {...row.getRowProps()}
       className={`tr ${isSelected ? 'selected' : ''}`}
@@ -41,14 +46,13 @@ const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, on
   );
 });
 
-// --- Specialized Editable Cell Components (Wrapped in React.memo) ---
+// --- Specialized Editable Cell Components ---
 
 const EditableStringCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
   const [value, setValue] = useState(initialValue);
   const [isEditing, setIsEditing] = useState(false);
   const onBlur = () => {
     setIsEditing(false);
-    // Only update if the value has actually changed
     if (initialValue !== value) {
       updateMyData(original.id, { [id]: value });
     }
@@ -88,12 +92,11 @@ const EditableSelectCell = React.memo(({ value: initialValue, row: { original },
   if (isEditing) {
     return (
       <select value={initialValue} onChange={onChange} onBlur={() => setIsEditing(false)} autoFocus onClick={(e) => e.stopPropagation()}>
-        {' '}
         {options.map((opt) => (
           <option key={opt} value={opt}>
             {opt}
           </option>
-        ))}{' '}
+        ))}
       </select>
     );
   }
@@ -150,7 +153,6 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
     if (e.currentTarget.contains(e.relatedTarget)) return;
     setIsEditing(false);
     const updates = { x: parseInt(coords.x, 10) || 0, y: parseInt(coords.y, 10) || 0, z: parseInt(coords.z, 10) || 0 };
-    // Only dispatch if coordinates have actually changed
     if (updates.x !== original.x || updates.y !== original.y || updates.z !== original.z) {
       updateMyData(original.id, updates);
     }
@@ -162,10 +164,9 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
   if (isEditing) {
     return (
       <div onBlur={onBlurContainer} className="coord-editor" onClick={(e) => e.stopPropagation()}>
-        {' '}
-        <input type="number" value={coords.x} onChange={(e) => onChange(e, 'x')} autoFocus />{' '}
-        <input type="number" value={coords.y} onChange={(e) => onChange(e, 'y')} />{' '}
-        <input type="number" value={coords.z} onChange={(e) => onChange(e, 'z')} />{' '}
+        <input type="number" value={coords.x} onChange={(e) => onChange(e, 'x')} autoFocus />
+        <input type="number" value={coords.y} onChange={(e) => onChange(e, 'y')} />
+        <input type="number" value={coords.z} onChange={(e) => onChange(e, 'z')} />
       </div>
     );
   }
@@ -180,12 +181,11 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
 const ActionCell = React.memo(({ value, row: { original }, onEditAction }) => {
   return (
     <div onDoubleClick={() => onEditAction(original)} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
-      {' '}
       {value ? (
         <pre style={{ margin: 0, padding: 0, whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</pre>
       ) : (
-        <span style={{ color: '#888' }}></span>
-      )}{' '}
+        <span></span>
+      )}
     </div>
   );
 });
@@ -194,11 +194,21 @@ const ActionCell = React.memo(({ value, row: { original }, onEditAction }) => {
 const WaypointTable = () => {
   const dispatch = useDispatch();
 
-  // OPTIMIZATION 1: Use shallowEqual to prevent re-renders from irrelevant state changes.
   const waypoints = useSelector((state) => state.cavebot.waypoints, shallowEqual);
   const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
 
   const [modalState, setModalState] = useState({ isOpen: false, waypoint: null });
+  const rowRefs = useRef(new Map());
+
+  useEffect(() => {
+    const node = rowRefs.current.get(selectedWaypointId);
+    if (node) {
+      node.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [selectedWaypointId]);
 
   const handleSelectRow = useCallback(
     (id) => {
@@ -209,8 +219,6 @@ const WaypointTable = () => {
     [dispatch],
   );
 
-  // OPTIMIZATION 2: Throttle the Redux dispatch for reordering.
-  // This is the most impactful change for drag & drop performance.
   const throttledReorder = useMemo(
     () =>
       throttle(
@@ -219,7 +227,7 @@ const WaypointTable = () => {
         },
         100,
         { leading: true, trailing: false },
-      ), // Fire immediately, then wait.
+      ),
     [dispatch],
   );
 
@@ -247,8 +255,8 @@ const WaypointTable = () => {
     handleCloseModal();
   };
 
-  // data and columns are already correctly memoized, which is great.
   const data = useMemo(() => waypoints, [waypoints]);
+
   const columns = useMemo(
     () => [
       { Header: 'ID', accessor: 'id', width: 39 },
@@ -302,6 +310,15 @@ const WaypointTable = () => {
                   onSelect={handleSelectRow}
                   onMoveRow={handleMoveRow}
                   isSelected={selectedWaypointId === row.original.id}
+                  setRef={(node) => {
+                    const map = rowRefs.current;
+                    const id = row.original.id;
+                    if (node) {
+                      map.set(id, node);
+                    } else {
+                      map.delete(id);
+                    }
+                  }}
                 >
                   {row.cells.map((cell) => (
                     <div {...cell.getCellProps()} className="td">

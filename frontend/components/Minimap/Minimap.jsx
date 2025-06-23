@@ -1,47 +1,61 @@
 import React, { useRef, useEffect, useState, useCallback, memo, useMemo } from 'react';
-import { useSelector, useStore } from 'react-redux';
+import { useSelector, useStore, useDispatch } from 'react-redux';
+import { addWaypoint, removeWaypoint, setSelectedWaypointId } from '../../redux/slices/cavebotSlice.js';
 import StyledMinimap from './Minimap.styled.js';
 import CustomSelect from '../CustomSelect/CustomSelect.js';
 
-// --- Configuration Constants (Easy to Tweak) ---
-
-// At what zoom level do we switch from a dot to a pixel-perfect square?
+// --- Configuration Constants ---
 const MARKER_STYLE_THRESHOLD = 7;
-
-// --- Style for the ZOOMED-OUT Dot Marker ---
-// The radius of the inner white part of the dot.
 const DOT_MARKER_RADIUS = 3;
-// The thickness of the black border around the dot.
 const DOT_MARKER_BORDER_WIDTH = 1;
+
+// --- Context Menu Options ---
+const WAYPOINT_TYPE_OPTIONS = [
+  { value: '', label: 'Add Waypoint...' },
+  { value: 'Node', label: 'Node' },
+  { value: 'Stand', label: 'Stand' },
+  { value: 'Shovel', label: 'Shovel' },
+  { value: 'Rope', label: 'Rope' },
+  { value: 'Machete', label: 'Machete' },
+  { value: 'Ladder', label: 'Ladder' },
+  { value: 'Use', label: 'Use' },
+  { value: 'Action', label: 'Action' },
+  { value: 'Lure', label: 'Lure' },
+];
 
 const Minimap = () => {
   const canvasRef = useRef(null);
   const store = useStore();
+  const dispatch = useDispatch();
 
-  const initialState = useSelector((state) => ({
-    pos: state.gameState.playerMinimapPosition,
-    z: state.gameState.playerMinimapPosition.z ?? 7,
-  }));
+  // --- Redux State ---
+  const { pos, z: initialZ } = useSelector((state) => state.gameState.playerMinimapPosition);
+  const waypoints = useSelector((state) => state.cavebot.waypoints);
+  const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
 
+  // --- Component State ---
   const [mapMode, setMapMode] = useState('map');
-  const [zLevel, setZLevel] = useState(initialState.z);
+  const [zLevel, setZLevel] = useState(initialZ ?? 7);
   const [zoomLevel, setZoomLevel] = useState(1.4);
+  const [currentMapImage, setCurrentMapImage] = useState(null);
+  const [currentMapIndex, setCurrentMapIndex] = useState(null);
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, type: 'add', target: null });
+  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, text: '' });
 
+  // --- Refs for frequent updates without re-renders ---
   const zLevelRef = useRef(zLevel);
+  const hoveredCoordRef = useRef(null);
+  const hoveredWaypointRef = useRef(null);
+  const contextMenuRef = useRef(null);
+  const drawingStateRef = useRef({ playerPosition: { ...pos, z: initialZ } });
+
+  const CANVAS_SIZE = 260;
+
   useEffect(() => {
     zLevelRef.current = zLevel;
   }, [zLevel]);
 
-  const [currentMapImage, setCurrentMapImage] = useState(null);
-  const [currentMapIndex, setCurrentMapIndex] = useState(null);
-
-  const drawingStateRef = useRef({
-    playerPosition: initialState.pos,
-  });
-
-  const CANVAS_SIZE = 260;
-
-  // Effect for dynamic asset loading (unchanged)
+  // Effect for dynamic asset loading
   useEffect(() => {
     let isMounted = true;
     setCurrentMapImage(null);
@@ -65,13 +79,11 @@ const Minimap = () => {
     };
   }, [zLevel, mapMode]);
 
-  // Direct Redux Store Subscription (unchanged and correct)
+  // Direct Redux Store Subscription for player position
   useEffect(() => {
     const handleStateChange = () => {
-      const wholeState = store.getState();
-      const newPosition = wholeState.gameState.playerMinimapPosition;
+      const newPosition = store.getState().gameState.playerMinimapPosition;
       const oldPosition = drawingStateRef.current.playerPosition;
-
       if (newPosition.x !== oldPosition.x || newPosition.y !== oldPosition.y || newPosition.z !== oldPosition.z) {
         drawingStateRef.current.playerPosition = newPosition;
         if (newPosition.z !== zLevelRef.current) {
@@ -83,7 +95,7 @@ const Minimap = () => {
     return () => unsubscribe();
   }, [store]);
 
-  // --- Animation Loop with CORRECTED Positioning ---
+  // Animation Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -93,6 +105,7 @@ const Minimap = () => {
 
     const draw = () => {
       const { playerPosition } = drawingStateRef.current;
+      const hoveredCoord = hoveredCoordRef.current;
       ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
       if (!currentMapImage || !currentMapIndex) {
@@ -101,15 +114,12 @@ const Minimap = () => {
       }
 
       const { minX, minY } = currentMapIndex;
-      // Use Math.floor to snap the player to a specific map pixel
       const playerPixelX = Math.floor(playerPosition.x - minX);
       const playerPixelY = Math.floor(playerPosition.y - minY);
 
       const centerX = CANVAS_SIZE / 2;
       const centerY = CANVAS_SIZE / 2;
 
-      // This calculation ensures the top-left of the player's map pixel
-      // is drawn at (centerX, centerY) on the canvas.
       const sourceX = playerPixelX - centerX / zoomLevel;
       const sourceY = playerPixelY - centerY / zoomLevel;
       const drawWidth = CANVAS_SIZE / zoomLevel;
@@ -117,32 +127,62 @@ const Minimap = () => {
 
       ctx.drawImage(currentMapImage, sourceX, sourceY, drawWidth, drawHeight, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-      // Draw the dynamic player marker
+      waypoints.forEach((waypoint) => {
+        if (waypoint.z !== zLevel) return;
+
+        const waypointPixelX = waypoint.x - minX;
+        const waypointPixelY = waypoint.y - minY;
+        const drawX = (waypointPixelX - sourceX) * zoomLevel;
+        const drawY = (waypointPixelY - sourceY) * zoomLevel;
+
+        const isSelected = waypoint.id === selectedWaypointId;
+        const fillColor = '#FF00FF';
+        const borderColor = isSelected ? '#00FFFF' : 'black';
+        const borderWidth = isSelected ? 2 : 1;
+
+        if (zoomLevel > MARKER_STYLE_THRESHOLD) {
+          ctx.fillStyle = borderColor;
+          ctx.fillRect(drawX, drawY, zoomLevel, zoomLevel);
+          ctx.fillStyle = fillColor;
+          ctx.fillRect(drawX + borderWidth, drawY + borderWidth, zoomLevel - 2 * borderWidth, zoomLevel - 2 * borderWidth);
+        } else {
+          const markerCenterX = drawX + zoomLevel / 2;
+          const markerCenterY = drawY + zoomLevel / 2;
+          ctx.beginPath();
+          ctx.arc(markerCenterX, markerCenterY, DOT_MARKER_RADIUS + DOT_MARKER_BORDER_WIDTH, 0, 2 * Math.PI);
+          ctx.fillStyle = borderColor;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(markerCenterX, markerCenterY, DOT_MARKER_RADIUS, 0, 2 * Math.PI);
+          ctx.fillStyle = fillColor;
+          ctx.fill();
+        }
+      });
+
+      if (hoveredCoord && !hoveredWaypointRef.current) {
+        const hoverPixelX = hoveredCoord.x - minX;
+        const hoverPixelY = hoveredCoord.y - minY;
+        const drawX = (hoverPixelX - sourceX) * zoomLevel;
+        const drawY = (hoverPixelY - sourceY) * zoomLevel;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(drawX, drawY, zoomLevel, zoomLevel);
+        ctx.fillStyle = 'rgba(0, 149, 255, 0)';
+        ctx.fillRect(drawX + 1, drawY + 1, zoomLevel - 2, zoomLevel - 2);
+      }
+
       if (playerPosition.z === zLevel) {
         if (zoomLevel > MARKER_STYLE_THRESHOLD) {
-          // --- Draw the pixel-perfect square marker ---
-          // This aligns it perfectly with the top-left of the scaled map pixel.
-
-          // 1. Draw the outer black rectangle (the 1px border)
           ctx.fillStyle = 'black';
           ctx.fillRect(centerX, centerY, zoomLevel, zoomLevel);
-
-          // 2. Draw the inner white rectangle (the background)
           ctx.fillStyle = 'white';
-          // Inset by 1px on all sides
           ctx.fillRect(centerX + 1, centerY + 1, zoomLevel - 2, zoomLevel - 2);
         } else {
-          // --- Center the dot INSIDE the pixel block ---
           const markerCenterX = centerX + zoomLevel / 2;
           const markerCenterY = centerY + zoomLevel / 2;
-
-          // 1. Draw the outer black circle (the border)
           ctx.beginPath();
           ctx.arc(markerCenterX, markerCenterY, DOT_MARKER_RADIUS + DOT_MARKER_BORDER_WIDTH, 0, 2 * Math.PI);
           ctx.fillStyle = 'black';
           ctx.fill();
-
-          // 2. Draw the inner white circle
           ctx.beginPath();
           ctx.arc(markerCenterX, markerCenterY, DOT_MARKER_RADIUS, 0, 2 * Math.PI);
           ctx.fillStyle = 'white';
@@ -155,9 +195,85 @@ const Minimap = () => {
 
     draw();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [zLevel, zoomLevel, currentMapImage, currentMapIndex]);
+  }, [zLevel, zoomLevel, currentMapImage, currentMapIndex, waypoints, selectedWaypointId]);
 
-  // Zooming functionality (unchanged)
+  // Effect for mouse move, leave, and click listeners
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // MODIFIED: Added 'e' parameter to check for ctrlKey
+    const handleCanvasClick = (e) => {
+      setContextMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+
+      if (hoveredWaypointRef.current) {
+        // NEW: If ctrl is pressed, delete the waypoint
+        if (e.ctrlKey) {
+          dispatch(removeWaypoint(hoveredWaypointRef.current.id));
+        } else {
+          // OLD: Otherwise, select it
+          dispatch(setSelectedWaypointId(hoveredWaypointRef.current.id));
+        }
+      }
+    };
+
+    // MODIFIED: Added 'e' parameter to check for ctrlKey and update cursor/tooltip
+    const handleMouseMove = (e) => {
+      if (!currentMapIndex) return;
+      const { playerPosition } = drawingStateRef.current;
+      const { minX, minY } = currentMapIndex;
+      const rect = canvas.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+      const centerX = CANVAS_SIZE / 2;
+      const centerY = CANVAS_SIZE / 2;
+      const playerPixelX = Math.floor(playerPosition.x - minX);
+      const playerPixelY = Math.floor(playerPosition.y - minY);
+      const sourceX = playerPixelX - centerX / zoomLevel;
+      const sourceY = playerPixelY - centerY / zoomLevel;
+      const worldX = Math.floor(sourceX + canvasX / zoomLevel + minX);
+      const worldY = Math.floor(sourceY + canvasY / zoomLevel + minY);
+
+      hoveredCoordRef.current = { x: worldX, y: worldY };
+
+      const foundWaypoint = waypoints.find((wp) => wp.x === worldX && wp.y === worldY && wp.z === zLevel);
+      hoveredWaypointRef.current = foundWaypoint || null;
+
+      // MODIFIED: Cursor logic updated
+      if (foundWaypoint) {
+        canvas.style.cursor = e.ctrlKey ? 'crosshair' : 'pointer'; // Change cursor if Ctrl is pressed
+
+        // MODIFIED: Tooltip text generation
+        let tooltipText = foundWaypoint.type;
+        if (foundWaypoint.label && foundWaypoint.label.trim() !== '') {
+          tooltipText += ` - ${foundWaypoint.label}`;
+        }
+        setTooltip({ visible: true, x: e.clientX + 15, y: e.clientY, text: tooltipText });
+      } else {
+        canvas.style.cursor = 'default';
+        setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      }
+    };
+
+    const handleMouseLeave = () => {
+      hoveredCoordRef.current = null;
+      hoveredWaypointRef.current = null;
+      canvas.style.cursor = 'default';
+      setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+    };
+
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
+    canvas.addEventListener('click', handleCanvasClick);
+
+    return () => {
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseleave', handleMouseLeave);
+      canvas.removeEventListener('click', handleCanvasClick);
+    };
+  }, [zoomLevel, currentMapIndex, waypoints, zLevel, dispatch]);
+
+  // Zooming functionality
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -170,7 +286,67 @@ const Minimap = () => {
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Handler for manual Z-level changes (unchanged)
+  // Context Menu Handler now only handles adding new waypoints.
+  const handleContextMenu = useCallback(
+    (e) => {
+      e.preventDefault();
+      // Only show the context menu for adding if not hovering over an existing waypoint.
+      if (hoveredCoordRef.current && !hoveredWaypointRef.current) {
+        setContextMenu({
+          visible: true,
+          x: e.clientX,
+          y: e.clientY,
+          type: 'add',
+          target: { ...hoveredCoordRef.current, z: zLevel },
+        });
+      }
+    },
+    [zLevel],
+  );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener('contextmenu', handleContextMenu);
+    return () => canvas.removeEventListener('contextmenu', handleContextMenu);
+  }, [handleContextMenu]);
+
+  // Effect to close the context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (canvasRef.current && canvasRef.current.contains(event.target)) {
+        return;
+      }
+      if (contextMenuRef.current && !contextMenuRef.current.contains(event.target)) {
+        setContextMenu((prev) => ({ ...prev, visible: false }));
+      }
+    };
+
+    if (contextMenu.visible) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [contextMenu.visible]);
+
+  // Waypoint Action Handlers
+  const handleWaypointAdd = useCallback(
+    (e) => {
+      const waypointType = e.target.value;
+      if (!waypointType || !contextMenu.target) {
+        setContextMenu({ visible: false, x: 0, y: 0, type: 'add', target: null });
+        return;
+      }
+      const { x, y, z } = contextMenu.target;
+      dispatch(addWaypoint({ type: waypointType, x, y, z, range: 1, action: waypointType === 'Action' ? 'Enter your action' : '' }));
+      setContextMenu({ visible: false, x: 0, y: 0, type: 'add', target: null });
+    },
+    [dispatch, contextMenu.target],
+  );
+
+  // Z-level change handler
   const handleZChange = useCallback((delta) => {
     setZLevel((prevZ) => Math.max(0, Math.min(15, prevZ + delta)));
   }, []);
@@ -196,10 +372,35 @@ const Minimap = () => {
           onChange={(e) => setMapMode(e.target.value)}
         />
       </div>
-      <canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} style={{ cursor: 'default' }} />
+      <canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} />
       <span>
         {drawingStateRef.current.playerPosition.x},{drawingStateRef.current.playerPosition.y},{zLevel}
       </span>
+
+      {tooltip.visible && (
+        <div
+          style={{
+            position: 'fixed',
+            top: tooltip.y,
+            left: tooltip.x,
+            background: 'rgba(0, 0, 0, 0.75)',
+            color: 'white',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            zIndex: 1001,
+            pointerEvents: 'none',
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+
+      {contextMenu.visible && contextMenu.type === 'add' && (
+        <div ref={contextMenuRef} style={{ position: 'fixed', top: `${contextMenu.y}px`, left: `${contextMenu.x}px`, zIndex: 1000 }}>
+          <CustomSelect autoFocus options={WAYPOINT_TYPE_OPTIONS} value={''} onChange={handleWaypointAdd} />
+        </div>
+      )}
     </StyledMinimap>
   );
 };

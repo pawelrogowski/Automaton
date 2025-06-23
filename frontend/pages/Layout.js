@@ -1,21 +1,18 @@
-import ManaSync from './ManaSync.js';
 import Healing from './Healing.js';
 import StyledDiv from './Layout.styled.js';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import React, { useEffect, useRef, useState } from 'react';
 import SidebarWrapper from '../components/SidebarWrapper/SidebarWrapper.js';
 import NavButton from '../components/NavButton/NavButton.js';
-import automaton from '../assets/cyberskull.png';
-import settings from '../assets/settings.png';
+
 import healParty from '../assets/actionBarItems/Ultimate_Healing_Rune.gif';
 import hotkey from '../assets/hotkey.png';
 import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
-import FAQ from '../assets/FAQ.png';
 import ActionBarIcon from '../assets/action_bar.png';
 import mageHat from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
-import { setIsisBotEnabled, setRefreshRate } from '../redux/slices/globalSlice.js';
+import { setIsisBotEnabled } from '../redux/slices/globalSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
 import { addRule } from '../redux/slices/ruleSlice.js';
@@ -33,23 +30,15 @@ import LuaScripts from './LuaScripts.js';
 import luaIcon from '../assets/Anatomy_Book.gif'; // Correct path
 import CustomSwitch from '../components/CustomSwitch/CustomSwitch.js';
 
-// Helper to clamp value between min and max
-const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-
-const DEBOUNCE_DELAY = 250; // milliseconds to wait after slider stops moving
-
 const Layout = () => {
   const dispatch = useDispatch();
-  const { windowId, isBotEnabled, refreshRate: refreshRateFromRedux, windowTitle } = useSelector((state) => state.global);
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
+  const { windowId, isBotEnabled } = useSelector((state) => state.global);
   const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
   const playerPosition = useSelector((state) => state.gameState.playerMinimapPosition);
   const location = useLocation();
   const hash = location.hash;
   const navigate = useNavigate();
 
-  // Local state for immediate UI feedback
-  const [displayedRate, setDisplayedRate] = useState(refreshRateFromRedux);
   // State for cavebot waypoint direction
   const [direction, setDirection] = useState('C');
 
@@ -73,11 +62,6 @@ const Layout = () => {
       navigate('/healing#actionbar', { replace: true });
     }
   }, [navigate, location]);
-
-  // Update local state if Redux state changes externally
-  useEffect(() => {
-    setDisplayedRate(refreshRateFromRedux);
-  }, [refreshRateFromRedux]);
 
   const handleAddRule = () => {
     // This function seems specific to the Healing/Rules page structure.
