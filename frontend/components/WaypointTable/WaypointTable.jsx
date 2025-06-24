@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
-import { reorderWaypoints, setwptSelection, updateWaypoint } from '../../redux/slices/cavebotSlice.js';
+// 1. ADD `setwptId` to the imports
+import { reorderWaypoints, setwptSelection, updateWaypoint, setwptId } from '../../redux/slices/cavebotSlice.js';
 import { useTable, useBlockLayout, useResizeColumns } from 'react-table';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -10,7 +11,8 @@ import { StyledWaypointTable } from './WaypointTable.styled.js';
 import MonacoEditorModal from './MonacoEditorModal.js';
 
 // --- Reusable Draggable Row Component ---
-const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, onMoveRow, setRef }) => {
+// 2. ADD `isActive` and `onContextMenu` props
+const WaypointRow = React.memo(({ index, row, children, isSelected, isActive, onSelect, onMoveRow, setRef, onContextMenu }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'row',
     item: { index },
@@ -33,21 +35,30 @@ const WaypointRow = React.memo(({ index, row, children, isSelected, onSelect, on
     drag(drop(node));
   };
 
+  // Add the new `active-bot-wp` class if isActive is true
+  const classNames = ['tr'];
+  if (isSelected) classNames.push('selected');
+  if (isActive) classNames.push('active-bot-wp');
+
   return (
     <div
       ref={combinedRef}
       style={{ opacity: isDragging ? 0.5 : 1 }}
       {...row.getRowProps()}
-      className={`tr ${isSelected ? 'selected' : ''}`}
+      className={classNames.join(' ')} // Use the new classNames
       onClick={() => onSelect(row.original.id)}
+      // 3. ADD the onContextMenu handler to the row itself
+      onContextMenu={(e) => {
+        e.preventDefault(); // Prevent the default right-click menu
+        onContextMenu(row.original.id); // Call our new handler
+      }}
     >
       {children}
     </div>
   );
 });
 
-// --- Specialized Editable Cell Components ---
-
+// --- Specialized Editable Cell Components (Unchanged) ---
 const EditableStringCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
   const [value, setValue] = useState(initialValue);
   const [isEditing, setIsEditing] = useState(false);
@@ -60,7 +71,6 @@ const EditableStringCell = React.memo(({ value: initialValue, row: { original },
   useEffect(() => {
     setValue(initialValue);
   }, [initialValue]);
-
   if (isEditing) {
     return (
       <input
@@ -77,36 +87,37 @@ const EditableStringCell = React.memo(({ value: initialValue, row: { original },
   }
   return (
     <div onDoubleClick={() => setIsEditing(true)} style={{ width: '100%', height: '100%' }}>
-      {value || <span> </span>}
+      {' '}
+      {value || <span> </span>}{' '}
     </div>
   );
 });
-
 const EditableSelectCell = React.memo(({ value: initialValue, row: { original }, column: { id, options }, updateMyData }) => {
   const [isEditing, setIsEditing] = useState(false);
   const onChange = (e) => {
     updateMyData(original.id, { [id]: e.target.value });
     setIsEditing(false);
   };
-
   if (isEditing) {
     return (
       <select value={initialValue} onChange={onChange} onBlur={() => setIsEditing(false)} autoFocus onClick={(e) => e.stopPropagation()}>
+        {' '}
         {options.map((opt) => (
           <option key={opt} value={opt}>
-            {opt}
+            {' '}
+            {opt}{' '}
           </option>
-        ))}
+        ))}{' '}
       </select>
     );
   }
   return (
     <div onDoubleClick={() => setIsEditing(true)} style={{ width: '100%', height: '100%' }}>
-      {initialValue}
+      {' '}
+      {initialValue}{' '}
     </div>
   );
 });
-
 const EditableNumberCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
   const [value, setValue] = useState(initialValue);
   const [isEditing, setIsEditing] = useState(false);
@@ -122,7 +133,6 @@ const EditableNumberCell = React.memo(({ value: initialValue, row: { original },
   useEffect(() => {
     setValue(initialValue);
   }, [initialValue]);
-
   if (isEditing) {
     return (
       <input
@@ -140,11 +150,11 @@ const EditableNumberCell = React.memo(({ value: initialValue, row: { original },
   }
   return (
     <div onDoubleClick={() => setIsEditing(true)} style={{ width: '100%', height: '100%' }}>
-      {initialValue}
+      {' '}
+      {initialValue}{' '}
     </div>
   );
 });
-
 const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData }) => {
   const [coords, setCoords] = useState({ x: original.x, y: original.y, z: original.z });
   const [isEditing, setIsEditing] = useState(false);
@@ -160,13 +170,13 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
   useEffect(() => {
     setCoords({ x: original.x, y: original.y, z: original.z });
   }, [original.x, original.y, original.z]);
-
   if (isEditing) {
     return (
       <div onBlur={onBlurContainer} className="coord-editor" onClick={(e) => e.stopPropagation()}>
-        <input type="number" value={coords.x} onChange={(e) => onChange(e, 'x')} autoFocus />
-        <input type="number" value={coords.y} onChange={(e) => onChange(e, 'y')} />
-        <input type="number" value={coords.z} onChange={(e) => onChange(e, 'z')} />
+        {' '}
+        <input type="number" value={coords.x} onChange={(e) => onChange(e, 'x')} autoFocus />{' '}
+        <input type="number" value={coords.y} onChange={(e) => onChange(e, 'y')} />{' '}
+        <input type="number" value={coords.z} onChange={(e) => onChange(e, 'z')} />{' '}
       </div>
     );
   }
@@ -177,15 +187,15 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
     >{`${original.x}, ${original.y}, ${original.z}`}</div>
   );
 });
-
 const ActionCell = React.memo(({ value, row: { original }, onEditAction }) => {
   return (
     <div onDoubleClick={() => onEditAction(original)} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
+      {' '}
       {value ? (
         <pre style={{ margin: 0, padding: 0, whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</pre>
       ) : (
         <span></span>
-      )}
+      )}{' '}
     </div>
   );
 });
@@ -196,25 +206,34 @@ const WaypointTable = () => {
 
   const waypoints = useSelector((state) => state.cavebot.waypoints, shallowEqual);
   const wptSelection = useSelector((state) => state.cavebot.wptSelection);
+  // 4. GET `wptId` from the Redux store
+  const wptId = useSelector((state) => state.cavebot.wptId);
 
   const [modalState, setModalState] = useState({ isOpen: false, waypoint: null });
   const rowRefs = useRef(new Map());
 
   useEffect(() => {
-    const node = rowRefs.current.get(wptSelection);
+    // Also scroll to the active `wptId`
+    const idToScroll = wptSelection || wptId;
+    const node = rowRefs.current.get(idToScroll);
     if (node) {
-      node.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-  }, [wptSelection]);
+  }, [wptSelection, wptId]); // Add wptId to dependency array
 
   const handleSelectRow = useCallback(
     (id) => {
       if (document.activeElement.tagName.toLowerCase() !== 'input' && document.activeElement.tagName.toLowerCase() !== 'select') {
         dispatch(setwptSelection(id));
       }
+    },
+    [dispatch],
+  );
+
+  // 5. CREATE the right-click handler
+  const handleSetWptId = useCallback(
+    (id) => {
+      dispatch(setwptId(id));
     },
     [dispatch],
   );
@@ -230,33 +249,27 @@ const WaypointTable = () => {
       ),
     [dispatch],
   );
-
   const handleMoveRow = useCallback(
     (dragIndex, hoverIndex) => {
       throttledReorder(dragIndex, hoverIndex);
     },
     [throttledReorder],
   );
-
   const updateMyData = useCallback(
     (waypointId, updates) => {
       dispatch(updateWaypoint({ id: waypointId, updates }));
     },
     [dispatch],
   );
-
   const handleOpenModal = useCallback((waypoint) => setModalState({ isOpen: true, waypoint }), []);
   const handleCloseModal = () => setModalState({ isOpen: false, waypoint: null });
-
   const handleSaveModal = (newCode) => {
     if (modalState.waypoint) {
       updateMyData(modalState.waypoint.id, { action: newCode });
     }
     handleCloseModal();
   };
-
   const data = useMemo(() => waypoints, [waypoints]);
-
   const columns = useMemo(
     () => [
       { Header: 'ID', accessor: 'id', width: 39 },
@@ -274,7 +287,6 @@ const WaypointTable = () => {
     ],
     [],
   );
-
   const { getTableProps, getTableBodyProps, headerGroups, rows, prepareRow } = useTable(
     { columns, data, updateMyData, onEditAction: handleOpenModal },
     useBlockLayout,
@@ -288,14 +300,16 @@ const WaypointTable = () => {
           <div className="thead">
             {headerGroups.map((headerGroup) => (
               <div {...headerGroup.getHeaderGroupProps()} className="tr header-group">
+                {' '}
                 {headerGroup.headers.map((column) => (
                   <div {...column.getHeaderProps()} className="th">
-                    {column.render('Header')}
+                    {' '}
+                    {column.render('Header')}{' '}
                     {column.canResize && (
                       <div {...column.getResizerProps()} className={`resizer ${column.isResizing ? 'isResizing' : ''}`} />
-                    )}
+                    )}{' '}
                   </div>
-                ))}
+                ))}{' '}
               </div>
             ))}
           </div>
@@ -309,7 +323,10 @@ const WaypointTable = () => {
                   row={row}
                   onSelect={handleSelectRow}
                   onMoveRow={handleMoveRow}
+                  // 6. PASS the props to the WaypointRow
+                  onContextMenu={handleSetWptId}
                   isSelected={wptSelection === row.original.id}
+                  isActive={wptId === row.original.id}
                   setRef={(node) => {
                     const map = rowRefs.current;
                     const id = row.original.id;

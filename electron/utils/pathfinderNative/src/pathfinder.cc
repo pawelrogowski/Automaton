@@ -53,6 +53,16 @@ namespace AStar {
         std::vector<Node> path;
         std::vector<Node*> allNodes;
 
+        // --- MODIFICATION START ---
+        // Define constants for the straight path logic
+        const int STRAIGHT_PATH_THRESHOLD = 0; // Minimum distance to activate straight path preference
+        const int TURN_PENALTY = 10;            // Extra cost for making a turn (equivalent to 2 straight steps)
+
+        // Check if the target is far enough away to warrant prioritizing straight paths
+        int initialDistance = std::abs(start.x - end.x) + std::abs(start.y - end.y);
+        bool prioritizeStraightPaths = initialDistance > STRAIGHT_PATH_THRESHOLD;
+        // --- MODIFICATION END ---
+
         auto cmp = [](const Node* left, const Node* right) { return left->f() > right->f(); };
         std::priority_queue<Node*, std::vector<Node*>, decltype(cmp)> openSet(cmp);
         std::unordered_map<Node, int, NodeHash> gCostMap;
@@ -82,10 +92,25 @@ namespace AStar {
                     int nextY = current->y + dy;
                     if (!isWalkable(nextX, nextY, mapData)) continue;
 
-                    // Increased diagonal cost to prioritize straight paths
-                    int moveCost = (dx != 0 && dy != 0) ? 18 : 10;
+                    // --- MODIFICATION START ---
+                    // Base movement cost. Diagonal moves are more expensive.
+                    int moveCost = (dx != 0 && dy != 0) ? 30 : 10;
 
-                    int newG = current->g + moveCost;
+                    // Add a penalty if the path changes direction
+                    int turnPenalty = 0;
+                    if (prioritizeStraightPaths && current->parent) {
+                        // Get the direction from the grandparent to the parent node
+                        int prev_dx = current->x - current->parent->x;
+                        int prev_dy = current->y - current->parent->y;
+                        // If the new direction is different, apply the penalty
+                        if (dx != prev_dx || dy != prev_dy) {
+                            turnPenalty = TURN_PENALTY;
+                        }
+                    }
+
+                    int newG = current->g + moveCost + turnPenalty;
+                    // --- MODIFICATION END ---
+
                     Node neighborTemplate = {nextX, nextY, 0, 0, nullptr, current->z};
                     auto it = gCostMap.find(neighborTemplate);
                     if (it != gCostMap.end() && newG >= it->second) {
@@ -246,7 +271,7 @@ void AStarWorker::Execute() {
         this->searchStatus = "WAYPOINT_REACHED";
         this->pathResult.clear();
     } else {
-        const int MAX_PATHFINDING_RANGE = 100;
+        const int MAX_PATHFINDING_RANGE = 500;
         int distance = std::abs(effectiveStart.x - effectiveEnd.x) + std::abs(effectiveStart.y - effectiveEnd.y);
 
         if (distance > MAX_PATHFINDING_RANGE) {

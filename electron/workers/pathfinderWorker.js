@@ -1,5 +1,3 @@
-// pathfinderWorker.js (Final Production Version)
-
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { createRequire } from 'module';
@@ -30,6 +28,7 @@ let state = null;
 let lastPlayerPosKey = null;
 let lastWaypointId = null;
 let latestRequestId = 0;
+let isSearching = false; // The lock to prevent concurrent searches
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
 
 /**
@@ -73,6 +72,11 @@ async function loadAllMapData() {
  * The core logic loop for the cavebot pathfinder.
  */
 async function processCavebotPathRequest() {
+  // Check if a search is already running. If so, exit immediately.
+  if (isSearching) {
+    return;
+  }
+
   const myRequestId = ++latestRequestId;
   const currentState = state;
 
@@ -111,6 +115,7 @@ async function processCavebotPathRequest() {
   const { x, y, z } = currentState.gameState.playerMinimapPosition;
   const currentPosKey = `${x},${y},${z}`;
 
+  // If we don't need to recalculate, exit early
   if (lastPlayerPosKey === currentPosKey && lastWaypointId === targetWaypoint.id) {
     return;
   }
@@ -132,23 +137,20 @@ async function processCavebotPathRequest() {
   lastPlayerPosKey = currentPosKey;
   lastWaypointId = targetWaypoint.id;
 
+  // The entire pathfinding call is now wrapped in a try/finally block
   try {
+    isSearching = true; // Acquire the lock before starting the async operation.
+
     const result = await pathfinderInstance.findPath({ x, y, z }, { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z });
 
     if (myRequestId !== latestRequestId) {
       return; // Stale result, discard.
     }
 
-    // --- CORRECTED SECTION ---
     const path = result.path || [];
-
-    // Add the correct 'z' coordinate to each node in the path, as the worker
-    // knows which Z-level the pathfinding operation was performed on.
     const pathWithZ = path.map((node) => ({ ...node, z: targetWaypoint.z }));
-
     const distance = path.length > 0 ? path.length - 1 : result.reason === 'WAYPOINT_REACHED' ? 0 : null;
 
-    // Send the enriched path (pathWithZ) in the payload to the main thread.
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setPathfindingFeedback',
@@ -158,7 +160,6 @@ async function processCavebotPathRequest() {
         routeSearchMs: result.performance.totalTimeMs,
       },
     });
-    // --- END OF CORRECTION ---
   } catch (error) {
     if (myRequestId === latestRequestId && error.message !== 'Search cancelled') {
       logger('error', `Pathfinding error: ${error.message}`);
@@ -169,6 +170,8 @@ async function processCavebotPathRequest() {
         payload: { pathWaypoints: [], wptDistance: null },
       });
     }
+  } finally {
+    isSearching = false; // Release the lock, ensuring other requests can proceed.
   }
 }
 

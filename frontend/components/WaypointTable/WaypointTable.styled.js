@@ -16,6 +16,26 @@ export const StyledWaypointTable = styled.div`
     background-color: rgb(0, 52, 109);
     color: white;
   }
+  .tbody .tr {
+    // ... all your existing .tr styles ...
+    position: relative; // This is crucial for positioning the ribbon
+  }
+  .tbody .tr.active-bot-wp::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    // Creates the triangle shape
+    border-style: solid;
+    border-width: 12px 12px 0 0;
+    // The color of the ribbon
+    border-color: rgba(183, 0, 255, 0.84) transparent transparent transparent;
+    // A subtle shadow to make it pop
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+  }
+
   .table {
     display: flex;
     flex-direction: column;
