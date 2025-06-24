@@ -28,16 +28,9 @@ const parseLegacyCoordinates = (payload) => {
 
 const initialState = {
   waypoints: [],
-  isCavebotEnabled: false,
-  currentWaypointId: null,
-  selectedWaypointId: null,
-  pathfinding: {
-    // New: Pathfinding feedback object
-    targetCoordinates: null,
-    distanceFromTarget: null,
-    timeToFindRouteMs: null,
-    timeOnCurrentWaypointMs: null,
-  },
+  enabled: false,
+  wptId: null,
+  wptSelection: null,
 };
 
 const cavebotSlice = createSlice({
@@ -60,7 +53,7 @@ const cavebotSlice = createSlice({
       };
 
       // 2. Determine the insertion index and store it for later.
-      const selectedIndex = state.waypoints.findIndex((waypoint) => waypoint.id === state.selectedWaypointId);
+      const selectedIndex = state.waypoints.findIndex((waypoint) => waypoint.id === state.wptSelection);
       let newWaypointIndex;
 
       if (selectedIndex > -1) {
@@ -81,7 +74,7 @@ const cavebotSlice = createSlice({
       // 4. Update the selection to the newly added waypoint.
       // We use the index we saved earlier to find the waypoint (which now has its new ID).
       if (state.waypoints[newWaypointIndex]) {
-        state.selectedWaypointId = state.waypoints[newWaypointIndex].id;
+        state.wptSelection = state.waypoints[newWaypointIndex].id;
       }
     },
 
@@ -93,7 +86,7 @@ const cavebotSlice = createSlice({
         return;
       }
 
-      const isRemovingSelected = state.selectedWaypointId === idToRemove;
+      const isRemovingSelected = state.wptSelection === idToRemove;
       let newSelectedIndex = -1;
 
       if (isRemovingSelected) {
@@ -108,9 +101,9 @@ const cavebotSlice = createSlice({
 
       if (isRemovingSelected) {
         if (state.waypoints.length === 0) {
-          state.selectedWaypointId = null;
+          state.wptSelection = null;
         } else {
-          state.selectedWaypointId = state.waypoints[newSelectedIndex].id;
+          state.wptSelection = state.waypoints[newSelectedIndex].id;
         }
       }
     },
@@ -124,16 +117,16 @@ const cavebotSlice = createSlice({
       });
     },
 
-    setIsCavebotEnabled: (state, action) => {
-      state.isCavebotEnabled = action.payload;
+    setenabled: (state, action) => {
+      state.enabled = action.payload;
     },
 
-    setCurrentWaypointId: (state, action) => {
-      state.currentWaypointId = action.payload;
+    setwptId: (state, action) => {
+      state.wptId = action.payload;
     },
 
-    setSelectedWaypointId: (state, action) => {
-      state.selectedWaypointId = action.payload;
+    setwptSelection: (state, action) => {
+      state.wptSelection = action.payload;
     },
 
     updateWaypoint: (state, action) => {
@@ -152,8 +145,13 @@ const cavebotSlice = createSlice({
       };
     },
     setPathfindingFeedback: (state, action) => {
-      // New reducer for pathfinding feedback
-      state.pathfinding = { ...state.pathfinding, ...action.payload };
+      // Destructure the payload for clarity and safety
+      const { pathWaypoints, wptDistance, routeSearchMs } = action.payload;
+
+      // Directly "mutate" the state draft. Immer will handle creating the new state.
+      state.pathWaypoints = pathWaypoints;
+      state.wptDistance = wptDistance;
+      state.routeSearchMs = routeSearchMs;
     },
   },
 });
@@ -162,12 +160,12 @@ export const {
   addWaypoint,
   removeWaypoint,
   reorderWaypoints,
-  setIsCavebotEnabled,
-  setCurrentWaypointId,
-  setSelectedWaypointId,
+  setenabled,
+  setwptId,
+  setwptSelection,
   updateWaypoint,
   setState,
-  setPathfindingFeedback, // Export new action
+  setPathfindingFeedback,
 } = cavebotSlice.actions;
 
 export default cavebotSlice;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
-import { reorderWaypoints, setSelectedWaypointId, updateWaypoint } from '../../redux/slices/cavebotSlice.js';
+import { reorderWaypoints, setwptSelection, updateWaypoint } from '../../redux/slices/cavebotSlice.js';
 import { useTable, useBlockLayout, useResizeColumns } from 'react-table';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -195,25 +195,25 @@ const WaypointTable = () => {
   const dispatch = useDispatch();
 
   const waypoints = useSelector((state) => state.cavebot.waypoints, shallowEqual);
-  const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
+  const wptSelection = useSelector((state) => state.cavebot.wptSelection);
 
   const [modalState, setModalState] = useState({ isOpen: false, waypoint: null });
   const rowRefs = useRef(new Map());
 
   useEffect(() => {
-    const node = rowRefs.current.get(selectedWaypointId);
+    const node = rowRefs.current.get(wptSelection);
     if (node) {
       node.scrollIntoView({
         behavior: 'smooth',
         block: 'nearest',
       });
     }
-  }, [selectedWaypointId]);
+  }, [wptSelection]);
 
   const handleSelectRow = useCallback(
     (id) => {
       if (document.activeElement.tagName.toLowerCase() !== 'input' && document.activeElement.tagName.toLowerCase() !== 'select') {
-        dispatch(setSelectedWaypointId(id));
+        dispatch(setwptSelection(id));
       }
     },
     [dispatch],
@@ -309,7 +309,7 @@ const WaypointTable = () => {
                   row={row}
                   onSelect={handleSelectRow}
                   onMoveRow={handleMoveRow}
-                  isSelected={selectedWaypointId === row.original.id}
+                  isSelected={wptSelection === row.original.id}
                   setRef={(node) => {
                     const map = rowRefs.current;
                     const id = row.original.id;

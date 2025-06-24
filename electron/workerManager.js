@@ -49,6 +49,7 @@ class WorkerManager {
     this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
     this.paths.findSequences = path.join(this.paths.utils, 'findSequences.node');
     this.paths.minimapMatcher = path.join(this.paths.utils, 'minimapMatcherNative.node');
+    this.paths.pathfinder = path.join(this.paths.utils, 'pathfinderNative.node');
 
     if (!app.isPackaged) {
       log('info', '[Worker Manager] Paths initialized:', this.paths);
@@ -350,6 +351,19 @@ class WorkerManager {
       if (this.workers.has('minimapMonitor')) {
         log('info', '[Worker Manager] Stopping minimapMonitor as window ID is no longer set.');
         this.stopWorker('minimapMonitor');
+      }
+    }
+
+    // Handle pathfinderWorker worker lifecycle
+    if (windowId) {
+      if (!this.workers.has('pathfinderWorker')) {
+        log('info', '[Worker Manager] Starting pathfinderWorker for window ID:', windowId);
+        this.startWorker('pathfinderWorker', null, this.paths); // Pass paths
+      }
+    } else {
+      if (this.workers.has('pathfinderWorker')) {
+        log('info', '[Worker Manager] Stopping pathfinderWorker as window ID is no longer set.');
+        this.stopWorker('pathfinderWorker');
       }
     }
 

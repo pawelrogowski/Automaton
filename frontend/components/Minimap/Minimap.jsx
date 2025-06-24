@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, memo, useMemo } from 'react';
 import { useSelector, useStore, useDispatch } from 'react-redux';
-import { addWaypoint, removeWaypoint, setSelectedWaypointId } from '../../redux/slices/cavebotSlice.js';
+import { addWaypoint, removeWaypoint, setwptSelection } from '../../redux/slices/cavebotSlice.js';
 import StyledMinimap from './Minimap.styled.js';
 import CustomSelect from '../CustomSelect/CustomSelect.js';
 
@@ -31,7 +31,8 @@ const Minimap = () => {
   // --- Redux State ---
   const { pos, z: initialZ } = useSelector((state) => state.gameState.playerMinimapPosition);
   const waypoints = useSelector((state) => state.cavebot.waypoints);
-  const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
+  const wptSelection = useSelector((state) => state.cavebot.wptSelection);
+  const pathWaypoints = useSelector((state) => state.cavebot.pathWaypoints);
 
   // --- Component State ---
   const [mapMode, setMapMode] = useState('map');
@@ -127,6 +128,22 @@ const Minimap = () => {
 
       ctx.drawImage(currentMapImage, sourceX, sourceY, drawWidth, drawHeight, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
+      // --- Draw Path Overlay ---
+      if (pathWaypoints && pathWaypoints.length > 0) {
+        ctx.fillStyle = 'rgb(0, 255, 234)';
+        pathWaypoints.forEach((pathNode) => {
+          if (pathNode.z !== zLevel) return;
+
+          const pathNodePixelX = pathNode.x - minX;
+          const pathNodePixelY = pathNode.y - minY;
+          const drawX = (pathNodePixelX - sourceX) * zoomLevel;
+          const drawY = (pathNodePixelY - sourceY) * zoomLevel;
+
+          ctx.fillRect(drawX, drawY, zoomLevel, zoomLevel);
+        });
+      }
+
+      // --- Draw Waypoints ---
       waypoints.forEach((waypoint) => {
         if (waypoint.z !== zLevel) return;
 
@@ -135,7 +152,7 @@ const Minimap = () => {
         const drawX = (waypointPixelX - sourceX) * zoomLevel;
         const drawY = (waypointPixelY - sourceY) * zoomLevel;
 
-        const isSelected = waypoint.id === selectedWaypointId;
+        const isSelected = waypoint.id === wptSelection;
         const fillColor = '#FF00FF';
         const borderColor = isSelected ? '#00FFFF' : 'black';
         const borderWidth = isSelected ? 2 : 1;
@@ -159,17 +176,18 @@ const Minimap = () => {
         }
       });
 
+      // --- Draw Hover Highlight (FIXED) ---
       if (hoveredCoord && !hoveredWaypointRef.current) {
         const hoverPixelX = hoveredCoord.x - minX;
         const hoverPixelY = hoveredCoord.y - minY;
         const drawX = (hoverPixelX - sourceX) * zoomLevel;
         const drawY = (hoverPixelY - sourceY) * zoomLevel;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        // Use a semi-transparent fill so the path below is still visible
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.fillRect(drawX, drawY, zoomLevel, zoomLevel);
-        ctx.fillStyle = 'rgba(0, 149, 255, 0)';
-        ctx.fillRect(drawX + 1, drawY + 1, zoomLevel - 2, zoomLevel - 2);
       }
 
+      // --- Draw Player Marker ---
       if (playerPosition.z === zLevel) {
         if (zoomLevel > MARKER_STYLE_THRESHOLD) {
           ctx.fillStyle = 'black';
@@ -195,29 +213,25 @@ const Minimap = () => {
 
     draw();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [zLevel, zoomLevel, currentMapImage, currentMapIndex, waypoints, selectedWaypointId]);
+  }, [zLevel, zoomLevel, currentMapImage, currentMapIndex, waypoints, wptSelection, pathWaypoints]);
 
   // Effect for mouse move, leave, and click listeners
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // MODIFIED: Added 'e' parameter to check for ctrlKey
     const handleCanvasClick = (e) => {
       setContextMenu((prev) => (prev.visible ? { ...prev, visible: false } : prev));
 
       if (hoveredWaypointRef.current) {
-        // NEW: If ctrl is pressed, delete the waypoint
         if (e.ctrlKey) {
           dispatch(removeWaypoint(hoveredWaypointRef.current.id));
         } else {
-          // OLD: Otherwise, select it
-          dispatch(setSelectedWaypointId(hoveredWaypointRef.current.id));
+          dispatch(setwptSelection(hoveredWaypointRef.current.id));
         }
       }
     };
 
-    // MODIFIED: Added 'e' parameter to check for ctrlKey and update cursor/tooltip
     const handleMouseMove = (e) => {
       if (!currentMapIndex) return;
       const { playerPosition } = drawingStateRef.current;
@@ -239,11 +253,9 @@ const Minimap = () => {
       const foundWaypoint = waypoints.find((wp) => wp.x === worldX && wp.y === worldY && wp.z === zLevel);
       hoveredWaypointRef.current = foundWaypoint || null;
 
-      // MODIFIED: Cursor logic updated
       if (foundWaypoint) {
-        canvas.style.cursor = e.ctrlKey ? 'crosshair' : 'pointer'; // Change cursor if Ctrl is pressed
+        canvas.style.cursor = e.ctrlKey ? 'crosshair' : 'pointer';
 
-        // MODIFIED: Tooltip text generation
         let tooltipText = foundWaypoint.type;
         if (foundWaypoint.label && foundWaypoint.label.trim() !== '') {
           tooltipText += ` - ${foundWaypoint.label}`;
@@ -286,11 +298,10 @@ const Minimap = () => {
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Context Menu Handler now only handles adding new waypoints.
+  // Context Menu Handler
   const handleContextMenu = useCallback(
     (e) => {
       e.preventDefault();
-      // Only show the context menu for adding if not hovering over an existing waypoint.
       if (hoveredCoordRef.current && !hoveredWaypointRef.current) {
         setContextMenu({
           visible: true,

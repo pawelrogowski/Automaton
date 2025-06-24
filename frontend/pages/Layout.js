@@ -33,7 +33,7 @@ import CustomSwitch from '../components/CustomSwitch/CustomSwitch.js';
 const Layout = () => {
   const dispatch = useDispatch();
   const { windowId, isBotEnabled } = useSelector((state) => state.global);
-  const selectedWaypointId = useSelector((state) => state.cavebot.selectedWaypointId);
+  const wptSelection = useSelector((state) => state.cavebot.wptSelection);
   const playerPosition = useSelector((state) => state.gameState.playerMinimapPosition);
   const location = useLocation();
   const hash = location.hash;
@@ -417,8 +417,8 @@ const Layout = () => {
               <SidebarButton
                 text={'Delete Waypoint'}
                 onClick={() => {
-                  if (selectedWaypointId) {
-                    dispatch(removeWaypoint(selectedWaypointId));
+                  if (wptSelection) {
+                    dispatch(removeWaypoint(wptSelection));
                   } else {
                     console.log('No waypoint selected to delete.');
                   }
