@@ -1,5 +1,5 @@
 {
-  "name": "guard-zone",
+  "name": "rocket_turbo_plus",
   "version": "1.3.5b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.guard-zone",
-    "productName": "Guard Zone",
+    "appId": "com.electron.rocket_turbo_plus",
+    "productName": "Rocket Turbo Plus",
     "directories": {
       "output": "dist",
       "buildResources": "build"
