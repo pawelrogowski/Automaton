@@ -28,7 +28,7 @@ export const StyledWaypointTable = styled.div`
     height: 0;
     border-style: solid;
     border-width: 12px 12px 0 0;
-    border-color: rgba(183, 0, 255, 0.84) transparent transparent transparent;
+    border-color: #b700ff transparent transparent transparent;
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
   }
 
@@ -157,7 +157,6 @@ export const SectionManagementRow = styled.div`
   align-items: center;
   gap: 5px;
   padding: 5px;
-  background-color: rgb(35, 35, 35); /* Darker background for the management row */
   border-bottom: 1px solid rgb(53, 53, 53);
   flex-shrink: 0; /* Prevent shrinking */
 `;
@@ -178,18 +177,19 @@ export const SectionButtonsContainer = styled.div`
 `;
 
 export const SectionButton = styled.button`
-  background-color: ${(props) => (props.active ? '#007ACC' : '#555')};
+  background-color: ${(props) => (props.active ? 'transparent' : 'transparent')};
   color: white;
   border: none;
   padding: 6px 10px; /* Slightly smaller padding for more compact buttons */
-  border-radius: 3px; /* Slightly smaller border-radius */
+  border-radius: ${(props) => (props.active ? '0px' : '3px')};
   cursor: pointer;
   font-size: 12px; /* Smaller font size */
   white-space: nowrap; /* Prevent text wrapping */
   flex-shrink: 0; /* Prevent buttons from shrinking */
-
+  border-bottom: 1px solid ${(props) => (props.active ? '#b700ff' : 'transparent')};
   &:hover {
-    background-color: ${(props) => (props.active ? '#005f99' : '#777')};
+    background-color: ${(props) => (props.active ? '#b700ff' : 'transparent')};
+    border-radius: 3px;
   }
   &:disabled {
     opacity: 0.5;
@@ -198,7 +198,7 @@ export const SectionButton = styled.button`
 `;
 
 export const AddSectionButton = styled.button`
-  background-color: #28a745; /* Green for add */
+  background-color: transparent; /* Green for add */
   color: white;
   border: none;
   padding: 6px 10px;
@@ -209,12 +209,11 @@ export const AddSectionButton = styled.button`
   flex-shrink: 0;
 
   &:hover {
-    background-color: #218838;
   }
 `;
 
 export const RemoveSectionButton = styled.button`
-  background-color: #dc3545; /* Red for remove */
+  background-color: transparent; /* Red for remove */
   color: white;
   border: none;
   padding: 6px 10px;
@@ -225,15 +224,14 @@ export const RemoveSectionButton = styled.button`
   flex-shrink: 0;
 
   &:hover {
-    background-color: #c82333;
   }
 `;
 
 export const SectionNameInput = styled.input`
   padding: 6px 8px; /* Smaller padding */
   border-radius: 3px;
-  border: 1px solid #555;
-  background-color: #444;
+  border: 1px solid #b700ff;
+  background-color: trsnaprent;
   color: white;
   width: 100px; /* Fixed width for consistency */
   flex-shrink: 0;
