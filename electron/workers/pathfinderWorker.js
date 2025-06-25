@@ -85,13 +85,15 @@ async function processCavebotPathRequest() {
     return;
   }
 
-  const { waypoints, wptId } = currentState.cavebot;
+  const { waypointSections, currentSection, wptId } = currentState.cavebot;
+  const currentWaypoints = waypointSections[currentSection]?.waypoints || [];
   let targetWaypoint = null;
 
   if (wptId) {
-    targetWaypoint = waypoints.find((wp) => wp.id === wptId);
-  } else if (waypoints && waypoints.length > 0) {
-    targetWaypoint = waypoints[0];
+    targetWaypoint = currentWaypoints.find((wp) => wp.id === wptId);
+  } else if (currentWaypoints.length > 0) {
+    // If no specific wptId is set, use the first waypoint in the current section
+    targetWaypoint = currentWaypoints[0];
   }
 
   if (!targetWaypoint) {

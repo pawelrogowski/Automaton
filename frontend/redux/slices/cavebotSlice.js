@@ -24,7 +24,13 @@ const parseLegacyCoordinates = (payload) => {
 };
 
 const initialState = {
-  waypoints: [],
+  waypointSections: {
+    default: {
+      name: 'Default',
+      waypoints: [],
+    },
+  },
+  currentSection: 'default', // New state to track the active section
   enabled: false,
   wptId: 'null',
   wptSelection: null,
@@ -48,53 +54,48 @@ const cavebotSlice = createSlice({
         range: 5,
         action: '',
         ...parsedPayload,
+        id: action.payload.id, // ID is now passed from the frontend component
       };
-      const selectedIndex = state.waypoints.findIndex((waypoint) => waypoint.id === state.wptSelection);
+      const currentWaypoints = state.waypointSections[state.currentSection].waypoints;
+      const selectedIndex = currentWaypoints.findIndex((waypoint) => waypoint.id === state.wptSelection);
       let newWaypointIndex;
       if (selectedIndex > -1) {
         newWaypointIndex = selectedIndex + 1;
-        state.waypoints.splice(newWaypointIndex, 0, newWaypoint);
+        currentWaypoints.splice(newWaypointIndex, 0, newWaypoint);
       } else {
-        state.waypoints.push(newWaypoint);
-        newWaypointIndex = state.waypoints.length - 1;
+        currentWaypoints.push(newWaypoint);
+        newWaypointIndex = currentWaypoints.length - 1;
       }
-      state.waypoints.forEach((waypoint, index) => {
-        waypoint.id = (index + 1).toString().padStart(3, '0');
-      });
-      if (state.waypoints[newWaypointIndex]) {
-        state.wptSelection = state.waypoints[newWaypointIndex].id;
+      if (currentWaypoints[newWaypointIndex]) {
+        state.wptSelection = currentWaypoints[newWaypointIndex].id;
       }
     },
     removeWaypoint: (state, action) => {
       const idToRemove = action.payload;
-      const indexToRemove = state.waypoints.findIndex((waypoint) => waypoint.id === idToRemove);
+      const currentWaypoints = state.waypointSections[state.currentSection].waypoints;
+      const indexToRemove = currentWaypoints.findIndex((waypoint) => waypoint.id === idToRemove);
       if (indexToRemove === -1) {
         return;
       }
       const isRemovingSelected = state.wptSelection === idToRemove;
       let newSelectedIndex = -1;
       if (isRemovingSelected) {
-        newSelectedIndex = Math.min(indexToRemove, state.waypoints.length - 2);
+        newSelectedIndex = Math.min(indexToRemove, currentWaypoints.length - 2);
       }
-      state.waypoints.splice(indexToRemove, 1);
-      state.waypoints.forEach((waypoint, index) => {
-        waypoint.id = (index + 1).toString().padStart(3, '0');
-      });
+      currentWaypoints.splice(indexToRemove, 1);
       if (isRemovingSelected) {
-        if (state.waypoints.length === 0) {
+        if (currentWaypoints.length === 0) {
           state.wptSelection = null;
         } else {
-          state.wptSelection = state.waypoints[newSelectedIndex].id;
+          state.wptSelection = currentWaypoints[newSelectedIndex].id;
         }
       }
     },
     reorderWaypoints: (state, action) => {
       const { startIndex, endIndex } = action.payload;
-      const [removed] = state.waypoints.splice(startIndex, 1);
-      state.waypoints.splice(endIndex, 0, removed);
-      state.waypoints.forEach((waypoint, index) => {
-        waypoint.id = (index + 1).toString().padStart(3, '0');
-      });
+      const currentWaypoints = state.waypointSections[state.currentSection].waypoints;
+      const [removed] = currentWaypoints.splice(startIndex, 1);
+      currentWaypoints.splice(endIndex, 0, removed);
     },
     setenabled: (state, action) => {
       state.enabled = action.payload;
@@ -116,7 +117,7 @@ const cavebotSlice = createSlice({
     },
     updateWaypoint: (state, action) => {
       const { id, updates } = action.payload;
-      const existingWaypoint = state.waypoints.find((waypoint) => waypoint.id === id);
+      const existingWaypoint = state.waypointSections[state.currentSection].waypoints.find((waypoint) => waypoint.id === id);
       if (existingWaypoint) {
         const parsedUpdates = parseLegacyCoordinates(updates);
         Object.assign(existingWaypoint, parsedUpdates);
@@ -131,6 +132,47 @@ const cavebotSlice = createSlice({
       state.wptDistance = wptDistance;
       state.routeSearchMs = routeSearchMs;
     },
+    addWaypointSection: (state, action) => {
+      const { id, name } = action.payload;
+      if (!state.waypointSections[id]) {
+        state.waypointSections[id] = { name, waypoints: [] };
+        state.currentSection = id; // Automatically switch to the new section
+      }
+    },
+    removeWaypointSection: (state, action) => {
+      const idToRemove = action.payload;
+      if (idToRemove === 'default') {
+        console.warn('Cannot remove the default waypoint section.');
+        return;
+      }
+      if (state.waypointSections[idToRemove]) {
+        delete state.waypointSections[idToRemove];
+        if (state.currentSection === idToRemove) {
+          // If the removed section was current, switch to 'default' or another available section
+          state.currentSection = Object.keys(state.waypointSections)[0] || 'default';
+          if (!state.waypointSections[state.currentSection]) {
+            state.waypointSections['default'] = { name: 'Default', waypoints: [] };
+            state.currentSection = 'default';
+          }
+        }
+      }
+    },
+    setCurrentWaypointSection: (state, action) => {
+      const sectionId = action.payload;
+      if (state.waypointSections[sectionId]) {
+        state.currentSection = sectionId;
+        state.wptSelection = null; // Clear selection when changing sections
+        state.wptId = 'null'; // Clear active waypoint when changing sections
+      } else {
+        console.warn(`Waypoint section with ID ${sectionId} not found.`);
+      }
+    },
+    renameWaypointSection: (state, action) => {
+      const { id, name } = action.payload;
+      if (state.waypointSections[id]) {
+        state.waypointSections[id].name = name;
+      }
+    },
   },
 });
 export const {
@@ -143,5 +185,9 @@ export const {
   updateWaypoint,
   setState,
   setPathfindingFeedback,
+  addWaypointSection,
+  removeWaypointSection,
+  setCurrentWaypointSection,
+  renameWaypointSection, // New action
 } = cavebotSlice.actions;
 export default cavebotSlice;

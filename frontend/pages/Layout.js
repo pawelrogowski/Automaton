@@ -146,6 +146,7 @@ const Layout = () => {
     }
 
     const newWaypointPayload = {
+      id: uuidv4(), // Generate a unique ID for the new waypoint
       type: waypointType,
       x, // Use the adjusted x
       y, // Use the adjusted y

@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Stage, Layer, Image, Line, Circle } from 'react-konva';
 import useImage from 'use-image';
 import { addWaypoint, removeWaypoint, setwptSelection, setwptId } from '../../redux/slices/cavebotSlice.js';
+import { v4 as uuidv4 } from 'uuid';
 import StyledMinimap, { StyledPlayerMarker, StyledMapControls, ControlGroup, ControlButton, FloorDisplay } from './Minimap.styled.js';
 
 // --- Configuration Constants ---
@@ -31,7 +32,8 @@ const Minimap = () => {
 
   // --- Redux State ---
   const playerPosition = useSelector((state) => state.gameState.playerMinimapPosition);
-  const allWaypoints = useSelector((state) => state.cavebot.waypoints);
+  const currentSection = useSelector((state) => state.cavebot.currentSection);
+  const allWaypoints = useSelector((state) => state.cavebot.waypointSections[currentSection]?.waypoints || []);
   const wptSelection = useSelector((state) => state.cavebot.wptSelection);
   const wptId = useSelector((state) => state.cavebot.wptId);
   const allPathWaypoints = useSelector((state) => state.cavebot.pathWaypoints);
@@ -202,7 +204,7 @@ const Minimap = () => {
       if (rightClickMenu.type === 'add' && rightClickMenu.hoveredType && rightClickMenu.targetPos) {
         const { x, y, z } = rightClickMenu.targetPos;
         const type = rightClickMenu.hoveredType;
-        dispatch(addWaypoint({ type, x, y, z, range: 1, action: type === 'Action' ? 'Enter your action' : '' }));
+        dispatch(addWaypoint({ id: uuidv4(), type, x, y, z, range: 1, action: type === 'Action' ? 'Enter your action' : '' }));
       }
       // Handle deleting a waypoint
       else if (rightClickMenu.type === 'delete' && rightClickMenu.hoveredType === 'Delete' && rightClickMenu.targetId) {

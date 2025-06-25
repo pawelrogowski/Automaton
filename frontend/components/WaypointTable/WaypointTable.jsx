@@ -1,13 +1,30 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
-// 1. ADD `setwptId` to the imports
-import { reorderWaypoints, setwptSelection, updateWaypoint, setwptId } from '../../redux/slices/cavebotSlice.js';
+import { v4 as uuidv4 } from 'uuid'; // Import uuid for new section IDs
+import {
+  reorderWaypoints,
+  setwptSelection,
+  updateWaypoint,
+  setwptId,
+  addWaypointSection, // New action
+  removeWaypointSection, // New action
+  setCurrentWaypointSection, // New action
+  renameWaypointSection, // New action
+} from '../../redux/slices/cavebotSlice.js';
 import { useTable, useBlockLayout, useResizeColumns } from 'react-table';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { useDrag, useDrop } from 'react-dnd';
 import { throttle } from 'lodash';
-import { StyledWaypointTable } from './WaypointTable.styled.js';
+import {
+  StyledWaypointTable,
+  SectionButtonsContainer,
+  SectionButton,
+  SectionManagementRow,
+  AddSectionButton,
+  RemoveSectionButton,
+  SectionNameInput, // Import SectionNameInput
+} from './WaypointTable.styled.js';
 import MonacoEditorModal from './MonacoEditorModal.js';
 
 // --- Reusable Draggable Row Component ---
@@ -204,12 +221,16 @@ const ActionCell = React.memo(({ value, row: { original }, onEditAction }) => {
 const WaypointTable = () => {
   const dispatch = useDispatch();
 
-  const waypoints = useSelector((state) => state.cavebot.waypoints, shallowEqual);
+  const waypointSections = useSelector((state) => state.cavebot.waypointSections, shallowEqual);
+  const currentSectionId = useSelector((state) => state.cavebot.currentSection);
+  const waypoints = waypointSections[currentSectionId]?.waypoints || [];
   const wptSelection = useSelector((state) => state.cavebot.wptSelection);
-  // 4. GET `wptId` from the Redux store
   const wptId = useSelector((state) => state.cavebot.wptId);
 
   const [modalState, setModalState] = useState({ isOpen: false, waypoint: null });
+  const [editingSectionId, setEditingSectionId] = useState(null);
+  const [editingSectionName, setEditingSectionName] = useState('');
+  const sectionInputRef = useRef(null);
   const rowRefs = useRef(new Map());
 
   useEffect(() => {
@@ -219,7 +240,7 @@ const WaypointTable = () => {
     if (node) {
       node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-  }, [wptSelection, wptId]); // Add wptId to dependency array
+  }, [wptSelection, wptId, currentSectionId]); // Add currentSectionId to dependency array
 
   const handleSelectRow = useCallback(
     (id) => {
@@ -269,10 +290,88 @@ const WaypointTable = () => {
     }
     handleCloseModal();
   };
+
+  const handleAddSectionClick = () => {
+    const newId = uuidv4();
+    dispatch(addWaypointSection({ id: newId, name: '' })); // Add with empty name to trigger inline edit
+    setEditingSectionId(newId);
+    setEditingSectionName('');
+  };
+
+  const handleRemoveCurrentSection = () => {
+    if (currentSectionId === 'default') {
+      // Use a more integrated notification system if available, for now, keep console.warn
+      console.warn('Cannot remove the default section.');
+      return;
+    }
+    // For now, keep window.confirm. This could be replaced by a custom modal later.
+    if (window.confirm(`Are you sure you want to remove section "${waypointSections[currentSectionId].name}"?`)) {
+      dispatch(removeWaypointSection(currentSectionId));
+    }
+  };
+
+  const handleSetCurrentSection = (sectionId) => {
+    dispatch(setCurrentWaypointSection(sectionId));
+    setEditingSectionId(null); // Exit editing mode when changing sections
+  };
+
+  const handleRenameSectionDoubleClick = (sectionId, currentName) => {
+    setEditingSectionId(sectionId);
+    setEditingSectionName(currentName);
+  };
+
+  const handleSectionNameChange = (e) => {
+    setEditingSectionName(e.target.value);
+  };
+
+  const handleSectionNameBlur = () => {
+    if (editingSectionId) {
+      const currentId = editingSectionId; // Capture current editing ID
+      const currentName = editingSectionName; // Capture current editing name
+
+      // Defer the state update to allow the native blur event to complete
+      setTimeout(() => {
+        const trimmedName = currentName.trim();
+        if (trimmedName) {
+          dispatch(renameWaypointSection({ id: currentId, name: trimmedName }));
+        } else {
+          // If name is empty, and it's not the default section, remove it.
+          if (currentId !== 'default') {
+            dispatch(removeWaypointSection(currentId));
+          } else {
+            // If it's the default section and the name is empty, revert to 'Default'
+            dispatch(renameWaypointSection({ id: currentId, name: 'Default' }));
+          }
+        }
+        setEditingSectionId(null); // Exit editing mode after dispatch
+      }, 0);
+    }
+  };
+
+  const handleSectionNameKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent default form submission
+      e.target.blur(); // Programmatically trigger the onBlur event
+    }
+  };
+
+  useEffect(() => {
+    if (editingSectionId && sectionInputRef.current) {
+      sectionInputRef.current.focus();
+      // Select all text for easy renaming
+      sectionInputRef.current.select();
+    }
+  }, [editingSectionId]);
+
   const data = useMemo(() => waypoints, [waypoints]);
   const columns = useMemo(
     () => [
-      { Header: 'ID', accessor: 'id', width: 39 },
+      {
+        Header: 'ID',
+        accessor: (row, i) => i + 1, // Display the index + 1
+        id: 'displayId', // Unique ID for this column
+        width: 39,
+      },
       {
         Header: 'Type',
         accessor: 'type',
@@ -296,20 +395,51 @@ const WaypointTable = () => {
   return (
     <DndProvider backend={HTML5Backend}>
       <StyledWaypointTable>
+        <SectionManagementRow>
+          <SectionButtonsContainer>
+            {Object.entries(waypointSections).map(([id, section]) => (
+              <React.Fragment key={id}>
+                {editingSectionId === id ? (
+                  <SectionNameInput
+                    ref={sectionInputRef}
+                    value={editingSectionName}
+                    onChange={handleSectionNameChange}
+                    onBlur={handleSectionNameBlur}
+                    onKeyDown={handleSectionNameKeyDown}
+                    style={{ width: `${Math.max(50, editingSectionName.length * 8 + 20)}px` }} // Dynamic width
+                  />
+                ) : (
+                  <SectionButton
+                    active={id === currentSectionId}
+                    onClick={() => handleSetCurrentSection(id)}
+                    onDoubleClick={() => handleRenameSectionDoubleClick(id, section.name)}
+                    title={id === 'default' ? 'Default section (cannot be removed)' : 'Double-click to rename'}
+                  >
+                    {section.name}
+                  </SectionButton>
+                )}
+              </React.Fragment>
+            ))}
+          </SectionButtonsContainer>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '5px' }}>
+            <RemoveSectionButton onClick={handleRemoveCurrentSection} disabled={currentSectionId === 'default'}>
+              X
+            </RemoveSectionButton>
+            <AddSectionButton onClick={handleAddSectionClick}>+</AddSectionButton>
+          </div>
+        </SectionManagementRow>
         <div {...getTableProps()} className="table">
           <div className="thead">
             {headerGroups.map((headerGroup) => (
               <div {...headerGroup.getHeaderGroupProps()} className="tr header-group">
-                {' '}
                 {headerGroup.headers.map((column) => (
                   <div {...column.getHeaderProps()} className="th">
-                    {' '}
-                    {column.render('Header')}{' '}
+                    {column.render('Header')}
                     {column.canResize && (
                       <div {...column.getResizerProps()} className={`resizer ${column.isResizing ? 'isResizing' : ''}`} />
-                    )}{' '}
+                    )}
                   </div>
-                ))}{' '}
+                ))}
               </div>
             ))}
           </div>
@@ -347,13 +477,13 @@ const WaypointTable = () => {
             })}
           </div>
         </div>
+        <MonacoEditorModal
+          isOpen={modalState.isOpen}
+          initialValue={modalState.waypoint?.action || ''}
+          onClose={handleCloseModal}
+          onSave={handleSaveModal}
+        />
       </StyledWaypointTable>
-      <MonacoEditorModal
-        isOpen={modalState.isOpen}
-        initialValue={modalState.waypoint?.action || ''}
-        onClose={handleCloseModal}
-        onSave={handleSaveModal}
-      />
     </DndProvider>
   );
 };

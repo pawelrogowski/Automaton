@@ -17,8 +17,7 @@ export const StyledWaypointTable = styled.div`
     color: white;
   }
   .tbody .tr {
-    // ... all your existing .tr styles ...
-    position: relative; // This is crucial for positioning the ribbon
+    position: relative;
   }
   .tbody .tr.active-bot-wp::before {
     content: '';
@@ -27,12 +26,9 @@ export const StyledWaypointTable = styled.div`
     left: 0;
     width: 0;
     height: 0;
-    // Creates the triangle shape
     border-style: solid;
     border-width: 12px 12px 0 0;
-    // The color of the ribbon
     border-color: rgba(183, 0, 255, 0.84) transparent transparent transparent;
-    // A subtle shadow to make it pop
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
   }
 
@@ -74,16 +70,8 @@ export const StyledWaypointTable = styled.div`
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
-    /* *** MODIFICATION: Added position relative *** */
-    /* This is crucial for positioning the editable inputs perfectly inside the cell */
     position: relative;
   }
-
-  /* .tr.selected is defined above, this one is redundant */
-  /* .tr.selected {
-    background-color: #007bff;
-    color: white;
-  } */
 
   .th {
     font-weight: bold;
@@ -110,53 +98,32 @@ export const StyledWaypointTable = styled.div`
     }
   }
 
-  button {
-    background-color: #5f6161;
-    color: #fafafa;
-    border: none;
-    padding: 4px 8px;
-    cursor: pointer;
-    border-radius: 3px;
-
-    &:hover {
-      background-color: #7a7a7a;
-    }
-  }
-
-  /* --- NEW STYLES FOR EDITABLE CELLS --- */
-
   /* General styles for all editable inputs and selects */
   .td input,
   .td select {
-    /* Positioning to perfectly overlay the parent TD */
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-
-    /* Take over the padding from the TD */
     padding: 8px;
     box-sizing: border-box;
-
-    /* Reset browser defaults and apply theme */
-    background-color: rgb(35, 35, 35); /* Slightly lighter to indicate it's an input */
+    background-color: rgb(35, 35, 35);
     color: #fafafa;
     font-family: monospace;
     font-size: 11px;
     border: none;
     border-radius: 0;
-    outline: none; /* We will use border for focus instead */
+    outline: none;
 
     &:focus {
-      /* Use the theme's highlight color for the focus border */
       border: 1px solid #007bff;
     }
   }
 
   /* Specific styles for the dropdown to make it look less like a default element */
   .td select {
-    appearance: none; /* Remove default dropdown arrow on some browsers */
+    appearance: none;
   }
 
   /* Specific styles for the container of the coordinate inputs */
@@ -166,26 +133,108 @@ export const StyledWaypointTable = styled.div`
     left: 0;
     width: 100%;
     height: 100%;
-
     display: flex;
-    align-items: stretch; /* Make inputs fill the height of the cell */
-    padding: 4px 8px; /* Slightly less vertical padding to fit nicely */
-    gap: 4px; /* Space between the x, y, z inputs */
+    align-items: stretch;
+    padding: 4px 8px;
+    gap: 4px;
     box-sizing: border-box;
   }
 
   /* The individual x, y, z inputs within the special editor */
   .coord-editor input {
-    /* These inputs are in a flex container, so they don't need absolute positioning */
     position: static;
-    flex: 1; /* Distribute width equally */
-    width: 100%; /* Required for flex to work correctly in some cases */
+    flex: 1;
+    width: 100%;
     height: 100%;
-
-    /* Reset padding since the container has it */
     padding: 0 4px;
-
     text-align: center;
-    border-radius: 2px; /* Give them a slight rounding */
+    border-radius: 2px;
   }
+`;
+
+export const SectionManagementRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  background-color: rgb(35, 35, 35); /* Darker background for the management row */
+  border-bottom: 1px solid rgb(53, 53, 53);
+  flex-shrink: 0; /* Prevent shrinking */
+`;
+
+export const SectionButtonsContainer = styled.div`
+  display: flex;
+  flex-wrap: nowrap; /* Keep buttons in a single line */
+  overflow-x: auto; /* Allow horizontal scrolling if many sections */
+  gap: 5px;
+  padding-right: 10px; /* Space before add/remove buttons */
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+
+  /* Hide scrollbar for a cleaner look */
+  scrollbar-width: none; /* Firefox */
+  &::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+`;
+
+export const SectionButton = styled.button`
+  background-color: ${(props) => (props.active ? '#007ACC' : '#555')};
+  color: white;
+  border: none;
+  padding: 6px 10px; /* Slightly smaller padding for more compact buttons */
+  border-radius: 3px; /* Slightly smaller border-radius */
+  cursor: pointer;
+  font-size: 12px; /* Smaller font size */
+  white-space: nowrap; /* Prevent text wrapping */
+  flex-shrink: 0; /* Prevent buttons from shrinking */
+
+  &:hover {
+    background-color: ${(props) => (props.active ? '#005f99' : '#777')};
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+export const AddSectionButton = styled.button`
+  background-color: #28a745; /* Green for add */
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+
+  &:hover {
+    background-color: #218838;
+  }
+`;
+
+export const RemoveSectionButton = styled.button`
+  background-color: #dc3545; /* Red for remove */
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+
+  &:hover {
+    background-color: #c82333;
+  }
+`;
+
+export const SectionNameInput = styled.input`
+  padding: 6px 8px; /* Smaller padding */
+  border-radius: 3px;
+  border: 1px solid #555;
+  background-color: #444;
+  color: white;
+  width: 100px; /* Fixed width for consistency */
+  flex-shrink: 0;
 `;
