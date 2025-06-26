@@ -1,5 +1,5 @@
 {
-  "name": "pro-sharp-byte",
+  "name": "bright_ideal_grid",
   "version": "1.3.5b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.pro-sharp-byte",
-    "productName": "Pro Sharp Byte",
+    "appId": "com.electron.bright_ideal_grid",
+    "productName": "Bright Ideal Grid",
     "directories": {
       "output": "dist",
       "buildResources": "build"

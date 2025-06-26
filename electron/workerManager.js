@@ -326,6 +326,7 @@ class WorkerManager {
     log('debug', '[Worker Manager] handleStoreUpdate triggered.');
     const state = store.getState();
     const { windowId } = state.global;
+    const { enabled: cavebotEnabled } = state.cavebot; // Get cavebot enabled state
     const currentEnabledPersistentScripts = state.lua.persistentScripts.filter((script) => script.enabled);
 
     // Handle screenMonitor worker lifecycle
@@ -366,6 +367,21 @@ class WorkerManager {
         this.stopWorker('pathfinderWorker');
       }
     }
+
+    // --- NEW: Handle pathFollowerWorker lifecycle ---
+    // It should run only if a window is attached AND cavebot is enabled.
+    if (windowId && cavebotEnabled) {
+      if (!this.workers.has('pathFollowerWorker')) {
+        log('info', '[Worker Manager] Starting pathFollowerWorker.');
+        this.startWorker('pathFollowerWorker', null, this.paths);
+      }
+    } else {
+      if (this.workers.has('pathFollowerWorker')) {
+        log('info', '[Worker Manager] Stopping pathFollowerWorker (no window or cavebot disabled).');
+        this.stopWorker('pathFollowerWorker');
+      }
+    }
+    // --- END NEW SECTION ---
 
     // Manage individual luaScriptWorkers
     const activeScriptIds = new Set(currentEnabledPersistentScripts.map((script) => script.id));

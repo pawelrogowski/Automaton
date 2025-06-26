@@ -101,7 +101,6 @@ export const StyledPlayerMarker = styled.div.attrs((props) => ({
     transform: translateY(-50%);
   }
 `;
-
 export const StyledMapControls = styled.div`
   position: absolute;
   top: 10px;
@@ -112,7 +111,6 @@ export const StyledMapControls = styled.div`
   gap: 8px;
   user-select: none;
 `;
-
 export const ControlGroup = styled.div`
   display: flex;
   flex-direction: column;

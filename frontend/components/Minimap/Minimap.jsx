@@ -95,13 +95,19 @@ const Minimap = () => {
   // --- Centering & Resizing Logic ---
   useEffect(() => {
     if (!isLockedToPlayer || !mapIndex) return;
-    const centerOfTileX = playerTile.x + 0.5;
-    const centerOfTileY = playerTile.y + 0.5;
+
+    // Update zLevel if player changes floors while locked
+    if (playerPosition.z !== zLevel) {
+      setZLevel(playerPosition.z);
+    }
+
+    const centerOfTileX = playerPosition.x + 0.5;
+    const centerOfTileY = playerPosition.y + 0.5;
     setStagePos({
       x: -centerOfTileX * stageScale + canvasDimensions.width / 2,
       y: -centerOfTileY * stageScale + canvasDimensions.height / 2,
     });
-  }, [isLockedToPlayer, playerTile, mapIndex, stageScale, canvasDimensions]);
+  }, [isLockedToPlayer, playerPosition, mapIndex, stageScale, canvasDimensions, zLevel]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -111,7 +117,12 @@ const Minimap = () => {
     };
     updateSize();
     const onFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const newFullscreenStatus = !!document.fullscreenElement;
+      setIsFullscreen(newFullscreenStatus);
+      if (!newFullscreenStatus) {
+        // If exiting fullscreen, lock to player again
+        setIsLockedToPlayer(true);
+      }
       setTimeout(updateSize, 10);
     };
     document.addEventListener('fullscreenchange', onFullscreenChange);
@@ -128,7 +139,7 @@ const Minimap = () => {
     setIsLockedToPlayer(false);
     setZLevel((prevZ) => Math.max(0, Math.min(15, prevZ + delta)));
   };
-  const handleLockToggle = () => setIsLockedToPlayer(true);
+  const handleLockToggle = () => setIsLockedToPlayer((prev) => !prev);
   const handleFullscreenToggle = () => {
     if (!minimapContainerRef.current) return;
     if (isFullscreen) {
@@ -230,8 +241,18 @@ const Minimap = () => {
 
   const markerSize = Math.max(8, Math.min(16, stageScale * 1.5));
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space') {
+        handleLockToggle();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleLockToggle]);
+
   return (
-    <StyledMinimap ref={minimapContainerRef} style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}>
+    <StyledMinimap ref={minimapContainerRef} style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }} tabIndex={0}>
       <StyledMapControls>
         <ControlGroup>
           <ControlButton
@@ -377,10 +398,24 @@ const Minimap = () => {
                 />
               );
             })}
+            {/* Player Position Marker (always visible, on map coordinates) */}
+            <Circle
+              x={playerPosition.x + 0.5}
+              y={playerPosition.y + 0.5}
+              radius={markerSize / 2 / stageScale} // Adjust radius based on markerSize and stageScale
+              fill="red"
+              stroke="white"
+              strokeWidth={1.5 / stageScale}
+              shadowColor="black"
+              shadowBlur={2 / stageScale}
+              shadowOffset={{ x: 0, y: 0 }}
+              shadowOpacity={0.8}
+            />
           </Layer>
         </Stage>
-        <StyledPlayerMarker size={markerSize} />
       </div>
+      {/* Player Position Marker (visual cue for locked state) */}
+      {isLockedToPlayer && <StyledPlayerMarker size={markerSize} />}
       <span
         style={{
           position: 'absolute',

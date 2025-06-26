@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Trash2, Plus } from 'react-feather';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
 import { v4 as uuidv4 } from 'uuid'; // Import uuid for new section IDs
 import {
@@ -423,9 +424,11 @@ const WaypointTable = () => {
           </SectionButtonsContainer>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '5px' }}>
             <RemoveSectionButton onClick={handleRemoveCurrentSection} disabled={currentSectionId === 'default'}>
-              X
+              <Trash2 size={16} />
             </RemoveSectionButton>
-            <AddSectionButton onClick={handleAddSectionClick}>+</AddSectionButton>
+            <AddSectionButton onClick={handleAddSectionClick}>
+              <Plus size={16} />
+            </AddSectionButton>
           </div>
         </SectionManagementRow>
         <div {...getTableProps()} className="table">

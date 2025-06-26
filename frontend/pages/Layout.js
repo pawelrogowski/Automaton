@@ -13,6 +13,10 @@ import ActionBarIcon from '../assets/action_bar.png';
 import mageHat from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
 import { setIsisBotEnabled } from '../redux/slices/globalSlice.js';
+import { setenabled as setRulesEnabled } from '../redux/slices/ruleSlice.js';
+import { setenabled as setCavebotEnabled } from '../redux/slices/cavebotSlice.js';
+import { setenabled as setLuaEnabled } from '../redux/slices/luaSlice.js';
+import { setenabled as setTargetingEnabled } from '../redux/slices/targetingSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
 import { addRule } from '../redux/slices/ruleSlice.js';
@@ -33,6 +37,10 @@ import CustomSwitch from '../components/CustomSwitch/CustomSwitch.js';
 const Layout = () => {
   const dispatch = useDispatch();
   const { windowId, isBotEnabled } = useSelector((state) => state.global);
+  const isRulesEnabled = useSelector((state) => state.rules.enabled);
+  const isCavebotEnabled = useSelector((state) => state.cavebot.enabled);
+  const isLuaEnabled = useSelector((state) => state.lua.enabled);
+  const isTargetingEnabled = useSelector((state) => state.targeting.enabled);
   const wptSelection = useSelector((state) => state.cavebot.wptSelection);
   const playerPosition = useSelector((state) => state.gameState.playerMinimapPosition);
   const location = useLocation();
@@ -175,25 +183,53 @@ const Layout = () => {
           text="Healing"
           // img={automaton}
           // imageWidth="22px"
-        ></NavButton>
+        >
+          <CustomSwitch
+            checked={isRulesEnabled}
+            onChange={() => {
+              dispatch(setRulesEnabled(!isRulesEnabled));
+            }}
+          />
+        </NavButton>
         <NavButton
           to="/cavebot"
           text="Cavebot"
           // img={automaton} // Placeholder icon
           // imageWidth="32px"
-        ></NavButton>
+        >
+          <CustomSwitch
+            checked={isCavebotEnabled}
+            onChange={() => {
+              dispatch(setCavebotEnabled(!isCavebotEnabled));
+            }}
+          />
+        </NavButton>
         <NavButton
           to="/targeting"
           text="Targeting"
           // img={settings}
           // imageWidth="26px"
-        ></NavButton>
+        >
+          <CustomSwitch
+            checked={isTargetingEnabled}
+            onChange={() => {
+              dispatch(setTargetingEnabled(!isTargetingEnabled));
+            }}
+          />
+        </NavButton>
         <NavButton
           to="/luascripts"
           text="Scripts"
           // img={luaIcon}
           //  imageWidth="32px"
-        ></NavButton>
+        >
+          <CustomSwitch
+            checked={isLuaEnabled}
+            onChange={() => {
+              dispatch(setLuaEnabled(!isLuaEnabled));
+            }}
+          />
+        </NavButton>
 
         {/* Add the button for Game State */}
         <NavButton
@@ -217,7 +253,7 @@ const Layout = () => {
                 <button className="add-button" type="button" onMouseDown={handleAddRule} tooltip="Add a new rule to selected section">
                   Add New Rule
                 </button>
-                <div className="save-load-buttons">
+                {/* <div className="save-load-buttons">
                   <button
                     className="save-button"
                     type="button"
@@ -238,32 +274,9 @@ const Layout = () => {
                   >
                     Save
                   </button>
-                </div>
+                </div> */}
               </div>
               <PresetSelector />
-              <div
-                className="checkbox-wrapper"
-                onClick={() => {
-                  dispatch(setIsisBotEnabled(!isBotEnabled));
-                }}
-                tooltip="Enable/Disable global rule precessing (alt+e)"
-              >
-                <CustomSwitch
-                  className="rule-input-enable-checkbox__custom-checkbox"
-                  checked={isBotEnabled}
-                  onChange={() => {
-                    dispatch(setIsisBotEnabled(!isBotEnabled));
-                  }}
-                  disabled={windowId === null}
-                />
-                <span
-                  onClick={() => {
-                    dispatch(setIsisBotEnabled(!isBotEnabled));
-                  }}
-                >
-                  Enable Bot
-                </span>
-              </div>
               <SideBarNavButton
                 to="/healing#actionbar"
                 img={ActionBarIcon}

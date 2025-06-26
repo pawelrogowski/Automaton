@@ -3,8 +3,7 @@ import styled from 'styled-components';
 // New wrapper to contain label (absolute) and switch (normal flow)
 export const SwitchWrapper = styled.div`
   position: relative; // Provide positioning context for absolute children
-  display: inline-block; // Maintain inline-block behavior if needed for flex parent
-  padding-top: 14px; // Add padding top to make space for the absolute label above
+  display: flex;
 `;
 
 // New component for the label text
@@ -18,7 +17,6 @@ export const SwitchLabel = styled.div`
   text-align: center;
   white-space: nowrap; // Prevent text wrapping
 `;
-
 
 export const SwitchContainer = styled.label`
   display: inline-block;
@@ -43,7 +41,7 @@ export const StyledSwitch = styled.div`
   position: relative;
   width: 48px; // Increased width for better glassmorphism feel
   height: 24px; // Increased height
-  background: rgb(0, 0, 0);
+  background: rgb(36, 36, 36);
   border-radius: 12px;
   transition: all 0.2s ease-in-out;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
@@ -56,7 +54,7 @@ export const SwitchThumb = styled.div`
   left: 1px;
   width: 20px;
   height: 20px;
-  background: ${({ checked }) => (checked ? 'rgba(0, 250, 83, 0.74);' : 'rgba(231, 0, 0, 0.84);')}; // Green when checked, grey when unchecked
+  background: ${({ checked }) => (checked ? 'rgb(183, 0, 255);' : 'rgb(103, 103, 103);')}; // Green when checked, grey when unchecked
   border-radius: 50%; // Circle shape
   transition: all 0.2s ease-in-out;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);

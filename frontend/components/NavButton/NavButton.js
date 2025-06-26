@@ -1,9 +1,10 @@
 import React from 'react';
 import { StyledLink } from './NavButton.styled.js';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-const NavButton = ({ to, img, text, imageWidth, className, tooltip }) => {
+const NavButton = ({ to, img, text, imageWidth, className, tooltip, children }) => {
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Split 'to' into path and optional hash
   const [targetPath, targetHash] = to.split('#');
@@ -19,9 +20,10 @@ const NavButton = ({ to, img, text, imageWidth, className, tooltip }) => {
   const isActive = isExactPathActive || isExactHashActive || isBasePathActiveWithHash;
 
   return (
-    <StyledLink className={className} to={to} $isActive={isActive} tooltip={tooltip}>
+    <StyledLink className={className} $isActive={isActive} tooltip={tooltip}>
       {img && <img src={img} alt={text} width={imageWidth} />}
-      <span>{text}</span>
+      <span onClick={() => navigate(to)}>{text}</span>
+      {children}
     </StyledLink>
   );
 };

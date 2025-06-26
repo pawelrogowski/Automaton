@@ -94,7 +94,7 @@ namespace AStar {
 
                     // --- MODIFICATION START ---
                     // Base movement cost. Diagonal moves are more expensive.
-                    int moveCost = (dx != 0 && dy != 0) ? 30 : 10;
+                    int moveCost = (dx != 0 && dy != 0) ? 31 : 10;
 
                     // Add a penalty if the path changes direction
                     int turnPenalty = 0;
@@ -285,9 +285,15 @@ void AStarWorker::Execute() {
             };
             try {
                 this->pathResult = AStar::findPath(effectiveStart, effectiveEnd, mapData, cancellationCheck);
+
+
+                if (!this->pathResult.empty()) {
+                    this->pathResult.erase(this->pathResult.begin());
+                }
+
                 this->searchStatus = this->pathResult.empty() ? "NO_PATH_FOUND" : "PATH_FOUND";
             } catch (const std::runtime_error& e) {
-                // Catch cancellation
+
             }
         }
     }

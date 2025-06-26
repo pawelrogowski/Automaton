@@ -1,6 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
+  enabled: false, // State for Lua scripts enable/disable
   persistentScripts: [], // Array to hold persistent Lua script objects
   hotkeyScripts: [], // Array to hold hotkey Lua script objects
 };
@@ -24,16 +25,7 @@ const luaSlice = createSlice({
      */
     addScript: (state, action) => {
       // The ID is now generated in the renderer for now
-      const {
-        id,
-        name,
-        code,
-        type,
-        enabled = false,
-        loopMin = 100,
-        loopMax = 200,
-        hotkey = null,
-      } = action.payload;
+      const { id, name, code, type, enabled = false, loopMin = 100, loopMax = 200, hotkey = null } = action.payload;
       const newScript = {
         id,
         name: name || 'New Script',
@@ -62,8 +54,7 @@ const luaSlice = createSlice({
     addLogEntry: (state, action) => {
       const { id, message } = action.payload;
       // Find the script in either list
-      const script = state.persistentScripts.find(s => s.id === id) ||
-        state.hotkeyScripts.find(s => s.id === id);
+      const script = state.persistentScripts.find((s) => s.id === id) || state.hotkeyScripts.find((s) => s.id === id);
 
       if (script) {
         // Ensure log is an array
@@ -90,13 +81,11 @@ const luaSlice = createSlice({
      */
     clearScriptLog: (state, action) => {
       const scriptId = action.payload;
-      const script = state.persistentScripts.find(s => s.id === scriptId) ||
-        state.hotkeyScripts.find(s => s.id === scriptId);
+      const script = state.persistentScripts.find((s) => s.id === scriptId) || state.hotkeyScripts.find((s) => s.id === scriptId);
       if (script) {
         script.log = [];
       }
     },
-
 
     /**
      * Removes a Lua script by ID from either list.
@@ -106,8 +95,8 @@ const luaSlice = createSlice({
      */
     removeScript: (state, action) => {
       const scriptIdToRemove = action.payload;
-      state.persistentScripts = state.persistentScripts.filter(script => script.id !== scriptIdToRemove);
-      state.hotkeyScripts = state.hotkeyScripts.filter(script => script.id !== scriptIdToRemove);
+      state.persistentScripts = state.persistentScripts.filter((script) => script.id !== scriptIdToRemove);
+      state.hotkeyScripts = state.hotkeyScripts.filter((script) => script.id !== scriptIdToRemove);
     },
 
     /**
@@ -122,13 +111,13 @@ const luaSlice = createSlice({
       const { id, updates } = action.payload;
 
       // Try finding and updating in persistent scripts
-      const persistentIndex = state.persistentScripts.findIndex(script => script.id === id);
+      const persistentIndex = state.persistentScripts.findIndex((script) => script.id === id);
       if (persistentIndex !== -1) {
         state.persistentScripts[persistentIndex] = {
           ...state.persistentScripts[persistentIndex],
           ...updates,
           // Ensure log is preserved unless explicitly updated (not currently planned)
-          log: state.persistentScripts[persistentIndex].log // Keep existing log
+          log: state.persistentScripts[persistentIndex].log, // Keep existing log
         };
         // Ensure loopMin/loopMax are numbers if updated
         if (updates.hasOwnProperty('loopMin')) {
@@ -142,13 +131,13 @@ const luaSlice = createSlice({
       }
 
       // Try finding and updating in hotkey scripts
-      const hotkeyIndex = state.hotkeyScripts.findIndex(script => script.id === id);
+      const hotkeyIndex = state.hotkeyScripts.findIndex((script) => script.id === id);
       if (hotkeyIndex !== -1) {
         state.hotkeyScripts[hotkeyIndex] = {
           ...state.hotkeyScripts[hotkeyIndex],
           ...updates,
           // Ensure log is preserved unless explicitly updated
-          log: state.hotkeyScripts[hotkeyIndex].log // Keep existing log
+          log: state.hotkeyScripts[hotkeyIndex].log, // Keep existing log
         };
         return; // Found and updated, exit
       }
@@ -164,7 +153,7 @@ const luaSlice = createSlice({
      */
     togglePersistentScript: (state, action) => {
       const scriptIdToToggle = action.payload;
-      const script = state.persistentScripts.find(script => script.id === scriptIdToToggle);
+      const script = state.persistentScripts.find((script) => script.id === scriptIdToToggle);
       if (script) {
         script.enabled = !script.enabled;
         // Optional: Add a log entry indicating the state change
@@ -186,17 +175,13 @@ const luaSlice = createSlice({
 
       return newState;
     },
+    setenabled: (state, action) => {
+      state.enabled = action.payload;
+    },
   },
 });
 
-export const {
-  addScript,
-  addLogEntry,
-  removeScript,
-  updateScript,
-  togglePersistentScript,
-  setState,
-  clearScriptLog,
-} = luaSlice.actions;
+export const { addScript, addLogEntry, removeScript, updateScript, togglePersistentScript, setState, clearScriptLog, setenabled } =
+  luaSlice.actions;
 
 export default luaSlice;

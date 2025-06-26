@@ -24,19 +24,19 @@ const parseLegacyCoordinates = (payload) => {
 };
 
 const initialState = {
+  enabled: false, // State for cavebot enable/disable
+  wptId: 'null',
+  wptSelection: null,
+  currentSection: 'default', // New state to track the active section
+  wptDistance: 0,
+  routeSearchMs: 0,
   waypointSections: {
     default: {
       name: 'Default',
       waypoints: [],
     },
   },
-  currentSection: 'default', // New state to track the active section
-  enabled: false,
-  wptId: 'null',
-  wptSelection: null,
   pathWaypoints: [],
-  wptDistance: 0,
-  routeSearchMs: 0,
 };
 
 const cavebotSlice = createSlice({
