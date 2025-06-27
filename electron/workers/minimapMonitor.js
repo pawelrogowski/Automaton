@@ -35,11 +35,9 @@ const MINIMAP_WIDTH = 106;
 const MINIMAP_HEIGHT = 109;
 const REPROCESS_INTERVAL_MS = 50;
 
-// --- MODIFIED: Palette initialization is now synchronous and immediate ---
 logger('info', 'Processing hardcoded palette data...');
 const colorToIndexMap = new Map();
 PALETTE_DATA.forEach((color, index) => {
-  // Use a single integer key for the fastest possible lookups in the main loop
   const intKey = (color.r << 16) | (color.g << 8) | color.b;
   colorToIndexMap.set(intKey, index);
 });
@@ -53,15 +51,15 @@ let regionBuffers = new Map();
 const captureInstance = new X11RegionCapture();
 let lastMinimapFrameBuffer = null;
 let lastProcessTime = 0;
+let isSearching = false; // The new "hard lock" to prevent race conditions.
+let lastKnownZ = null; // NEW: Track the last reported Z coordinate to avoid redundant updates.
 
 // --- Helper Functions ---
 
-/** Resets region definitions and clears associated buffers. */
 function resetRegions() {
   regionBuffers.clear();
 }
 
-/** Adds a region to the X11 capture instance and tracks its buffer. */
 function addAndTrackRegion(name, x, y, width, height) {
   const regionConfig = { regionName: name, winX: x, winY: y, regionWidth: width, regionHeight: height };
   try {
@@ -76,7 +74,6 @@ function addAndTrackRegion(name, x, y, width, height) {
   }
 }
 
-/** Finds minimap regions on screen and sets up capture for them. */
 async function initializeRegions() {
   if (!state?.global?.windowId) {
     initialized = false;
@@ -122,8 +119,11 @@ async function initializeRegions() {
   }
 }
 
-/** Processes a single frame, finds the player position, and posts updates. */
 async function processFrame() {
+  if (isSearching) {
+    return;
+  }
+
   const regionData = {};
   for (const [regionName, bufferInfo] of regionBuffers.entries()) {
     const result = captureInstance.getRegionRgbData(regionName, bufferInfo.buffer);
@@ -166,6 +166,21 @@ async function processFrame() {
     }
   }
 
+  // --- MODIFICATION START ---
+  // If we detected a floor level and it's different from the one we last reported,
+  // post an immediate update for the Z-coordinate. This improves UI responsiveness.
+  if (detectedZ !== null && detectedZ !== lastKnownZ) {
+    lastKnownZ = detectedZ; // Update our internal tracker
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'gameState/setPlayerMinimapPosition',
+      payload: {
+        z: detectedZ,
+      },
+    });
+  }
+  // --- MODIFICATION END ---
+
   if (detectedZ === null) return;
 
   const { width, height } = minimapEntry;
@@ -182,17 +197,22 @@ async function processFrame() {
     minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
   }
 
+  isSearching = true;
+  minimapMatcher.cancelCurrentSearch();
+
   minimapMatcher
     .findPosition(minimapIndexData, width, height, detectedZ)
     .then((result) => {
       if (result?.position) {
+        // Ensure our last known Z is in sync with the final position found.
+        lastKnownZ = result.position.z;
         parentPort.postMessage({
           storeUpdate: true,
-          type: 'playerMinimapPosition',
+          type: 'gameState/setPlayerMinimapPosition',
           payload: {
-            ...result.position,
-            searchTimeMs: result.performance.totalTimeMs,
-            searchMethod: result.performance.method,
+            x: result.position.x,
+            y: result.position.y,
+            z: result.position.z,
           },
         });
       }
@@ -201,15 +221,16 @@ async function processFrame() {
       if (error?.message !== 'Search cancelled') {
         logger('error', `Minimap search promise rejected: ${error.message}`);
       }
+    })
+    .finally(() => {
+      isSearching = false;
     });
 }
 
-/** The main execution loop for the worker. */
 async function mainLoop() {
   const loopStartTime = Date.now();
   try {
     if ((!initialized && state?.global?.windowId) || shouldRestart) {
-      minimapMatcher.cancelCurrentSearch();
       await initializeRegions();
     }
 
@@ -226,7 +247,6 @@ async function mainLoop() {
   }
 }
 
-/** Gracefully triggers a full re-initialization of the worker's capture logic. */
 function triggerReinitialization() {
   if (captureInstance && initialized) {
     captureInstance.stopMonitorInstance();
@@ -236,13 +256,13 @@ function triggerReinitialization() {
   lastMinimapFrameBuffer = null;
   lastProcessTime = 0;
   minimapMatcher.cancelCurrentSearch();
+  isSearching = false;
+  lastKnownZ = null; // NEW: Reset our Z tracker on re-initialization
 }
 
-/** Main entry point for the worker. */
 async function start() {
   logger('info', 'Minimap monitor worker started.');
   try {
-    // No more async palette loading, just load the map data
     await minimapMatcher.loadMapData();
 
     while (true) {

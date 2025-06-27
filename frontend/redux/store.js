@@ -7,13 +7,13 @@ import cavebotSlice from './slices/cavebotSlice.js';
 import targetingSlice from './slices/targetingSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
-  if (action.origin !== 'backend') {
-    // console.log('Sending action to main process:', action.origin);
-    const actionWithOrigin = { ...action, origin: 'renderer' };
-    const serializedAction = JSON.stringify(actionWithOrigin);
-    window.electron.ipcRenderer.send('state-change', serializedAction);
+  // If the action comes from the backend, let it pass through to the reducer.
+  if (action.origin === 'backend') {
+    return next(action);
   }
-  return next(action);
+  const actionWithOrigin = { ...action, origin: 'renderer' };
+  const serializedAction = JSON.stringify(actionWithOrigin);
+  window.electron.ipcRenderer.send('state-change', serializedAction);
 };
 
 const store = configureStore({

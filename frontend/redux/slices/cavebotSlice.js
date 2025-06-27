@@ -37,6 +37,7 @@ const initialState = {
     },
   },
   pathWaypoints: [],
+  retryMoveDelayMs: 250, // New state for retry move delay
 };
 
 const cavebotSlice = createSlice({
@@ -103,17 +104,11 @@ const cavebotSlice = createSlice({
 
     // LOGGING ADDED
     setwptId: (state, action) => {
-      console.log(`[Redux/setwptId] Reducer called. Payload: ${action.payload}`);
-      console.log(`[Redux/setwptId] State BEFORE: wptId = ${state.wptId}`);
       state.wptId = action.payload;
-      console.log(`[Redux/setwptId] State AFTER: wptId = ${state.wptId}`);
     },
     // LOGGING ADDED
     setwptSelection: (state, action) => {
-      console.log(`[Redux/setwptSelection] Reducer called. Payload: ${action.payload}`);
-      console.log(`[Redux/setwptSelection] State BEFORE: wptSelection = ${state.wptSelection}`);
       state.wptSelection = action.payload;
-      console.log(`[Redux/setwptSelection] State AFTER: wptSelection = ${state.wptSelection}`);
     },
     updateWaypoint: (state, action) => {
       const { id, updates } = action.payload;
@@ -173,6 +168,9 @@ const cavebotSlice = createSlice({
         state.waypointSections[id].name = name;
       }
     },
+    setRetryMoveDelayMs: (state, action) => {
+      state.retryMoveDelayMs = action.payload;
+    },
   },
 });
 export const {
@@ -188,6 +186,7 @@ export const {
   addWaypointSection,
   removeWaypointSection,
   setCurrentWaypointSection,
-  renameWaypointSection, // New action
+  renameWaypointSection,
+  setRetryMoveDelayMs, // New action
 } = cavebotSlice.actions;
 export default cavebotSlice;

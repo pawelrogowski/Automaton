@@ -1,24 +1,28 @@
-import { getMainWindow } from './createMainWindow.js';
 import store from './store.js';
-import { setPlayerMinimapPosition } from '../frontend/redux/slices/gameStateSlice.js'; // Import the specific action
+import { getMainWindow } from './createMainWindow.js';
 
-const setGlobalState = (type, payload) => {
-  // console.log('debug', `[setGlobalState] Received type: ${type}, payload:`, payload);
-  // Handle specific actions from workers
-  if (type === 'playerMinimapPosition') {
-    // console.log('info', `[setGlobalState] Dispatching playerMinimapPosition with payload:`, payload);
-    store.dispatch(setPlayerMinimapPosition(payload));
-  } else {
-    // For other actions, dispatch as usual
-    store.dispatch({ type, payload });
-  }
+/**
+ * A centralized function to update the main process Redux store
+ * and broadcast the change to the renderer process.
+ * @param {string} type - The action type (e.g., 'cavebot/setEnabled').
+ * @param {*} payload - The action payload.
+ */
+function setGlobalState(type, payload) {
+  const mainWindow = getMainWindow();
 
-  // Send state update to renderer process
-  getMainWindow().webContents.send('state-update', {
+  const action = {
     type,
     payload,
-    origin: 'backend',
-  });
-};
+    origin: 'backend', // Mark this action as originating from the main process
+  };
+
+  // 1. Dispatch the action to the main process store.
+  store.dispatch(action);
+
+  // 2. Broadcast the action to the renderer window so its store can sync.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('state-update', action);
+  }
+}
 
 export default setGlobalState;

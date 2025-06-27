@@ -15,16 +15,18 @@ const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
+// --- THIS IS THE CORRECTED LISTENER ---
 ipcMain.on('state-change', (_, serializedAction) => {
   try {
     const action = JSON.parse(serializedAction);
     if (action.origin === 'renderer') {
-      store.dispatch(action);
+      setGlobalState(action.type, action.payload);
     }
   } catch (error) {
-    console.error('Error dispatching action in main process:', error);
+    console.error('Error handling state-change from renderer:', error);
   }
 });
+// --- END CORRECTION ---
 
 ipcMain.on('save-rules', async () => {
   const mainWindow = getMainWindow();

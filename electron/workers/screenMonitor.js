@@ -821,7 +821,6 @@ async function mainLoopIteration() {
         },
         isLoggedIn: dynamicRegionResults.isLoggedIn,
         isChatOff: dynamicRegionResults.isChatOff,
-        playerMinimapPosition: state.gameState.playerMinimapPosition, // Include player minimap position
       };
 
       // Dispatch the complete state update ONCE

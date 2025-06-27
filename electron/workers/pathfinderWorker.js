@@ -1,7 +1,9 @@
+// workers/pathfinderWorker.js
+
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { createRequire } from 'module';
-import fs from 'fs/promises';
+import fs from 'fs';
 import path from 'path';
 
 const logger = createLogger({ info: true, error: true, debug: false });
@@ -26,15 +28,10 @@ try {
 // --- Worker State ---
 let state = null;
 let lastPlayerPosKey = null;
-let lastWaypointId = null;
-let latestRequestId = 0;
-let isSearching = false; // The lock to prevent concurrent searches
+let lastTargetWptId = null;
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
 
-/**
- * Loads all walkable.bin and walkable.json files into a format the C++ addon can consume.
- */
-async function loadAllMapData() {
+function loadAllMapData() {
   if (pathfinderInstance.isLoaded) {
     logger('info', 'Pathfinding data already loaded into native module.');
     return;
@@ -42,164 +39,126 @@ async function loadAllMapData() {
   logger('info', 'Loading pathfinding data for all Z-levels...');
   const mapDataForAddon = {};
 
-  const zLevelDirs = (await fs.readdir(PREPROCESSED_BASE_DIR, { withFileTypes: true }))
-    .filter((d) => d.isDirectory() && d.name.startsWith('z'))
-    .map((d) => d.name);
+  try {
+    const zLevelDirs = fs
+      .readdirSync(PREPROCESSED_BASE_DIR, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && d.name.startsWith('z'))
+      .map((d) => d.name);
 
-  for (const zDir of zLevelDirs) {
-    const zLevel = parseInt(zDir.substring(1), 10);
-    const zLevelPath = path.join(PREPROCESSED_BASE_DIR, zDir);
-    try {
-      const metadata = JSON.parse(await fs.readFile(path.join(zLevelPath, 'walkable.json'), 'utf8'));
-      const grid = await fs.readFile(path.join(zLevelPath, 'walkable.bin'));
-      mapDataForAddon[zLevel] = { ...metadata, grid };
-    } catch (e) {
-      if (e.code !== 'ENOENT') {
-        logger('warn', `Could not load pathfinding data for Z=${zLevel}: ${e.message}`);
+    for (const zDir of zLevelDirs) {
+      const zLevel = parseInt(zDir.substring(1), 10);
+      const zLevelPath = path.join(PREPROCESSED_BASE_DIR, zDir);
+      try {
+        const metadata = JSON.parse(fs.readFileSync(path.join(zLevelPath, 'walkable.json'), 'utf8'));
+        const grid = fs.readFileSync(path.join(zLevelPath, 'walkable.bin'));
+        mapDataForAddon[zLevel] = { ...metadata, grid };
+      } catch (e) {
+        if (e.code !== 'ENOENT') {
+          logger('warn', `Could not load pathfinding data for Z=${zLevel}: ${e.message}`);
+        }
       }
     }
-  }
 
-  pathfinderInstance.loadMapData(mapDataForAddon);
-  if (pathfinderInstance.isLoaded) {
-    logger('info', `Pathfinding data successfully loaded into native module. Ready for path requests.`);
-  } else {
-    logger('error', 'Failed to load data into native module, even after processing files.');
+    pathfinderInstance.loadMapData(mapDataForAddon);
+    if (pathfinderInstance.isLoaded) {
+      logger('info', 'Pathfinding data successfully loaded into native module. Ready for path requests.');
+    } else {
+      logger('error', 'Failed to load data into native module, even after processing files.');
+    }
+  } catch (e) {
+    logger('error', `Critical error during map data loading: ${e.message}`);
+    if (parentPort) parentPort.postMessage({ fatalError: 'Failed to load pathfinding map data.' });
+    process.exit(1);
   }
 }
 
-/**
- * The core logic loop for the cavebot pathfinder.
- */
-async function processCavebotPathRequest() {
-  // Check if a search is already running. If so, exit immediately.
-  if (isSearching) {
-    return;
-  }
-
-  const myRequestId = ++latestRequestId;
-  const currentState = state;
-
-  if (!currentState?.gameState?.playerMinimapPosition) {
-    pathfinderInstance.cancelSearch();
-    return;
-  }
-
-  const { waypointSections, currentSection, wptId } = currentState.cavebot;
-  const currentWaypoints = waypointSections[currentSection]?.waypoints || [];
-  let targetWaypoint = null;
-
-  if (wptId) {
-    targetWaypoint = currentWaypoints.find((wp) => wp.id === wptId);
-  } else if (currentWaypoints.length > 0) {
-    // If no specific wptId is set, use the first waypoint in the current section
-    targetWaypoint = currentWaypoints[0];
-  }
-
-  if (!targetWaypoint) {
-    return;
-  }
-
-  const nonPathableTypes = ['Action', 'Lure'];
-  if (nonPathableTypes.includes(targetWaypoint.type)) {
-    // If the current waypoint doesn't require a path, we should clear any old path data.
-    if (lastWaypointId !== targetWaypoint.id) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setPathfindingFeedback',
-        payload: { pathWaypoints: [], targetWpt: null, wptDistance: null },
-      });
-      lastWaypointId = targetWaypoint.id;
-    }
-    return;
-  }
-
-  const { x, y, z } = currentState.gameState.playerMinimapPosition;
-  const currentPosKey = `${x},${y},${z}`;
-
-  // If we don't need to recalculate, exit early
-  if (lastPlayerPosKey === currentPosKey && lastWaypointId === targetWaypoint.id) {
-    return;
-  }
-
-  if (z !== targetWaypoint.z) {
-    if (lastWaypointId !== targetWaypoint.id) {
-      // Different Z-level, clear the path.
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setPathfindingFeedback',
-        payload: { pathWaypoints: [], wptDistance: null },
-      });
-    }
-    lastPlayerPosKey = currentPosKey;
-    lastWaypointId = targetWaypoint.id;
-    return;
-  }
-
-  lastPlayerPosKey = currentPosKey;
-  lastWaypointId = targetWaypoint.id;
-
-  // The entire pathfinding call is now wrapped in a try/finally block
+function runPathfindingLogic() {
   try {
-    isSearching = true; // Acquire the lock before starting the async operation.
-
-    const result = await pathfinderInstance.findPath({ x, y, z }, { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z });
-
-    if (myRequestId !== latestRequestId) {
-      return; // Stale result, discard.
+    if (!state || !state.gameState?.playerMinimapPosition || !state.cavebot?.wptId) {
+      return;
     }
+
+    const { waypointSections, currentSection, wptId } = state.cavebot;
+    const currentWaypoints = waypointSections[currentSection]?.waypoints || [];
+    const targetWaypoint = currentWaypoints.find((wp) => wp.id === wptId);
+
+    if (!targetWaypoint) {
+      return;
+    }
+
+    const nonPathableTypes = ['Action', 'Lure'];
+    if (nonPathableTypes.includes(targetWaypoint.type)) {
+      if (lastTargetWptId !== targetWaypoint.id) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'cavebot/setPathfindingFeedback',
+          payload: { pathWaypoints: [], wptDistance: null },
+        });
+        lastTargetWptId = targetWaypoint.id;
+      }
+      return;
+    }
+
+    const { x, y, z } = state.gameState.playerMinimapPosition;
+    if (z !== targetWaypoint.z) {
+      if (lastTargetWptId !== targetWaypoint.id) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'cavebot/setPathfindingFeedback',
+          payload: { pathWaypoints: [], wptDistance: null },
+        });
+        lastTargetWptId = targetWaypoint.id;
+      }
+      return;
+    }
+
+    const currentPosKey = `${x},${y},${z}`;
+    if (lastPlayerPosKey === currentPosKey && lastTargetWptId === targetWaypoint.id) {
+      return;
+    }
+
+    lastPlayerPosKey = currentPosKey;
+    lastTargetWptId = targetWaypoint.id;
+
+    // --- MODIFICATION --- Pass a third argument with the waypoint type to the native addon.
+    const result = pathfinderInstance.findPathSync(
+      { x, y, z },
+      { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
+      { waypointType: targetWaypoint.type },
+    );
 
     const path = result.path || [];
-    const pathWithZ = path.map((node) => ({ ...node, z: targetWaypoint.z }));
-    const distance = path.length > 0 ? path.length - 1 : result.reason === 'WAYPOINT_REACHED' ? 0 : null;
+    const distance = path.length > 0 ? path.length : result.reason === 'WAYPOINT_REACHED' ? 0 : null;
 
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setPathfindingFeedback',
       payload: {
-        pathWaypoints: pathWithZ,
+        pathWaypoints: path,
         wptDistance: distance,
         routeSearchMs: result.performance.totalTimeMs,
       },
     });
   } catch (error) {
-    if (myRequestId === latestRequestId && error.message !== 'Search cancelled') {
-      logger('error', `Pathfinding error: ${error.message}`);
-      // On error, clear the path in the state.
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setPathfindingFeedback',
-        payload: { pathWaypoints: [], wptDistance: null },
-      });
-    }
-  } finally {
-    isSearching = false; // Release the lock, ensuring other requests can proceed.
+    logger('error', `Pathfinding error: ${error.message}`);
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setPathfindingFeedback',
+      payload: { pathWaypoints: [], wptDistance: null },
+    });
   }
 }
 
-async function mainLoop() {
-  while (true) {
-    if (!pathfinderInstance.isLoaded) {
-      logger('info', 'Pathfinder data not loaded yet. Waiting...');
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      continue;
-    }
-    try {
-      await processCavebotPathRequest();
-    } catch (e) {
-      logger('error', `Error in main loop: ${e.message}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-
-async function start() {
+function start() {
   logger('info', 'Pathfinder worker started.');
-  await loadAllMapData();
-  await mainLoop();
+  loadAllMapData();
+  if (pathfinderInstance.isLoaded) {
+    setInterval(runPathfindingLogic, 1);
+  } else {
+    logger('error', 'Pathfinder did not load map data, main loop will not start.');
+  }
 }
 
-// --- Event Listeners ---
 parentPort.on('message', (message) => {
   state = message;
 });
@@ -209,8 +168,10 @@ parentPort.on('close', () => {
   process.exit(0);
 });
 
-start().catch((err) => {
+try {
+  start();
+} catch (err) {
   logger('error', `Pathfinder worker fatal error: ${err.message}`, err);
   if (parentPort) parentPort.postMessage({ fatalError: err.message || 'Unknown fatal error in worker' });
   process.exit(1);
-});
+}
