@@ -1,0 +1,23 @@
+{
+  "name": "minimap_matcher-native",
+  "version": "1.0.0",
+  "description": "Native module matching minimap position to image",
+  "main": "wrapper.js",
+  "private": true,
+  "scripts": {
+    "install": "node-gyp rebuild"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^7.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

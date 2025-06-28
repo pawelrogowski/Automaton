@@ -59,3 +59,14 @@ bun.lockb
 node_modules
 .electron-obfuscated
 package-lock.json
+
+# Node.js native module build artifacts
+nativeModules/*/build/
+nativeModules/*/Release/
+nativeModules/*/Debug/
+nativeModules/*/*.node
+nativeModules/*/obj.target/
+nativeModules/*/binding.Makefile
+nativeModules/*/config.gypi
+nativeModules/*/*.target.mk
+nativeModules/*/Makefile

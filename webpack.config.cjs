@@ -1,7 +1,5 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const TerserPlugin = require('terser-webpack-plugin');
-const CompressionPlugin = require('compression-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 
@@ -127,29 +125,8 @@ module.exports = {
       // Ensures worker files are loaded from a relative path, which is crucial for Electron's `file://` protocol.
       publicPath: './',
     }),
-
-    // Your existing compression plugin
-    new CompressionPlugin({
-      algorithm: 'gzip',
-      test: /\.js$|\.css$|\.html$/,
-      threshold: 10240,
-      minRatio: 0.8,
-    }),
   ],
   optimization: {
-    minimize: true,
-    minimizer: [
-      new TerserPlugin({
-        terserOptions: {
-          compress: {
-            drop_console: false,
-          },
-          mangle: true,
-          output: {
-            comments: false,
-          },
-        },
-      }),
-    ],
+    minimize: false,
   },
 };

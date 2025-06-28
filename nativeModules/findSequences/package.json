@@ -1,0 +1,23 @@
+{
+  "name": "find-sequences-native",
+  "version": "1.0.0",
+  "description": "Native module for finding sequences in image data.",
+  "main": "wrapper.js",
+  "private": true,
+  "scripts": {
+    "install": "node-gyp rebuild"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^8.3.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

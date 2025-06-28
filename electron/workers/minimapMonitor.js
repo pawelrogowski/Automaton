@@ -1,34 +1,19 @@
 // minimapMonitor.js
 
-import { parentPort, workerData } from 'worker_threads';
-import { createRequire } from 'module';
+import { parentPort } from 'worker_threads';
 import { regionColorSequences, floorLevelIndicators } from '../constants/index.js';
 import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
 import { MinimapMatcher } from '../utils/minimapMatcher.js';
+import X11RegionCapture from 'x11-region-capture-native'; // Direct import
+import findSequences from 'find-sequences-native'; // Direct import
 
-const paths = workerData?.paths || {};
 const logger = createLogger({ info: true, error: true, debug: false });
 
-const require = createRequire(import.meta.url);
-
 // --- Native Modules & Configuration ---
-let X11RegionCapture, findSequencesNative, minimapMatcher;
-
-try {
-  if (!paths.x11capture || !paths.findSequences || !paths.minimapMatcher) {
-    throw new Error('One or more native module paths are missing from workerData.');
-  }
-  ({ X11RegionCapture } = require(paths.x11capture));
-  ({ findSequencesNative } = require(paths.findSequences));
-  minimapMatcher = new MinimapMatcher(paths.minimapMatcher);
-} catch (e) {
-  const errorMessage = `Failed to load native modules or initialize minimapMatcher: ${e.message}`;
-  logger('error', errorMessage);
-  if (parentPort) parentPort.postMessage({ fatalError: errorMessage });
-  else process.exit(1);
-}
+// X11RegionCapture and findSequencesNative are now directly imported
+const minimapMatcher = new MinimapMatcher(); // Initialize MinimapMatcher directly
 
 const TARGET_FPS = 60;
 const MINIMAP_WIDTH = 106;
@@ -48,7 +33,7 @@ let state = null;
 let initialized = false;
 let shouldRestart = false;
 let regionBuffers = new Map();
-const captureInstance = new X11RegionCapture();
+const captureInstance = new X11RegionCapture.X11RegionCapture();
 let lastMinimapFrameBuffer = null;
 let lastProcessTime = 0;
 let isSearching = false; // The new "hard lock" to prevent race conditions.
@@ -87,7 +72,12 @@ async function initializeRegions() {
     const initialFullFrameResult = captureInstance.getFullWindowImageData(fullWindowBuffer);
     if (!initialFullFrameResult?.success) throw new Error('Failed to get initial frame for region finding.');
 
-    const foundMinimapFull = findSequencesNative(fullWindowBuffer, { minimapFull: regionColorSequences.minimapFull }, null, 'first');
+    const foundMinimapFull = findSequences.findSequencesNative(
+      fullWindowBuffer,
+      { minimapFull: regionColorSequences.minimapFull },
+      null,
+      'first',
+    );
     if (foundMinimapFull?.minimapFull?.x !== undefined) {
       const def = createRegion(foundMinimapFull.minimapFull, MINIMAP_WIDTH, MINIMAP_HEIGHT);
       if (validateRegionDimensions(def)) {
@@ -95,7 +85,7 @@ async function initializeRegions() {
       }
     }
 
-    const foundFloorIndicator = findSequencesNative(
+    const foundFloorIndicator = findSequences.findSequencesNative(
       fullWindowBuffer,
       { minimapFloorIndicatorColumn: regionColorSequences.minimapFloorIndicatorColumn },
       null,
@@ -152,7 +142,7 @@ async function processFrame() {
   let detectedZ = null;
   if (regionData.minimapFloorIndicatorColumnRegion) {
     const { data } = regionData.minimapFloorIndicatorColumnRegion;
-    const foundFloor = findSequencesNative(data, floorLevelIndicators, null, 'first');
+    const foundFloor = findSequences.findSequencesNative(data, floorLevelIndicators, null, 'first');
     if (foundFloor) {
       let lowestY = Infinity;
       const floorKey = Object.keys(foundFloor).reduce((lowest, key) => {

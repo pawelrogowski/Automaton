@@ -9,7 +9,7 @@ import StyledMinimap, { StyledPlayerMarker, StyledMapControls, ControlGroup, Con
 // --- Configuration Constants ---
 const CANVAS_SIZE = 260;
 const DOT_MARKER_RADIUS = 3;
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 20;
 
 // --- Context Menu Options ---
@@ -43,8 +43,8 @@ const Minimap = () => {
   const [zLevel, setZLevel] = useState(playerPosition.z ?? 7);
   const [mapUrl, setMapUrl] = useState('');
   const [mapIndex, setMapIndex] = useState(null);
-  const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
-  const [stageScale, setStageScale] = useState(1.4);
+  const [stagePos, setStagePos] = useState({ x: 32097, y: 32219 });
+  const [stageScale, setStageScale] = useState(10);
   const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, text: '' });
   // This state now controls both menu types
   const [rightClickMenu, setRightClickMenu] = useState({
@@ -255,6 +255,14 @@ const Minimap = () => {
     <StyledMinimap ref={minimapContainerRef} style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }} tabIndex={0}>
       <StyledMapControls>
         <ControlGroup>
+          <ControlButton position="top" onClick={() => handleZChange(-1)} title="Go Up">
+            ▲
+          </ControlButton>
+          <ControlButton position="bottom" onClick={() => handleZChange(+1)} title="Go Down">
+            ▼
+          </ControlButton>
+        </ControlGroup>
+        <ControlGroup>
           <ControlButton
             position="single"
             onClick={handleMapModeToggle}
@@ -266,14 +274,7 @@ const Minimap = () => {
             </svg>
           </ControlButton>
         </ControlGroup>
-        <ControlGroup>
-          <ControlButton position="top" onClick={() => handleZoom(1)}>
-            +
-          </ControlButton>
-          <ControlButton position="bottom" onClick={() => handleZoom(-1)}>
-            −
-          </ControlButton>
-        </ControlGroup>
+
         <ControlGroup>
           <ControlButton position="single" onClick={handleLockToggle} active={isLockedToPlayer} title="Center on Player">
             <div style={{ width: '12px', height: '12px', border: '2px solid currentColor', borderRadius: '50%' }}></div>
@@ -325,15 +326,6 @@ const Minimap = () => {
                 }}
               ></div>
             </div>
-          </ControlButton>
-        </ControlGroup>
-        <ControlGroup>
-          <ControlButton position="top" onClick={() => handleZChange(1)} title="Go Up">
-            ▲
-          </ControlButton>
-          <FloorDisplay>{zLevel}</FloorDisplay>
-          <ControlButton position="bottom" onClick={() => handleZChange(-1)} title="Go Down">
-            ▼
           </ControlButton>
         </ControlGroup>
       </StyledMapControls>

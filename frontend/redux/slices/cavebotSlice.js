@@ -102,9 +102,17 @@ const cavebotSlice = createSlice({
       state.enabled = action.payload;
     },
 
-    // LOGGING ADDED
     setwptId: (state, action) => {
-      state.wptId = action.payload;
+      const newWptId = action.payload;
+      // Only perform the update if the ID is actually changing to prevent unnecessary resets.
+      if (state.wptId !== newWptId) {
+        state.wptId = newWptId;
+        // Atomically invalidate the old path and distance.
+        // This signals to other workers that a new path is required.
+        state.pathWaypoints = [];
+        state.wptDistance = null; // Use null to signify "unknown" or "recalculating".
+        state.routeSearchMs = 0;
+      }
     },
     // LOGGING ADDED
     setwptSelection: (state, action) => {

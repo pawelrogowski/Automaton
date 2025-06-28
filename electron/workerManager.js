@@ -43,13 +43,7 @@ class WorkerManager {
     } else {
       this.paths.utils = path.join(cwd, '..', 'resources', 'x11utils');
     }
-
-    this.paths.x11capture = path.join(this.paths.utils, 'x11RegionCapture.node');
-    this.paths.keypress = path.join(this.paths.utils, 'keypress.node');
     this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
-    this.paths.findSequences = path.join(this.paths.utils, 'findSequences.node');
-    this.paths.minimapMatcher = path.join(this.paths.utils, 'minimapMatcherNative.node');
-    this.paths.pathfinder = path.join(this.paths.utils, 'pathfinderNative.node');
 
     if (!app.isPackaged) {
       log('info', '[Worker Manager] Paths initialized:', this.paths);

@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "pre-build": "node scripts/set-random-name.js",
-    "start": "webpack --mode production && NODE_ENV=production electron .",
+    "start": "webpack --mode production && electron .",
     "rebuild": "electron-rebuild",
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
@@ -103,10 +103,14 @@
     "styled-components": "^6.1.6",
     "use-image": "^1.1.4",
     "uuid": "^11.0.3",
-    "valkey": "^0.0.3",
     "wasmoon": "^1.16.0",
     "webpack-node-externals": "^3.0.0",
-    "x11": "^2.3.0"
+    "keypress-native": "file:./nativeModules/keypress",
+    "minimap_matcher-native": "file:./nativeModules/minimapMatcher",
+    "windowinfo-native": "file:./nativeModules/windowInfo",
+    "pathfinder-native": "file:./nativeModules/pathfinder",
+    "x11-region-capture-native": "file:./nativeModules/x11RegionCapture",
+    "find-sequences-native": "file:./nativeModules/findSequences"
   },
   "devDependencies": {
     "@babel/core": "^7.23.6",
@@ -129,13 +133,11 @@
     "file-loader": "^6.2.0",
     "fs-extra": "^11.3.0",
     "html-webpack-plugin": "^5.6.0",
-    "javascript-obfuscator": "^4.1.1",
     "monaco-editor-webpack-plugin": "^7.1.0",
     "prettier": "^3.1.1",
     "style-loader": "^3.3.3",
     "terser-webpack-plugin": "^5.3.10",
     "webpack": "^5.89.0",
-    "webpack-cli": "^5.1.4",
-    "webpack-obfuscator": "^3.5.1"
+    "webpack-cli": "^5.1.4"
   }
 }

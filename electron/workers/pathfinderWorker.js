@@ -2,22 +2,16 @@
 
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
-import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
+import Pathfinder from 'pathfinder-native'; // Direct import
 
 const logger = createLogger({ info: true, error: true, debug: false });
-const require = createRequire(import.meta.url);
 
 // --- Native Addon Initialization ---
-let Pathfinder;
 let pathfinderInstance;
 try {
-  if (!workerData?.paths?.pathfinder) {
-    throw new Error('Path to native Pathfinder addon is missing from workerData.');
-  }
-  ({ Pathfinder } = require(workerData.paths.pathfinder));
-  pathfinderInstance = new Pathfinder();
+  pathfinderInstance = new Pathfinder.Pathfinder();
   logger('info', 'Native Pathfinder addon loaded successfully.');
 } catch (e) {
   logger('error', `FATAL: Failed to load native Pathfinder module: ${e.message}`);

@@ -1,14 +1,12 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from './logger.js';
-import { createRequire } from 'module';
+import MinimapMatcherNative from 'minimap_matcher-native';
 
 const logger = createLogger({ info: true, error: true, debug: false });
-const require = createRequire(import.meta.url);
 
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
 const LANDMARK_SIZE = 7;
-// --- KEY CHANGE #1 ---
 // The landmark pattern is now packed at 4-bits per pixel.
 // The C++ addon will now work with 25-byte keys instead of 49-byte keys.
 const LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2); // 25
@@ -26,20 +24,15 @@ const EXCLUDED_COLORS_RGB = [
 ];
 
 class MinimapMatcher {
-  constructor(nativeModulePath) {
-    if (!nativeModulePath) {
-      throw new Error('MinimapMatcher: nativeModulePath is required.');
-    }
+  constructor() {
     try {
-      const { MinimapMatcher: NativeMinimapMatcher } = require(nativeModulePath);
-      // Pass the NEW packed size to the C++ addon
-      this.nativeMatcher = new NativeMinimapMatcher({
+      this.nativeMatcher = new MinimapMatcherNative.MinimapMatcher({
         LANDMARK_SIZE,
-        LANDMARK_PATTERN_BYTES, // This will be 25
+        LANDMARK_PATTERN_BYTES,
         EXCLUDED_COLORS_RGB,
       });
     } catch (error) {
-      logger('error', `Failed to load native minimap matcher module from ${nativeModulePath}: ${error.message}`);
+      logger('error', `Failed to load native minimap matcher module: ${error.message}`);
       throw error;
     }
 

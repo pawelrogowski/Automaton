@@ -1,5 +1,4 @@
 import { parentPort, workerData, isMainThread } from 'worker_threads';
-import { createRequire } from 'module';
 import regionColorSequences from '../constants/regionColorSequeces.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -11,11 +10,10 @@ import path from 'path';
 import { PNG } from 'pngjs';
 // Import the new minimap matcher utility
 import { findMatchingMinimapTilesBruteForce } from '../utils/minimapMatcher.js';
+import X11Capture from 'x11-full-capture-native'; // Direct import
+import findSequencesNative from 'find-sequences-native'; // Direct import
 
-// Load X11Capture module
-const require = createRequire(import.meta.url);
-const { X11Capture } = require(workerData?.x11capturePath);
-const { findSequencesNative } = require(workerData?.findSequencesPath);
+// State
 
 // State
 let state = null;

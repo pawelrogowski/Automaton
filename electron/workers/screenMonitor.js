@@ -1,5 +1,4 @@
 import { parentPort, workerData } from 'worker_threads';
-import { createRequire } from 'module';
 import {
   regionColorSequences,
   resourceBars,
@@ -18,20 +17,8 @@ import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js
 import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
-
-const require = createRequire(import.meta.url);
-const paths = workerData?.paths || {};
-const x11capturePath = paths.x11capture;
-const findSequencesPath = paths.findSequences;
-let X11RegionCapture = null;
-let findSequencesNative = null;
-try {
-  ({ X11RegionCapture } = require(x11capturePath));
-  ({ findSequencesNative } = require(findSequencesPath));
-} catch (e) {
-  parentPort.postMessage({ fatalError: `Failed to load native modules in screenMonitor: ${e.message}` });
-  process.exit(1);
-}
+import X11RegionCapture from 'x11-region-capture-native';
+import findSequences from 'find-sequences-native';
 
 const TARGET_FPS = 32;
 const MINIMAP_CHANGE_INTERVAL = 500;
@@ -71,7 +58,7 @@ let lastKnownGoodHealthPercentage = null;
 let lastKnownGoodManaPercentage = null;
 let currentWindowId = null;
 
-const captureInstance = X11RegionCapture ? new X11RegionCapture() : null;
+const captureInstance = X11RegionCapture ? new X11RegionCapture.X11RegionCapture() : null;
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
 
@@ -118,7 +105,7 @@ function findBoundingRegionHelper(fullFrameDataBufferWithHeader, startSequence, 
   }
   try {
     const result = findBoundingRect(
-      findSequencesNative,
+      findSequences.findSequencesNative,
       fullFrameDataBufferWithHeader,
       startSequence,
       endSequence,
@@ -191,7 +178,7 @@ async function initializeRegions() {
   dimensions = { width: fullWindowBufferMetadata.width, height: fullWindowBufferMetadata.height };
   try {
     const fullFrameDataWithHeader = fullWindowBuffer;
-    startRegions = findSequencesNative(fullFrameDataWithHeader, regionColorSequences, null, 'first');
+    startRegions = findSequences.findSequencesNative(fullFrameDataWithHeader, regionColorSequences, null, 'first');
     initializeStandardRegions();
     initializeSpecialRegions(fullFrameDataWithHeader, dimensions.width, dimensions.height);
     initialized = true;
@@ -424,7 +411,7 @@ function handleMinimapChange() {
 
 function processDynamicRegions(regionDataMap) {
   const results = { cooldowns: {}, statusBar: {}, actionItems: {}, equipped: {}, isLoggedIn: false, isChatOff: false };
-  if (!regionDataMap || typeof findSequencesNative !== 'function') {
+  if (!regionDataMap || typeof findSequences?.findSequencesNative !== 'function') {
     return results;
   }
   const getRegionBufferWithHeader = (regionName) => {
@@ -442,7 +429,7 @@ function processDynamicRegions(regionDataMap) {
   const cooldownsBuffer = getRegionBufferWithHeader('cooldownsRegion');
   if (cooldownsRegionDef && cooldownsBuffer) {
     try {
-      results.cooldowns = findSequencesNative(cooldownsBuffer, cooldownColorSequences, null, 'first') || {};
+      results.cooldowns = findSequences.findSequencesNative(cooldownsBuffer, cooldownColorSequences, null, 'first') || {};
     } catch (e) {
       results.cooldowns = {};
     }
@@ -451,7 +438,7 @@ function processDynamicRegions(regionDataMap) {
   const statusBarBuffer = getRegionBufferWithHeader('statusBarRegion');
   if (statusBarRegionDef && statusBarBuffer) {
     try {
-      results.statusBar = findSequencesNative(statusBarBuffer, statusBarSequences, null, 'first') || {};
+      results.statusBar = findSequences.findSequencesNative(statusBarBuffer, statusBarSequences, null, 'first') || {};
     } catch (e) {
       results.statusBar = {};
     }
@@ -460,7 +447,7 @@ function processDynamicRegions(regionDataMap) {
   const overallActionBarsBuffer = getRegionBufferWithHeader('overallActionBarsRegion');
   if (overallActionBarsRegionDef && overallActionBarsBuffer) {
     try {
-      const rawFoundItemsMap = findSequencesNative(overallActionBarsBuffer, actionBarItems, null, 'first') || {};
+      const rawFoundItemsMap = findSequences.findSequencesNative(overallActionBarsBuffer, actionBarItems, null, 'first') || {};
       const filteredActionItems = {};
       for (const itemName in rawFoundItemsMap) {
         if (rawFoundItemsMap[itemName] !== null && rawFoundItemsMap[itemName] !== undefined) {
@@ -476,7 +463,7 @@ function processDynamicRegions(regionDataMap) {
   const amuletSlotBuffer = getRegionBufferWithHeader('amuletSlotRegion');
   if (amuletSlotRegionDef && amuletSlotBuffer) {
     try {
-      const foundItems = findSequencesNative(amuletSlotBuffer, equippedItems, null, 'first');
+      const foundItems = findSequences.findSequencesNative(amuletSlotBuffer, equippedItems, null, 'first');
       let detectedItemName = Object.keys(foundItems).find((key) => foundItems[key] !== null);
 
       // If "emptyAmuletSlot" is found, change it to "Empty"
@@ -498,7 +485,7 @@ function processDynamicRegions(regionDataMap) {
   const ringSlotBuffer = getRegionBufferWithHeader('ringSlotRegion');
   if (ringSlotRegionDef && ringSlotBuffer) {
     try {
-      const foundItems = findSequencesNative(ringSlotBuffer, equippedItems, null, 'first');
+      const foundItems = findSequences.findSequencesNative(ringSlotBuffer, equippedItems, null, 'first');
       let detectedItemName = Object.keys(foundItems).find((key) => foundItems[key] !== null);
 
       // If "emptyRingSlot" is found, change it to "Empty"
@@ -520,7 +507,7 @@ function processDynamicRegions(regionDataMap) {
   const bootsSlotBuffer = getRegionBufferWithHeader('bootsSlotRegion');
   if (bootsSlotRegionDef && bootsSlotBuffer) {
     try {
-      const foundItems = findSequencesNative(bootsSlotBuffer, equippedItems, null, 'first');
+      const foundItems = findSequences.findSequencesNative(bootsSlotBuffer, equippedItems, null, 'first');
       let detectedItemName = Object.keys(foundItems).find((key) => foundItems[key] !== null);
 
       // If "emptyBootsSlot" is found, change it to "Empty"
@@ -540,7 +527,12 @@ function processDynamicRegions(regionDataMap) {
   if (onlineMarkerRegionDef && onlineMarkerBuffer) {
     try {
       // Check if the online marker sequence is found within its region buffer
-      const foundOnlineMarker = findSequencesNative(onlineMarkerBuffer, { onlineMarker: regionColorSequences.onlineMarker }, null, 'first');
+      const foundOnlineMarker = findSequences.findSequencesNative(
+        onlineMarkerBuffer,
+        { onlineMarker: regionColorSequences.onlineMarker },
+        null,
+        'first',
+      );
       results.isLoggedIn = foundOnlineMarker?.onlineMarker !== null;
     } catch (e) {
       results.isLoggedIn = false;
@@ -553,7 +545,7 @@ function processDynamicRegions(regionDataMap) {
   if (chatOffRegionDef && chatOffBuffer) {
     try {
       // Check if the chat off sequence is found within its region buffer
-      const foundChatOff = findSequencesNative(chatOffBuffer, { chatOff: regionColorSequences.chatOff }, null, 'first');
+      const foundChatOff = findSequences.findSequencesNative(chatOffBuffer, { chatOff: regionColorSequences.chatOff }, null, 'first');
       results.isChatOff = foundChatOff?.chatOff !== null;
     } catch (e) {
       results.isChatOff = false;
@@ -605,11 +597,11 @@ function getBattleListEntries() {
   if (!battleListRegionDef || !battleListEntry?.data || battleListEntry.data.length < 8) {
     return [];
   }
-  if (typeof findSequencesNative !== 'function') {
+  if (typeof findSequences?.findSequencesNative !== 'function') {
     return [];
   }
   try {
-    const entries = findAllOccurrences(findSequencesNative, battleListEntry.data, battleListSequences.battleEntry, null);
+    const entries = findAllOccurrences(findSequences.findSequencesNative, battleListEntry.data, battleListSequences.battleEntry, null);
     return Array.isArray(entries) ? entries : [];
   } catch (e) {
     return [];
@@ -647,11 +639,16 @@ function checkPartyMemberStatus(partyListBufferWithHeader, nameRegionRelativeToP
   if (!partyListBufferWithHeader || partyListBufferWithHeader.length < 8 || !validateRegionDimensions(nameRegionRelativeToPartialBuffer)) {
     return false;
   }
-  if (typeof findSequencesNative !== 'function') {
+  if (typeof findSequences?.findSequencesNative !== 'function') {
     return false;
   }
   try {
-    const statusResult = findSequencesNative(partyListBufferWithHeader, PARTY_MEMBER_STATUS, nameRegionRelativeToPartialBuffer, 'first');
+    const statusResult = findSequences.findSequencesNative(
+      partyListBufferWithHeader,
+      PARTY_MEMBER_STATUS,
+      nameRegionRelativeToPartialBuffer,
+      'first',
+    );
     return statusResult && Object.values(statusResult).some((coords) => coords !== null);
   } catch (error) {
     return false;

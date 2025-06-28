@@ -1,9 +1,6 @@
-import { workerData } from 'worker_threads';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const keypress = require(workerData.paths.keypress);
+import keypress from 'keypress-native';
 
-export const keyPress = (windowId, key, rule = null) => {
+export const keyPress = (windowId, key) => {
   keypress.sendKey(parseInt(windowId), key);
 };
 

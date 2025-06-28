@@ -4,25 +4,8 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger({ info: true, error: true, warn: true });
 
-import { createRequire } from 'module';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { app } from 'electron';
 import workerManager from '../workerManager.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-let windowInfoPath;
-
-if (app.isPackaged) {
-  windowInfoPath = path.join(app.getAppPath(), '..', 'resources', 'x11utils', 'windowinfo.node');
-} else {
-  windowInfoPath = path.join(__dirname, '..', '..', 'resources', 'x11utils', 'windowinfo.node');
-}
-
-const require = createRequire(import.meta.url);
-const windowinfo = require(windowInfoPath);
+import windowinfo from 'windowinfo-native';
 
 let selectedWindowId = null;
 
