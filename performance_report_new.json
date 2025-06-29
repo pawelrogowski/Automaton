@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "reportGeneratedAt": "2025-06-29T21:08:55.121Z",
+    "status": "Periodic"
+  },
+  "summary": {
+    "testDurationSec": 100.17685704699159,
+    "totalFramesProcessed": 3147,
+    "targetFps": 32,
+    "actualAvgFps": 31.414441346705313,
+    "avgFrameTimeMs": 31.76605433655573,
+    "minFrameTimeMs": 29.91652700304985,
+    "maxFrameTimeMs": 375.25989401340485
+  },
+  "stages": {
+    "A2. Initial Region Find": {
+      "calls": 1,
+      "totalTimeMs": 43.18557599186897,
+      "minMs": 43.18557599186897,
+      "maxMs": 43.18557599186897,
+      "totalPixels": 2039040,
+      "avgMs": 43.18557599186897,
+      "avgMsPer1kPixels": 0.02117936675684095
+    },
+    "A. Initialize": {
+      "calls": 1,
+      "totalTimeMs": 358.0024369955063,
+      "minMs": 358.0024369955063,
+      "maxMs": 358.0024369955063,
+      "totalPixels": 0,
+      "avgMs": 358.0024369955063,
+      "avgMsPer1kPixels": 0
+    },
+    "B. Capture (memcpy)": {
+      "calls": 3146,
+      "totalTimeMs": 7701.950591653585,
+      "minMs": 0.7720720171928406,
+      "maxMs": 45.933218985795975,
+      "totalPixels": 6414819840,
+      "avgMs": 2.4481724703285397,
+      "avgMsPer1kPixels": 0.0012006495558343827
+    },
+    "C. Batch Search": {
+      "calls": 3146,
+      "totalTimeMs": 11432.397268772125,
+      "minMs": 1.050025999546051,
+      "maxMs": 313.25840601325035,
+      "totalPixels": 16271112,
+      "avgMs": 3.6339470021526146,
+      "avgMsPer1kPixels": 0.702619296626569
+    },
+    "D. Data Processing": {
+      "calls": 3146,
+      "totalTimeMs": 729.396378159523,
+      "minMs": 0.1330920159816742,
+      "maxMs": 12.158906012773514,
+      "totalPixels": 0,
+      "avgMs": 0.231848816961069,
+      "avgMsPer1kPixels": 0
+    }
+  }
+}
