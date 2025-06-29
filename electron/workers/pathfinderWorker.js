@@ -1,10 +1,8 @@
-// workers/pathfinderWorker.js
-
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import fs from 'fs';
 import path from 'path';
-import Pathfinder from 'pathfinder-native'; // Direct import
+import Pathfinder from 'pathfinder-native';
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
@@ -23,7 +21,22 @@ try {
 let state = null;
 let lastPlayerPosKey = null;
 let lastTargetWptId = null;
+const lastJsonForType = new Map();
+
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
+
+const WAYPOINT_AVOIDANCE_MAP = {
+  Node: 'cavebot',
+  Stand: 'cavebot',
+  Shovel: 'cavebot',
+  Rope: 'cavebot',
+  Machete: 'cavebot',
+  Ladder: 'cavebot',
+  Use: 'cavebot',
+  Action: 'cavebot',
+  Lure: 'targeting',
+  Attack: 'targeting',
+};
 
 function loadAllMapData() {
   if (pathfinderInstance.isLoaded) {
@@ -80,17 +93,33 @@ function runPathfindingLogic() {
       return;
     }
 
-    const nonPathableTypes = ['Action', 'Lure'];
-    if (nonPathableTypes.includes(targetWaypoint.type)) {
-      if (lastTargetWptId !== targetWaypoint.id) {
-        parentPort.postMessage({
-          storeUpdate: true,
-          type: 'cavebot/setPathfindingFeedback',
-          payload: { pathWaypoints: [], wptDistance: null },
-        });
-        lastTargetWptId = targetWaypoint.id;
+    const requiredAvoidanceType = WAYPOINT_AVOIDANCE_MAP[targetWaypoint.type];
+    if (requiredAvoidanceType) {
+      const relevantAreas = (state.cavebot?.specialAreas || []).filter((area) => area.enabled && area.type === requiredAvoidanceType);
+
+      const currentJson = JSON.stringify(relevantAreas);
+
+      if (currentJson !== lastJsonForType.get(requiredAvoidanceType)) {
+        logger('info', `Special areas for type "${requiredAvoidanceType}" have changed. Updating native cache...`);
+
+        // --- THE FIX: Map the data to the format C++ expects ---
+        const areasForNative = relevantAreas.map((area) => ({
+          x: area.x,
+          y: area.y,
+          z: area.z,
+          avoidance: area.avoidance,
+          // Translate sizeX/sizeY to width/height
+          width: area.sizeX,
+          height: area.sizeY,
+        }));
+
+        // Pass the correctly formatted data to the native module
+        pathfinderInstance.updateSpecialAreas(areasForNative);
+
+        // This line will now be reached, fixing the infinite loop.
+        lastJsonForType.set(requiredAvoidanceType, currentJson);
+        logger('info', 'Native cache updated.');
       }
-      return;
     }
 
     const { x, y, z } = state.gameState.playerMinimapPosition;
@@ -114,7 +143,6 @@ function runPathfindingLogic() {
     lastPlayerPosKey = currentPosKey;
     lastTargetWptId = targetWaypoint.id;
 
-    // --- MODIFICATION --- Pass a third argument with the waypoint type to the native addon.
     const result = pathfinderInstance.findPathSync(
       { x, y, z },
       { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
@@ -147,7 +175,7 @@ function start() {
   logger('info', 'Pathfinder worker started.');
   loadAllMapData();
   if (pathfinderInstance.isLoaded) {
-    setInterval(runPathfindingLogic, 1);
+    setInterval(runPathfindingLogic, 100);
   } else {
     logger('error', 'Pathfinder did not load map data, main loop will not start.');
   }

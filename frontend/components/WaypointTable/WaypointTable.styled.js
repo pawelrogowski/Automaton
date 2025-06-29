@@ -236,3 +236,32 @@ export const SectionNameInput = styled.input`
   width: 100px; /* Fixed width for consistency */
   flex-shrink: 0;
 `;
+
+export const ModeSwitchButton = styled.button`
+  background: none;
+  border: 1px solid #4a4a4a;
+  color: #ccc;
+  padding: 5px;
+  margin-right: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    color: #fff;
+    border-color: #6a6a6a;
+    background-color: #3a3a3a;
+  }
+
+  // Use the 'active' prop to change style
+  ${({ active }) =>
+    active &&
+    `
+    color: #00bfff;
+    border-color: #00bfff;
+    background-color: #2c3e50;
+  `}
+`;

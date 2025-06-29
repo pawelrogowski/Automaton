@@ -41,12 +41,19 @@ public:
 private:
     static Napi::FunctionReference constructor;
 
+    // Methods exposed to Node.js
     Napi::Value LoadMapData(const Napi::CallbackInfo& info);
     Napi::Value FindPathSync(const Napi::CallbackInfo& info);
     Napi::Value IsLoadedGetter(const Napi::CallbackInfo& info);
+    // New method to update the cache from JS
+    Napi::Value UpdateSpecialAreas(const Napi::CallbackInfo& info);
 
+    // Internal State
     std::unordered_map<int, MapData> allMapData;
     std::atomic<bool> isLoaded{false};
+
+    // The Cache: Stores a pre-calculated cost grid for each Z-level
+    std::unordered_map<int, std::vector<int>> cost_grid_cache;
 };
 
 #endif // PATHFINDER_H

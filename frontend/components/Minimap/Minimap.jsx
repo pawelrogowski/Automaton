@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, memo, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Stage, Layer, Image, Line, Circle } from 'react-konva';
+import { Stage, Layer, Image, Line, Circle, Rect } from 'react-konva';
 import useImage from 'use-image';
 import { addWaypoint, removeWaypoint, setwptSelection, setwptId } from '../../redux/slices/cavebotSlice.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -37,6 +37,7 @@ const Minimap = () => {
   const wptSelection = useSelector((state) => state.cavebot.wptSelection);
   const wptId = useSelector((state) => state.cavebot.wptId);
   const allPathWaypoints = useSelector((state) => state.cavebot.pathWaypoints);
+  const specialAreas = useSelector((state) => state.cavebot.specialAreas);
 
   // --- Component State ---
   const [mapMode, setMapMode] = useState('map');
@@ -46,14 +47,13 @@ const Minimap = () => {
   const [stagePos, setStagePos] = useState({ x: 32097, y: 32219 });
   const [stageScale, setStageScale] = useState(10);
   const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0, text: '' });
-  // This state now controls both menu types
   const [rightClickMenu, setRightClickMenu] = useState({
     visible: false,
     x: 0,
     y: 0,
-    type: null, // 'add' or 'delete'
-    targetPos: null, // for adding
-    targetId: null, // for deleting
+    type: null,
+    targetPos: null,
+    targetId: null,
     hoveredType: null,
   });
   const [isLockedToPlayer, setIsLockedToPlayer] = useState(true);
@@ -91,16 +91,12 @@ const Minimap = () => {
     () => ({ x: Math.floor(playerPosition.x), y: Math.floor(playerPosition.y) }),
     [playerPosition.x, playerPosition.y],
   );
+  const visibleSpecialAreas = useMemo(() => specialAreas.filter((area) => area.z === zLevel && area.enabled), [specialAreas, zLevel]);
 
   // --- Centering & Resizing Logic ---
   useEffect(() => {
     if (!isLockedToPlayer || !mapIndex) return;
-
-    // Update zLevel if player changes floors while locked
-    if (playerPosition.z !== zLevel) {
-      setZLevel(playerPosition.z);
-    }
-
+    if (playerPosition.z !== zLevel) setZLevel(playerPosition.z);
     const centerOfTileX = playerPosition.x + 0.5;
     const centerOfTileY = playerPosition.y + 0.5;
     setStagePos({
@@ -111,18 +107,14 @@ const Minimap = () => {
 
   useEffect(() => {
     const updateSize = () => {
-      if (minimapContainerRef.current) {
+      if (minimapContainerRef.current)
         setCanvasDimensions({ width: minimapContainerRef.current.clientWidth, height: minimapContainerRef.current.clientHeight });
-      }
     };
     updateSize();
     const onFullscreenChange = () => {
       const newFullscreenStatus = !!document.fullscreenElement;
       setIsFullscreen(newFullscreenStatus);
-      if (!newFullscreenStatus) {
-        // If exiting fullscreen, lock to player again
-        setIsLockedToPlayer(true);
-      }
+      if (!newFullscreenStatus) setIsLockedToPlayer(true);
       setTimeout(updateSize, 10);
     };
     document.addEventListener('fullscreenchange', onFullscreenChange);
@@ -130,23 +122,15 @@ const Minimap = () => {
   }, []);
 
   // --- UI Event Handlers ---
-  const handleZoom = (delta) => {
-    const scaleBy = 1.2;
-    const newScale = delta > 0 ? Math.min(MAX_ZOOM, stageScale * scaleBy) : Math.max(MIN_ZOOM, stageScale / scaleBy);
-    setStageScale(newScale);
-  };
   const handleZChange = (delta) => {
     setIsLockedToPlayer(false);
     setZLevel((prevZ) => Math.max(0, Math.min(15, prevZ + delta)));
   };
-  const handleLockToggle = () => setIsLockedToPlayer((prev) => !prev);
+  const handleLockToggle = useCallback(() => setIsLockedToPlayer((prev) => !prev), []);
   const handleFullscreenToggle = () => {
     if (!minimapContainerRef.current) return;
-    if (isFullscreen) {
-      document.exitFullscreen().catch((err) => console.error(err));
-    } else {
-      minimapContainerRef.current.requestFullscreen().catch((err) => console.error(err));
-    }
+    if (isFullscreen) document.exitFullscreen().catch((err) => console.error(err));
+    else minimapContainerRef.current.requestFullscreen().catch((err) => console.error(err));
   };
   const handleMapModeToggle = () => setMapMode((prevMode) => (prevMode === 'map' ? 'waypoint' : 'map'));
 
@@ -168,15 +152,11 @@ const Minimap = () => {
   };
 
   const handleMouseDown = (e) => {
-    // We only care about right-click
     if (e.evt.button !== 2) return;
     e.evt.preventDefault();
-
     const stage = e.target.getStage();
     const pointerPos = stage.getPointerPosition();
     if (!pointerPos) return;
-
-    // Check if the click target is a waypoint (`Circle`)
     if (e.target.className === 'Circle') {
       const waypointId = e.target.attrs.id;
       setRightClickMenu({
@@ -189,7 +169,6 @@ const Minimap = () => {
         hoveredType: null,
       });
     } else {
-      // Otherwise, it's a background click to add a waypoint
       if (!mapIndex) return;
       const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
       const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
@@ -210,42 +189,34 @@ const Minimap = () => {
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       if (!rightClickMenu.visible) return;
-
-      // Handle adding a waypoint
       if (rightClickMenu.type === 'add' && rightClickMenu.hoveredType && rightClickMenu.targetPos) {
-        const { x, y, z } = rightClickMenu.targetPos;
-        const type = rightClickMenu.hoveredType;
-        dispatch(addWaypoint({ id: uuidv4(), type, x, y, z, range: 1, action: type === 'Action' ? 'Enter your action' : '' }));
-      }
-      // Handle deleting a waypoint
-      else if (rightClickMenu.type === 'delete' && rightClickMenu.hoveredType === 'Delete' && rightClickMenu.targetId) {
+        dispatch(
+          addWaypoint({
+            id: uuidv4(),
+            type: rightClickMenu.hoveredType,
+            ...rightClickMenu.targetPos,
+            range: 1,
+            action: rightClickMenu.hoveredType === 'Action' ? 'Enter your action' : '',
+          }),
+        );
+      } else if (rightClickMenu.type === 'delete' && rightClickMenu.hoveredType === 'Delete' && rightClickMenu.targetId) {
         dispatch(removeWaypoint(rightClickMenu.targetId));
       }
-
-      // Always reset the menu state on mouse up
       setRightClickMenu({ visible: false, x: 0, y: 0, type: null, targetPos: null, targetId: null, hoveredType: null });
     };
     window.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => {
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-    };
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [rightClickMenu, dispatch]);
 
-  // This handler is now only for left-click selection
   const handleWaypointClick = (e, waypointId) => {
-    if (e.evt.button === 2) return; // Ignore right-clicks
-    dispatch(setwptSelection(waypointId));
+    if (e.evt.button !== 2) dispatch(setwptSelection(waypointId));
   };
-
   const handleWaypointDoubleClick = (waypointId) => dispatch(setwptId(waypointId));
-
   const markerSize = Math.max(8, Math.min(16, stageScale * 1.5));
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.code === 'Space') {
-        handleLockToggle();
-      }
+      if (e.code === 'Space') handleLockToggle();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -274,7 +245,6 @@ const Minimap = () => {
             </svg>
           </ControlButton>
         </ControlGroup>
-
         <ControlGroup>
           <ControlButton position="single" onClick={handleLockToggle} active={isLockedToPlayer} title="Center on Player">
             <div style={{ width: '12px', height: '12px', border: '2px solid currentColor', borderRadius: '50%' }}></div>
@@ -346,6 +316,21 @@ const Minimap = () => {
         >
           <Layer imageSmoothingEnabled={false}>
             {mapImageStatus === 'loaded' && mapIndex && <Image image={mapImage} x={mapIndex.minX} y={mapIndex.minY} />}
+
+            {visibleSpecialAreas.map((area) => (
+              <Rect
+                key={area.id}
+                x={area.x}
+                y={area.y}
+                width={area.sizeX}
+                height={area.sizeY}
+                fill="rgba(0, 100, 255, 0.4)"
+                stroke="rgba(100, 150, 255, 0.8)"
+                strokeWidth={1 / stageScale}
+                listening={false}
+              />
+            ))}
+
             <Line
               points={visiblePathPoints}
               stroke="rgb(255, 0, 242)"
@@ -357,16 +342,16 @@ const Minimap = () => {
               shadowOffset={{ x: 0, y: 0 }}
               shadowOpacity={0.8}
             />
+
             {visibleWaypoints.map((waypoint) => {
               const isSelected = waypoint.id === wptSelection;
               const isActive = waypoint.id === wptId;
               const strokeColor = isActive ? '#00FF00' : isSelected ? '#00FFFF' : 'black';
               const strokeWidth = isActive ? 3 : isSelected ? 2 : 1;
-
               return (
                 <Circle
                   key={waypoint.id}
-                  id={waypoint.id} // Pass id so we can read it from the event target
+                  id={waypoint.id}
                   x={waypoint.x + 0.5}
                   y={waypoint.y + 0.5}
                   radius={DOT_MARKER_RADIUS / stageScale}
@@ -390,11 +375,11 @@ const Minimap = () => {
                 />
               );
             })}
-            {/* Player Position Marker (always visible, on map coordinates) */}
+
             <Circle
               x={playerPosition.x + 0.5}
               y={playerPosition.y + 0.5}
-              radius={markerSize / 2 / stageScale} // Adjust radius based on markerSize and stageScale
+              radius={markerSize / 2 / stageScale}
               fill="red"
               stroke="white"
               strokeWidth={1.5 / stageScale}
@@ -406,8 +391,9 @@ const Minimap = () => {
           </Layer>
         </Stage>
       </div>
-      {/* Player Position Marker (visual cue for locked state) */}
+
       {isLockedToPlayer && <StyledPlayerMarker size={markerSize} />}
+
       <span
         style={{
           position: 'absolute',
@@ -423,6 +409,7 @@ const Minimap = () => {
       >
         {playerTile.x},{playerTile.y},{zLevel}
       </span>
+
       {tooltip.visible && (
         <div
           style={{
