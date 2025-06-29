@@ -6,18 +6,18 @@ const logger = createLogger({ info: true, error: true, debug: false });
 
 // --- CONFIGURATION ---
 const SPECIAL_WAYPOINT_TYPES = ['Stand', 'Machete', 'Rope', 'Shovel'];
-const SPECIAL_WAYPOINT_DELAY_MS = 500;
+const SPECIAL_WAYPOINT_DELAY_MS = 400; // Delay upon ARRIVAL at a special waypoint.
 
-// --- ADAPTIVE LEARNING CONFIGURATION ---
-const INITIAL_MOVE_DURATION_MS = 250;
-const SAFETY_BUFFER_MS = 50;
-const CALIBRATION_PATH_LENGTH = 5;
-const MOVE_TIMEOUT_MS = 500;
+// --- NEW FIXED SPEED CONFIGURATION ---
+const STANDARD_WALK_DELAY_MS = 50; // Standard speed for normal pathing.
+const APPROACH_WALK_DELAY_MS = 300; // Slower speed when approaching the target.
+const APPROACH_DISTANCE_THRESHOLD = 2; // The distance (in tiles) at which to start slowing down.
+const MOVE_TIMEOUT_MS = 1000; // Timeout before a move is considered failed/stuck.
 // --- END CONFIGURATION ---
 
 // --- Worker State ---
 let appState = null;
-let learnedMoveSpeedMs = INITIAL_MOVE_DURATION_MS;
+// The `learnedMoveSpeedMs` variable is no longer needed.
 
 // --- Helper Functions ---
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -51,14 +51,10 @@ function advanceToNextWaypoint() {
 
   const { waypointSections, currentSection, wptId } = appState.cavebot;
   const waypoints = waypointSections[currentSection]?.waypoints || [];
-  if (waypoints.length === 0) {
-    return;
-  }
+  if (waypoints.length === 0) return;
 
   const currentIndex = waypoints.findIndex((wp) => wp.id === wptId);
-  if (currentIndex === -1) {
-    return;
-  }
+  if (currentIndex === -1) return;
 
   const nextIndex = (currentIndex + 1) % waypoints.length;
   const nextWpt = waypoints[nextIndex];
@@ -73,26 +69,7 @@ function advanceToNextWaypoint() {
   }
 }
 
-function isStraightPath(path, length) {
-  if (!path || path.length < length) return false;
-  if (path.length < 2) return false;
-
-  const firstStep = path[0];
-  const secondStep = path[1];
-  const dx = secondStep.x - firstStep.x;
-  const dy = secondStep.y - firstStep.y;
-
-  for (let i = 1; i < length - 1; i++) {
-    if (i + 1 >= path.length) return false;
-
-    const current = path[i];
-    const next = path[i + 1];
-    if (next.x - current.x !== dx || next.y - current.y !== dy) {
-      return false;
-    }
-  }
-  return true;
-}
+// The `isStraightPath` function is no longer needed.
 
 /**
  * The main logic loop for the path follower.
@@ -106,7 +83,6 @@ async function mainLoop() {
     }
 
     const { playerMinimapPosition } = appState.gameState;
-    // Destructure wptDistance here. This is crucial for the fix.
     const { waypointSections, currentSection, wptId, pathWaypoints, wptDistance } = appState.cavebot;
     const targetWaypoint = waypointSections[currentSection]?.waypoints.find((wp) => wp.id === wptId);
 
@@ -114,16 +90,14 @@ async function mainLoop() {
       continue;
     }
 
-    // Check for Z-level mismatch. This logic is correct.
     if (playerMinimapPosition.z !== targetWaypoint.z) {
       advanceToNextWaypoint();
-      // Add a slightly longer delay for Z-level changes to allow state to settle
       await sleep(100);
       continue;
     }
 
-    // This block handles walking along a calculated path. It is unchanged and correct.
     if (pathWaypoints.length > 0) {
+      // --- NEW SIMPLIFIED WALKING LOGIC ---
       const positionBeforeMove = { ...playerMinimapPosition };
       const nextStep = pathWaypoints[0];
       const moveKey = getDirectionKey(positionBeforeMove, nextStep);
@@ -132,82 +106,46 @@ async function mainLoop() {
         continue; // Already at the next step, wait for path update
       }
 
-      const isLastStep = pathWaypoints.length === 1;
-      const isSpecialTarget = SPECIAL_WAYPOINT_TYPES.includes(targetWaypoint.type);
-      const isCalibrating = isStraightPath(pathWaypoints, CALIBRATION_PATH_LENGTH);
+      // Determine the correct delay based on the distance to the final waypoint.
+      const walkDelay = wptDistance <= APPROACH_DISTANCE_THRESHOLD ? APPROACH_WALK_DELAY_MS : STANDARD_WALK_DELAY_MS;
 
-      // --- Mode 3: The Specialist (Final move to special waypoint) ---
-      if (isLastStep && isSpecialTarget) {
-        logger('info', `Performing final move to special waypoint "${targetWaypoint.type}".`);
-        keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
-        await sleep(SPECIAL_WAYPOINT_DELAY_MS);
+      logger('info', `Walking. Distance: ${wptDistance}, Delay: ${walkDelay}ms`);
 
-        // --- Mode 1: The Calibrator (High-speed on straight paths) ---
-      } else if (isCalibrating) {
-        const moveStartTime = Date.now();
-        keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
-        // Fast polling loop to precisely measure move time
-        while (
-          appState.gameState.playerMinimapPosition.x === positionBeforeMove.x &&
-          appState.gameState.playerMinimapPosition.y === positionBeforeMove.y
-        ) {
-          if (Date.now() - moveStartTime > MOVE_TIMEOUT_MS) {
-            logger('warn', 'Calibration move timed out.');
-            break;
-          }
-          await sleep(5); // Poll very quickly
+      const moveStartTime = Date.now();
+      keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
+
+      // Wait for the determined duration.
+      await sleep(walkDelay);
+
+      // After the wait, quickly check to ensure the move actually happened, in case of lag.
+      while (
+        appState.gameState.playerMinimapPosition.x === positionBeforeMove.x &&
+        appState.gameState.playerMinimapPosition.y === positionBeforeMove.y
+      ) {
+        if (Date.now() - moveStartTime > MOVE_TIMEOUT_MS) {
+          logger('warn', 'Paced move timed out. Character may be stuck.');
+          break;
         }
-        // If move was successful, update our learned speed
-        if (
-          appState.gameState.playerMinimapPosition.x !== positionBeforeMove.x ||
-          appState.gameState.playerMinimapPosition.y !== positionBeforeMove.y
-        ) {
-          const duration = Date.now() - moveStartTime;
-          learnedMoveSpeedMs = Math.round((learnedMoveSpeedMs * 3 + duration) / 4);
-          logger('info', `Move confirmed in ${duration}ms. New learned speed: ${learnedMoveSpeedMs}ms.`);
-        }
-
-        // --- Mode 2: The Pacer (Reliable walking on turns or short paths) ---
-      } else {
-        logger('info', `Pacing move with learned speed: ${learnedMoveSpeedMs}ms`);
-        const moveStartTime = Date.now();
-        keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
-        await sleep(learnedMoveSpeedMs + SAFETY_BUFFER_MS);
-
-        // After the wait, quickly check to ensure the move actually happened
-        while (
-          appState.gameState.playerMinimapPosition.x === positionBeforeMove.x &&
-          appState.gameState.playerMinimapPosition.y === positionBeforeMove.y
-        ) {
-          if (Date.now() - moveStartTime > MOVE_TIMEOUT_MS) {
-            logger('warn', 'Paced move timed out. Character may be stuck.');
-            break;
-          }
-          await sleep(20);
-        }
+        await sleep(20);
       }
+      // --- END NEW WALKING LOGIC ---
     } else {
-      // --- ROBUST ARRIVAL LOGIC (THE FIX) ---
-      // This block now handles two cases:
-      // 1. We have genuinely arrived at the waypoint (`wptDistance === 0`).
-      // 2. We are waiting for the pathfinder to generate a new path (`wptDistance` is null or > 0).
-
-      // Condition for being TRULY "at" the waypoint. This is an unambiguous signal from the pathfinder.
+      // --- ARRIVAL LOGIC ---
+      // This block is only entered when the path is empty. We confirm arrival
+      // by checking if the pathfinder has told us the distance is 0.
       if (wptDistance === 0) {
         logger('info', `Arrival confirmed at waypoint ${targetWaypoint.id}.`);
+
         // Handle special waypoint delays upon arrival.
         if (SPECIAL_WAYPOINT_TYPES.includes(targetWaypoint.type)) {
           logger('info', `Arrived at special waypoint "${targetWaypoint.type}". Pausing...`);
           await sleep(SPECIAL_WAYPOINT_DELAY_MS);
         }
+
         // Now that we've handled the arrival, advance to the next waypoint.
         advanceToNextWaypoint();
-        await sleep(50); // A small delay to allow the state update to be dispatched.
+        await sleep(50);
       }
-      // If pathWaypoints is empty but wptDistance is NOT 0 (i.e., it's null or > 0),
-      // it means we are waiting for the pathfinder. In this case, we do nothing and
-      // simply let the loop continue, effectively polling for the new path. This
-      // prevents the race condition.
     }
   }
 }
