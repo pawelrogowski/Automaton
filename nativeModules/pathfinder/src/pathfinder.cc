@@ -20,7 +20,7 @@ struct SpecialArea {
 };
 
 namespace AStar {
-    // isWalkable, heuristic, and findNearestWalkable are shared and unchanged.
+    // isWalkable is shared and unchanged.
     bool isWalkable(int x, int y, const MapData& mapData) {
         if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
         int linearIndex = y * mapData.width + x;
@@ -29,10 +29,12 @@ namespace AStar {
         return (mapData.grid[byteIndex] & (1 << bitIndex)) != 0;
     }
 
+    // REVERTED: Heuristic back to Manhattan distance, as it's more suitable with high diagonal costs.
     int heuristic(const Node& a, const Node& b) {
         return (std::abs(a.x - b.x) + std::abs(a.y - b.y)) * 10;
     }
 
+    // findNearestWalkable is shared and unchanged.
     Node findNearestWalkable(const Node& point, const MapData& mapData) {
         if (isWalkable(point.x, point.y, mapData)) return point;
         for (int dy = -1; dy <= 1; ++dy) {
@@ -49,11 +51,14 @@ namespace AStar {
     }
 
     // --- VERSION 1: The fast, default A* without cost grid logic ---
+    // EDITED: Removed turn penalty. Diagonals are now always allowed but have a very high cost.
     std::vector<Node> findPath(const Node& start, const Node& end, const Node& heuristicTarget, const MapData& mapData, std::function<void()> onCancelled) {
         std::vector<Node> path;
         std::vector<Node*> allNodes;
-        const int TURN_PENALTY = 10;
         const int BASE_MOVE_COST = 10;
+        // A diagonal move costs the same as 5 straight moves.
+        const int DIAGONAL_MOVE_COST = 50;
+
         auto cmp = [](const Node* left, const Node* right) { if (left->f() != right->f()) return left->f() > right->f(); return left->h > right->h; };
         std::priority_queue<Node*, std::vector<Node*>, decltype(cmp)> openSet(cmp);
         std::unordered_map<Node, int, NodeHash> gCostMap;
@@ -69,16 +74,18 @@ namespace AStar {
             openSet.pop();
             if (gCostMap.count(*current) && current->g > gCostMap.at(*current)) continue;
             if (current->x == end.x && current->y == end.y) { finalNode = current; break; }
+
             for (int dx = -1; dx <= 1; ++dx) {
                 for (int dy = -1; dy <= 1; ++dy) {
-                    if (dx == 0 && dy == 0 || (dx != 0 && dy != 0)) continue;
+                    if (dx == 0 && dy == 0) continue;
+
                     int nextX = current->x + dx, nextY = current->y + dy;
                     if (!isWalkable(nextX, nextY, mapData)) continue;
-                    int turnPenalty = 0;
-                    if (current->parent && ((current->x - current->parent->x) != dx || (current->y - current->parent->y) != dy)) {
-                        turnPenalty = TURN_PENALTY;
-                    }
-                    int newG = current->g + BASE_MOVE_COST + turnPenalty;
+
+                    bool isDiagonal = (dx != 0 && dy != 0);
+                    int moveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                    int newG = current->g + moveCost;
+
                     Node neighborTemplate = {nextX, nextY, 0, 0, nullptr, current->z};
                     auto it = gCostMap.find(neighborTemplate);
                     if (it != gCostMap.end() && newG >= it->second) continue;
@@ -99,11 +106,14 @@ namespace AStar {
     }
 
     // --- VERSION 2: The A* that handles cost grids ---
+    // EDITED: Removed turn penalty. Diagonals are now always allowed but have a very high cost.
     std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const Node& heuristicTarget, const MapData& mapData, const std::vector<int>& cost_grid, std::function<void()> onCancelled) {
         std::vector<Node> path;
         std::vector<Node*> allNodes;
-        const int TURN_PENALTY = 10;
         const int BASE_MOVE_COST = 10;
+        // A diagonal move costs the same as 5 straight moves.
+        const int DIAGONAL_MOVE_COST = 50;
+
         auto cmp = [](const Node* left, const Node* right) { if (left->f() != right->f()) return left->f() > right->f(); return left->h > right->h; };
         std::priority_queue<Node*, std::vector<Node*>, decltype(cmp)> openSet(cmp);
         std::unordered_map<Node, int, NodeHash> gCostMap;
@@ -119,22 +129,24 @@ namespace AStar {
             openSet.pop();
             if (gCostMap.count(*current) && current->g > gCostMap.at(*current)) continue;
             if (current->x == end.x && current->y == end.y) { finalNode = current; break; }
+
             for (int dx = -1; dx <= 1; ++dx) {
                 for (int dy = -1; dy <= 1; ++dy) {
-                    if (dx == 0 && dy == 0 || (dx != 0 && dy != 0)) continue;
+                    if (dx == 0 && dy == 0) continue;
+
                     int nextX = current->x + dx, nextY = current->y + dy;
                     if (!isWalkable(nextX, nextY, mapData)) continue;
+
                     int additional_cost = 0;
                     int cost_grid_index = nextY * mapData.width + nextX;
                     if(cost_grid_index >= 0 && cost_grid_index < cost_grid.size()) {
                         additional_cost = cost_grid[cost_grid_index];
                     }
-                    int moveCost = BASE_MOVE_COST + additional_cost;
-                    int turnPenalty = 0;
-                    if (current->parent && ((current->x - current->parent->x) != dx || (current->y - current->parent->y) != dy)) {
-                        turnPenalty = TURN_PENALTY;
-                    }
-                    int newG = current->g + moveCost + turnPenalty;
+
+                    bool isDiagonal = (dx != 0 && dy != 0);
+                    int moveCost = (isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST) + additional_cost;
+                    int newG = current->g + moveCost;
+
                     Node neighborTemplate = {nextX, nextY, 0, 0, nullptr, current->z};
                     auto it = gCostMap.find(neighborTemplate);
                     if (it != gCostMap.end() && newG >= it->second) continue;

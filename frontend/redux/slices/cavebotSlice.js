@@ -30,6 +30,7 @@ const initialState = {
   currentSection: 'default',
   wptDistance: 0,
   routeSearchMs: 0,
+  standTime: 0, // Time in ms the player has been stationary
   waypointSections: {
     default: {
       name: 'Default',
@@ -37,7 +38,6 @@ const initialState = {
     },
   },
   pathWaypoints: [],
-  retryMoveDelayMs: 250,
   // The main array for our special avoidance areas
   specialAreas: [],
 };
@@ -78,8 +78,8 @@ const cavebotSlice = createSlice({
       state.routeSearchMs = routeSearchMs;
     },
 
-    setRetryMoveDelayMs: (state, action) => {
-      state.retryMoveDelayMs = action.payload;
+    setStandTime: (state, action) => {
+      state.standTime = action.payload;
     },
 
     // --- WAYPOINT-SPECIFIC REDUCERS ---
@@ -264,7 +264,7 @@ export const {
   setwptId,
   setwptSelection,
   setPathfindingFeedback,
-  setRetryMoveDelayMs,
+  setStandTime,
   // Waypoints
   addWaypoint,
   removeWaypoint,
