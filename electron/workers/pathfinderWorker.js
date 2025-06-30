@@ -70,7 +70,7 @@ function handleStuckCondition() {
   if (!state || !state.cavebot) return;
 
   const { enabled, wptDistance, standTime, pathWaypoints } = state.cavebot;
-  const isStuck = enabled && wptDistance > 0 && standTime > 750;
+  const isStuck = enabled && wptDistance > 0 && standTime > 1000;
 
   if (isStuck && !isApplyingTemporaryBlock) {
     isApplyingTemporaryBlock = true;

@@ -110,7 +110,8 @@
     "windowinfo-native": "file:./nativeModules/windowInfo",
     "pathfinder-native": "file:./nativeModules/pathfinder",
     "x11-region-capture-native": "file:./nativeModules/x11RegionCapture",
-    "find-sequences-native": "file:./nativeModules/findSequences"
+    "find-sequences-native": "file:./nativeModules/findSequences",
+    "font-ocr": "file:./nativeModules/fontOcr"
   },
   "devDependencies": {
     "@babel/core": "^7.23.6",

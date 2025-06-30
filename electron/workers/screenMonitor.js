@@ -21,14 +21,22 @@ import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
 import X11RegionCapture from 'x11-region-capture-native';
 import findSequences from 'find-sequences-native';
+import fontOcr from 'font-ocr';
+import { PNG } from 'pngjs';
 
 // --- Constants and Performance Reporter ---
 const TARGET_FPS = 32;
 const MINIMAP_CHANGE_INTERVAL = 500;
 const LOG_RULE_INPUT = false;
-const REPORT_FILENAME = 'performance_report_new.json'; // Use a new name for comparison
+
+// --- Performance Reporting Configuration ---
+const ENABLE_PERFORMANCE_REPORTING = false; // Set to true to enable performance logging
+const REPORT_FILENAME = 'performance_report_new.json';
 const REPORT_INTERVAL_MS = 10000;
 
+/**
+ * A real performance reporter that collects and saves metrics.
+ */
 class PerformanceReporter {
   constructor() {
     this.metrics = {};
@@ -135,7 +143,67 @@ class PerformanceReporter {
     }
   }
 }
-const perfReporter = new PerformanceReporter();
+
+/**
+ * A dummy reporter that does nothing. Used when performance reporting is disabled
+ * to avoid conditional checks throughout the code, ensuring minimal overhead.
+ */
+class NoOpPerformanceReporter {
+  start() {}
+  end() {}
+  startFrame() {}
+  endFrame() {}
+  generateReport() {}
+}
+
+// Conditionally create either a real reporter or a no-op one.
+const perfReporter = ENABLE_PERFORMANCE_REPORTING ? new PerformanceReporter() : new NoOpPerformanceReporter();
+
+/**
+ * Reads a directory of PNG files and constructs a font atlas object.
+ * @param {string} dirPath - The path to your font atlas directory.
+ * @returns {object} The font atlas object ready to be sent to C++.
+ */
+function loadAtlasFromDirectory(dirPath) {
+  console.log(`Loading font atlas from: ${dirPath}`);
+  const atlas = {};
+  const files = fs.readdirSync(dirPath);
+
+  // Mapping for special filenames to their character representation
+  const specialCharMap = {
+    comma: ',',
+    period: '.',
+    colon: ':',
+    fslash: '/',
+    lSqBracket: '[',
+    rSqBracket: ']',
+    // Add any other special mappings here, e.g., 'exclamation_mark': '!'
+  };
+
+  for (const file of files) {
+    if (path.extname(file).toLowerCase() !== '.png') {
+      continue;
+    }
+
+    const basename = path.basename(file, '.png');
+    const char = specialCharMap[basename] || basename;
+
+    try {
+      const buffer = fs.readFileSync(path.join(dirPath, file));
+      const png = PNG.sync.read(buffer);
+
+      atlas[char] = {
+        width: png.width,
+        height: png.height,
+        data: png.data, // This is an RGBA buffer
+      };
+    } catch (e) {
+      console.error(`Failed to load/parse character template: ${file}`, e);
+    }
+  }
+  console.log(`Atlas loaded with ${Object.keys(atlas).length} characters.`);
+  return atlas;
+}
 
 // --- State Variables ---
 let state = null;
@@ -155,7 +223,8 @@ let hpManaRegionDef,
   ringSlotRegionDef,
   bootsSlotRegionDef,
   onlineMarkerRegionDef,
-  chatOffRegionDef;
+  chatOffRegionDef,
+  ocrTestRegionDef;
 let healthBarAbsolute, manaBarAbsolute;
 let lastMinimapChangeTime = null;
 let minimapChanged = false;
@@ -185,7 +254,8 @@ function resetState() {
     bootsSlotRegionDef,
     onlineMarkerRegionDef,
     chatOffRegionDef,
-  ] = Array(12).fill(null);
+    ocrTestRegionDef,
+  ] = Array(13).fill(null);
   [healthBarAbsolute, manaBarAbsolute] = Array(2).fill(null);
   lastKnownGoodHealthPercentage = null;
   lastKnownGoodManaPercentage = null;
@@ -308,6 +378,8 @@ async function initialize() {
       600,
       100,
     );
+
+    ocrTestRegionDef = { x: 180, y: 790, width: 500, height: 351 };
 
     initialized = true;
     shouldRestart = false;
@@ -455,6 +527,15 @@ async function mainLoopIteration() {
     const totalPixelsSearched = Object.values(searchTasks).reduce((sum, task) => sum + task.searchArea.width * task.searchArea.height, 0);
     perfReporter.end('C. Batch Search', totalPixelsSearched);
 
+    if (ocrTestRegionDef) {
+      perfReporter.start('F. OCR');
+      const ocrText = fontOcr.recognizeText(fullWindowBuffer, ocrTestRegionDef);
+      if (ocrText) {
+        console.log(`OCR Found: "${ocrText}"`);
+      }
+      perfReporter.end('F. OCR');
+    }
+
     perfReporter.start('D. Data Processing');
 
     const { newHealthPercentage, newManaPercentage } =
@@ -549,6 +630,18 @@ async function mainLoopIteration() {
 }
 
 async function start() {
+  try {
+    const atlasPath = path.join(process.cwd(), 'font_atlas');
+    if (fs.existsSync(atlasPath)) {
+      const fontAtlasObject = loadAtlasFromDirectory(atlasPath);
+      fontOcr.loadFontAtlas(fontAtlasObject);
+    } else {
+      console.error(`CRITICAL: Font atlas directory not found at '${atlasPath}'. OCR will not work.`);
+    }
+  } catch (e) {
+    console.error('CRITICAL: Failed to load font atlas.', e);
+  }
+
   while (true) {
     await mainLoopIteration();
   }
