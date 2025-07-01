@@ -12,12 +12,12 @@
       "conditions": [
         ['OS=="linux"', {
           "defines": [
-            # --- FIX: Tell node-addon-api that we are disabling exceptions ---
             "NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS=1"
           ],
           "cflags_cc": [
-            # --- Build Optimizations from the Guide ---
+            # --- Build Optimizations ---
             "-O3",              # Maximum optimization level
+            "-std=c++17",       # Explicitly set the C++ standard for consistency
             "-march=native",    # Generate code for the specific CPU it's compiled on
             "-mtune=native",    # Tune instruction scheduling for the specific CPU
             "-flto",            # Enable Link-Time Optimization

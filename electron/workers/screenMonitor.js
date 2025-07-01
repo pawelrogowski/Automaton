@@ -22,7 +22,11 @@ import { delay, calculateDelayTime, createRegion, validateRegionDimensions } fro
 import X11RegionCapture from 'x11-region-capture-native';
 import findSequences from 'find-sequences-native';
 import fontOcr from 'font-ocr';
-import { PNG } from 'pngjs';
+
+// +++ ADDED +++
+// Import the pre-generated, data-driven font atlas.
+// IMPORTANT: Adjust this path to point to your actual font-data.js file.
+import fontAtlasData from '../../font_atlas/font-data.js';
 
 // --- Constants and Performance Reporter ---
 const TARGET_FPS = 32;
@@ -159,51 +163,10 @@ class NoOpPerformanceReporter {
 // Conditionally create either a real reporter or a no-op one.
 const perfReporter = ENABLE_PERFORMANCE_REPORTING ? new PerformanceReporter() : new NoOpPerformanceReporter();
 
-/**
- * Reads a directory of PNG files and constructs a font atlas object.
- * @param {string} dirPath - The path to your font atlas directory.
- * @returns {object} The font atlas object ready to be sent to C++.
- */
-function loadAtlasFromDirectory(dirPath) {
-  console.log(`Loading font atlas from: ${dirPath}`);
-  const atlas = {};
-  const files = fs.readdirSync(dirPath);
-
-  // Mapping for special filenames to their character representation
-  const specialCharMap = {
-    comma: ',',
-    period: '.',
-    colon: ':',
-    fslash: '/',
-    lSqBracket: '[',
-    rSqBracket: ']',
-    // Add any other special mappings here, e.g., 'exclamation_mark': '!'
-  };
-
-  for (const file of files) {
-    if (path.extname(file).toLowerCase() !== '.png') {
-      continue;
-    }
-
-    const basename = path.basename(file, '.png');
-    const char = specialCharMap[basename] || basename;
-
-    try {
-      const buffer = fs.readFileSync(path.join(dirPath, file));
-      const png = PNG.sync.read(buffer);
-
-      atlas[char] = {
-        width: png.width,
-        height: png.height,
-        data: png.data, // This is an RGBA buffer
-      };
-    } catch (e) {
-      console.error(`Failed to load/parse character template: ${file}`, e);
-    }
-  }
-  console.log(`Atlas loaded with ${Object.keys(atlas).length} characters.`);
-  return atlas;
-}
+// --- REMOVED ---
+// The old `loadAtlasFromDirectory` function is no longer needed.
+// The `font-data.js` file and its internal `loadCharData` function
+// have replaced this logic.
 
 // --- State Variables ---
 let state = null;
@@ -224,7 +187,7 @@ let hpManaRegionDef,
   bootsSlotRegionDef,
   onlineMarkerRegionDef,
   chatOffRegionDef,
-  ocrTestRegionDef;
+  gameLogRegionDef;
 let healthBarAbsolute, manaBarAbsolute;
 let lastMinimapChangeTime = null;
 let minimapChanged = false;
@@ -254,7 +217,7 @@ function resetState() {
     bootsSlotRegionDef,
     onlineMarkerRegionDef,
     chatOffRegionDef,
-    ocrTestRegionDef,
+    gameLogRegionDef,
   ] = Array(13).fill(null);
   [healthBarAbsolute, manaBarAbsolute] = Array(2).fill(null);
   lastKnownGoodHealthPercentage = null;
@@ -379,7 +342,7 @@ async function initialize() {
       100,
     );
 
-    ocrTestRegionDef = { x: 180, y: 790, width: 500, height: 351 };
+    gameLogRegionDef = { x: 808, y: 695, width: 125, height: 11 };
 
     initialized = true;
     shouldRestart = false;
@@ -527,11 +490,12 @@ async function mainLoopIteration() {
     const totalPixelsSearched = Object.values(searchTasks).reduce((sum, task) => sum + task.searchArea.width * task.searchArea.height, 0);
     perfReporter.end('C. Batch Search', totalPixelsSearched);
 
-    if (ocrTestRegionDef) {
+    if (gameLogRegionDef) {
       perfReporter.start('F. OCR');
-      const ocrText = fontOcr.recognizeText(fullWindowBuffer, ocrTestRegionDef);
-      if (ocrText) {
-        console.log(`OCR Found: "${ocrText}"`);
+      const detectedText = fontOcr.recognizeText(fullWindowBuffer, gameLogRegionDef);
+      if (detectedText) {
+        // Log the detected text from the game's log region
+        console.log(`[Game Log]: ${detectedText}`);
       }
       perfReporter.end('F. OCR');
     }
@@ -630,14 +594,13 @@ async function mainLoopIteration() {
 }
 
 async function start() {
+  // --- MODIFIED: Use the new data-driven font loading ---
   try {
-    const atlasPath = path.join(process.cwd(), 'font_atlas');
-    if (fs.existsSync(atlasPath)) {
-      const fontAtlasObject = loadAtlasFromDirectory(atlasPath);
-      fontOcr.loadFontAtlas(fontAtlasObject);
-    } else {
-      console.error(`CRITICAL: Font atlas directory not found at '${atlasPath}'. OCR will not work.`);
-    }
+    console.log('Loading data-driven font atlas...');
+    // The fontAtlasData object is imported directly and passed to the C++ addon.
+    // The C++ addon now expects the `offset` property for each character.
+    fontOcr.loadFontAtlas(fontAtlasData);
+    console.log(`Font atlas loaded successfully with ${Object.keys(fontAtlasData).length} characters.`);
   } catch (e) {
     console.error('CRITICAL: Failed to load font atlas.', e);
   }

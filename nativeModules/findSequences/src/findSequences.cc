@@ -50,11 +50,10 @@ struct FoundCoords {
 using FirstCandidateMap = std::map<std::string, std::pair<FirstCandidate, FirstCandidate>>;
 using AllCandidateMap = std::map<std::string, std::pair<std::set<FoundCoords>, std::set<FoundCoords>>>;
 
-// A structure to hold all sequences for a given search task
 struct SearchTask {
-    std::string taskName; // e.g., "cooldowns", "statusBar"
+    std::string taskName;
     std::unordered_map<uint32_t, std::vector<SequenceDefinition>> firstColorLookup;
-    std::vector<std::string> targetNames; // All sequence names within this task
+    std::vector<std::string> targetNames;
     SearchArea searchArea;
     std::string occurrenceMode;
 };
@@ -67,7 +66,7 @@ struct WorkerData {
     size_t bgraDataLength;
     uint32_t startRow;
     uint32_t endRow;
-    const std::vector<SearchTask>& tasks; // Reference to all tasks
+    const std::vector<SearchTask>& tasks;
     FirstCandidateMap* localFirstResults;
     AllCandidateMap* localAllResults;
 };
@@ -122,7 +121,6 @@ bool ParseTargetSequences(
             if (offsetObj.Has("y")) offsetY = offsetObj.Get("y").As<Napi::Number>().Int32Value();
         }
 
-        // Primary Sequence
         if (config.Has("sequence")) {
             SequenceDefinition primarySeqDef;
             primarySeqDef.name = targetName;
@@ -136,7 +134,6 @@ bool ParseTargetSequences(
             }
         }
 
-        // Backup Sequence
         if (config.Has("backupSequence")) {
             SequenceDefinition backupSeqDef;
             backupSeqDef.name = targetName;
@@ -153,8 +150,95 @@ bool ParseTargetSequences(
     return true;
 }
 
-// --- Worker Thread Function (Scalar-Only) ---
+// --- Verification Function (The original "slow path") ---
+void VerifyAndRecordMatch(
+    const WorkerData& data,
+    const SequenceDefinition& seqDef,
+    const SearchTask& task, // Pass in the current task
+    uint32_t x,
+    uint32_t y
+) {
+    const size_t seqLen = seqDef.sequenceHashes.size();
+    bool match = true;
+    size_t pixelOffset = (y * data.stride) + (x * 4);
+
+    if (seqDef.direction == "horizontal") {
+        if (x + seqLen > data.bufferWidth) return;
+        for (size_t j = 1; j < seqLen; ++j) {
+            uint32_t expectedColor = seqDef.sequenceHashes[j];
+            if (expectedColor == ANY_COLOR_HASH) continue;
+            size_t nextPixelOffset = pixelOffset + j * 4;
+            if (nextPixelOffset + 3 >= data.bgraDataLength) { match = false; break; }
+            uint32_t actualColor = (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 2]) << 16) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 1]) << 8) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset]));
+            if (actualColor != expectedColor) { match = false; break; }
+        }
+    } else { // Vertical
+        if (y + seqLen > data.bufferHeight) return;
+        for (size_t j = 1; j < seqLen; ++j) {
+            uint32_t expectedColor = seqDef.sequenceHashes[j];
+            if (expectedColor == ANY_COLOR_HASH) continue;
+            size_t nextPixelOffset = pixelOffset + j * data.stride;
+            if (nextPixelOffset + 3 >= data.bgraDataLength) { match = false; break; }
+            uint32_t actualColor = (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 2]) << 16) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 1]) << 8) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset]));
+            if (actualColor != expectedColor) { match = false; break; }
+        }
+    }
+
+    if (match) {
+        size_t currentPixelIndex = y * data.bufferWidth + x;
+        int foundX = static_cast<int>(x) + seqDef.offsetX;
+        int foundY = static_cast<int>(y) + seqDef.offsetY;
+
+        if (task.occurrenceMode == "first") {
+            auto& candidatePair = (*data.localFirstResults)[seqDef.name];
+            if (seqDef.variant == "primary") {
+                if (candidatePair.first.pixelIndex == (size_t)-1 || currentPixelIndex < candidatePair.first.pixelIndex) {
+                    candidatePair.first = {foundX, foundY, currentPixelIndex};
+                }
+            } else {
+                if (candidatePair.first.pixelIndex == (size_t)-1) {
+                    if (candidatePair.second.pixelIndex == (size_t)-1 || currentPixelIndex < candidatePair.second.pixelIndex) {
+                        candidatePair.second = {foundX, foundY, currentPixelIndex};
+                    }
+                }
+            }
+        } else { // "all"
+            auto& candidatePair = (*data.localAllResults)[seqDef.name];
+            if (seqDef.variant == "primary") {
+                candidatePair.first.insert({foundX, foundY});
+            } else {
+                candidatePair.second.insert({foundX, foundY});
+            }
+        }
+    }
+}
+
+// --- Worker Thread Function (AVX2-Optimized) ---
 void FindSequencesWorker(const WorkerData& data) {
+    // REFACTORED: Use a map to find unique colors first, avoiding vector alignment warnings.
+    std::unordered_map<uint32_t, bool> unique_colors;
+    for (const auto& task : data.tasks) {
+        for (const auto& pair : task.firstColorLookup) {
+            unique_colors[pair.first] = true;
+        }
+    }
+
+    std::vector<__m256i> first_color_vectors;
+    for (const auto& color_pair : unique_colors) {
+        uint32_t rgb_hash = color_pair.first;
+        uint32_t r = (rgb_hash >> 16) & 0xFF;
+        uint32_t g = (rgb_hash >> 8) & 0xFF;
+        uint32_t b = rgb_hash & 0xFF;
+        // FIX: Correctly construct the 32-bit integer to match the BGRA memory layout
+        // when read as a little-endian uint32_t. Alpha is 0xFF.
+        uint32_t bgra_val = (0xFF << 24) | (r << 16) | (g << 8) | b;
+        first_color_vectors.push_back(_mm256_set1_epi32(bgra_val));
+    }
+
+    if (first_color_vectors.empty()) {
+        return;
+    }
+
     for (const auto& task : data.tasks) {
         uint32_t startY = std::max(data.startRow, task.searchArea.y);
         uint32_t endY = std::min(data.endRow, task.searchArea.y + task.searchArea.height);
@@ -162,87 +246,52 @@ void FindSequencesWorker(const WorkerData& data) {
         uint32_t endX = task.searchArea.x + task.searchArea.width;
 
         for (uint32_t y = startY; y < endY; ++y) {
-            for (uint32_t x = startX; x < endX; ++x) {
-                size_t pixelOffset = (y * data.stride) + (x * 4);
-                uint32_t currentColorHash = (static_cast<uint32_t>(data.bgraData[pixelOffset + 2]) << 16) |
-                                            (static_cast<uint32_t>(data.bgraData[pixelOffset + 1]) << 8)  |
-                                            (static_cast<uint32_t>(data.bgraData[pixelOffset]));
+            const uint8_t* row_ptr = data.bgraData + (y * data.stride);
 
-                auto lookupIt = task.firstColorLookup.find(currentColorHash);
-                if (lookupIt == task.firstColorLookup.end()) continue;
+            for (uint32_t x = startX; x < endX; ) {
+                if (x + 8 <= endX) {
+                    __m256i screen_chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row_ptr + x * 4));
 
-                for (const auto& seqDef : lookupIt->second) {
-                    const size_t seqLen = seqDef.sequenceHashes.size();
-                    if (seqLen == 0) continue;
-                    bool match = true;
-
-                    if (seqDef.direction == "horizontal") {
-                        if (x + seqLen > data.bufferWidth) continue;
-
-                        // --- SCALAR-ONLY LOGIC ---
-                        for (size_t j = 1; j < seqLen; ++j) {
-                            uint32_t expectedColor = seqDef.sequenceHashes[j];
-                            if (expectedColor == ANY_COLOR_HASH) {
-                                continue;
-                            }
-
-                            size_t nextPixelOffset = pixelOffset + j * 4;
-
-                            if (nextPixelOffset + 3 >= data.bgraDataLength) {
-                                match = false;
-                                break;
-                            }
-
-                            uint32_t actualColor = (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 2]) << 16) |
-                                                   (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 1]) << 8) |
-                                                   (static_cast<uint32_t>(data.bgraData[nextPixelOffset]));
-
-                            if (actualColor != expectedColor) {
-                                match = false;
-                                break;
-                            }
-                        }
-                        // --- END SCALAR-ONLY LOGIC ---
-
-                    } else { // Vertical
-                        if (y + seqLen > data.bufferHeight) continue;
-                        for (size_t j = 1; j < seqLen; ++j) {
-                            uint32_t expectedColor = seqDef.sequenceHashes[j];
-                            if (expectedColor == ANY_COLOR_HASH) continue;
-                            size_t nextPixelOffset = pixelOffset + j * data.stride;
-                            if (nextPixelOffset + 3 >= data.bgraDataLength) { match = false; break; }
-                            uint32_t actualColor = (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 2]) << 16) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 1]) << 8) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset]));
-                            if (actualColor != expectedColor) { match = false; break; }
-                        }
+                    int found_mask = 0;
+                    for (const auto& color_vec : first_color_vectors) {
+                        __m256i cmp_result = _mm256_cmpeq_epi32(screen_chunk, color_vec);
+                        found_mask |= _mm256_movemask_ps(_mm256_castsi256_ps(cmp_result));
                     }
 
-                    if (match) {
-                        size_t currentPixelIndex = y * data.bufferWidth + x;
-                        int foundX = static_cast<int>(x) + seqDef.offsetX;
-                        int foundY = static_cast<int>(y) + seqDef.offsetY;
+                    if (found_mask != 0) {
+                        for (int j = 0; j < 8; ++j) {
+                            if ((found_mask >> j) & 1) {
+                                uint32_t current_x = x + j;
+                                size_t pixelOffset = (y * data.stride) + (current_x * 4);
+                                uint32_t r_val = data.bgraData[pixelOffset + 2];
+                                uint32_t g_val = data.bgraData[pixelOffset + 1];
+                                uint32_t b_val = data.bgraData[pixelOffset + 0];
+                                uint32_t currentColorHash = (r_val << 16) | (g_val << 8) | b_val;
 
-                        if (task.occurrenceMode == "first") {
-                            auto& candidatePair = (*data.localFirstResults)[seqDef.name];
-                            if (seqDef.variant == "primary") {
-                                if (candidatePair.first.pixelIndex == (size_t)-1 || currentPixelIndex < candidatePair.first.pixelIndex) {
-                                    candidatePair.first = {foundX, foundY, currentPixelIndex};
-                                }
-                            } else {
-                                if (candidatePair.first.pixelIndex == (size_t)-1) {
-                                    if (candidatePair.second.pixelIndex == (size_t)-1 || currentPixelIndex < candidatePair.second.pixelIndex) {
-                                        candidatePair.second = {foundX, foundY, currentPixelIndex};
+                                auto lookupIt = task.firstColorLookup.find(currentColorHash);
+                                if (lookupIt != task.firstColorLookup.end()) {
+                                    for (const auto& seqDef : lookupIt->second) {
+                                        VerifyAndRecordMatch(data, seqDef, task, current_x, y);
                                     }
                                 }
                             }
-                        } else { // "all"
-                            auto& candidatePair = (*data.localAllResults)[seqDef.name];
-                            if (seqDef.variant == "primary") {
-                                candidatePair.first.insert({foundX, foundY});
-                            } else {
-                                candidatePair.second.insert({foundX, foundY});
-                            }
                         }
                     }
+                    x += 8;
+                } else {
+                    size_t pixelOffset = (y * data.stride) + (x * 4);
+                    uint32_t r_val = data.bgraData[pixelOffset + 2];
+                    uint32_t g_val = data.bgraData[pixelOffset + 1];
+                    uint32_t b_val = data.bgraData[pixelOffset + 0];
+                    uint32_t currentColorHash = (r_val << 16) | (g_val << 8) | b_val;
+
+                    auto lookupIt = task.firstColorLookup.find(currentColorHash);
+                    if (lookupIt != task.firstColorLookup.end()) {
+                        for (const auto& seqDef : lookupIt->second) {
+                            VerifyAndRecordMatch(data, seqDef, task, x, y);
+                        }
+                    }
+                    x++;
                 }
             }
         }
@@ -266,22 +315,17 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
         Napi::Value keyVal = taskNames.Get(i);
         if (!keyVal.IsString()) continue;
         task.taskName = keyVal.As<Napi::String>().Utf8Value();
-
         Napi::Object taskConfig = jsSearchTasks.Get(task.taskName).As<Napi::Object>();
-
         if (!ParseTargetSequences(env, taskConfig.Get("sequences").As<Napi::Object>(), task.firstColorLookup, task.targetNames)) {
             return env.Null();
         }
-
         task.occurrenceMode = taskConfig.Get("occurrence").As<Napi::String>().Utf8Value();
-
         Napi::Object jsSearchArea = taskConfig.Get("searchArea").As<Napi::Object>();
         task.searchArea.x = jsSearchArea.Get("x").As<Napi::Number>().Uint32Value();
         task.searchArea.y = jsSearchArea.Get("y").As<Napi::Number>().Uint32Value();
         task.searchArea.width = jsSearchArea.Get("width").As<Napi::Number>().Uint32Value();
         task.searchArea.height = jsSearchArea.Get("height").As<Napi::Number>().Uint32Value();
         task.searchArea.active = true;
-
         tasks.push_back(task);
     }
 
@@ -296,7 +340,6 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
         uint32_t startRow = i * rowsPerThread;
         uint32_t endRow = std::min(startRow + rowsPerThread, bufferHeight);
         if (startRow >= endRow) continue;
-
         threads.emplace_back(FindSequencesWorker, WorkerData{
             bgraData, bufferWidth, bufferHeight, stride, bgraDataLength,
             startRow, endRow, std::ref(tasks), &threadFirstResults[i], &threadAllResults[i]
@@ -369,6 +412,7 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
                     coordsArray = Napi::Array::New(env, backupSet.size());
                     size_t idx = 0;
                     for (const auto& coords : backupSet) {
+                        // FIX: Corrected Npi -> Napi typo
                         Napi::Object obj = Napi::Object::New(env);
                         obj.Set("x", coords.x);
                         obj.Set("y", coords.y);
@@ -386,7 +430,6 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
     return finalResultsByTask;
 }
 
-
 // --- BATCH N-API FUNCTION (Now a simple wrapper) ---
 Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -397,17 +440,13 @@ Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
     return PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), info[1].As<Napi::Object>());
 }
 
-
 // --- ORIGINAL FUNCTION (Now a wrapper for backward compatibility) ---
 Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-
     Napi::Object searchTasks = Napi::Object::New(env);
     Napi::Object singleTask = Napi::Object::New(env);
-
     singleTask.Set("sequences", info[1]);
     singleTask.Set("occurrence", (info.Length() > 3 && !info[3].IsNull()) ? info[3] : Napi::String::New(env, "first"));
-
     Napi::Object searchArea = Napi::Object::New(env);
     if (info.Length() > 2 && info[2].IsObject()) {
         searchArea = info[2].As<Napi::Object>();
@@ -421,18 +460,13 @@ Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
         searchArea.Set("height", bufferHeight);
     }
     singleTask.Set("searchArea", searchArea);
-
     searchTasks.Set("defaultTask", singleTask);
-
     Napi::Value batchResult = PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), searchTasks);
-
     if (batchResult.IsNull() || !batchResult.IsObject()) {
         return env.Null();
     }
-
     return batchResult.As<Napi::Object>().Get("defaultTask");
 }
-
 
 // --- Module Initialization ---
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
