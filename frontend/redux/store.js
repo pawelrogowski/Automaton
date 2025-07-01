@@ -5,6 +5,7 @@ import gameStateSlice from './slices/gameStateSlice.js';
 import luaSlice from './slices/luaSlice.js';
 import cavebotSlice from './slices/cavebotSlice.js';
 import targetingSlice from './slices/targetingSlice.js';
+import statusMessagesSlice from './slices/statusMessagesSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
   // If the action comes from the backend, let it pass through to the reducer.
@@ -24,6 +25,7 @@ const store = configureStore({
     lua: luaSlice.reducer,
     cavebot: cavebotSlice.reducer,
     targeting: targetingSlice.reducer,
+    statusMessages: statusMessagesSlice.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });

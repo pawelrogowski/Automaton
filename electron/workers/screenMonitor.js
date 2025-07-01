@@ -11,6 +11,7 @@ import {
   actionBarItems,
   equippedItems,
 } from '../constants/index.js';
+import { setNotPossibleTimestamp, setThereIsNoWayTimestamp } from '../../frontend/redux/slices/statusMessagesSlice.js';
 import { findBoundingRect } from '../screenMonitor/screenGrabUtils/findBoundingRect.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
@@ -29,7 +30,7 @@ import fontOcr from 'font-ocr';
 import fontAtlasData from '../../font_atlas/font-data.js';
 
 // --- Constants and Performance Reporter ---
-const TARGET_FPS = 32;
+const TARGET_FPS = 16;
 const MINIMAP_CHANGE_INTERVAL = 500;
 const LOG_RULE_INPUT = false;
 
@@ -194,6 +195,9 @@ let minimapChanged = false;
 let lastKnownGoodHealthPercentage = null;
 let lastKnownGoodManaPercentage = null;
 let currentWindowId = null;
+let lastNotPossibleTimestamp = 0;
+let lastThereIsNoWayTimestamp = 0;
+const MESSAGE_UPDATE_INTERVAL = 300; // 300ms
 
 const captureInstance = X11RegionCapture ? new X11RegionCapture.X11RegionCapture() : null;
 const cooldownManager = new CooldownManager();
@@ -495,7 +499,26 @@ async function mainLoopIteration() {
       const detectedText = fontOcr.recognizeText(fullWindowBuffer, gameLogRegionDef);
       if (detectedText) {
         // Log the detected text from the game's log region
-        console.log(`[Game Log]: ${detectedText}`);
+        // console.log(`[Game Log]: ${detectedText}`);
+
+        const now = Date.now();
+        if (detectedText.includes('Sorry, not possible.')) {
+          if (now - lastNotPossibleTimestamp > MESSAGE_UPDATE_INTERVAL) {
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: setNotPossibleTimestamp.type,
+            });
+            lastNotPossibleTimestamp = now;
+          }
+        } else if (detectedText.includes('There is no way.')) {
+          if (now - lastThereIsNoWayTimestamp > MESSAGE_UPDATE_INTERVAL) {
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: setThereIsNoWayTimestamp.type,
+            });
+            lastThereIsNoWayTimestamp = now;
+          }
+        }
       }
       perfReporter.end('F. OCR');
     }

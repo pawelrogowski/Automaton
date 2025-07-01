@@ -21,8 +21,10 @@ const GameState = () => {
         return state.gameState; // Default to gameState if hash is not recognized or empty
       case '#luaState': // Add case for luaState
         return state.lua; // Return lua state slice
-      case '#cavebotState': // Add case for luaState
-        return state.cavebot; // Return lua state slice
+      case '#cavebotState':
+        return state.cavebot;
+      case '#statusMessagesState':
+        return state.statusMessages;
     }
   });
 
@@ -38,8 +40,10 @@ const GameState = () => {
         return 'Game State';
       case '#luaState': // Add case for luaState
         return 'Lua Scripts'; // Return lua state slice
-      case '#cavebotState': // Add case for luaState
-        return 'Cavebot State'; // Return lua state slice
+      case '#cavebotState':
+        return 'Cavebot State';
+      case '#statusMessagesState':
+        return 'Status Messages';
     }
   };
 

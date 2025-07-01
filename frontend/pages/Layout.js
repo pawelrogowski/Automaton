@@ -381,6 +381,13 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current cavebot state slice"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#statusMessagesState"
+                img={tibia} // Use the imported icon
+                text={'Status Messages'}
+                imageWidth="32px"
+                tooltip="View the current status messages slice"
+              ></SideBarNavButton>
             </>
           )}
 
