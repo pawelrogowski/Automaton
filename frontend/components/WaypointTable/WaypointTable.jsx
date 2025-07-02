@@ -30,9 +30,8 @@ import {
   SectionNameInput,
   ModeSwitchButton,
 } from './WaypointTable.styled.js';
-import MonacoEditorModal from './MonacoEditorModal.js';
+import LuaEditorModal from '../luaEditorModal/luaEditorModal.js';
 
-// --- Reusable Row Component ---
 const DraggableRow = React.memo(({ index, row, children, isSelected, isActive, onSelect, onMoveRow, setRef, onContextMenu }) => {
   const [{ isDragging }, drag] = useDrag({
     type: 'row',
@@ -78,7 +77,6 @@ const DraggableRow = React.memo(({ index, row, children, isSelected, isActive, o
   );
 });
 
-// --- Cell Components ---
 const EditableStringCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
   const [value, setValue] = useState(initialValue);
   const [isEditing, setIsEditing] = useState(false);
@@ -108,6 +106,7 @@ const EditableStringCell = React.memo(({ value: initialValue, row: { original },
     </div>
   );
 });
+
 const EditableSelectCell = React.memo(({ value: initialValue, row: { original }, column: { id, options }, updateMyData }) => {
   const [isEditing, setIsEditing] = useState(false);
   const onChange = (e) => {
@@ -130,6 +129,7 @@ const EditableSelectCell = React.memo(({ value: initialValue, row: { original },
     </div>
   );
 });
+
 const EditableNumberCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => {
   const [value, setValue] = useState(initialValue);
   const [isEditing, setIsEditing] = useState(false);
@@ -162,6 +162,7 @@ const EditableNumberCell = React.memo(({ value: initialValue, row: { original },
     </div>
   );
 });
+
 const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData }) => {
   const [coords, setCoords] = useState({ x: original.x, y: original.y, z: original.z });
   const [isEditing, setIsEditing] = useState(false);
@@ -190,7 +191,8 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
     >{`${original.x}, ${original.y}, ${original.z}`}</div>
   );
 });
-const MonacoActionCell = React.memo(({ value, row: { original }, onEditAction }) => (
+
+const LuaActionCell = React.memo(({ value, row: { original }, onEditAction }) => (
   <div onDoubleClick={() => onEditAction(original)} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
     {value ? (
       <pre style={{ margin: 0, padding: '2px', whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</pre>
@@ -199,6 +201,7 @@ const MonacoActionCell = React.memo(({ value, row: { original }, onEditAction })
     )}
   </div>
 ));
+
 const EditableCheckboxCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => (
   <input
     type="checkbox"
@@ -208,6 +211,7 @@ const EditableCheckboxCell = React.memo(({ value: initialValue, row: { original 
     style={{ display: 'block', margin: 'auto' }}
   />
 ));
+
 const ActionCell = React.memo(({ row: { original }, onRemove }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
     <Trash2
@@ -221,7 +225,6 @@ const ActionCell = React.memo(({ row: { original }, onRemove }) => (
   </div>
 ));
 
-// --- The Main Table Component ---
 const WaypointTable = () => {
   const dispatch = useDispatch();
   const [viewMode, setViewMode] = useState('waypoints');
@@ -237,7 +240,6 @@ const WaypointTable = () => {
       wptSelection: state.cavebot.wptSelection,
       wptId: state.cavebot.wptId,
       specialAreas: state.cavebot.specialAreas,
-      // FIX: Get player position to use when creating new special areas
       playerPosition: state.gameState.playerMinimapPosition,
     }),
     shallowEqual,
@@ -274,7 +276,6 @@ const WaypointTable = () => {
   const handleSetWptId = useCallback((id) => dispatch(setwptId(id)), [dispatch]);
   const handleRemoveSpecialArea = useCallback((id) => dispatch(removeSpecialArea(id)), [dispatch]);
 
-  // FIX: Use player position when adding a new special area
   const handleAddSpecialAreaRow = useCallback(() => {
     const payload = {
       id: uuidv4(),
@@ -355,20 +356,19 @@ const WaypointTable = () => {
       { Header: 'Label', accessor: 'label', width: 75, Cell: EditableStringCell },
       { Header: 'Coordinates', accessor: 'x', width: 134, Cell: EditableCoordinatesCell },
       { Header: 'Range', accessor: 'range', width: 51, Cell: EditableNumberCell },
-      { Header: 'Action', accessor: 'action', width: 275, Cell: MonacoActionCell },
+      { Header: 'Action', accessor: 'action', width: 275, Cell: LuaActionCell },
     ],
     [],
   );
 
-  // FIX: Split Size column into Width and Height
   const specialAreaCols = useMemo(
     () => [
       { Header: 'On', accessor: 'enabled', width: 35, Cell: EditableCheckboxCell },
       { Header: 'Name', accessor: 'name', width: 100, Cell: EditableStringCell },
       { Header: 'Type', accessor: 'type', width: 80, Cell: EditableSelectCell, options: ['cavebot', 'targeting'] },
       { Header: 'Coordinates', accessor: 'x', width: 134, Cell: EditableCoordinatesCell },
-      { Header: 'W', accessor: 'sizeX', width: 45, Cell: EditableNumberCell }, // New Width column
-      { Header: 'H', accessor: 'sizeY', width: 45, Cell: EditableNumberCell }, // New Height column
+      { Header: 'W', accessor: 'sizeX', width: 45, Cell: EditableNumberCell },
+      { Header: 'H', accessor: 'sizeY', width: 45, Cell: EditableNumberCell },
       { Header: 'Avoidance', accessor: 'avoidance', width: 70, Cell: EditableNumberCell },
       { Header: '', id: 'actions', width: 45, Cell: ActionCell },
     ],
@@ -476,7 +476,7 @@ const WaypointTable = () => {
             })}
           </div>
         </div>
-        <MonacoEditorModal
+        <LuaEditorModal
           isOpen={modalState.isOpen}
           initialValue={modalState.waypoint?.action || ''}
           onClose={handleCloseModal}

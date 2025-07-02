@@ -30,6 +30,7 @@ const luaSlice = createSlice({
         id,
         name: name || 'New Script',
         code: code || '',
+        type, // Include type directly in the new script object
         log: [], // Ensure log array is initialized
       };
 

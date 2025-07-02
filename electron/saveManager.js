@@ -5,6 +5,28 @@ import { showNotification } from './notificationHandler.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import throttle from 'lodash/throttle.js';
+// Helper to normalize Lua scripts with a 'type' property if missing
+const normalizeLuaScripts = (luaState) => {
+  if (!luaState) return luaState;
+
+  const normalizedState = { ...luaState };
+
+  if (normalizedState.persistentScripts && Array.isArray(normalizedState.persistentScripts)) {
+    normalizedState.persistentScripts = normalizedState.persistentScripts.map((script) => ({
+      ...script,
+      type: script.type || 'persistent', // Ensure type is 'persistent'
+    }));
+  }
+
+  if (normalizedState.hotkeyScripts && Array.isArray(normalizedState.hotkeyScripts)) {
+    normalizedState.hotkeyScripts = normalizedState.hotkeyScripts.map((script) => ({
+      ...script,
+      type: script.type || 'hotkey', // Ensure type is 'hotkey'
+    }));
+  }
+
+  return normalizedState;
+};
 
 const user_data_path = app.getPath('userData');
 const auto_load_file_path = path.join(user_data_path, 'autoLoadRules.json');
@@ -46,7 +68,7 @@ export const loadRulesFromFile = async (callback) => {
       // Check for each slice before setting state to avoid errors with old/malformed files
       if (loaded_state.rules) setGlobalState('rules/setState', loaded_state.rules);
       if (loaded_state.global) setGlobalState('global/setState', loaded_state.global);
-      if (loaded_state.lua) setGlobalState('lua/setState', loaded_state.lua);
+      if (loaded_state.lua) setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
       // ADD THIS LINE
       if (loaded_state.cavebot) setGlobalState('cavebot/setState', loaded_state.cavebot);
 
@@ -86,7 +108,7 @@ export const autoLoadRules = async () => {
     if (Object.keys(loaded_state).length > 0) {
       if (loaded_state.rules) setGlobalState('rules/setState', loaded_state.rules);
       if (loaded_state.global) setGlobalState('global/setState', loaded_state.global);
-      if (loaded_state.lua) setGlobalState('lua/setState', loaded_state.lua);
+      if (loaded_state.lua) setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
       // ADD THIS LINE
       if (loaded_state.cavebot) setGlobalState('cavebot/setState', loaded_state.cavebot);
     }

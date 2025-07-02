@@ -3,7 +3,7 @@ import { regionColorSequences, floorLevelIndicators } from '../constants/index.j
 import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
 import { delay, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
-import { MinimapMatcher } from '../utils/minimapMatcher.js'; // Your correct wrapper
+import { MinimapMatcher } from '../utils/minimapMatcher.js';
 import findSequences from 'find-sequences-native';
 
 const logger = createLogger({ info: true, error: true, debug: false });
@@ -17,6 +17,7 @@ const FRAME_COUNTER_INDEX = 0,
   WIDTH_INDEX = 1,
   HEIGHT_INDEX = 2,
   IS_RUNNING_INDEX = 3;
+const HEADER_SIZE = 8; // Define the header size as a constant
 
 // --- Configuration ---
 const MINIMAP_WIDTH = 106,
@@ -59,9 +60,7 @@ async function initialize() {
   resetState();
   logger('info', 'Initializing Minimap Monitor...');
   try {
-    if (!minimapMatcher.isLoaded) {
-      await minimapMatcher.loadMapData();
-    }
+    if (!minimapMatcher.isLoaded) await minimapMatcher.loadMapData();
 
     const lastFrame = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
     const waitResult = Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastFrame, 5000);
@@ -71,8 +70,12 @@ async function initialize() {
       height = Atomics.load(syncArray, HEIGHT_INDEX);
     if (width === 0 || height === 0) throw new Error('Received invalid frame dimension.');
 
-    fullWindowBufferView = Buffer.from(imageSAB, 0, width * height * 4);
+    // *** THE FIRST PART OF THE FIX: Create a view of the correct size, including the header ***
+    const bufferSize = HEADER_SIZE + width * height * 4;
+    fullWindowBufferView = Buffer.from(imageSAB, 0, bufferSize);
+    fullWindowBufferMetadata = { width, height, frameCounter: Atomics.load(syncArray, FRAME_COUNTER_INDEX) };
 
+    // The rest of this logic is now operating on a buffer identical to the old one.
     const searchResults = findSequences.findSequencesNative(
       fullWindowBufferView,
       {
@@ -95,20 +98,25 @@ async function initialize() {
   }
 }
 
-function extractMinimapData(sourceBuffer, sourceMeta, rect) {
+// *** THE SECOND PART OF THE FIX: Use the ORIGINAL, WORKING extractBGRA function ***
+function extractBGRA(sourceBuffer, sourceMeta, rect) {
   if (!sourceBuffer || !rect || !validateRegionDimensions(rect)) return null;
   const { width: sourceWidth } = sourceMeta;
-  const targetSize = rect.width * rect.height * 4;
+  const bytesPerPixel = 4;
+  const headerSize = HEADER_SIZE; // Use the constant
+  const targetSize = rect.width * rect.height * bytesPerPixel;
   const targetBuffer = Buffer.alloc(targetSize);
   for (let y = 0; y < rect.height; y++) {
-    const sourceRowStart = ((rect.y + y) * sourceWidth + rect.x) * 4;
-    const targetRowStart = y * rect.width * 4;
-    sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * 4);
+    const sourceY = rect.y + y;
+    // This calculation is now correct again, because our sourceBuffer (the view) contains the header.
+    const sourceRowStart = headerSize + (sourceY * sourceWidth + rect.x) * bytesPerPixel;
+    const targetRowStart = y * rect.width * bytesPerPixel;
+    sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * bytesPerPixel);
   }
   return targetBuffer;
 }
 
-// *** THIS IS THE CORE FIX - USING ASYNC/AWAIT PROPERLY ***
+// The rest of the file uses the same async/await logic which is correct.
 async function processFrame() {
   if (!initialized || isSearching) return;
 
@@ -118,11 +126,12 @@ async function processFrame() {
 
   const width = Atomics.load(syncArray, WIDTH_INDEX),
     height = Atomics.load(syncArray, HEIGHT_INDEX);
-  fullWindowBufferView = Buffer.from(imageSAB, 0, width * height * 4);
+  const bufferSize = HEADER_SIZE + width * height * 4;
+  fullWindowBufferView = Buffer.from(imageSAB, 0, bufferSize);
   fullWindowBufferMetadata = { width, height, frameCounter: currentFrameCounter };
 
   const now = Date.now();
-  const currentMinimapData = extractMinimapData(fullWindowBufferView, fullWindowBufferMetadata, minimapRegionDef);
+  const currentMinimapData = extractBGRA(fullWindowBufferView, fullWindowBufferMetadata, minimapRegionDef);
   if (!currentMinimapData) {
     lastProcessedFrameCounter = currentFrameCounter;
     return;
@@ -161,24 +170,16 @@ async function processFrame() {
     minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
   }
 
-  // Set lock, cancel previous search, then AWAIT the result.
   isSearching = true;
   minimapMatcher.cancelCurrentSearch();
-
   try {
-    // AWAITING THE PROMISE IS THE FIX. The code will pause here.
     const result = await minimapMatcher.findPosition(minimapIndexData, MINIMAP_WIDTH, MINIMAP_HEIGHT, detectedZ);
-
     if (result?.position) {
-      logger('debug', '--- POSITION FOUND ---', result.position);
-      // Sanitize just in case, it's cheap and safe.
       const cleanPayload = { x: result.position.x, y: result.position.y, z: result.position.z };
       parentPort.postMessage({ storeUpdate: true, type: 'gameState/setPlayerMinimapPosition', payload: cleanPayload });
     }
   } catch (err) {
-    if (err.message !== 'Search cancelled') {
-      logger('error', `Minimap search failed: ${err.message}`);
-    }
+    if (err.message !== 'Search cancelled') logger('error', `Minimap search failed: ${err.message}`);
   } finally {
     isSearching = false;
   }
@@ -194,7 +195,6 @@ async function start() {
         await initialize();
       }
       if (initialized) {
-        // The processFrame function now contains its own wait logic.
         await processFrame();
       } else {
         await delay(500);

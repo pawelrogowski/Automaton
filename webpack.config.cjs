@@ -1,7 +1,8 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
+// REMOVED: No longer need the Webpack plugin as the React part is gone.
+// const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 
 module.exports = {
   entry: './frontend/index.js',
@@ -84,19 +85,12 @@ module.exports = {
     ],
   },
   plugins: [
-    // Generates index.html for the React app
     new HtmlWebpackPlugin({
       template: './frontend/index.html',
     }),
 
-    // Generates scriptEditor.html for the separate window
-    new HtmlWebpackPlugin({
-      template: './frontend/scriptEditor.html',
-      filename: 'scriptEditor.html',
-      inject: false,
-    }),
-
-    // Copies static assets, including the raw Monaco files for the non-React window
+    // KEPT: This is CRITICAL for your non-React scriptEditor.html window.
+    // It copies the pre-built Monaco files to your output directory.
     new CopyWebpackPlugin({
       patterns: [
         {
@@ -107,24 +101,17 @@ module.exports = {
           from: 'resources/preprocessed_minimaps',
           to: 'resources/preprocessed_minimaps',
         },
-        {
-          from: './frontend/scriptEditorEntry.js',
-          to: 'scriptEditorEntry.js',
-        },
-        {
-          from: './frontend/scriptEditor.css',
-          to: 'scriptEditor.css',
-        },
       ],
     }),
 
-    // Bundles Monaco correctly for the React app
+    // REMOVED: This plugin was only for bundling Monaco within the React app.
+    // The CopyWebpackPlugin above handles the non-React case.
+    /*
     new MonacoWebpackPlugin({
       languages: ['lua'],
-      // --- THIS IS THE KEY ADDITION ---
-      // Ensures worker files are loaded from a relative path, which is crucial for Electron's `file://` protocol.
       publicPath: './',
     }),
+    */
   ],
   optimization: {
     minimize: false,
