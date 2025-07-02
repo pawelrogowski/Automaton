@@ -1,80 +1,80 @@
-import { parentPort } from 'worker_threads';
+import { parentPort, workerData } from 'worker_threads';
 import { regionColorSequences, floorLevelIndicators } from '../constants/index.js';
 import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
-import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
-import { MinimapMatcher } from '../utils/minimapMatcher.js';
-import X11RegionCapture from 'x11-region-capture-native';
+import { delay, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
+import { MinimapMatcher } from '../utils/minimapMatcher.js'; // Your correct wrapper
 import findSequences from 'find-sequences-native';
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
-// --- Native Modules & Configuration ---
+// --- Shared Buffer Setup ---
+const { sharedData } = workerData;
+if (!sharedData) throw new Error('[MinimapMonitor] Shared data not provided.');
+const { imageSAB, syncSAB } = sharedData;
+const syncArray = new Int32Array(syncSAB);
+const FRAME_COUNTER_INDEX = 0,
+  WIDTH_INDEX = 1,
+  HEIGHT_INDEX = 2,
+  IS_RUNNING_INDEX = 3;
+
+// --- Configuration ---
+const MINIMAP_WIDTH = 106,
+  MINIMAP_HEIGHT = 109,
+  REPROCESS_INTERVAL_MS = 100;
 const minimapMatcher = new MinimapMatcher();
-const captureInstance = new X11RegionCapture.X11RegionCapture();
 
-const TARGET_FPS = 10; // Minimap doesn't need to update as fast
-const MINIMAP_WIDTH = 106;
-const MINIMAP_HEIGHT = 109;
-const REPROCESS_INTERVAL_MS = 100; // Can be a bit longer
-
-logger('info', 'Processing hardcoded palette data...');
 const colorToIndexMap = new Map();
 PALETTE_DATA.forEach((color, index) => {
   const intKey = (color.r << 16) | (color.g << 8) | color.b;
   colorToIndexMap.set(intKey, index);
 });
-logger('info', 'Palette data successfully processed.');
 
 // --- Worker State ---
-let state = null;
-let initialized = false;
-let shouldRestart = false;
-let isSearching = false;
-let lastKnownZ = null;
-
-// --- NEW: Centralized Buffers and Region Definitions ---
-let fullWindowBuffer = null;
-let fullWindowBufferMetadata = { width: 0, height: 0 };
-let minimapRegionDef = null;
-let floorIndicatorRegionDef = null;
-let lastMinimapFrameData = null; // Buffer to hold just the minimap pixels for change detection
-let lastProcessTime = 0;
+let state = null,
+  initialized = false,
+  shouldRestart = false,
+  isSearching = false,
+  lastKnownZ = null,
+  lastProcessedFrameCounter = -1;
+let fullWindowBufferView = null,
+  fullWindowBufferMetadata = { width: 0, height: 0, frameCounter: 0 };
+let minimapRegionDef = null,
+  floorIndicatorRegionDef = null;
+let lastMinimapFrameData = null,
+  lastProcessTime = 0;
 
 function resetState() {
   initialized = false;
-  fullWindowBuffer = null;
-  fullWindowBufferMetadata = { width: 0, height: 0 };
+  shouldRestart = false;
+  isSearching = false;
+  lastKnownZ = null;
+  lastProcessedFrameCounter = -1;
+  fullWindowBufferView = null;
   minimapRegionDef = null;
   floorIndicatorRegionDef = null;
-  lastMinimapFrameData = null;
-  lastKnownZ = null;
-  isSearching = false;
 }
 
-async function initializeRegions() {
-  if (!state?.global?.windowId) {
-    initialized = false;
-    shouldRestart = true;
-    return;
-  }
+async function initialize() {
   resetState();
+  logger('info', 'Initializing Minimap Monitor...');
   try {
-    captureInstance.startMonitorInstance(state.global.windowId, TARGET_FPS);
-
-    const estimatedMaxSize = 2560 * 1600 * 4 + 8; // 4 bytes for BGRA
-    fullWindowBuffer = Buffer.alloc(estimatedMaxSize);
-
-    await delay(100); // Give capture thread time to start
-    const initialFrameResult = captureInstance.getLatestFrame(fullWindowBuffer);
-    if (!initialFrameResult?.success) {
-      throw new Error('Failed to get initial frame for region finding.');
+    if (!minimapMatcher.isLoaded) {
+      await minimapMatcher.loadMapData();
     }
-    fullWindowBufferMetadata = { width: initialFrameResult.width, height: initialFrameResult.height };
 
-    // Find minimap and floor indicator regions using the full frame
-    const initialSearchResults = findSequences.findSequencesNative(
-      fullWindowBuffer,
+    const lastFrame = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+    const waitResult = Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastFrame, 5000);
+    if (waitResult === 'timed-out') throw new Error('Timed out waiting for first frame.');
+
+    const width = Atomics.load(syncArray, WIDTH_INDEX),
+      height = Atomics.load(syncArray, HEIGHT_INDEX);
+    if (width === 0 || height === 0) throw new Error('Received invalid frame dimension.');
+
+    fullWindowBufferView = Buffer.from(imageSAB, 0, width * height * 4);
+
+    const searchResults = findSequences.findSequencesNative(
+      fullWindowBufferView,
       {
         minimapFull: regionColorSequences.minimapFull,
         minimapFloorIndicatorColumn: regionColorSequences.minimapFloorIndicatorColumn,
@@ -83,222 +83,141 @@ async function initializeRegions() {
       'first',
     );
 
-    const { minimapFull, minimapFloorIndicatorColumn } = initialSearchResults;
-
-    if (minimapFull?.x !== undefined) {
-      minimapRegionDef = createRegion(minimapFull, MINIMAP_WIDTH, MINIMAP_HEIGHT);
-    }
-
-    if (minimapFloorIndicatorColumn?.x !== undefined) {
-      floorIndicatorRegionDef = createRegion(minimapFloorIndicatorColumn, 2, 63);
-    }
-
-    if (!minimapRegionDef || !floorIndicatorRegionDef) {
-      throw new Error('Could not locate all required minimap regions on screen.');
-    }
+    if (searchResults.minimapFull) minimapRegionDef = createRegion(searchResults.minimapFull, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    if (searchResults.minimapFloorIndicatorColumn) floorIndicatorRegionDef = createRegion(searchResults.minimapFloorIndicatorColumn, 2, 63);
+    if (!minimapRegionDef || !floorIndicatorRegionDef) throw new Error('Could not locate all required minimap regions.');
 
     initialized = true;
-    shouldRestart = false;
-    logger('info', 'Minimap monitor regions initialized.');
+    logger('info', 'Minimap monitor initialized successfully.');
   } catch (error) {
-    logger('error', `Region initialization error: ${error.message}`);
-    initialized = false;
+    logger('error', `Initialization error: ${error.message}`);
     shouldRestart = true;
-    if (captureInstance)
-      try {
-        captureInstance.stopMonitorInstance();
-      } catch (e) {}
   }
 }
 
-// Helper to extract a sub-region from the full BGRA buffer
-function extractBGRA(sourceBuffer, sourceMeta, rect) {
+function extractMinimapData(sourceBuffer, sourceMeta, rect) {
   if (!sourceBuffer || !rect || !validateRegionDimensions(rect)) return null;
-
   const { width: sourceWidth } = sourceMeta;
-  const bytesPerPixel = 4;
-  const headerSize = 8;
-  const targetSize = rect.width * rect.height * bytesPerPixel;
+  const targetSize = rect.width * rect.height * 4;
   const targetBuffer = Buffer.alloc(targetSize);
-
   for (let y = 0; y < rect.height; y++) {
-    const sourceY = rect.y + y;
-    const sourceRowStart = headerSize + (sourceY * sourceWidth + rect.x) * bytesPerPixel;
-    const targetRowStart = y * rect.width * bytesPerPixel;
-    sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * bytesPerPixel);
+    const sourceRowStart = ((rect.y + y) * sourceWidth + rect.x) * 4;
+    const targetRowStart = y * rect.width * 4;
+    sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * 4);
   }
   return targetBuffer;
 }
 
+// *** THIS IS THE CORE FIX - USING ASYNC/AWAIT PROPERLY ***
 async function processFrame() {
-  if (isSearching || !initialized || !fullWindowBuffer) {
+  if (!initialized || isSearching) return;
+
+  Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastProcessedFrameCounter, 200);
+  const currentFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+  if (currentFrameCounter <= lastProcessedFrameCounter) return;
+
+  const width = Atomics.load(syncArray, WIDTH_INDEX),
+    height = Atomics.load(syncArray, HEIGHT_INDEX);
+  fullWindowBufferView = Buffer.from(imageSAB, 0, width * height * 4);
+  fullWindowBufferMetadata = { width, height, frameCounter: currentFrameCounter };
+
+  const now = Date.now();
+  const currentMinimapData = extractMinimapData(fullWindowBufferView, fullWindowBufferMetadata, minimapRegionDef);
+  if (!currentMinimapData) {
+    lastProcessedFrameCounter = currentFrameCounter;
     return;
   }
 
-  // Get the latest full frame from the capture thread
-  const frameResult = captureInstance.getLatestFrame(fullWindowBuffer);
-  if (!frameResult?.success) {
-    return; // No new frame available
-  }
-
-  // --- Change Detection ---
-  const now = Date.now();
-  const currentMinimapData = extractBGRA(fullWindowBuffer, fullWindowBufferMetadata, minimapRegionDef);
-  if (!currentMinimapData) return;
-
   if (lastMinimapFrameData && lastMinimapFrameData.equals(currentMinimapData) && now - lastProcessTime < REPROCESS_INTERVAL_MS) {
-    return; // Frame is identical and we're within the reprocess interval, so skip.
+    lastProcessedFrameCounter = currentFrameCounter;
+    return;
   }
+  lastMinimapFrameData = currentMinimapData;
   lastProcessTime = now;
-  lastMinimapFrameData = currentMinimapData; // Update last frame
 
-  // --- Find Floor Level (Z coordinate) ---
-  const searchTasks = {};
-  if (floorIndicatorRegionDef) {
-    searchTasks.floor = {
-      sequences: floorLevelIndicators,
-      searchArea: floorIndicatorRegionDef,
-      occurrence: 'first',
-    };
-  }
-
-  const searchResults = findSequences.findSequencesNativeBatch(fullWindowBuffer, searchTasks);
+  const searchResults = findSequences.findSequencesNativeBatch(fullWindowBufferView, {
+    floor: { sequences: floorLevelIndicators, searchArea: floorIndicatorRegionDef, occurrence: 'first' },
+  });
   const foundFloor = searchResults.floor || {};
-
-  let detectedZ = null;
-  let lowestY = Infinity;
-  const floorKey = Object.keys(foundFloor).reduce((lowest, key) => {
-    if (foundFloor[key] !== null && foundFloor[key].y < lowestY) {
-      lowestY = foundFloor[key].y;
-      return key;
-    }
-    return lowest;
-  }, null);
-
-  if (floorKey !== null) {
-    detectedZ = parseInt(floorKey, 10);
-  }
+  const floorKey = Object.keys(foundFloor).reduce(
+    (lowest, key) => (foundFloor[key] !== null && foundFloor[key].y < lowest.y ? { key, y: foundFloor[key].y } : lowest),
+    { key: null, y: Infinity },
+  ).key;
+  const detectedZ = floorKey !== null ? parseInt(floorKey, 10) : null;
 
   if (detectedZ !== null && detectedZ !== lastKnownZ) {
     lastKnownZ = detectedZ;
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'gameState/setPlayerMinimapPosition',
-      payload: { z: detectedZ },
-    });
+    parentPort.postMessage({ storeUpdate: true, type: 'gameState/setPlayerMinimapPosition', payload: { z: detectedZ } });
+  }
+  if (detectedZ === null) {
+    lastProcessedFrameCounter = currentFrameCounter;
+    return;
   }
 
-  if (detectedZ === null) return;
-
-  // --- Convert Minimap to Index Data for Matching ---
   const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
-  const pixelCount = MINIMAP_WIDTH * MINIMAP_HEIGHT;
-
-  for (let i = 0; i < pixelCount; i++) {
-    const pixelOffset = i * 4; // BGRA
-    const b = currentMinimapData[pixelOffset];
-    const g = currentMinimapData[pixelOffset + 1];
-    const r = currentMinimapData[pixelOffset + 2];
-    const key = (r << 16) | (g << 8) | b;
+  for (let i = 0; i < minimapIndexData.length; i++) {
+    const p = i * 4;
+    const key = (currentMinimapData[p + 2] << 16) | (currentMinimapData[p + 1] << 8) | currentMinimapData[p];
     minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
   }
 
-  // --- Find Player Position (X, Y) ---
+  // Set lock, cancel previous search, then AWAIT the result.
   isSearching = true;
   minimapMatcher.cancelCurrentSearch();
 
-  minimapMatcher
-    .findPosition(minimapIndexData, MINIMAP_WIDTH, MINIMAP_HEIGHT, detectedZ)
-    .then((result) => {
-      if (result?.position) {
-        lastKnownZ = result.position.z;
-        parentPort.postMessage({
-          storeUpdate: true,
-          type: 'gameState/setPlayerMinimapPosition',
-          payload: {
-            x: result.position.x,
-            y: result.position.y,
-            z: result.position.z,
-          },
-        });
-      }
-    })
-    .catch((error) => {
-      if (error?.message !== 'Search cancelled') {
-        logger('error', `Minimap search promise rejected: ${error.message}`);
-      }
-    })
-    .finally(() => {
-      isSearching = false;
-    });
-}
-
-async function mainLoop() {
-  const loopStartTime = Date.now();
   try {
-    if ((!initialized && state?.global?.windowId) || shouldRestart) {
-      await initializeRegions();
-    }
+    // AWAITING THE PROMISE IS THE FIX. The code will pause here.
+    const result = await minimapMatcher.findPosition(minimapIndexData, MINIMAP_WIDTH, MINIMAP_HEIGHT, detectedZ);
 
-    if (initialized) {
-      await processFrame();
+    if (result?.position) {
+      logger('debug', '--- POSITION FOUND ---', result.position);
+      // Sanitize just in case, it's cheap and safe.
+      const cleanPayload = { x: result.position.x, y: result.position.y, z: result.position.z };
+      parentPort.postMessage({ storeUpdate: true, type: 'gameState/setPlayerMinimapPosition', payload: cleanPayload });
     }
   } catch (err) {
-    logger('error', `Fatal error in mainLoop: ${err.message}`, err);
-    triggerReinitialization();
+    if (err.message !== 'Search cancelled') {
+      logger('error', `Minimap search failed: ${err.message}`);
+    }
   } finally {
-    const loopExecutionTime = Date.now() - loopStartTime;
-    const delayTime = calculateDelayTime(loopExecutionTime, TARGET_FPS);
-    if (delayTime > 0) await delay(delayTime);
+    isSearching = false;
   }
-}
 
-function triggerReinitialization() {
-  if (captureInstance && initialized) {
-    try {
-      captureInstance.stopMonitorInstance();
-    } catch (e) {}
-  }
-  resetState();
-  shouldRestart = true;
-  minimapMatcher.cancelCurrentSearch();
+  lastProcessedFrameCounter = currentFrameCounter;
 }
 
 async function start() {
   logger('info', 'Minimap monitor worker started.');
-  try {
-    await minimapMatcher.loadMapData();
-    while (true) {
-      await mainLoop();
+  while (true) {
+    try {
+      if (!initialized || shouldRestart) {
+        await initialize();
+      }
+      if (initialized) {
+        // The processFrame function now contains its own wait logic.
+        await processFrame();
+      } else {
+        await delay(500);
+      }
+      if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
+        shouldRestart = true;
+      }
+    } catch (err) {
+      logger('error', `Fatal error in mainLoop: ${err.stack}`);
+      shouldRestart = true;
+      await delay(1000);
     }
-  } catch (err) {
-    logger('error', `Worker fatal error during startup: ${err.message}`, err);
-    if (parentPort) parentPort.postMessage({ fatalError: err.message });
-    process.exit(1);
   }
 }
 
 parentPort.on('message', (message) => {
   if (message?.command === 'forceReinitialize') {
-    logger('info', '[Minimap Monitor] Forced re-initialization requested.');
-    triggerReinitialization();
-    return;
+    shouldRestart = true;
   }
-  const previousWindowId = state?.global?.windowId;
   state = message;
-  const newWindowId = state?.global?.windowId;
-  if (newWindowId && newWindowId !== previousWindowId) {
-    logger('info', `Window ID changed from ${previousWindowId} to ${newWindowId}. Re-initializing.`);
-    triggerReinitialization();
-  }
 });
 
 parentPort.on('close', () => {
-  logger('info', 'Parent port closed. Stopping minimap worker.');
-  if (captureInstance)
-    try {
-      captureInstance.stopMonitorInstance();
-    } catch (e) {}
   process.exit(0);
 });
 

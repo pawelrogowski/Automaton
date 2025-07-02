@@ -17,17 +17,26 @@ import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePart
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
-import { PARTY_MEMBER_STATUS } from './screenMonitor/constants.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
-import { delay, calculateDelayTime, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
-import X11RegionCapture from 'x11-region-capture-native';
+import { delay, createRegion, validateRegionDimensions } from './screenMonitor/modules/utils.js';
 import findSequences from 'find-sequences-native';
 import fontOcr from 'font-ocr';
-
-// +++ ADDED +++
-// Import the pre-generated, data-driven font atlas.
-// IMPORTANT: Adjust this path to point to your actual font-data.js file.
 import fontAtlasData from '../../font_atlas/font-data.js';
+
+// +++ ADDED: Setup for reading from Shared Buffers +++
+const { sharedData } = workerData;
+if (!sharedData) {
+  throw new Error('[ScreenMonitor] Critical Error: Shared data was not provided by the worker manager.');
+}
+const { imageSAB, syncSAB } = sharedData;
+
+// Create a typed array view for atomic operations on the sync buffer
+const syncArray = new Int32Array(syncSAB);
+const FRAME_COUNTER_INDEX = 0;
+const WIDTH_INDEX = 1;
+const HEIGHT_INDEX = 2;
+const IS_RUNNING_INDEX = 3;
+// --- END of new setup ---
 
 // --- Constants and Performance Reporter ---
 const TARGET_FPS = 16;
@@ -36,7 +45,7 @@ const LOG_RULE_INPUT = false;
 
 // --- Performance Reporting Configuration ---
 const ENABLE_PERFORMANCE_REPORTING = false; // Set to true to enable performance logging
-const REPORT_FILENAME = 'performance_report_new.json';
+const REPORT_FILENAME = 'performance_report_monitor_sharedBuffer.json';
 const REPORT_INTERVAL_MS = 10000;
 
 /**
@@ -60,13 +69,7 @@ class PerformanceReporter {
     if (this.tempTimings[name]) {
       const duration = endTime - this.tempTimings[name];
       if (!this.metrics[name]) {
-        this.metrics[name] = {
-          calls: 0,
-          totalTimeMs: 0,
-          minMs: Infinity,
-          maxMs: -Infinity,
-          totalPixels: 0,
-        };
+        this.metrics[name] = { calls: 0, totalTimeMs: 0, minMs: Infinity, maxMs: -Infinity, totalPixels: 0 };
       }
       const metric = this.metrics[name];
       metric.calls++;
@@ -80,12 +83,10 @@ class PerformanceReporter {
   startFrame() {
     this.start('_Frame');
   }
-
   endFrame() {
     this.end('_Frame');
     const lastFrameDuration = this.metrics['_Frame'].totalTimeMs - this.frameTimings.reduce((a, b) => a + b, 0);
     this.frameTimings.push(lastFrameDuration);
-
     const now = performance.now();
     if (now - this.lastReportTime > REPORT_INTERVAL_MS) {
       this.generateReport(false);
@@ -96,14 +97,11 @@ class PerformanceReporter {
   generateReport(isFinal = true) {
     const totalDurationSec = (performance.now() - this.startTime) / 1000;
     const totalFrames = this.frameTimings.length;
-
     if (totalFrames === 0) {
       if (isFinal) console.log('No frames processed, skipping performance report.');
       return;
     }
-
     const reportMetrics = JSON.parse(JSON.stringify(this.metrics));
-
     for (const name in reportMetrics) {
       const metric = reportMetrics[name];
       metric.avgMs = metric.calls > 0 ? metric.totalTimeMs / metric.calls : 0;
@@ -111,38 +109,24 @@ class PerformanceReporter {
       if (metric.minMs === Infinity) metric.minMs = 0;
       if (metric.maxMs === -Infinity) metric.maxMs = 0;
     }
-
     const frameTotalTime = this.frameTimings.reduce((sum, time) => sum + time, 0);
-    const frameAvg = frameTotalTime / totalFrames;
-    const frameMin = Math.min(...this.frameTimings);
-    const frameMax = Math.max(...this.frameTimings);
-    const actualFps = totalFrames / totalDurationSec;
-
     const report = {
-      metadata: {
-        reportGeneratedAt: new Date().toISOString(),
-        status: isFinal ? 'Final' : 'Periodic',
-      },
+      metadata: { reportGeneratedAt: new Date().toISOString(), status: isFinal ? 'Final' : 'Periodic' },
       summary: {
         testDurationSec: totalDurationSec,
         totalFramesProcessed: totalFrames,
         targetFps: TARGET_FPS,
-        actualAvgFps: actualFps,
-        avgFrameTimeMs: frameAvg,
-        minFrameTimeMs: frameMin,
-        maxFrameTimeMs: frameMax,
+        actualAvgFps: totalFrames / totalDurationSec,
+        avgFrameTimeMs: frameTotalTime / totalFrames,
+        minFrameTimeMs: Math.min(...this.frameTimings),
+        maxFrameTimeMs: Math.max(...this.frameTimings),
       },
       stages: reportMetrics,
     };
-
     delete report.stages['_Frame'];
-
     try {
-      const reportJson = JSON.stringify(report, null, 2);
-      fs.writeFileSync(path.join(process.cwd(), REPORT_FILENAME), reportJson);
-      if (isFinal) {
-        console.log(`\nFinal performance report saved to ${REPORT_FILENAME}`);
-      }
+      fs.writeFileSync(path.join(process.cwd(), REPORT_FILENAME), JSON.stringify(report, null, 2));
+      if (isFinal) console.log(`\nFinal performance report saved to ${REPORT_FILENAME}`);
     } catch (err) {
       console.error('Failed to write performance report:', err);
     }
@@ -150,8 +134,7 @@ class PerformanceReporter {
 }
 
 /**
- * A dummy reporter that does nothing. Used when performance reporting is disabled
- * to avoid conditional checks throughout the code, ensuring minimal overhead.
+ * A dummy reporter that does nothing.
  */
 class NoOpPerformanceReporter {
   start() {}
@@ -161,20 +144,15 @@ class NoOpPerformanceReporter {
   generateReport() {}
 }
 
-// Conditionally create either a real reporter or a no-op one.
 const perfReporter = ENABLE_PERFORMANCE_REPORTING ? new PerformanceReporter() : new NoOpPerformanceReporter();
-
-// --- REMOVED ---
-// The old `loadAtlasFromDirectory` function is no longer needed.
-// The `font-data.js` file and its internal `loadCharData` function
-// have replaced this logic.
 
 // --- State Variables ---
 let state = null;
 let initialized = false;
 let shouldRestart = false;
-let fullWindowBuffer = null;
-let fullWindowBufferMetadata = { width: 0, height: 0, timestamp: 0 };
+let fullWindowBufferView = null;
+let fullWindowBufferMetadata = { width: 0, height: 0, frameCounter: 0 };
+let lastProcessedFrameCounter = -1;
 let lastMinimapData = null;
 let hpManaRegionDef,
   cooldownsRegionDef,
@@ -194,19 +172,18 @@ let lastMinimapChangeTime = null;
 let minimapChanged = false;
 let lastKnownGoodHealthPercentage = null;
 let lastKnownGoodManaPercentage = null;
-let currentWindowId = null;
 let lastNotPossibleTimestamp = 0;
 let lastThereIsNoWayTimestamp = 0;
-const MESSAGE_UPDATE_INTERVAL = 300; // 300ms
+const MESSAGE_UPDATE_INTERVAL = 300;
 
-const captureInstance = X11RegionCapture ? new X11RegionCapture.X11RegionCapture() : null;
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
 
 function resetState() {
   initialized = false;
-  fullWindowBuffer = null;
-  fullWindowBufferMetadata = { width: 0, height: 0, timestamp: 0 };
+  fullWindowBufferView = null;
+  fullWindowBufferMetadata = { width: 0, height: 0, frameCounter: 0 };
+  lastProcessedFrameCounter = -1;
   lastMinimapData = null;
   [
     hpManaRegionDef,
@@ -230,75 +207,48 @@ function resetState() {
 
 async function initialize() {
   perfReporter.start('A. Initialize');
-  if (!state?.global?.windowId) {
-    shouldRestart = true;
-    perfReporter.end('A. Initialize');
-    return;
-  }
-
   resetState();
-
-  try {
-    captureInstance.startMonitorInstance(state.global.windowId, TARGET_FPS);
-  } catch (startError) {
-    console.error('Failed to start capture instance:', startError);
-    shouldRestart = true;
-    perfReporter.end('A. Initialize');
-    return;
-  }
-
-  const estimatedMaxSize = 2560 * 1600 * 4 + 8;
-  fullWindowBuffer = Buffer.alloc(estimatedMaxSize);
+  console.log('[ScreenMonitor] Initializing. Waiting for first valid frame from capture worker...');
 
   const maxInitAttempts = 50;
   let initSuccess = false;
   let initialSearchResults = null;
 
-  await delay(100);
-  let lastTimestamp = captureInstance.getLatestFrame(fullWindowBuffer)?.captureTimestampUs || 0;
-
   for (let attempt = 1; attempt <= maxInitAttempts; attempt++) {
-    let frameResult;
-    let currentTimestamp = lastTimestamp;
-    const waitStart = performance.now();
-    while (currentTimestamp <= lastTimestamp && performance.now() - waitStart < 2000) {
-      await delay(50);
-      frameResult = captureInstance.getLatestFrame(fullWindowBuffer);
-      currentTimestamp = frameResult?.captureTimestampUs || 0;
+    const lastFrame = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+    const waitResult = Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastFrame, 2000);
+
+    if (waitResult === 'timed-out') {
+      console.warn(`[ScreenMonitor] Timed out waiting for frame (Attempt ${attempt}/${maxInitAttempts})`);
+      continue;
     }
-    lastTimestamp = currentTimestamp;
 
-    if (!frameResult?.success) continue;
+    const width = Atomics.load(syncArray, WIDTH_INDEX);
+    const height = Atomics.load(syncArray, HEIGHT_INDEX);
+    if (width === 0 || height === 0) continue;
 
-    const fullSearchArea = { x: 0, y: 0, width: frameResult.width, height: frameResult.height };
-    const sanityCheckResult = findSequences.findSequencesNativeBatch(fullWindowBuffer, {
+    fullWindowBufferView = Buffer.from(imageSAB, 0, width * height * 4);
+    fullWindowBufferMetadata = { width, height, frameCounter: Atomics.load(syncArray, FRAME_COUNTER_INDEX) };
+
+    const fullSearchArea = { x: 0, y: 0, width, height };
+    const sanityCheckResult = findSequences.findSequencesNativeBatch(fullWindowBufferView, {
       sanityCheck: { sequences: { onlineMarker: regionColorSequences.onlineMarker }, searchArea: fullSearchArea, occurrence: 'first' },
     });
 
     if (sanityCheckResult?.sanityCheck?.onlineMarker) {
       perfReporter.start('A2. Initial Region Find');
-      initialSearchResults = findSequences.findSequencesNativeBatch(fullWindowBuffer, {
+      initialSearchResults = findSequences.findSequencesNativeBatch(fullWindowBufferView, {
         main: { sequences: regionColorSequences, searchArea: fullSearchArea, occurrence: 'first' },
       });
-      perfReporter.end('A2. Initial Region Find', frameResult.width * frameResult.height);
-
+      perfReporter.end('A2. Initial Region Find', width * height);
       initSuccess = true;
-      fullWindowBufferMetadata = {
-        width: frameResult.width,
-        height: frameResult.height,
-        timestamp: frameResult.captureTimestampUs,
-      };
       break;
     }
   }
 
   if (!initSuccess || !initialSearchResults?.main) {
-    console.error('Initialization failed: Could not find critical UI elements after multiple attempts.');
+    console.error('[ScreenMonitor] Initialization failed: Could not find critical UI elements.');
     shouldRestart = true;
-    if (captureInstance)
-      try {
-        captureInstance.stopMonitorInstance();
-      } catch (e) {}
     perfReporter.end('A. Initialize');
     return;
   }
@@ -318,13 +268,11 @@ async function initialize() {
       onlineMarker,
       chatOff,
     } = startRegions;
-
     if (healthBar && manaBar) {
       hpManaRegionDef = createRegion(healthBar, 94, 14);
       healthBarAbsolute = { x: healthBar.x, y: healthBar.y };
       manaBarAbsolute = { x: manaBar.x, y: manaBar.y };
     }
-
     cooldownsRegionDef = createRegion(cooldownBar || cooldownBarFallback, 56, 4);
     statusBarRegionDef = createRegion(statusBar, 104, 9);
     minimapRegionDef = createRegion(minimap, 106, 106);
@@ -335,7 +283,7 @@ async function initialize() {
     chatOffRegionDef = createRegion(chatOff, regionColorSequences.chatOff.sequence.length, 1);
 
     const findBoundingRectBatch = (startSeq, endSeq, ...args) =>
-      findBoundingRect(findSequences.findSequencesNativeBatch, fullWindowBuffer, startSeq, endSeq, ...args);
+      findBoundingRect(findSequences.findSequencesNativeBatch, fullWindowBufferView, startSeq, endSeq, ...args);
 
     battleListRegionDef = findBoundingRectBatch(regionColorSequences.battleListStart, regionColorSequences.battleListEnd, 160, 600);
     partyListRegionDef = findBoundingRectBatch(regionColorSequences.partyListStart, regionColorSequences.partyListEnd, 160, 200);
@@ -345,14 +293,13 @@ async function initialize() {
       600,
       100,
     );
-
     gameLogRegionDef = { x: 808, y: 695, width: 125, height: 11 };
 
     initialized = true;
     shouldRestart = false;
     notifyInitializationStatus();
   } catch (error) {
-    console.error('Error during UI element location:', error);
+    console.error('[ScreenMonitor] Error during UI element location:', error);
     shouldRestart = true;
   }
   perfReporter.end('A. Initialize');
@@ -396,20 +343,17 @@ function handleMinimapChange() {
 }
 
 function getPartyData() {
-  if (!validateRegionDimensions(partyListRegionDef) || !fullWindowBuffer) return [];
-
+  if (!validateRegionDimensions(partyListRegionDef) || !fullWindowBufferView) return [];
   const partyData = [];
   const approxEntryHeight = 26;
   const maxEntries = Math.floor(partyListRegionDef.height / approxEntryHeight);
   if (maxEntries <= 0) return [];
-
   const partyEntryRegions = calculatePartyEntryRegions({ x: 0, y: 0 }, maxEntries);
-
   for (let i = 0; i < partyEntryRegions.length; i++) {
     const entry = partyEntryRegions[i];
     const absoluteBarCoords = { x: partyListRegionDef.x + entry.bar.x, y: partyListRegionDef.y + entry.bar.y };
     const hppc = calculatePartyHpPercentage(
-      fullWindowBuffer,
+      fullWindowBufferView,
       fullWindowBufferMetadata,
       absoluteBarCoords,
       resourceBars.partyEntryHpBar,
@@ -440,9 +384,8 @@ function runRules(ruleInput) {
 
 async function mainLoopIteration() {
   perfReporter.startFrame();
-  const loopStartTime = Date.now();
   try {
-    if ((!initialized && state?.global?.windowId) || shouldRestart) {
+    if (!initialized || shouldRestart) {
       await initialize();
       if (!initialized) {
         resetState();
@@ -450,20 +393,28 @@ async function mainLoopIteration() {
       }
     }
 
-    if (!fullWindowBuffer) {
-      await delay(100);
+    perfReporter.start('B. Wait For Frame');
+    const currentFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+    if (currentFrameCounter === lastProcessedFrameCounter) {
+      Atomics.wait(syncArray, FRAME_COUNTER_INDEX, currentFrameCounter, 1000);
+    }
+    const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+
+    if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
+      console.log('[ScreenMonitor] Capture worker has stopped. Triggering re-initialization.');
+      shouldRestart = true;
+      initialized = false;
+      perfReporter.end('B. Wait For Frame');
       return;
     }
+    perfReporter.end('B. Wait For Frame');
 
-    perfReporter.start('B. Capture (memcpy)');
-    const frameResult = captureInstance.getLatestFrame(fullWindowBuffer);
-    const pixelsCaptured = frameResult?.success ? fullWindowBufferMetadata.width * fullWindowBufferMetadata.height : 0;
-    perfReporter.end('B. Capture (memcpy)', pixelsCaptured);
+    const width = Atomics.load(syncArray, WIDTH_INDEX);
+    const height = Atomics.load(syncArray, HEIGHT_INDEX);
+    if (width === 0 || height === 0) return;
 
-    if (!frameResult?.success) {
-      return;
-    }
-    fullWindowBufferMetadata.timestamp = frameResult.captureTimestampUs;
+    fullWindowBufferView = Buffer.from(imageSAB, 0, width * height * 4);
+    fullWindowBufferMetadata = { width, height, frameCounter: newFrameCounter };
 
     const searchTasks = {};
     if (cooldownsRegionDef)
@@ -490,32 +441,23 @@ async function mainLoopIteration() {
       };
 
     perfReporter.start('C. Batch Search');
-    const searchResults = findSequences.findSequencesNativeBatch(fullWindowBuffer, searchTasks);
+    const searchResults = findSequences.findSequencesNativeBatch(fullWindowBufferView, searchTasks);
     const totalPixelsSearched = Object.values(searchTasks).reduce((sum, task) => sum + task.searchArea.width * task.searchArea.height, 0);
     perfReporter.end('C. Batch Search', totalPixelsSearched);
 
     if (gameLogRegionDef) {
       perfReporter.start('F. OCR');
-      const detectedText = fontOcr.recognizeText(fullWindowBuffer, gameLogRegionDef);
+      const detectedText = fontOcr.recognizeText(fullWindowBufferView, gameLogRegionDef);
       if (detectedText) {
-        // Log the detected text from the game's log region
-        // console.log(`[Game Log]: ${detectedText}`);
-
         const now = Date.now();
         if (detectedText.includes('Sorry, not possible.')) {
           if (now - lastNotPossibleTimestamp > MESSAGE_UPDATE_INTERVAL) {
-            parentPort.postMessage({
-              storeUpdate: true,
-              type: setNotPossibleTimestamp.type,
-            });
+            parentPort.postMessage({ storeUpdate: true, type: setNotPossibleTimestamp.type });
             lastNotPossibleTimestamp = now;
           }
         } else if (detectedText.includes('There is no way.')) {
           if (now - lastThereIsNoWayTimestamp > MESSAGE_UPDATE_INTERVAL) {
-            parentPort.postMessage({
-              storeUpdate: true,
-              type: setThereIsNoWayTimestamp.type,
-            });
+            parentPort.postMessage({ storeUpdate: true, type: setThereIsNoWayTimestamp.type });
             lastThereIsNoWayTimestamp = now;
           }
         }
@@ -524,21 +466,25 @@ async function mainLoopIteration() {
     }
 
     perfReporter.start('D. Data Processing');
-
     const { newHealthPercentage, newManaPercentage } =
       hpManaRegionDef && healthBarAbsolute
         ? {
             newHealthPercentage: calculatePercentages(
-              fullWindowBuffer,
+              fullWindowBufferView,
               fullWindowBufferMetadata,
               healthBarAbsolute,
               resourceBars.healthBar,
               94,
             ),
-            newManaPercentage: calculatePercentages(fullWindowBuffer, fullWindowBufferMetadata, manaBarAbsolute, resourceBars.manaBar, 94),
+            newManaPercentage: calculatePercentages(
+              fullWindowBufferView,
+              fullWindowBufferMetadata,
+              manaBarAbsolute,
+              resourceBars.manaBar,
+              94,
+            ),
           }
         : { newHealthPercentage: lastKnownGoodHealthPercentage, newManaPercentage: lastKnownGoodManaPercentage };
-
     lastKnownGoodHealthPercentage = newHealthPercentage ?? lastKnownGoodHealthPercentage;
     lastKnownGoodManaPercentage = newManaPercentage ?? lastKnownGoodManaPercentage;
 
@@ -551,9 +497,8 @@ async function mainLoopIteration() {
     if (currentCooldowns.supportInactive) cooldownManager.forceDeactivate('support');
 
     const characterStatus = {};
-    const currentStatusBar = searchResults.statusBar || {};
     Object.keys(statusBarSequences).forEach((key) => {
-      characterStatus[key] = !!currentStatusBar[key];
+      characterStatus[key] = !!(searchResults.statusBar || {})[key];
     });
 
     const battleListEntries = searchResults.battleList || [];
@@ -571,7 +516,6 @@ async function mainLoopIteration() {
 
     const isLoggedIn = !!searchResults.onlineMarker?.onlineMarker;
     const isChatOff = !!searchResults.chatOff?.chatOff;
-
     handleMinimapChange();
 
     const currentStateUpdate = {
@@ -600,34 +544,24 @@ async function mainLoopIteration() {
     if (state?.global?.isBotEnabled) {
       runRules(currentStateUpdate);
     }
+    lastProcessedFrameCounter = newFrameCounter;
   } catch (err) {
     console.error('Fatal error in mainLoopIteration:', err);
     shouldRestart = true;
     initialized = false;
-    if (captureInstance)
-      try {
-        captureInstance.stopMonitorInstance();
-      } catch (e) {}
   } finally {
-    const loopExecutionTime = Date.now() - loopStartTime;
-    const delayTime = calculateDelayTime(loopExecutionTime, TARGET_FPS);
-    if (delayTime > 0) await delay(delayTime);
     perfReporter.endFrame();
   }
 }
 
 async function start() {
-  // --- MODIFIED: Use the new data-driven font loading ---
   try {
-    console.log('Loading data-driven font atlas...');
-    // The fontAtlasData object is imported directly and passed to the C++ addon.
-    // The C++ addon now expects the `offset` property for each character.
+    console.log('[ScreenMonitor] Loading data-driven font atlas...');
     fontOcr.loadFontAtlas(fontAtlasData);
     console.log(`Font atlas loaded successfully with ${Object.keys(fontAtlasData).length} characters.`);
   } catch (e) {
     console.error('CRITICAL: Failed to load font atlas.', e);
   }
-
   while (true) {
     await mainLoopIteration();
   }
@@ -635,48 +569,23 @@ async function start() {
 
 parentPort.on('message', (message) => {
   if (message && message.command === 'forceReinitialize') {
-    if (captureInstance && initialized) {
-      try {
-        captureInstance.stopMonitorInstance();
-      } catch (e) {}
-    }
     initialized = false;
     shouldRestart = true;
-    currentWindowId = null;
     resetState();
     return;
   }
-  const previousWindowId = state?.global?.windowId;
   state = message;
-  const newWindowId = state?.global?.windowId;
-  if (newWindowId && newWindowId !== previousWindowId) {
-    if (captureInstance && initialized) {
-      try {
-        captureInstance.stopMonitorInstance();
-      } catch (e) {}
-    }
-    initialized = false;
-    shouldRestart = true;
-    currentWindowId = newWindowId;
-    resetState();
-  }
 });
 
 parentPort.on('close', async () => {
-  if (captureInstance) {
-    captureInstance.stopMonitorInstance();
-  }
   perfReporter.generateReport(true);
   resetState();
   process.exit(0);
 });
 
 start().catch(async (err) => {
-  console.error('Worker fatal error:', err);
+  console.error('[ScreenMonitor] Worker fatal error:', err);
   if (parentPort) parentPort.postMessage({ fatalError: err.message || 'Unknown fatal error in worker' });
-  if (captureInstance) {
-    captureInstance.stopMonitorInstance();
-  }
   perfReporter.generateReport(true);
   process.exit(1);
 });
