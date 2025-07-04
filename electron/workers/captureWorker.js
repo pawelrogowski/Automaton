@@ -14,7 +14,7 @@ const IS_RUNNING_INDEX = 3;
 const WINDOW_ID_INDEX = 4; // We can even pass the window ID this way
 
 const captureInstance = X11RegionCapture ? new X11RegionCapture.X11RegionCapture() : null;
-let targetFps = 32;
+let targetFps = 10;
 let isCapturing = false;
 
 async function delay(ms) {

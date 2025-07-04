@@ -37,8 +37,7 @@ const IS_RUNNING_INDEX = 3;
 const HEADER_SIZE = 8; // Define the header size from x11-region-capture-native
 
 // --- Constants and Performance Reporter ---
-const TARGET_FPS = 16;
-const MINIMAP_CHANGE_INTERVAL = 500;
+const MINIMAP_CHANGE_INTERVAL = 500; // This will be removed in minimapMonitor.js, but keeping it here for now.
 const LOG_RULE_INPUT = false;
 const ENABLE_PERFORMANCE_REPORTING = false;
 const REPORT_FILENAME = 'performance_report_monitor_sharedBuffer.json';
@@ -99,7 +98,6 @@ class PerformanceReporter {
       summary: {
         testDurationSec: totalDurationSec,
         totalFramesProcessed: totalFrames,
-        targetFps: TARGET_FPS,
         actualAvgFps: totalFrames / totalDurationSec,
         avgFrameTimeMs: frameTotalTime / totalFrames,
         minFrameTimeMs: Math.min(...this.frameTimings),
@@ -147,8 +145,6 @@ let lastMinimapData = null,
   chatOffRegionDef,
   gameLogRegionDef;
 let healthBarAbsolute, manaBarAbsolute;
-let lastMinimapChangeTime = null,
-  minimapChanged = false;
 let lastKnownGoodHealthPercentage = null,
   lastKnownGoodManaPercentage = null;
 let lastNotPossibleTimestamp = 0,
@@ -417,7 +413,7 @@ async function mainLoopIteration() {
 
     const isLoggedIn = !!searchResults.onlineMarker?.onlineMarker;
     const isChatOff = !!searchResults.chatOff?.chatOff;
-    handleMinimapChange();
+    // handleMinimapChange(); // This function is not needed anymore as minimapMonitor handles its own changes
 
     const currentStateUpdate = {
       hppc: lastKnownGoodHealthPercentage,
@@ -427,7 +423,7 @@ async function mainLoopIteration() {
       attackCd,
       characterStatus,
       monsterNum: battleListEntries.length,
-      isWalking: minimapChanged,
+      isWalking: false, // This is now handled by minimapMonitor
       partyMembers,
       activeActionItems,
       equippedItems: equippedItemsResult,

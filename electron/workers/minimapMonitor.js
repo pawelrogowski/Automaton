@@ -21,8 +21,7 @@ const HEADER_SIZE = 8; // Define the header size as a constant
 
 // --- Configuration ---
 const MINIMAP_WIDTH = 106,
-  MINIMAP_HEIGHT = 109,
-  REPROCESS_INTERVAL_MS = 100;
+  MINIMAP_HEIGHT = 109;
 const minimapMatcher = new MinimapMatcher();
 
 const colorToIndexMap = new Map();
@@ -42,8 +41,7 @@ let fullWindowBufferView = null,
   fullWindowBufferMetadata = { width: 0, height: 0, frameCounter: 0 };
 let minimapRegionDef = null,
   floorIndicatorRegionDef = null;
-let lastMinimapFrameData = null,
-  lastProcessTime = 0;
+let lastMinimapFrameData = null;
 
 function resetState() {
   initialized = false;
@@ -137,12 +135,11 @@ async function processFrame() {
     return;
   }
 
-  if (lastMinimapFrameData && lastMinimapFrameData.equals(currentMinimapData) && now - lastProcessTime < REPROCESS_INTERVAL_MS) {
+  if (lastMinimapFrameData && lastMinimapFrameData.equals(currentMinimapData)) {
     lastProcessedFrameCounter = currentFrameCounter;
     return;
   }
   lastMinimapFrameData = currentMinimapData;
-  lastProcessTime = now;
 
   const searchResults = findSequences.findSequencesNativeBatch(fullWindowBufferView, {
     floor: { sequences: floorLevelIndicators, searchArea: floorIndicatorRegionDef, occurrence: 'first' },

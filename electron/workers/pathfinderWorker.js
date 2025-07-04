@@ -232,19 +232,28 @@ function runPathfindingLogic() {
 function start() {
   logger('info', 'Pathfinder worker started.');
   loadAllMapData();
-  if (pathfinderInstance.isLoaded) {
-    setInterval(() => {
-      handleStuckCondition();
-      runPathfindingLogic();
-      updateStandTimer();
-    }, 100);
-  } else {
-    logger('error', 'Pathfinder did not load map data, main loop will not start.');
+  if (!pathfinderInstance.isLoaded) {
+    logger('error', 'Pathfinder did not load map data, worker will not function correctly.');
   }
 }
 
 parentPort.on('message', (message) => {
+  const oldState = state; // Store old state to compare
   state = message;
+
+  // Trigger logic based on relevant state changes
+  // These functions have internal checks to prevent redundant work
+  if (state.gameState?.playerMinimapPosition || oldState?.gameState?.playerMinimapPosition) {
+    updateStandTimer();
+    runPathfindingLogic();
+  }
+  if (
+    state.cavebot?.enabled !== oldState?.cavebot?.enabled ||
+    state.cavebot?.wptDistance !== oldState?.cavebot?.wptDistance ||
+    state.cavebot?.standTime !== oldState?.cavebot?.standTime
+  ) {
+    handleStuckCondition();
+  }
 });
 parentPort.on('close', () => {
   logger('info', 'Parent port closed. Stopping pathfinder worker.');
