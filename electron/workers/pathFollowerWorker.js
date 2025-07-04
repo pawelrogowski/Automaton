@@ -112,7 +112,7 @@ async function mainLoop() {
       logger('info', `Walking. Distance: ${wptDistance}, Delay: ${walkDelay}ms`);
 
       const moveStartTime = Date.now();
-      keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
+      keypress.sendKey(parseInt(appState.global.windowId, 10, moveKey));
 
       // Wait for the determined duration.
       await sleep(walkDelay);
