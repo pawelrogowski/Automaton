@@ -6,7 +6,7 @@ import MinimapMatcherNative from 'minimap_matcher-native';
 const logger = createLogger({ info: true, error: true, debug: false });
 
 const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
-const LANDMARK_SIZE = 7;
+const LANDMARK_SIZE = 3;
 // The landmark pattern is now packed at 4-bits per pixel.
 // The C++ addon will now work with 25-byte keys instead of 49-byte keys.
 const LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2); // 25

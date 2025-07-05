@@ -9,9 +9,9 @@ const SPECIAL_WAYPOINT_TYPES = ['Stand', 'Machete', 'Rope', 'Shovel'];
 const SPECIAL_WAYPOINT_DELAY_MS = 400; // Delay upon ARRIVAL at a special waypoint.
 
 // --- NEW FIXED SPEED CONFIGURATION ---
-const STANDARD_WALK_DELAY_MS = 50; // Standard speed for normal pathing.
+const STANDARD_WALK_DELAY_MS = 0; // Standard speed for normal pathing.
 const APPROACH_WALK_DELAY_MS = 300; // Slower speed when approaching the target.
-const APPROACH_DISTANCE_THRESHOLD = 2; // The distance (in tiles) at which to start slowing down.
+const APPROACH_DISTANCE_THRESHOLD = 1; // The distance (in tiles) at which to start slowing down.
 const MOVE_TIMEOUT_MS = 500; // Timeout before a move is considered failed/stuck.
 // --- END CONFIGURATION ---
 
