@@ -16,6 +16,7 @@ const preloadPath = path.join(cwd, '/preload.js');
 const log = createLogger();
 
 let loginWindow;
+let isQuitting = false;
 
 const createLoginWindow = () => {
   loginWindow = new BrowserWindow({
@@ -63,16 +64,53 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', async () => {
-  try {
-  } catch (error) {
-    log('error', `[Main] ${error}`);
+app.on('before-quit', async (event) => {
+  if (isQuitting) {
+    return; // Already in the process of quitting, do nothing.
   }
-  unregisterGlobalShortcuts();
-  log('info', '[Main] Application cleanup finished.');
-});
 
+  // 1. Prevent the application from closing immediately.
+  event.preventDefault();
+  isQuitting = true;
+
+  log('info', '[Main] Graceful shutdown initiated...');
+
+  // 2. Show a confirmation dialog to the user.
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['Yes, Quit', 'No, Cancel'],
+    defaultId: 1,
+    title: 'Confirm Quit',
+    message: 'Are you sure you want to quit the application?',
+    cancelId: 1,
+  });
+
+  if (response === 1) {
+    // User clicked "No, Cancel"
+    isQuitting = false;
+    log('info', '[Main] Shutdown cancelled by user.');
+    return;
+  }
+
+  // 3. User confirmed. Proceed with cleanup.
+  try {
+    log('info', '[Main] Terminating all workers...');
+    await workerManager.stopAllWorkers(); // Wait for all workers to stop.
+
+    log('info', '[Main] Unregistering global shortcuts...');
+    unregisterGlobalShortcuts();
+
+    log('info', '[Main] Application cleanup finished. Exiting now.');
+  } catch (error) {
+    log('error', '[Main] Error during shutdown cleanup:', error);
+  } finally {
+    // 4. After all cleanup, allow the app to finally quit.
+    // We call app.quit() again, but since isQuitting is true, it will now exit.
+    app.exit();
+  }
+});
 app.on('window-all-closed', () => {
+  log('info', '[Main] All windows closed, initiating app quit.');
   app.quit();
 });
 

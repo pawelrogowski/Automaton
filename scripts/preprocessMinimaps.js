@@ -1,4 +1,3 @@
-// This script pre-processes minimap PNGs and WaypointCost PNGs into optimized formats:
 // 1. A landmark index (landmarks.bin): An efficient, 4-bit packed index of small,
 //    truly unique 7x7 pixel "landmarks" for near-instant visual searching.
 // 2. A walkability grid (walkable.bin): A highly-compressed, 1-bit packed binary grid

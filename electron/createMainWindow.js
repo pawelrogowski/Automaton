@@ -11,7 +11,6 @@ const HTML_PATH = '../dist/index.html';
 let mainWindow;
 let tray;
 let isNotificationEnabled = false;
-let shouldClose = false;
 let isTrayVisible = true;
 
 const filename = fileURLToPath(import.meta.url);
@@ -147,36 +146,15 @@ const createTray = () => {
   tray.on('click', toggleMainWindowVisibility);
 };
 
-const handleWindowClose = async (event) => {
-  if (event) event.preventDefault();
-  if (!shouldClose) {
-    const { response } = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      buttons: ['Yes', 'No'],
-      defaultId: 1,
-      title: 'Confirm',
-      message: 'Are you sure you want to quit the application?',
-      cancelId: 1,
-    });
-    if (response === 0) {
-      shouldClose = true;
-      app.exit(0);
-    }
-  }
+const handleWindowClose = (event) => {
+  // We no longer need the 'shouldClose' flag or a dialog here.
+  // The main 'before-quit' handler will manage the confirmation and exit.
+  event.preventDefault(); // Always prevent the default close action
+  app.quit(); // Initiate the graceful shutdown sequence
 };
 
-const closeAppFromTray = async () => {
-  const { response } = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Yes', 'No'],
-    defaultId: 1,
-    title: 'Confirm',
-    message: 'Are you sure you want to quit the application?',
-    cancelId: 1,
-  });
-  if (response === 0) {
-    app.exit(0);
-  }
+const closeAppFromTray = () => {
+  app.quit();
 };
 
 export const createMainWindow = () => {
@@ -197,11 +175,6 @@ export const createMainWindow = () => {
 
   mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
 
-  mainWindow.on('closed', async () => {
-    mainWindow = null;
-    app.exit();
-  });
-
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
     createTray();
@@ -213,10 +186,6 @@ export const createMainWindow = () => {
   });
 
   mainWindow.on('close', handleWindowClose);
-
-  app.on('window-all-closed', async () => {
-    app.exit();
-  });
 };
 
 export const toggleMainWindowVisibility = () => {
