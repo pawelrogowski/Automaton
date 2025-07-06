@@ -56,11 +56,13 @@ export function createLogger(config = {}) {
     let formattedMessage;
     if (loggerConfig.colors) {
       const colorCode = levelDetails.color;
-      // Format: [LEVEL] message [timestamp]
-      formattedMessage = `\x1b[${colorCode}m[${tag}]\x1b[0m ${message} [\x1b[90m${timestamp}\x1b[0m]`; // Gray timestamp
+      // --- FIX: Apply color once at the start and reset once at the end ---
+      // This ensures the tag, timestamp, and message are all the same color.
+      // OLD: `\x1b[${colorCode}m[${tag}] [\x1b[90m${timestamp}\x1b[0m]\x1b[0m ${message}`
+      formattedMessage = `\x1b[${colorCode}m[${tag}] [${timestamp}] ${message}\x1b[0m`;
     } else {
-      // Format: [LEVEL] message [timestamp]
-      formattedMessage = `[${tag}] ${message} [${timestamp}]`;
+      // Format: [TAG] [TIMESTAMP] Message
+      formattedMessage = `[${tag}] [${timestamp}] ${message}`;
     }
 
     // Use the appropriate console method to maintain console output streams (stdout vs stderr)

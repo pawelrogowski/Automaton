@@ -3,16 +3,17 @@
 #include <X11/extensions/XTest.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
-#include <X11/Xatom.h> // For Atom and XInternAtom
+#include <X11/Xatom.h>
 #include <string.h>
 #include <map>
-#include <unistd.h> // For usleep
-#include <cctype> // For isupper, tolower
-#include <algorithm> // For std::transform
-#include <cstdlib> // For rand, srand
-#include <ctime> // For time
+#include <unistd.h>
+#include <cctype>
+#include <algorithm>
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
 
-// Map for special keys
+// Map for special keys (unchanged from your original)
 std::map<std::string, KeySym> specialKeys = {
    {"f1", XK_F1}, {"f2", XK_F2}, {"f3", XK_F3}, {"f4", XK_F4},
    {"f5", XK_F5}, {"f6", XK_F6}, {"f7", XK_F7}, {"f8", XK_F8},
@@ -28,57 +29,28 @@ std::map<std::string, KeySym> specialKeys = {
    {"pgup", XK_Page_Up}, {"pgdn", XK_Page_Down}, {"menu", XK_Menu},
 };
 
-// Map for modifier keys
+// Map for modifier keys (unchanged from your original)
 std::map<std::string, unsigned int> modifierKeys = {
     {"shift", ShiftMask}, {"control", ControlMask}, {"ctrl", ControlMask},
     {"alt", Mod1Mask}, {"super", Mod4Mask}, {"meta", Mod4Mask},
 };
 
-// FINAL HELPER: Checks for the _NET_WM_STATE_FOCUSED atom on the window.
-// If it's not present, it performs a robust focus action for XWayland.
-void CheckAndFocusIfNeeded(Display* display, Window target_window) {
-    Atom net_wm_state = XInternAtom(display, "_NET_WM_STATE", False);
-    Atom net_wm_state_focused = XInternAtom(display, "_NET_WM_STATE_FOCUSED", False);
-    Atom actual_type;
-    int actual_format;
-    unsigned long nitems;
-    unsigned long bytes_after;
-    Atom *prop_data = NULL;
-    bool is_focused = false;
 
-    int status = XGetWindowProperty(display, target_window, net_wm_state, 0, 1024, False, XA_ATOM,
-                                    &actual_type, &actual_format, &nitems, &bytes_after, (unsigned char**)&prop_data);
+// --- AGGRESSIVE, UNCONDITIONAL FOCUS FUNCTION ---
+// This function doesn't check anything. It uses the most direct X11 call
+// to command the server to change the keyboard input focus.
+void ForceFocus(Display* display, Window target_window) {
+    // Forcefully set the keyboard input focus directly via the X server.
+    XSetInputFocus(display, target_window, RevertToParent, CurrentTime);
 
-    if (status == Success && prop_data) {
-        for (unsigned long i = 0; i < nitems; i++) {
-            if (prop_data[i] == net_wm_state_focused) {
-                is_focused = true;
-                break;
-            }
-        }
-        XFree(prop_data);
-    }
-
-    if (!is_focused) {
-        Window root_window = XDefaultRootWindow(display);
-        Atom net_active_window = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
-        XEvent event;
-        memset(&event, 0, sizeof(event));
-        event.xclient.type = ClientMessage;
-        event.xclient.window = target_window;
-        event.xclient.message_type = net_active_window;
-        event.xclient.format = 32;
-        event.xclient.data.l[0] = 1;
-        event.xclient.data.l[1] = CurrentTime;
-        event.xclient.data.l[2] = 0;
-        XSendEvent(display, root_window, False, SubstructureRedirectMask | SubstructureNotifyMask, &event);
-        XSetInputFocus(display, target_window, RevertToParent, CurrentTime);
-        XSync(display, False);
-        usleep(15000); // 15 milliseconds
-    }
+    // Flush the request to the server and wait for it to be processed.
+    // This helps ensure the focus has changed before we send key events.
+    XSync(display, False);
+    usleep(15000); // 15 millisecond delay, matching your original code's timing.
 }
 
-// NEW INTERNAL HELPER for keyDown and keyUp to avoid code duplication
+
+// Internal helper for keyDown and keyUp, now calling ForceFocus
 void SendKeyEvent(const Napi::CallbackInfo& info, bool is_press) {
     Napi::Env env = info.Env();
     if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
@@ -109,7 +81,9 @@ void SendKeyEvent(const Napi::CallbackInfo& info, bool is_press) {
         return;
     }
     Window target_window = (Window)window_id;
-    CheckAndFocusIfNeeded(display, target_window);
+
+    ForceFocus(display, target_window); // <-- UPDATED CALL
+
     KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
     if (keysym == NoSymbol) {
         XCloseDisplay(display);
@@ -132,17 +106,9 @@ void SendKeyEvent(const Napi::CallbackInfo& info, bool is_press) {
     XCloseDisplay(display);
 }
 
-// NEW: Sends only a KeyPress event
-void KeyDown(const Napi::CallbackInfo& info) {
-    SendKeyEvent(info, true); // true for is_press
-}
+void KeyDown(const Napi::CallbackInfo& info) { SendKeyEvent(info, true); }
+void KeyUp(const Napi::CallbackInfo& info) { SendKeyEvent(info, false); }
 
-// NEW: Sends only a KeyRelease event
-void KeyUp(const Napi::CallbackInfo& info) {
-    SendKeyEvent(info, false); // false for is_press
-}
-
-// Original function for a single "click"
 void SendKeypress(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
@@ -173,7 +139,9 @@ void SendKeypress(const Napi::CallbackInfo& info) {
         return;
     }
     Window target_window = (Window)window_id;
-    CheckAndFocusIfNeeded(display, target_window);
+
+    ForceFocus(display, target_window); // <-- UPDATED CALL
+
     KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
     if (keysym == NoSymbol) {
         XCloseDisplay(display);
@@ -220,7 +188,9 @@ void TypeString(const Napi::CallbackInfo& info) {
     Display *display = XOpenDisplay(NULL);
     if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
     Window target_window = (Window)window_id;
-    CheckAndFocusIfNeeded(display, target_window);
+
+    ForceFocus(display, target_window); // <-- UPDATED CALL
+
     XkbDescPtr desc = XkbGetMap(display, XkbAllMapComponentsMask, XkbUseCoreKbd);
     if (!desc) { XCloseDisplay(display); Napi::Error::New(env, "Cannot get keyboard mapping").ThrowAsJavaScriptException(); return; }
     auto send_enter = [&](Display* d, Window w) {
@@ -267,7 +237,9 @@ void RotateFunction(const Napi::CallbackInfo& info) {
     Display *display = XOpenDisplay(NULL);
     if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
     Window target_window = (Window)window_id;
-    CheckAndFocusIfNeeded(display, target_window);
+
+    ForceFocus(display, target_window); // <-- UPDATED CALL
+
     srand(time(NULL));
     KeySym arrows[5];
     arrows[0] = XK_Down; arrows[3] = XK_Up; arrows[4] = XK_Down;
@@ -291,22 +263,31 @@ void RotateFunction(const Napi::CallbackInfo& info) {
 void FocusWindow(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsNumber()) { Napi::TypeError::New(env, "Window ID must be a number").ThrowAsJavaScriptException(); return; }
+    // --- THIS IS THE FIX ---
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
+    // --- END FIX ---
     Display *display = XOpenDisplay(NULL);
     if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
-    CheckAndFocusIfNeeded(display, (Window)window_id);
+
+    ForceFocus(display, (Window)window_id); // <-- UPDATED CALL
+
     XCloseDisplay(display);
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+    // CRITICAL: Initialize X11 for multi-threaded access.
+    // This is essential for stability within a complex application like Electron.
+    if (!XInitThreads()) {
+      std::cerr << "keypress-native: Warning - XInitThreads() failed. This could lead to instability." << std::endl;
+    }
+
     exports.Set("sendKey", Napi::Function::New(env, SendKeypress));
     exports.Set("rotate", Napi::Function::New(env, RotateFunction));
     exports.Set("type", Napi::Function::New(env, TypeString));
     exports.Set("focusWindow", Napi::Function::New(env, FocusWindow));
-    // Add the new functions for holding keys
     exports.Set("keyDown", Napi::Function::New(env, KeyDown));
     exports.Set("keyUp", Napi::Function::New(env, KeyUp));
     return exports;
 }
 
-NODE_API_MODULE(keypress, Init)
+NODE_API_MODULE(keypress, Init);

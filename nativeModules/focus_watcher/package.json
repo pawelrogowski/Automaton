@@ -1,0 +1,23 @@
+{
+  "name": "focus-watcher",
+  "version": "1.0.0",
+  "description": "Native module for enforcing _NET_WM_STATE_FOCUSED atom on an X11 window",
+  "main": "wrapper.js",
+  "private": true,
+  "scripts": {
+    "install": "node-gyp rebuild"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^7.0.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

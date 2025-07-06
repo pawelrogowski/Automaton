@@ -123,9 +123,16 @@ class WorkerManager {
   handleWorkerMessage(message) {
     if (message.notification) {
       showNotification(message.notification.title, message.notification.body);
-    }
-    if (message.storeUpdate) {
+    } else if (message.storeUpdate) {
       setGlobalState(message.type, message.payload);
+    } else if (message.command === 'requestRegionRescan') {
+      log('info', '[Worker Manager] Received request for region rescan. Relaying to regionMonitor...');
+      const regionWorkerEntry = this.workers.get('regionMonitor');
+      if (regionWorkerEntry?.worker) {
+        regionWorkerEntry.worker.postMessage({ command: 'forceRegionSearch' });
+      } else {
+        log('warn', '[Worker Manager] Could not relay rescan request: regionMonitor is not running.');
+      }
     } else if (['scriptError', 'luaPrint', 'luaStatusUpdate'].includes(message.type)) {
       const { scriptId, message: logMessage } = message;
       if (scriptId) {

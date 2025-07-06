@@ -20,7 +20,7 @@ const HEADER_SIZE = 8;
 // --- State ---
 let lastProcessedFrameCounter = -1;
 let lastRegionUpdateTime = 0;
-const REGION_UPDATE_INTERVAL_MS = 2000; // Find regions every 2 seconds
+const REGION_UPDATE_INTERVAL_MS = 1000; // Find regions every 2 seconds
 
 async function findAndDispatchRegions(buffer, metadata) {
   console.log('[RegionMonitor] Searching for all UI regions...');
@@ -123,5 +123,12 @@ async function mainLoop() {
     }
   }
 }
+
+parentPort.on('message', (message) => {
+  if (message.command === 'forceRegionSearch') {
+    console.log('[RegionMonitor] Received request for immediate region search. Triggering on next loop.');
+    lastRegionUpdateTime = 0;
+  }
+});
 
 mainLoop();
