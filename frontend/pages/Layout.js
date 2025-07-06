@@ -388,6 +388,13 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current status messages slice"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#regionCoordinatesState"
+                img={tibia} // Use the imported icon
+                text={'Region Coordinates'}
+                imageWidth="32px"
+                tooltip="View the current region coordinates slice"
+              ></SideBarNavButton>
             </>
           )}
 

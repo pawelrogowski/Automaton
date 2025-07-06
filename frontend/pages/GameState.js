@@ -25,6 +25,8 @@ const GameState = () => {
         return state.cavebot;
       case '#statusMessagesState':
         return state.statusMessages;
+      case '#regionCoordinatesState':
+        return state.regionCoordinates;
     }
   });
 
@@ -44,6 +46,8 @@ const GameState = () => {
         return 'Cavebot State';
       case '#statusMessagesState':
         return 'Status Messages';
+      case '#regionCoordinatesState':
+        return 'Region Coordinates';
     }
   };
 
