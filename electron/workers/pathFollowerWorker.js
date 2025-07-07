@@ -19,13 +19,17 @@ const pathFollowerConfig = {
   mapClickMaxDistance: 60,
   mapClickPostClickDelayMs: 100,
   mapClickStandTimeThresholdMs: 600,
+  thereIsNoWayKeyboardOnlyDurationMs: 5000,
+  notPossibleCooldownMs: 5000,
+  blockedTileExpirationMs: 5000,
 };
 // --- END CONFIGURATION ---
 
 // --- Worker State ---
 let appState = null;
-// --- THE DEFINITIVE FIX: A flag to grant a one-time bypass to the standTime check ---
 let isFirstActionOnNewTarget = true;
+let lastNotPossibleHandledTimestamp = 0;
+let temporaryBlocks = []; // In-memory list of temporarily blocked tiles
 
 // --- Helper Functions ---
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,8 +64,6 @@ function advanceToNextWaypoint() {
   const nextWpt = waypoints[nextIndex];
   if (nextWpt) {
     logger('info', `Advancing to next target: ${nextWpt.id}`);
-    // --- SET THE BYPASS FLAG ---
-    // When we ask for a new waypoint, we know the next action should be immediate.
     isFirstActionOnNewTarget = true;
     parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setwptId', payload: nextWpt.id });
   }
@@ -78,83 +80,124 @@ async function mainLoop() {
 
     const { playerMinimapPosition } = appState.gameState;
     const { waypointSections, currentSection, wptId, pathWaypoints, wptDistance, standTime } = appState.cavebot;
+    const { statusMessages } = appState;
     const targetWaypoint = waypointSections[currentSection]?.waypoints.find((wp) => wp.id === wptId);
     const minimapRegionDef = appState.regionCoordinates?.regions?.minimapFull;
+
+    temporaryBlocks = temporaryBlocks.filter((block) => block.expiresAt > Date.now());
 
     if (!targetWaypoint || !minimapRegionDef) {
       await sleep(250);
       continue;
     }
-
     if (playerMinimapPosition.z !== targetWaypoint.z) {
       advanceToNextWaypoint();
       continue;
     }
-
-    // --- 1. HANDLE ARRIVAL ---
     if (wptDistance === 0) {
-      logger('info', `Arrival confirmed at waypoint ${targetWaypoint.id}.`);
+      // --- CHANGE START: Handle 'Action' waypoint type ---
       if (pathFollowerConfig.specialWaypointTypes.includes(targetWaypoint.type)) {
         await sleep(pathFollowerConfig.specialWaypointDelayMs);
+      } else if (targetWaypoint.type === 'Action') {
+        logger('info', `Reached Action waypoint. Pressing F12.`);
+        keypress.sendKey(parseInt(appState.global.windowId, 10), 'f12');
+        await sleep(1500);
+        keypress.sendKey(parseInt(appState.global.windowId, 10), 'f11');
+        await sleep(100);
+        keypress.sendKey(parseInt(appState.global.windowId, 10), 'f10');
+        await sleep(100);
+        keypress.sendKey(parseInt(appState.global.windowId, 10), 'f9');
       }
+      // --- CHANGE END ---
       advanceToNextWaypoint();
       continue;
     }
 
-    // --- 2. HANDLE MOVEMENT (if path exists) ---
     if (pathWaypoints && pathWaypoints.length > 0) {
-      const shouldUseKeyboard = !pathFollowerConfig.useMapclicks || wptDistance < pathFollowerConfig.switchToKeyboardDistance;
+      const isThereNoWayRecent =
+        statusMessages?.thereIsNoWay && Date.now() - statusMessages.thereIsNoWay < pathFollowerConfig.thereIsNoWayKeyboardOnlyDurationMs;
+      const shouldUseKeyboard =
+        isThereNoWayRecent || !pathFollowerConfig.useMapclicks || wptDistance < pathFollowerConfig.switchToKeyboardDistance;
 
       if (shouldUseKeyboard) {
-        // --- KEYBOARD LOGIC ---
-        const positionBeforeMove = { ...playerMinimapPosition };
+        if (isThereNoWayRecent) logger('info', "'There is no way' detected. Forcing keyboard movement.");
+
         const nextStep = pathWaypoints[0];
+        const positionBeforeMove = { ...playerMinimapPosition };
         const moveKey = getDirectionKey(positionBeforeMove, nextStep);
-        if (!moveKey) continue;
 
-        // Consume the bypass flag, as we are taking an action.
+        if (!moveKey) {
+          // This can happen if we are already on the next step. Wait for path update.
+          await sleep(50);
+          continue;
+        }
+
+        // --- ATTEMPT MOVE (Optimistic Approach) ---
         isFirstActionOnNewTarget = false;
-
         const walkDelay =
           wptDistance <= pathFollowerConfig.approachDistanceThreshold
             ? pathFollowerConfig.approachWalkDelayMs
             : pathFollowerConfig.standardWalkDelayMs;
-
         const moveStartTime = Date.now();
         keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
         await sleep(walkDelay);
 
+        // --- REACTIVE CHECK (Only runs if the move failed) ---
         while (
           appState.gameState.playerMinimapPosition.x === positionBeforeMove.x &&
           appState.gameState.playerMinimapPosition.y === positionBeforeMove.y
         ) {
-          if (Date.now() - moveStartTime > pathFollowerConfig.moveTimeoutMs) {
-            logger('warn', 'Keyboard move timed out.');
-            break;
+          const now = Date.now();
+          const notPossibleTimestamp = appState.statusMessages?.notPossible;
+          const isNotPossibleDetected = notPossibleTimestamp && now - notPossibleTimestamp < 1000;
+          const isCooldownOver = now - lastNotPossibleHandledTimestamp > pathFollowerConfig.notPossibleCooldownMs;
+
+          // Check for failure conditions
+          if ((isNotPossibleDetected && isCooldownOver) || now - moveStartTime > pathFollowerConfig.moveTimeoutMs) {
+            if (isNotPossibleDetected) logger('warn', `'Not Possible' detected. Adding temporary block for [${nextStep.x},${nextStep.y}].`);
+            else logger('warn', `Keyboard move timed out. Adding temporary block for [${nextStep.x},${nextStep.y}].`);
+
+            // --- Define the action to take on failure ---
+            const addBlockAndRecalculate = () => {
+              lastNotPossibleHandledTimestamp = Date.now();
+              const newBlock = {
+                id: `temp-blocked-${nextStep.x}-${nextStep.y}-${playerMinimapPosition.z}`,
+                x: nextStep.x,
+                y: nextStep.y,
+                z: playerMinimapPosition.z,
+                avoidance: 10000,
+                type: 'cavebot',
+                expiresAt: now + pathFollowerConfig.blockedTileExpirationMs,
+              };
+              const existingBlockIndex = temporaryBlocks.findIndex((b) => b.id === newBlock.id);
+              if (existingBlockIndex > -1) {
+                temporaryBlocks[existingBlockIndex] = newBlock;
+              } else {
+                temporaryBlocks.push(newBlock);
+              }
+
+              const modifiedState = JSON.parse(JSON.stringify(appState));
+              modifiedState.cavebot.specialAreas.push(...temporaryBlocks);
+              parentPort.postMessage({ type: 'pathfinder/update', payload: modifiedState });
+            };
+
+            addBlockAndRecalculate();
+            break; // Exit the "stuck" loop and wait for the new path to arrive.
           }
           await sleep(5);
         }
       } else {
-        // --- MAP CLICK LOGIC ---
-        // This is the safety check to prevent clicking while the game is already handling a walk.
+        // --- MAP CLICKING LOGIC ---
         const isCharacterWalking = standTime < pathFollowerConfig.mapClickStandTimeThresholdMs;
-
-        // This is the crucial check: We only wait IF the character is walking AND it's NOT the first action for a new target.
         if (isCharacterWalking && !isFirstActionOnNewTarget) {
-          logger('debug', `Character is already walking from a previous map click. Waiting...`);
           await sleep(5);
           continue;
         }
-
-        logger('info', `Initiating map click to target ${wptId}. Bypass flag: ${isFirstActionOnNewTarget}`);
-        // Consume the bypass flag, as we are taking our one-time immediate action.
         isFirstActionOnNewTarget = false;
-
         let clickTargetWaypoint = pathWaypoints[pathWaypoints.length - 1];
         for (let i = pathWaypoints.length - 1; i >= 0; i--) {
-          const waypoint = pathWaypoints[i];
-          if (getDistance(playerMinimapPosition, waypoint) <= pathFollowerConfig.mapClickMaxDistance) {
-            clickTargetWaypoint = waypoint;
+          if (getDistance(playerMinimapPosition, pathWaypoints[i]) <= pathFollowerConfig.mapClickMaxDistance) {
+            clickTargetWaypoint = pathWaypoints[i];
             break;
           }
         }
@@ -167,9 +210,7 @@ async function mainLoop() {
         mouseController.leftClick(parseInt(appState.global.windowId, 10), clickCoords.x, clickCoords.y);
         await sleep(pathFollowerConfig.mapClickPostClickDelayMs);
       }
-    }
-    // --- 3. HANDLE WAITING FOR PATH ---
-    else {
+    } else {
       logger('debug', `Awaiting path to ${targetWaypoint.id}...`);
       await sleep(5);
     }
