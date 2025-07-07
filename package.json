@@ -117,7 +117,8 @@
     "webpack-node-externals": "^3.0.0",
     "windowinfo-native": "file:./nativeModules/windowInfo",
     "x11-region-capture-native": "file:./nativeModules/x11RegionCapture",
-    "focus-watcher": "file:./nativeModules/focus_watcher"
+    "focus-watcher": "file:./nativeModules/focus_watcher",
+    "mouse-controller": "file:./nativeModules/mouseController"
   },
   "devDependencies": {
     "@babel/core": "^7.23.6",

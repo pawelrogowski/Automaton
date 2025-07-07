@@ -75,16 +75,16 @@ async function findAndDispatchRegions(buffer, metadata) {
     foundRegions.gameLog = { x: 808, y: 695, width: 125, height: 11 };
 
     // --- Dispatch ONE atomic update ---
-    if (Object.keys(foundRegions).length > 5) {
-      // Simple check to ensure we found most things
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: setAllRegions.type,
-        payload: foundRegions,
-      });
+    // Always dispatch found regions, even if few are found, to ensure critical regions like minimapFull are propagated.
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: setAllRegions.type,
+      payload: foundRegions,
+    });
+    if (Object.keys(foundRegions).length > 0) {
       console.log('[RegionMonitor] Successfully found and dispatched regions.');
     } else {
-      console.warn('[RegionMonitor] Found too few regions, not dispatching update.');
+      console.warn('[RegionMonitor] No regions found to dispatch.');
     }
   } catch (error) {
     console.error('[RegionMonitor] Error during region location:', error);

@@ -1,6 +1,5 @@
 #include <napi.h>
 #include <X11/Xlib.h>
-#include <X11/extensions/XTest.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
@@ -46,7 +45,6 @@ void ForceFocus(Display* display, Window target_window) {
     // Flush the request to the server and wait for it to be processed.
     // This helps ensure the focus has changed before we send key events.
     XSync(display, False);
-    usleep(15000); // 15 millisecond delay, matching your original code's timing.
 }
 
 
@@ -238,7 +236,6 @@ void RotateFunction(const Napi::CallbackInfo& info) {
     if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
     Window target_window = (Window)window_id;
 
-    ForceFocus(display, target_window); // <-- UPDATED CALL
 
     srand(time(NULL));
     KeySym arrows[5];
@@ -246,6 +243,7 @@ void RotateFunction(const Napi::CallbackInfo& info) {
     arrows[1] = (rand() % 2 == 0) ? XK_Left : XK_Right;
     arrows[2] = (arrows[1] == XK_Left) ? XK_Right : XK_Left;
     for (int i = 0; i < 5; ++i) {
+        ForceFocus(display, target_window);
         KeyCode keycode = XKeysymToKeycode(display, arrows[i]);
         if (keycode == 0) continue;
         XEvent ev; memset(&ev, 0, sizeof(ev));

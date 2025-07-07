@@ -258,7 +258,7 @@ class WorkerManager {
       }
     }
 
-    if (windowId && regionsExist) {
+    if (windowId) {
       if (!this.workers.has('screenMonitor')) this.startWorker('screenMonitor');
       if (!this.workers.has('minimapMonitor')) this.startWorker('minimapMonitor');
     } else {
