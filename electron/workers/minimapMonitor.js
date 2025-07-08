@@ -194,7 +194,7 @@ async function start() {
       if (initialized) {
         await processFrame();
       } else {
-        await delay(500);
+        await delay(50);
       }
       if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
         shouldRestart = true;
@@ -202,7 +202,7 @@ async function start() {
     } catch (err) {
       logger('error', `Fatal error in mainLoop: ${err.stack}`);
       shouldRestart = true;
-      await delay(1000);
+      await delay(500);
     }
   }
 }

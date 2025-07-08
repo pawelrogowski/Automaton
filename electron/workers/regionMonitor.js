@@ -73,6 +73,7 @@ async function findAndDispatchRegions(buffer, metadata) {
     if (overallActionBarsRegion?.startFound) foundRegions.overallActionBars = overallActionBarsRegion;
 
     foundRegions.gameLog = { x: 808, y: 695, width: 125, height: 11 };
+    foundRegions.gameWorld = { x: 330, y: 6, width: 1086, height: 796 };
 
     // --- Dispatch ONE atomic update ---
     // Always dispatch found regions, even if few are found, to ensure critical regions like minimapFull are propagated.

@@ -31,6 +31,8 @@ const initialState = {
   wptDistance: 0,
   routeSearchMs: 0,
   standTime: 0, // Time in ms the player has been stationary
+  pathfindingStatus: 'IDLE', // To store the status from the native module
+  isActionPaused: false,
   waypointSections: {
     default: {
       name: 'Default',
@@ -51,7 +53,9 @@ const cavebotSlice = createSlice({
     setenabled: (state, action) => {
       state.enabled = action.payload;
     },
-
+    setActionPaused: (state, action) => {
+      state.isActionPaused = action.payload;
+    },
     setwptId: (state, action) => {
       const newWptId = action.payload;
       // This atomic update is the critical fix for the waypoint skipping race condition.
@@ -60,6 +64,10 @@ const cavebotSlice = createSlice({
         state.pathWaypoints = [];
         state.wptDistance = null;
         state.routeSearchMs = 0;
+        // --- THE CRITICAL FIX IS HERE ---
+        // Reset the status to a neutral state. This prevents the path follower
+        // from acting on stale data from the previous waypoint.
+        state.pathfindingStatus = 'IDLE';
       }
     },
 
@@ -72,10 +80,14 @@ const cavebotSlice = createSlice({
     },
 
     setPathfindingFeedback: (state, action) => {
-      const { pathWaypoints, wptDistance, routeSearchMs } = action.payload;
+      const { pathWaypoints, wptDistance, routeSearchMs, pathfindingStatus } = action.payload;
       state.pathWaypoints = pathWaypoints;
       state.wptDistance = wptDistance;
       state.routeSearchMs = routeSearchMs;
+      // Only update status if it's provided in the payload
+      if (pathfindingStatus) {
+        state.pathfindingStatus = pathfindingStatus;
+      }
     },
 
     setStandTime: (state, action) => {
@@ -83,7 +95,7 @@ const cavebotSlice = createSlice({
     },
 
     // --- WAYPOINT-SPECIFIC REDUCERS ---
-
+    // ... (no changes to any of the other reducers)
     addWaypoint: (state, action) => {
       const parsedPayload = parseLegacyCoordinates(action.payload);
       const newWaypoint = {
@@ -212,7 +224,7 @@ const cavebotSlice = createSlice({
         z: 0,
         sizeX: 1,
         sizeY: 1,
-        avoidance: 100,
+        avoidance: 10000,
         type: 'cavebot',
         enabled: true,
         ...action.payload,
@@ -279,6 +291,7 @@ export const {
   addSpecialArea,
   removeSpecialArea,
   updateSpecialArea,
+  setActionPaused,
 } = cavebotSlice.actions;
 
 export default cavebotSlice;
