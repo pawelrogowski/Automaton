@@ -1,5 +1,5 @@
-const TILE_WIDTH = 72;
-const TILE_HEIGHT = 72;
+const TILE_WIDTH = 64;
+const TILE_HEIGHT = 64;
 
 // Game world region from electron/workers/regionMonitor.js
 const GAME_WORLD_REGION = { x: 330, y: 6, width: 1086, height: 796 };
@@ -56,8 +56,8 @@ export function getAbsoluteGameWorldClickCoordinates(targetGameX, targetGameY, p
       finalClickY += TILE_HEIGHT;
       break;
     case 'bottomRight':
-      finalClickX += TILE_WIDTH - 5;
-      finalClickY += TILE_HEIGHT - 5;
+      finalClickX += TILE_WIDTH - 3;
+      finalClickY += TILE_HEIGHT - 3;
       break;
     case 'center':
     default:

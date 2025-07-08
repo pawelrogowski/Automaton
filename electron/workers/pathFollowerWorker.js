@@ -200,7 +200,7 @@ async function mainLoop() {
             playerMinimapPosition.x,
             playerMinimapPosition.y,
             playerMinimapPosition,
-            'bottomRight',
+            'center',
           );
           if (clickCoords) await handleZLevelChangeAction(clickCoords, targetWaypoint.type);
         } else if (targetWaypoint.type === 'Stand') {

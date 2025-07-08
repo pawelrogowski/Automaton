@@ -25,7 +25,7 @@ const luaSlice = createSlice({
      */
     addScript: (state, action) => {
       // The ID is now generated in the renderer for now
-      const { id, name, code, type, enabled = false, loopMin = 100, loopMax = 200, hotkey = null } = action.payload;
+      const { id, name, code, type, enabled = false, loopMin = 1000, loopMax = 5000, hotkey = null } = action.payload;
       const newScript = {
         id,
         name: name || 'New Script',

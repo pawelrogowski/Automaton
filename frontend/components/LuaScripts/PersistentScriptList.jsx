@@ -2,19 +2,17 @@
 import React, { useState, useCallback } from 'react';
 import ScriptEditorModal from '../ScriptEditorModal/ScriptEditorModal.jsx';
 import { useSelector, useDispatch } from 'react-redux';
-import { addScript, togglePersistentScript, removeScript, clearScriptLog } from '../../redux/slices/luaSlice';
+import { addScript, togglePersistentScript, removeScript, clearScriptLog, updateScript } from '../../redux/slices/luaSlice';
 import { v4 as uuidv4 } from 'uuid';
-import StyledList from './ScriptList.styled';
-import StyledScriptItem from './PersistentScriptListItem.styled'; // Import styled item
+import ScriptTable from './ScriptTable.jsx';
 
 const PersistentScriptList = () => {
   const dispatch = useDispatch();
   const persistent_scripts = useSelector((state) => state.lua.persistentScripts);
-  const [expanded_log_id, set_expanded_log_id] = useState(null);
   const [modalState, setModalState] = useState({ isOpen: false, script: null });
 
-  const handle_add_script = useCallback(() => {
-    const new_script_details = {
+  const handleAddScript = useCallback(() => {
+    const newScriptDetails = {
       id: uuidv4(),
       name: `New Persistent Script ${persistent_scripts.length + 1}`,
       code: '-- Your Lua code here',
@@ -24,29 +22,28 @@ const PersistentScriptList = () => {
       loopMax: 5000,
       log: [],
     };
-    dispatch(addScript(new_script_details));
-    setModalState({ isOpen: true, script: new_script_details });
+    dispatch(addScript(newScriptDetails));
   }, [dispatch, persistent_scripts.length]);
 
-  const handle_toggle_enabled = useCallback(
+  const handleToggleEnabled = useCallback(
     (id) => {
       dispatch(togglePersistentScript(id));
     },
     [dispatch],
   );
 
-  const handle_remove_script_from_modal = useCallback(
+  const handleRemoveScript = useCallback(
     (id) => {
-      // The modal dispatches removeScript directly, so this function is not strictly needed here.
-      // For now, the modal handles the dispatch.
-      handle_close_modal();
+      if (window.confirm('Are you sure you want to remove this script?')) {
+        dispatch(removeScript(id));
+      }
     },
-    [handle_close_modal],
+    [dispatch],
   );
 
-  const handle_edit_script = useCallback(
-    (script_id) => {
-      const scriptToEdit = persistent_scripts.find((s) => s.id === script_id);
+  const handleEditScript = useCallback(
+    (scriptId) => {
+      const scriptToEdit = persistent_scripts.find((s) => s.id === scriptId);
       if (scriptToEdit) {
         setModalState({ isOpen: true, script: { ...scriptToEdit } });
       }
@@ -54,62 +51,52 @@ const PersistentScriptList = () => {
     [persistent_scripts],
   );
 
-  const handle_close_modal = useCallback(() => {
+  const handleCloseModal = useCallback(() => {
     setModalState({ isOpen: false, script: null });
   }, []);
 
-  const handle_save_script = useCallback(
+  const handleSaveScript = useCallback(
     (updates) => {
       // The modal dispatches updateScript directly, so this function is not strictly needed here
       // but kept for consistency if a different flow was desired.
       // For now, the modal handles the dispatch.
-      handle_close_modal();
+      handleCloseModal();
     },
-    [handle_close_modal],
+    [handleCloseModal],
   );
 
-  const handle_toggle_log = useCallback(
-    (script_id) => {
-      set_expanded_log_id(expanded_log_id === script_id ? null : script_id);
+  const handleUpdateScriptData = useCallback(
+    (id, updates) => {
+      dispatch(updateScript({ id, updates }));
     },
-    [expanded_log_id],
+    [dispatch],
   );
 
-  const handle_clear_log = useCallback(
-    (script_id) => {
-      dispatch(clearScriptLog(script_id));
+  const handleClearLog = useCallback(
+    (scriptId) => {
+      dispatch(clearScriptLog(scriptId));
     },
     [dispatch],
   );
 
   return (
     <>
-      <StyledList>
-        <button onClick={handle_add_script}>New Script</button>
-        <ul>
-          {persistent_scripts.map((script) => (
-            <StyledScriptItem key={script.id}>
-              <div>
-                <span>{script.name}</span>
-                <button onClick={() => handle_toggle_enabled(script.id)}>{script.enabled ? 'Disable' : 'Enable'}</button>
-                <button onClick={() => handle_edit_script(script.id)}>Edit</button>
-                <button onClick={() => handle_toggle_log(script.id)}>
-                  {expanded_log_id === script.id ? 'Hide Log' : 'View Log'} ({script.log ? script.log.length : 0})
-                </button>
-                <button onClick={() => handle_clear_log(script.id)}>Clear Log</button>
-                <button onClick={() => dispatch(removeScript(script.id))}>Remove</button> {/* Direct dispatch for remove */}
-              </div>
-              {expanded_log_id === script.id && script.log && <pre className="script-log-display">{script.log.join('\n')}</pre>}
-            </StyledScriptItem>
-          ))}
-        </ul>
-      </StyledList>
+      <ScriptTable
+        scripts={persistent_scripts}
+        updateScriptData={handleUpdateScriptData}
+        onEditScript={handleEditScript}
+        onRemoveScript={handleRemoveScript}
+        onToggleScriptEnabled={handleToggleEnabled}
+        onClearScriptLog={handleClearLog}
+        onAddScript={handleAddScript}
+        type="persistent"
+      />
       <ScriptEditorModal
         isOpen={modalState.isOpen}
-        onClose={handle_close_modal}
+        onClose={handleCloseModal}
         scriptData={modalState.script}
-        onSave={handle_save_script}
-        onRemove={handle_remove_script_from_modal}
+        onSave={handleSaveScript}
+        onRemove={handleRemoveScript}
       />
     </>
   );

@@ -3,8 +3,8 @@ import React from 'react';
 import { useLocation } from 'react-router-dom';
 import StyledMain from './Healing.styled.js'; // Can reuse or create new styled component
 import HighWrapper from '../components/HighWrapper/HighWrapper.js';
-import PersistentScriptList from '../components/LuaScripts/PersistentScriptList.jsx'; // We will create this
-import HotkeyScriptList from '../components/LuaScripts/HotkeyScriptList.jsx'; // We will create this
+import PersistentScriptList from '../components/LuaScripts/PersistentScriptList.jsx';
+import HotkeyScriptList from '../components/LuaScripts/HotkeyScriptList.jsx';
 
 const LuaScripts = () => {
   const location = useLocation();
@@ -20,11 +20,10 @@ const LuaScripts = () => {
     title = 'Hotkey Scripts';
     content = <HotkeyScriptList />;
   } else {
-      // Default view or redirect if no hash
-       title = 'Select Script Type';
-       content = <p style={{ color: '#fafafa', textAlign: 'center' }}>Please select Persistent or Hotkey from the sidebar.</p>;
+    // Default view or redirect if no hash
+    title = 'Select Script Type';
+    content = <p style={{ color: '#fafafa', textAlign: 'center' }}>Please select Persistent or Hotkey from the sidebar.</p>;
   }
-
 
   return (
     <StyledMain>
