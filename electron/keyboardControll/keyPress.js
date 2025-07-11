@@ -1,23 +1,37 @@
 import keypress from 'keypress-native';
 
-export const keyPress = (windowId, key) => {
-  keypress.sendKey(parseInt(windowId), key);
+let isTyping = false;
+
+export const getIsTyping = () => isTyping;
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const keyPress = async (windowId, key, { modifier = null } = {}) => {
+  await keypress.sendKey(parseInt(windowId), key, modifier);
 };
 
-export const keyPressManaSync = async (windowId, key, pressNumber = 1) => {
-  keypress.sendKey(parseInt(windowId), key);
-
-  // Handle remaining presses with delays
-  for (let i = 1; i < pressNumber; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    await keypress.sendKey(parseInt(windowId), key);
+export const keyPressMultiple = async (windowId, key, { count = 1, modifier = null, delayMs = 50 } = {}) => {
+  for (let i = 0; i < count; i++) {
+    await keyPress(windowId, key, { modifier });
+    if (i < count - 1) {
+      await delay(delayMs);
+    }
   }
 };
 
-export const keyPressType = (windowId, str, delayMs = 10, finishWithEnter = false) => {
-  keypress.type(parseInt(windowId), str, delayMs, finishWithEnter);
+export const type = async (windowId, texts, startAndEndWithEnter = true) => {
+  isTyping = true;
+  try {
+    for (const text of texts) {
+      await keypress.type(parseInt(windowId), text, startAndEndWithEnter);
+      // Add a small delay between typing multiple strings to allow the game to process
+      await delay(150); 
+    }
+  } finally {
+    isTyping = false;
+  }
 };
 
-export const keyPressRotate = (windowId) => {
-  keypress.rotate(parseInt(windowId));
+export const rotate = async (windowId, direction) => {
+  await keypress.rotate(parseInt(windowId), direction);
 };

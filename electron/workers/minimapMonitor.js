@@ -1,4 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
+import { performance } from 'perf_hooks';
+import { appendFile } from 'fs/promises';
+import path from 'path';
 import { regionColorSequences, floorLevelIndicators } from '../constants/index.js';
 import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
@@ -6,10 +9,38 @@ import { delay, createRegion, validateRegionDimensions } from './screenMonitor/m
 import { MinimapMatcher } from '../utils/minimapMatcher.js';
 import findSequences from 'find-sequences-native';
 
+// --- Worker Configuration ---
+const { enableMemoryLogging = false, sharedData } = workerData;
+
+// --- Memory Usage Logging (Conditional) ---
+const LOG_INTERVAL_MS = 10000; // 10 seconds
+const LOG_FILE_NAME = 'minimap-monitor-memory-usage.log';
+const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
+let lastLogTime = 0;
+
+const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
+
+async function logMemoryUsage() {
+  try {
+    const memoryUsage = process.memoryUsage();
+    const timestamp = new Date().toISOString();
+    const logEntry =
+      `${timestamp} | ` +
+      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
+      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
+      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
+      `External: ${toMB(memoryUsage.external)} MB\n`;
+
+    await appendFile(LOG_FILE_PATH, logEntry);
+  } catch (error) {
+    console.error('[MemoryLogger] Failed to write to memory log file:', error);
+  }
+}
+// --- End of Memory Usage Logging ---
+
 const logger = createLogger({ info: true, error: true, debug: false });
 
 // --- Shared Buffer Setup ---
-const { sharedData } = workerData;
 if (!sharedData) throw new Error('[MinimapMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
@@ -17,7 +48,7 @@ const FRAME_COUNTER_INDEX = 0,
   WIDTH_INDEX = 1,
   HEIGHT_INDEX = 2,
   IS_RUNNING_INDEX = 3;
-const HEADER_SIZE = 8; // Define the header size as a constant
+const HEADER_SIZE = 8;
 
 // --- Configuration ---
 const MINIMAP_WIDTH = 106,
@@ -68,12 +99,10 @@ async function initialize() {
       height = Atomics.load(syncArray, HEIGHT_INDEX);
     if (width === 0 || height === 0) throw new Error('Received invalid frame dimension.');
 
-    // *** THE FIRST PART OF THE FIX: Create a view of the correct size, including the header ***
     const bufferSize = HEADER_SIZE + width * height * 4;
     fullWindowBufferView = Buffer.from(imageSAB, 0, bufferSize);
     fullWindowBufferMetadata = { width, height, frameCounter: Atomics.load(syncArray, FRAME_COUNTER_INDEX) };
 
-    // The rest of this logic is now operating on a buffer identical to the old one.
     const searchResults = findSequences.findSequencesNative(
       fullWindowBufferView,
       {
@@ -96,17 +125,15 @@ async function initialize() {
   }
 }
 
-// *** THE SECOND PART OF THE FIX: Use the ORIGINAL, WORKING extractBGRA function ***
 function extractBGRA(sourceBuffer, sourceMeta, rect) {
   if (!sourceBuffer || !rect || !validateRegionDimensions(rect)) return null;
   const { width: sourceWidth } = sourceMeta;
   const bytesPerPixel = 4;
-  const headerSize = HEADER_SIZE; // Use the constant
+  const headerSize = HEADER_SIZE;
   const targetSize = rect.width * rect.height * bytesPerPixel;
   const targetBuffer = Buffer.alloc(targetSize);
   for (let y = 0; y < rect.height; y++) {
     const sourceY = rect.y + y;
-    // This calculation is now correct again, because our sourceBuffer (the view) contains the header.
     const sourceRowStart = headerSize + (sourceY * sourceWidth + rect.x) * bytesPerPixel;
     const targetRowStart = y * rect.width * bytesPerPixel;
     sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * bytesPerPixel);
@@ -114,7 +141,6 @@ function extractBGRA(sourceBuffer, sourceMeta, rect) {
   return targetBuffer;
 }
 
-// The rest of the file uses the same async/await logic which is correct.
 async function processFrame() {
   if (!initialized || isSearching) return;
 
@@ -128,7 +154,6 @@ async function processFrame() {
   fullWindowBufferView = Buffer.from(imageSAB, 0, bufferSize);
   fullWindowBufferMetadata = { width, height, frameCounter: currentFrameCounter };
 
-  const now = Date.now();
   const currentMinimapData = extractBGRA(fullWindowBufferView, fullWindowBufferMetadata, minimapRegionDef);
   if (!currentMinimapData) {
     lastProcessedFrameCounter = currentFrameCounter;
@@ -153,7 +178,6 @@ async function processFrame() {
 
   if (detectedZ !== null && detectedZ !== lastKnownZ) {
     lastKnownZ = detectedZ;
-    parentPort.postMessage({ storeUpdate: true, type: 'gameState/setPlayerMinimapPosition', payload: { z: detectedZ } });
   }
   if (detectedZ === null) {
     lastProcessedFrameCounter = currentFrameCounter;
@@ -186,8 +210,31 @@ async function processFrame() {
 
 async function start() {
   logger('info', 'Minimap monitor worker started.');
+
+  // --- Initialize Logger if Enabled ---
+  if (enableMemoryLogging) {
+    try {
+      const header = `\n--- New Session Started at ${new Date().toISOString()} ---\n`;
+      await appendFile(LOG_FILE_PATH, header);
+      logger('info', `[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
+      lastLogTime = performance.now();
+      await logMemoryUsage();
+    } catch (error) {
+      logger('error', `[MemoryLogger] Could not initialize memory log file: ${error}`);
+    }
+  }
+  // --- End of Logger Initialization ---
+
   while (true) {
     try {
+      // --- Integrated Memory Logging Check ---
+      const now = performance.now();
+      if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
+        await logMemoryUsage();
+        lastLogTime = now;
+      }
+      // --- End of Integrated Memory Logging Check ---
+
       if (!initialized || shouldRestart) {
         await initialize();
       }

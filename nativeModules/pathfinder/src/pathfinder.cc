@@ -218,18 +218,17 @@ Napi::Value Pathfinder::LoadMapData(const Napi::CallbackInfo& info) {
 
 Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsArray()) {
-        Napi::TypeError::New(env, "Expected an array of special area objects").ThrowAsJavaScriptException();
+    if (info.Length() < 2 || !info[0].IsArray() || !info[1].IsNumber()) {
+        Napi::TypeError::New(env, "Expected an array of special area objects and current Z-level").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    this->cost_grid_cache.clear();
+    this->cost_grid_cache.clear(); // Clear all cache, as we're rebuilding for the current Z
+
     Napi::Array areas_array = info[0].As<Napi::Array>();
-    if (areas_array.Length() == 0) {
-        return env.Undefined();
-    }
+    int current_z = info[1].As<Napi::Number>().Int32Value();
 
-    std::vector<SpecialArea> all_special_areas;
+    std::vector<SpecialArea> areas_on_current_z;
     for (uint32_t i = 0; i < areas_array.Length(); ++i) {
         Napi::Object area_obj = areas_array.Get(i).As<Napi::Object>();
         SpecialArea area;
@@ -239,31 +238,34 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
         area.avoidance = area_obj.Get("avoidance").As<Napi::Number>().Int32Value();
         area.width = area_obj.Get("width").As<Napi::Number>().Int32Value();
         area.height = area_obj.Get("height").As<Napi::Number>().Int32Value();
-        all_special_areas.push_back(area);
+        if (area.z == current_z) { // Only consider areas on the current Z-level
+            areas_on_current_z.push_back(area);
+        }
     }
 
-    for (auto const& [z_level, mapData] : this->allMapData) {
-        std::vector<int> cost_grid(mapData.width * mapData.height, 0);
-        bool grid_was_modified = false;
-        for (const auto& area : all_special_areas) {
-            if (area.z != z_level) continue;
-            grid_was_modified = true;
-            int local_start_x = area.x - mapData.minX;
-            int local_start_y = area.y - mapData.minY;
-            for (int dx = 0; dx < area.width; ++dx) {
-                for (int dy = 0; dy < area.height; ++dy) {
-                    int current_x = local_start_x + dx;
-                    int current_y = local_start_y + dy;
-                    if (current_x >= 0 && current_x < mapData.width && current_y >= 0 && current_y < mapData.height) {
-                        cost_grid[current_y * mapData.width + current_x] = std::max(cost_grid[current_y * mapData.width + current_x], area.avoidance);
-                    }
+    auto it_map = this->allMapData.find(current_z);
+    if (it_map == this->allMapData.end()) {
+        // Map data for this Z-level is not loaded, nothing to update.
+        return env.Undefined();
+    }
+    const MapData& mapData = it_map->second;
+
+    std::vector<int> cost_grid(mapData.width * mapData.height, 0);
+    for (const auto& area : areas_on_current_z) {
+        int local_start_x = area.x - mapData.minX;
+        int local_start_y = area.y - mapData.minY;
+        for (int dx = 0; dx < area.width; ++dx) {
+            for (int dy = 0; dy < area.height; ++dy) {
+                int current_x = local_start_x + dx;
+                int current_y = local_start_y + dy;
+                if (current_x >= 0 && current_x < mapData.width && current_y >= 0 && current_y < mapData.height) {
+                    cost_grid[current_y * mapData.width + current_x] = std::max(cost_grid[current_y * mapData.width + current_x], area.avoidance);
                 }
             }
         }
-        if (grid_was_modified) {
-            this->cost_grid_cache[z_level] = std::move(cost_grid);
-        }
     }
+    this->cost_grid_cache[current_z] = std::move(cost_grid);
+
     return env.Undefined();
 }
 

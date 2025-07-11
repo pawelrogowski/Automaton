@@ -3,16 +3,20 @@
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 #include <X11/Xatom.h>
-#include <string.h>
+#include <string>
 #include <map>
+#include <vector>
 #include <unistd.h>
 #include <cctype>
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <thread>
+#include <chrono>
+#include <random>
 
-// Map for special keys (unchanged from your original)
+// --- KEY MAPS ---
 std::map<std::string, KeySym> specialKeys = {
    {"f1", XK_F1}, {"f2", XK_F2}, {"f3", XK_F3}, {"f4", XK_F4},
    {"f5", XK_F5}, {"f6", XK_F6}, {"f7", XK_F7}, {"f8", XK_F8},
@@ -28,263 +32,434 @@ std::map<std::string, KeySym> specialKeys = {
    {"pgup", XK_Page_Up}, {"pgdn", XK_Page_Down}, {"menu", XK_Menu},
 };
 
-// Map for modifier keys (unchanged from your original)
 std::map<std::string, unsigned int> modifierKeys = {
     {"shift", ShiftMask}, {"control", ControlMask}, {"ctrl", ControlMask},
     {"alt", Mod1Mask}, {"super", Mod4Mask}, {"meta", Mod4Mask},
 };
 
+std::map<char, KeySym> directionKeys = {
+    {'n', XK_Up}, {'s', XK_Down}, {'e', XK_Right}, {'w', XK_Left}
+};
 
-// --- AGGRESSIVE, UNCONDITIONAL FOCUS FUNCTION ---
-// This function doesn't check anything. It uses the most direct X11 call
-// to command the server to change the keyboard input focus.
+// --- UTILITY FUNCTIONS ---
 void ForceFocus(Display* display, Window target_window) {
-    // Forcefully set the keyboard input focus directly via the X server.
     XSetInputFocus(display, target_window, RevertToParent, CurrentTime);
-
-    // Flush the request to the server and wait for it to be processed.
-    // This helps ensure the focus has changed before we send key events.
     XSync(display, False);
 }
 
+// Random number generator for delays
+std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
-// Internal helper for keyDown and keyUp, now calling ForceFocus
-void SendKeyEvent(const Napi::CallbackInfo& info, bool is_press) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
-        Napi::TypeError::New(env, "Invalid arguments (window_id, key required)").ThrowAsJavaScriptException();
-        return;
+// Gets a human-like, fluctuating delay
+int get_human_delay(int base_delay_ms, int fluctuation_ms) {
+    std::uniform_int_distribution<int> dist(-fluctuation_ms, fluctuation_ms);
+    return std::max(1, base_delay_ms + dist(rng));
+}
+
+// --- ASYNC WORKER for SendKey ---
+class SendKeyWorker : public Napi::AsyncWorker {
+public:
+    SendKeyWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string key, std::string modifier)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), key(key), modifier(modifier) {}
+
+protected:
+    void Execute() override {
+        Display *display = XOpenDisplay(NULL);
+        if (!display) {
+            SetError("Cannot open display");
+            return;
+        }
+        Window target_window = (Window)window_id;
+        ForceFocus(display, target_window);
+
+        unsigned int modifiers_state = 0;
+        if (!modifier.empty()) {
+            std::transform(modifier.begin(), modifier.end(), modifier.begin(), ::tolower);
+            if (modifierKeys.count(modifier)) {
+                modifiers_state = modifierKeys[modifier];
+            } else {
+                XCloseDisplay(display);
+                SetError("Invalid modifier: " + modifier);
+                return;
+            }
+        }
+
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
+        if (keysym == NoSymbol) {
+            XCloseDisplay(display);
+            SetError("Invalid key: " + key);
+            return;
+        }
+
+        KeyCode keycode = XKeysymToKeycode(display, keysym);
+        if (keycode == 0) {
+            XCloseDisplay(display);
+            SetError("Could not get keycode for key: " + key);
+            return;
+        }
+
+        XkbStateRec state;
+        XkbGetState(display, XkbUseCoreKbd, &state);
+        unsigned int current_base_mods = state.base_mods;
+
+        XEvent event;
+        memset(&event, 0, sizeof(event));
+        event.xkey.display = display;
+        event.xkey.window = target_window;
+        event.xkey.root = XDefaultRootWindow(display);
+        event.xkey.subwindow = None;
+        event.xkey.time = CurrentTime;
+        event.xkey.x = 1; event.xkey.y = 1;
+        event.xkey.x_root = 1; event.xkey.y_root = 1;
+        event.xkey.same_screen = True;
+        event.xkey.keycode = keycode;
+        event.xkey.state = current_base_mods | modifiers_state;
+
+        // Key Press
+        event.type = KeyPress;
+        XSendEvent(display, target_window, True, KeyPressMask, &event);
+        XSync(display, False);
+
+        usleep(get_human_delay(50, 20) * 1000); // Default delay for single key presses
+
+        // Key Release
+        event.type = KeyRelease;
+        XSendEvent(display, target_window, True, KeyReleaseMask, &event);
+        XSync(display, False);
+
+        XCloseDisplay(display);
     }
+
+    void OnOK() override {
+        deferred.Resolve(Env().Undefined());
+    }
+
+    void OnError(const Napi::Error& e) override {
+        deferred.Reject(Napi::Error::New(Env(), e.Message()).Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred;
+    uint64_t window_id;
+    std::string key;
+    std::string modifier;
+};
+
+// --- ASYNC WORKER for TypeString ---
+class TypeStringWorker : public Napi::AsyncWorker {
+public:
+    TypeStringWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string str, bool start_and_end_with_enter)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), str(str), start_and_end_with_enter(start_and_end_with_enter) {}
+
+protected:
+    void Execute() override {
+        Display *display = XOpenDisplay(NULL);
+        if (!display) {
+            SetError("Cannot open display");
+            return;
+        }
+        Window target_window = (Window)window_id;
+        ForceFocus(display, target_window);
+
+        XkbDescPtr desc = XkbGetMap(display, XkbAllMapComponentsMask, XkbUseCoreKbd);
+        if (!desc) {
+            XCloseDisplay(display);
+            SetError("Cannot get keyboard mapping");
+            return;
+        }
+
+        XkbStateRec state;
+        XkbGetState(display, XkbUseCoreKbd, &state);
+        unsigned int current_base_mods = state.base_mods;
+
+        // Helper to send an instantaneous key press/release
+        auto send_key_event = [&](Display* d, Window w, KeyCode kc, unsigned int mods) {
+            XEvent ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.xkey.display = d;
+            ev.xkey.window = w;
+            ev.xkey.root = XDefaultRootWindow(d);
+            ev.xkey.subwindow = None;
+            ev.xkey.time = CurrentTime;
+            ev.xkey.x = 1; ev.xkey.y = 1;
+            ev.xkey.x_root = 1; ev.xkey.y_root = 1;
+            ev.xkey.same_screen = True;
+            ev.xkey.keycode = kc;
+            ev.xkey.state = mods;
+
+            ev.type = KeyPress;
+            XSendEvent(d, w, True, KeyPressMask, &ev);
+            XSync(d, False);
+
+            usleep(get_human_delay(20, 10) * 1000);
+
+            ev.type = KeyRelease;
+            XSendEvent(d, w, True, KeyReleaseMask, &ev);
+            XSync(d, False);
+        };
+
+        // Helper to send an instantaneous Enter key press
+        auto send_enter_key = [&](Display* d, Window w, unsigned int mods) {
+            KeySym ks = XK_Return;
+            KeyCode kc = XKeysymToKeycode(d, ks);
+            if (kc != 0) {
+                send_key_event(d, w, kc, mods);
+            }
+        };
+
+        if (start_and_end_with_enter) {
+            send_enter_key(display, target_window, current_base_mods);
+            usleep(get_human_delay(50, 10) * 1000); // Small delay after initial enter
+        }
+
+        for (char c : str) {
+            KeySym keysym = NoSymbol;
+            unsigned int required_modifier = 0;
+
+            // --- FIX: Explicitly handle special characters that XStringToKeysym fails on ---
+            if (c == ' ') {
+                keysym = XK_space;
+            } else if (c == '\'') {
+                keysym = XK_apostrophe;
+            } else if (isalnum(c) || ispunct(c)) {
+                 keysym = XStringToKeysym(std::string(1, c).c_str());
+                 if (isupper(c) || std::string("!@#$%^&*()_+{}|:\"<>?~").find(c) != std::string::npos) {
+                    required_modifier = ShiftMask;
+                 }
+            }
+
+            if (keysym == NoSymbol) continue;
+
+            KeyCode keycode = XKeysymToKeycode(display, keysym);
+            if (keycode == 0) continue;
+
+            send_key_event(display, target_window, keycode, current_base_mods | required_modifier);
+
+            int base_delay = 70;
+            int fluctuation = 30;
+            if (str.length() > 10) {
+                base_delay = 50;
+                fluctuation = 20;
+            }
+            usleep(get_human_delay(base_delay, fluctuation) * 1000);
+        }
+
+        if (start_and_end_with_enter) {
+            usleep(get_human_delay(50, 10) * 1000);
+            send_enter_key(display, target_window, current_base_mods);
+            usleep(get_human_delay(50, 10) * 1000);
+        }
+
+        XkbFreeKeyboard(desc, XkbAllComponentsMask, True);
+        XCloseDisplay(display);
+    }
+
+    void OnOK() override {
+        deferred.Resolve(Env().Undefined());
+    }
+
+    void OnError(const Napi::Error& e) override {
+        deferred.Reject(Napi::Error::New(Env(), e.Message()).Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred;
+    uint64_t window_id;
+    std::string str;
+    bool start_and_end_with_enter;
+};
+
+
+// --- ASYNC WORKER for Rotate ---
+class RotateWorker : public Napi::AsyncWorker {
+public:
+    RotateWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, char direction)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), direction(direction) {}
+
+protected:
+    void Execute() override {
+        Display *display = XOpenDisplay(NULL);
+        if (!display) {
+            SetError("Cannot open display");
+            return;
+        }
+        Window target_window = (Window)window_id;
+        ForceFocus(display, target_window);
+
+        std::vector<KeySym> key_sequence;
+        key_sequence.push_back(XK_Down);
+        bool go_left = (rand() % 2 == 0);
+        key_sequence.push_back(go_left ? XK_Left : XK_Right);
+        key_sequence.push_back(go_left ? XK_Right : XK_Left);
+        key_sequence.push_back(XK_Up);
+        key_sequence.push_back(XK_Down);
+
+        if (direction != '\0') {
+            auto it = directionKeys.find(direction);
+            if (it != directionKeys.end()) {
+                key_sequence.back() = it->second;
+            }
+        }
+
+        KeyCode ctrl_keycode = XKeysymToKeycode(display, XK_Control_L);
+        if (ctrl_keycode == 0) {
+            XCloseDisplay(display);
+            SetError("Could not find keycode for Control_L key.");
+            return;
+        }
+
+        XEvent event;
+        memset(&event, 0, sizeof(event));
+        event.xkey.display = display;
+        event.xkey.window = target_window;
+        event.xkey.root = XDefaultRootWindow(display);
+        event.xkey.keycode = ctrl_keycode;
+
+        event.type = KeyPress;
+        XSendEvent(display, target_window, True, KeyPressMask, &event);
+        XSync(display, False);
+        usleep(20 * 1000);
+
+        for (KeySym keysym : key_sequence) {
+            KeyCode keycode = XKeysymToKeycode(display, keysym);
+            if (keycode == 0) continue;
+            event.xkey.keycode = keycode;
+            event.xkey.state = ControlMask;
+
+            event.type = KeyPress;
+            XSendEvent(display, target_window, True, KeyPressMask, &event);
+            XSync(display, False);
+            usleep(((rand() % 41) + 30) * 1000);
+
+            event.type = KeyRelease;
+            XSendEvent(display, target_window, True, KeyReleaseMask, &event);
+            XSync(display, False);
+            usleep(((rand() % 41) + 25) * 1000);
+        }
+
+        event.xkey.keycode = ctrl_keycode;
+        event.type = KeyRelease;
+        XSendEvent(display, target_window, True, KeyReleaseMask, &event);
+        XSync(display, False);
+
+        XCloseDisplay(display);
+    }
+
+    void OnOK() override {
+        deferred.Resolve(Env().Undefined());
+    }
+
+    void OnError(const Napi::Error& e) override {
+        deferred.Reject(Napi::Error::New(Env(), e.Message()).Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred;
+    uint64_t window_id;
+    char direction;
+};
+
+// --- N-API WRAPPERS ---
+Napi::Value SendKeyAsync(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    auto deferred = Napi::Promise::Deferred::New(env);
+
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
+        deferred.Reject(Napi::TypeError::New(env, "sendKey(windowId, key, [modifier]) requires at least windowId and key.").Value());
+        return deferred.Promise();
+    }
+
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
     std::string key = info[1].As<Napi::String>().Utf8Value();
-    unsigned int modifiers_state = 0;
-    if (info.Length() > 2 && !info[2].IsUndefined()) {
-        if (!info[2].IsString()) {
-            Napi::TypeError::New(env, "Modifier must be a string").ThrowAsJavaScriptException();
-            return;
-        }
-        std::string modifier_str = info[2].As<Napi::String>().Utf8Value();
-        std::transform(modifier_str.begin(), modifier_str.end(), modifier_str.begin(), ::tolower);
-        if (modifierKeys.count(modifier_str)) {
-            modifiers_state = modifierKeys[modifier_str];
-        } else {
-            Napi::Error::New(env, "Invalid modifier: " + modifier_str).ThrowAsJavaScriptException();
-            return;
-        }
-    }
-    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-    Display *display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return;
-    }
-    Window target_window = (Window)window_id;
+    std::string modifier = "";
 
-    ForceFocus(display, target_window); // <-- UPDATED CALL
-
-    KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
-    if (keysym == NoSymbol) {
-        XCloseDisplay(display);
-        Napi::Error::New(env, "Invalid key: " + key).ThrowAsJavaScriptException();
-        return;
+    if (info.Length() > 2 && info[2].IsString()) {
+        modifier = info[2].As<Napi::String>().Utf8Value();
     }
-    KeyCode keycode = XKeysymToKeycode(display, keysym);
-    XkbStateRec state;
-    XkbGetState(display, XkbUseCoreKbd, &state);
-    unsigned int current_base_mods = state.base_mods;
-    XEvent event;
-    memset(&event, 0, sizeof(event));
-    event.xkey.display = display; event.xkey.window = target_window; event.xkey.root = XDefaultRootWindow(display);
-    event.xkey.subwindow = None; event.xkey.time = CurrentTime; event.xkey.x = 1; event.xkey.y = 1;
-    event.xkey.x_root = 1; event.xkey.y_root = 1; event.xkey.same_screen = True;
-    event.xkey.keycode = keycode; event.xkey.state = current_base_mods | modifiers_state;
-    event.type = is_press ? KeyPress : KeyRelease;
-    XSendEvent(display, target_window, True, is_press ? KeyPressMask : KeyReleaseMask, &event);
-    XSync(display, False);
-    XCloseDisplay(display);
+
+    SendKeyWorker* worker = new SendKeyWorker(env, deferred, window_id, key, modifier);
+    worker->Queue();
+    return deferred.Promise();
 }
 
-void KeyDown(const Napi::CallbackInfo& info) { SendKeyEvent(info, true); }
-void KeyUp(const Napi::CallbackInfo& info) { SendKeyEvent(info, false); }
-
-void SendKeypress(const Napi::CallbackInfo& info) {
+Napi::Value TypeStringAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
+    auto deferred = Napi::Promise::Deferred::New(env);
+
     if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
-        Napi::TypeError::New(env, "Invalid arguments").ThrowAsJavaScriptException();
-        return;
+        deferred.Reject(Napi::TypeError::New(env, "type(windowId, text, [startAndEndWithEnter]) requires at least windowId and text.").Value());
+        return deferred.Promise();
     }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    std::string key = info[1].As<Napi::String>().Utf8Value();
-    unsigned int modifiers_state = 0;
-    if (info.Length() > 2 && !info[2].IsUndefined()) {
-        if (!info[2].IsString()) {
-            Napi::TypeError::New(env, "Modifier must be a string").ThrowAsJavaScriptException();
-            return;
-        }
-        std::string modifier_str = info[2].As<Napi::String>().Utf8Value();
-        std::transform(modifier_str.begin(), modifier_str.end(), modifier_str.begin(), ::tolower);
-        if (modifierKeys.count(modifier_str)) {
-            modifiers_state = modifierKeys[modifier_str];
-        } else {
-            Napi::Error::New(env, "Invalid modifier: " + modifier_str).ThrowAsJavaScriptException();
-            return;
-        }
-    }
-    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
-    Display *display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return;
-    }
-    Window target_window = (Window)window_id;
 
-    ForceFocus(display, target_window); // <-- UPDATED CALL
-
-    KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
-    if (keysym == NoSymbol) {
-        XCloseDisplay(display);
-        Napi::Error::New(env, "Invalid key: " + key).ThrowAsJavaScriptException();
-        return;
-    }
-    KeyCode keycode = XKeysymToKeycode(display, keysym);
-    XkbStateRec state;
-    XkbGetState(display, XkbUseCoreKbd, &state);
-    unsigned int current_base_mods = state.base_mods;
-    XEvent event;
-    memset(&event, 0, sizeof(event));
-    event.xkey.display = display; event.xkey.window = target_window; event.xkey.root = XDefaultRootWindow(display);
-    event.xkey.subwindow = None; event.xkey.time = CurrentTime; event.xkey.x = 1; event.xkey.y = 1;
-    event.xkey.x_root = 1; event.xkey.y_root = 1; event.xkey.same_screen = True;
-    event.xkey.keycode = keycode; event.xkey.state = current_base_mods | modifiers_state;
-    event.type = KeyPress;
-    XSendEvent(display, target_window, True, KeyPressMask, &event);
-    XSync(display, False);
-    event.type = KeyRelease;
-    XSendEvent(display, target_window, True, KeyReleaseMask, &event);
-    XSync(display, False);
-    XCloseDisplay(display);
-}
-
-void TypeString(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
-        Napi::TypeError::New(env, "Invalid arguments").ThrowAsJavaScriptException();
-        return;
-    }
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
     std::string str = info[1].As<Napi::String>().Utf8Value();
-    int delay_ms = 0;
-    bool finish_with_enter = false;
-    if (info.Length() > 2 && !info[2].IsUndefined()) {
-        if (!info[2].IsNumber()) { Napi::TypeError::New(env, "Delay must be a number").ThrowAsJavaScriptException(); return; }
-        delay_ms = info[2].As<Napi::Number>().Int32Value();
-    }
-    if (info.Length() > 3 && !info[3].IsUndefined()) {
-        if (!info[3].IsBoolean()) { Napi::TypeError::New(env, "finish_with_enter must be a boolean").ThrowAsJavaScriptException(); return; }
-        finish_with_enter = info[3].As<Napi::Boolean>().Value();
-    }
-    Display *display = XOpenDisplay(NULL);
-    if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
-    Window target_window = (Window)window_id;
+    bool start_and_end_with_enter = false;
 
-    ForceFocus(display, target_window); // <-- UPDATED CALL
-
-    XkbDescPtr desc = XkbGetMap(display, XkbAllMapComponentsMask, XkbUseCoreKbd);
-    if (!desc) { XCloseDisplay(display); Napi::Error::New(env, "Cannot get keyboard mapping").ThrowAsJavaScriptException(); return; }
-    auto send_enter = [&](Display* d, Window w) {
-        KeySym ks = XK_Return; KeyCode kc = XKeysymToKeycode(d, ks);
-        if (kc != 0) {
-            XEvent ev; memset(&ev, 0, sizeof(ev));
-            ev.xkey.display = d; ev.xkey.window = w; ev.xkey.root = XDefaultRootWindow(d);
-            ev.xkey.subwindow = None; ev.xkey.time = CurrentTime; ev.xkey.x = 1; ev.xkey.y = 1;
-            ev.xkey.x_root = 1; ev.xkey.y_root = 1; ev.xkey.same_screen = True;
-            ev.xkey.keycode = kc; ev.xkey.state = 0;
-            ev.type = KeyPress; XSendEvent(d, w, True, KeyPressMask, &ev); XSync(d, False);
-            ev.type = KeyRelease; XSendEvent(d, w, True, KeyReleaseMask, &ev); XSync(d, False);
-        }
-    };
-    if (finish_with_enter) { send_enter(display, target_window); usleep(100 * 1000); }
-    XkbStateRec state; XkbGetState(display, XkbUseCoreKbd, &state);
-    unsigned int current_base_mods = state.base_mods;
-    for (char c : str) {
-        KeyCode keycode = 0; unsigned int required_modifier = 0; bool found = false; KeySym keysym = NoSymbol;
-        if (c == ' ') { keysym = XK_space; required_modifier = 0; found = true; } else { switch (c) { case '(': keysym = XK_parenleft; required_modifier = ShiftMask; found = true; break; case ')': keysym = XK_parenright; required_modifier = ShiftMask; found = true; break; case '!': keysym = XK_exclam; required_modifier = ShiftMask; found = true; break; case '@': keysym = XK_at; required_modifier = ShiftMask; found = true; break; case '#': keysym = XK_numbersign; required_modifier = ShiftMask; found = true; break; case '$': keysym = XK_dollar; required_modifier = ShiftMask; found = true; break; case '%': keysym = XK_percent; required_modifier = ShiftMask; found = true; break; case '^': keysym = XK_asciicircum; required_modifier = ShiftMask; found = true; break; case '&': keysym = XK_ampersand; required_modifier = ShiftMask; found = true; break; case '*': keysym = XK_asterisk; required_modifier = ShiftMask; found = true; break; case '_': keysym = XK_underscore; required_modifier = ShiftMask; found = true; break; case '+': keysym = XK_plus; required_modifier = ShiftMask; found = true; break; case '{': keysym = XK_braceleft; required_modifier = ShiftMask; found = true; break; case '}': keysym = XK_braceright; required_modifier = ShiftMask; found = true; break; case ':': keysym = XK_colon; required_modifier = ShiftMask; found = true; break; case '"': keysym = XK_quotedbl; required_modifier = ShiftMask; found = true; break; case '<': keysym = XK_less; required_modifier = ShiftMask; found = true; break; case '>': keysym = XK_greater; required_modifier = ShiftMask; found = true; break; case '?': keysym = XK_question; required_modifier = ShiftMask; found = true; break; case '~': keysym = XK_asciitilde; required_modifier = ShiftMask; found = true; break; case '|': keysym = XK_bar; required_modifier = ShiftMask; found = true; break; case '=': keysym = XK_equal; required_modifier = 0; found = true; break; case '-': keysym = XK_minus; required_modifier = 0; found = true; break; case '.': keysym = XK_period; required_modifier = 0; found = true; break; case '/': keysym = XK_slash; required_modifier = 0; found = true; break; case '\\': keysym = XK_backslash; required_modifier = 0; found = true; break; case ';': keysym = XK_semicolon; required_modifier = 0; found = true; break; case '\'': keysym = XK_apostrophe; required_modifier = 0; found = true; break; case '[': keysym = XK_bracketleft; required_modifier = 0; found = true; break; case ']': keysym = XK_bracketright; required_modifier = 0; found = true; break; case '`': keysym = XK_grave; required_modifier = 0; found = true; break; case ',': keysym = XK_comma; required_modifier = 0; found = true; break; default: break; } if (found) { keycode = XKeysymToKeycode(display, keysym); if (keycode == 0) found = false; } }
-        if (!found) { for (KeyCode kc = desc->min_key_code; kc <= desc->max_key_code; ++kc) { KeySym ks0 = XkbKeycodeToKeysym(display, kc, state.group, 0); if (ks0 != NoSymbol) { char* s = XKeysymToString(ks0); if (s && strlen(s) == 1 && s[0] == c) { keysym = ks0; keycode = kc; required_modifier = 0; found = true; break; } } KeySym ks1 = XkbKeycodeToKeysym(display, kc, state.group, 1); if (ks1 != NoSymbol) { char* s = XKeysymToString(ks1); if (s && strlen(s) == 1 && s[0] == c) { keysym = ks1; keycode = kc; required_modifier = ShiftMask; found = true; break; } } } }
-        if (found && keycode == 0) { keycode = XKeysymToKeycode(display, keysym); if (keycode == 0) found = false; }
-        if (!found) continue;
-        XEvent pressEvent; memset(&pressEvent, 0, sizeof(pressEvent));
-        pressEvent.type = KeyPress; pressEvent.xkey.display = display; pressEvent.xkey.window = target_window;
-        pressEvent.xkey.root = XDefaultRootWindow(display); pressEvent.xkey.subwindow = None; pressEvent.xkey.time = CurrentTime;
-        pressEvent.xkey.x = 1; pressEvent.xkey.y = 1; pressEvent.xkey.x_root = 1; pressEvent.xkey.y_root = 1;
-        pressEvent.xkey.same_screen = True; pressEvent.xkey.keycode = keycode;
-        pressEvent.xkey.state = current_base_mods | required_modifier;
-        XSendEvent(display, target_window, True, KeyPressMask, &pressEvent); XSync(display, False);
-        XEvent releaseEvent = pressEvent; releaseEvent.type = KeyRelease;
-        XSendEvent(display, target_window, True, KeyReleaseMask, &releaseEvent); XSync(display, False);
-        if (delay_ms > 0) usleep(delay_ms * 1000);
+    if (info.Length() > 2 && info[2].IsBoolean()) {
+        start_and_end_with_enter = info[2].As<Napi::Boolean>().Value();
     }
-    if (finish_with_enter) { usleep(100 * 1000); send_enter(display, target_window); usleep(100 * 1000); }
-    XkbFreeKeyboard(desc, XkbAllComponentsMask, True);
-    XCloseDisplay(display);
+
+    TypeStringWorker* worker = new TypeStringWorker(env, deferred, window_id, str, start_and_end_with_enter);
+    worker->Queue();
+    return deferred.Promise();
 }
 
-void RotateFunction(const Napi::CallbackInfo& info) {
+Napi::Value RotateAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsNumber()) { Napi::TypeError::New(env, "Window ID must be a number").ThrowAsJavaScriptException(); return; }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    Display *display = XOpenDisplay(NULL);
-    if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
-    Window target_window = (Window)window_id;
+    auto deferred = Napi::Promise::Deferred::New(env);
 
-
-    srand(time(NULL));
-    KeySym arrows[5];
-    arrows[0] = XK_Down; arrows[3] = XK_Up; arrows[4] = XK_Down;
-    arrows[1] = (rand() % 2 == 0) ? XK_Left : XK_Right;
-    arrows[2] = (arrows[1] == XK_Left) ? XK_Right : XK_Left;
-    for (int i = 0; i < 5; ++i) {
-        ForceFocus(display, target_window);
-        KeyCode keycode = XKeysymToKeycode(display, arrows[i]);
-        if (keycode == 0) continue;
-        XEvent ev; memset(&ev, 0, sizeof(ev));
-        ev.xkey.display = display; ev.xkey.window = target_window; ev.xkey.root = XDefaultRootWindow(display);
-        ev.xkey.subwindow = None; ev.xkey.time = CurrentTime; ev.xkey.x = 1; ev.xkey.y = 1;
-        ev.xkey.x_root = 1; ev.xkey.y_root = 1; ev.xkey.same_screen = True;
-        ev.xkey.keycode = keycode; ev.xkey.state = ControlMask;
-        ev.type = KeyPress; XSendEvent(display, target_window, True, KeyPressMask, &ev); XSync(display, False);
-        ev.type = KeyRelease; XSendEvent(display, target_window, True, KeyReleaseMask, &ev); XSync(display, False);
-        usleep(((rand() % 16) + 10) * 1000);
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        deferred.Reject(Napi::TypeError::New(env, "rotate(windowId, [direction]) requires at least a windowId.").Value());
+        return deferred.Promise();
     }
-    XCloseDisplay(display);
+
+    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
+    char direction_char = '\0';
+
+    if (info.Length() > 1 && info[1].IsString()) {
+        std::string direction_str = info[1].As<Napi::String>().Utf8Value();
+        if (direction_str.length() == 1) {
+            char c = tolower(direction_str[0]);
+            if (directionKeys.count(c)) {
+                direction_char = c;
+            }
+        }
+    }
+
+    RotateWorker* worker = new RotateWorker(env, deferred, window_id, direction_char);
+    worker->Queue();
+    return deferred.Promise();
 }
 
 void FocusWindow(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsNumber()) { Napi::TypeError::New(env, "Window ID must be a number").ThrowAsJavaScriptException(); return; }
-    // --- THIS IS THE FIX ---
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Window ID must be a number").ThrowAsJavaScriptException();
+        return;
+    }
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    // --- END FIX ---
     Display *display = XOpenDisplay(NULL);
-    if (!display) { Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException(); return; }
-
-    ForceFocus(display, (Window)window_id); // <-- UPDATED CALL
-
+    if (!display) {
+        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
+        return;
+    }
+    ForceFocus(display, (Window)window_id);
     XCloseDisplay(display);
 }
 
-Napi::Object Init(Napi::Env env, Napi::Object exports) {
-    // CRITICAL: Initialize X11 for multi-threaded access.
-    // This is essential for stability within a complex application like Electron.
-    if (!XInitThreads()) {
-      std::cerr << "keypress-native: Warning - XInitThreads() failed. This could lead to instability." << std::endl;
-    }
 
-    exports.Set("sendKey", Napi::Function::New(env, SendKeypress));
-    exports.Set("rotate", Napi::Function::New(env, RotateFunction));
-    exports.Set("type", Napi::Function::New(env, TypeString));
+// --- MODULE INITIALIZATION ---
+Napi::Object Init(Napi::Env env, Napi::Object exports) {
+    if (!XInitThreads()) {
+      std::cerr << "keypress-native: Warning - XInitThreads() failed." << std::endl;
+    }
+    srand(time(NULL));
+
+    exports.Set("sendKey", Napi::Function::New(env, SendKeyAsync));
+    exports.Set("rotate", Napi::Function::New(env, RotateAsync));
+    exports.Set("type", Napi::Function::New(env, TypeStringAsync));
     exports.Set("focusWindow", Napi::Function::New(env, FocusWindow));
-    exports.Set("keyDown", Napi::Function::New(env, KeyDown));
-    exports.Set("keyUp", Napi::Function::New(env, KeyUp));
     return exports;
 }
 

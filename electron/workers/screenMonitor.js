@@ -1,4 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
+import { performance } from 'perf_hooks';
+import { appendFile } from 'fs/promises';
+import path from 'path';
 import {
   regionColorSequences,
   resourceBars,
@@ -18,8 +21,36 @@ import findSequences from 'find-sequences-native';
 import fontOcr from 'font-ocr';
 import fontAtlasData from '../../font_atlas/font-data.js';
 
+// --- Worker Configuration ---
+const { enableMemoryLogging = false, sharedData } = workerData;
+
+// --- Memory Usage Logging (Conditional) ---
+const LOG_INTERVAL_MS = 10000; // 10 seconds
+const LOG_FILE_NAME = 'screen-monitor-memory-usage.log';
+const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
+let lastLogTime = 0;
+
+const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
+
+async function logMemoryUsage() {
+  try {
+    const memoryUsage = process.memoryUsage();
+    const timestamp = new Date().toISOString();
+    const logEntry =
+      `${timestamp} | ` +
+      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
+      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
+      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
+      `External: ${toMB(memoryUsage.external)} MB\n`;
+
+    await appendFile(LOG_FILE_PATH, logEntry);
+  } catch (error) {
+    console.error('[MemoryLogger] Failed to write to memory log file:', error);
+  }
+}
+// --- End of Memory Usage Logging ---
+
 // --- Shared Buffer Setup ---
-const { sharedData } = workerData;
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
@@ -70,25 +101,26 @@ function runRules(ruleInput) {
 }
 
 async function mainLoop() {
-  console.log('[ScreenMonitor] Worker started. Waiting for region data...');
-  try {
-    await fontOcr.loadFontAtlas(fontAtlasData);
-    console.log('[ScreenMonitor] Font atlas loaded.');
-  } catch (e) {
-    console.error('[ScreenMonitor] CRITICAL: Failed to load font atlas.', e);
-  }
+  console.log('[ScreenMonitor] Worker main loop started.');
 
   while (true) {
     try {
       Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastProcessedFrameCounter, 200);
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+      const now = performance.now();
+
+      // --- Integrated Memory Logging Check ---
+      if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
+        await logMemoryUsage();
+        lastLogTime = now;
+      }
+      // --- End of Integrated Memory Logging Check ---
+
       if (newFrameCounter <= lastProcessedFrameCounter) continue;
 
-      // <<< THE GUARD >>>
-      // This worker will do nothing until the state and regions are populated by regionMonitor.
       if (!state || !state.regionCoordinates || Object.keys(state.regionCoordinates.regions).length === 0) {
-        lastProcessedFrameCounter = newFrameCounter; // Acknowledge frame but do nothing
-        await new Promise((resolve) => setTimeout(resolve, 50)); // Prevent tight spin loop
+        lastProcessedFrameCounter = newFrameCounter;
+        await new Promise((resolve) => setTimeout(resolve, 50));
         continue;
       }
 
@@ -99,9 +131,6 @@ async function mainLoop() {
       const bufferSize = HEADER_SIZE + width * height * 4;
       const bufferView = Buffer.from(imageSAB, 0, bufferSize);
       const metadata = { width, height, frameCounter: newFrameCounter };
-
-      // <<< THE NEW LOGIC >>>
-      // Read regions directly from the state object on every frame.
       const { regions } = state.regionCoordinates;
 
       const searchTasks = {};
@@ -209,4 +238,29 @@ parentPort.on('message', (message) => {
   state = message;
 });
 
-mainLoop();
+async function startWorker() {
+  console.log('[ScreenMonitor] Worker starting up...');
+
+  if (enableMemoryLogging) {
+    try {
+      const header = `\n--- New Session Started at ${new Date().toISOString()} ---\n`;
+      await appendFile(LOG_FILE_PATH, header);
+      console.log(`[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
+      lastLogTime = performance.now();
+      await logMemoryUsage();
+    } catch (error) {
+      console.error('[MemoryLogger] Could not initialize memory log file:', error);
+    }
+  }
+
+  try {
+    await fontOcr.loadFontAtlas(fontAtlasData);
+    console.log('[ScreenMonitor] Font atlas loaded.');
+  } catch (e) {
+    console.error('[ScreenMonitor] CRITICAL: Failed to load font atlas.', e);
+  }
+
+  mainLoop();
+}
+
+startWorker();

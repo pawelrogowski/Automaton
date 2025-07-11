@@ -3,12 +3,38 @@ import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
+import { appendFile } from 'fs/promises'; // <-- ADDED FOR LOGGING
 import { createMainWindow } from './createMainWindow.js';
 import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import { getLinuxHardwareId } from './hardwareId.js';
 import { createLogger } from './utils/logger.js';
-import workerManager from './workerManager.js'; // Keep this import, it's still needed for initialization
+import workerManager from './workerManager.js';
+
+// --- Main Process Memory Logging Setup ---
+const MAIN_LOG_INTERVAL_MS = 10000; // 10 seconds
+const MAIN_LOG_FILE_NAME = 'main-process-memory-usage.log';
+const MAIN_LOG_FILE_PATH = path.join(process.cwd(), MAIN_LOG_FILE_NAME);
+
+const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
+
+async function logMainProcessMemoryUsage() {
+  try {
+    const memoryUsage = process.memoryUsage();
+    const timestamp = new Date().toISOString();
+    const logEntry =
+      `${timestamp} | ` +
+      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
+      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
+      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
+      `External: ${toMB(memoryUsage.external)} MB\n`;
+
+    await appendFile(MAIN_LOG_FILE_PATH, logEntry);
+  } catch (error) {
+    console.error('[Main MemoryLogger] Failed to write to memory log file:', error);
+  }
+}
+// --- End of Main Process Memory Logging Setup ---
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -54,6 +80,24 @@ app.whenReady().then(async () => {
     // });
     createMainWindow();
     workerManager.initialize(app, cwd);
+
+    // --- Start Main Process Memory Logging ---
+    (async () => {
+      try {
+        const header = `\n--- Main Process Session Started at ${new Date().toISOString()} ---\n`;
+        await appendFile(MAIN_LOG_FILE_PATH, header);
+        console.log(`[Main MemoryLogger] Memory usage logging is active. Outputting to ${MAIN_LOG_FILE_PATH}`);
+
+        // Log immediately on start
+        await logMainProcessMemoryUsage();
+
+        // Start the periodic logging. This is safe in the main process.
+        setInterval(logMainProcessMemoryUsage, MAIN_LOG_INTERVAL_MS);
+      } catch (error) {
+        console.error('[Main MemoryLogger] Could not initialize memory log file:', error);
+      }
+    })();
+    // --- End of Main Process Memory Logging ---
   } catch (error) {
     console.error('[Main] FATAL: Error during application startup:', error);
     dialog.showErrorBox(
@@ -65,49 +109,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', async (event) => {
-  if (isQuitting) {
-    return; // Already in the process of quitting, do nothing.
-  }
-
-  // 1. Prevent the application from closing immediately.
-  event.preventDefault();
-  isQuitting = true;
-
-  log('info', '[Main] Graceful shutdown initiated...');
-
-  // 2. Show a confirmation dialog to the user.
-  const { response } = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Yes, Quit', 'No, Cancel'],
-    defaultId: 1,
-    title: 'Confirm Quit',
-    message: 'Are you sure you want to quit the application?',
-    cancelId: 1,
-  });
-
-  if (response === 1) {
-    // User clicked "No, Cancel"
-    isQuitting = false;
-    log('info', '[Main] Shutdown cancelled by user.');
-    return;
-  }
-
-  // 3. User confirmed. Proceed with cleanup.
-  try {
-    log('info', '[Main] Terminating all workers...');
-    await workerManager.stopAllWorkers(); // Wait for all workers to stop.
-
-    log('info', '[Main] Unregistering global shortcuts...');
-    unregisterGlobalShortcuts();
-
-    log('info', '[Main] Application cleanup finished. Exiting now.');
-  } catch (error) {
-    log('error', '[Main] Error during shutdown cleanup:', error);
-  } finally {
-    // 4. After all cleanup, allow the app to finally quit.
-    // We call app.quit() again, but since isQuitting is true, it will now exit.
-    app.exit();
-  }
+  event.preventDefault(); // Prevent the app from quitting immediately
+  console.log('[Main] App is quitting. Terminating all workers...');
+  await workerManager.stopAllWorkers(); // Wait for all workers to stop
+  console.log('[Main] All workers terminated. Exiting now.');
+  app.exit(); // Now, exit the app
 });
 app.on('window-all-closed', () => {
   log('info', '[Main] All windows closed, initiating app quit.');

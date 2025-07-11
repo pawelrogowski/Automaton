@@ -13,6 +13,7 @@ const initialState = {
   monsterNum: 0,
   partyNum: 0,
   isWalking: false,
+  isTyping: false, // Flag to indicate when a typing action is in progress
   partyMembers: [],
   activeActionItems: {}, // This will now store items with an added 'position' key
   equippedItems: {
@@ -173,6 +174,9 @@ const gameStateSlice = createSlice({
       // unless used very carefully.
       return action.payload;
     },
+    setIsTyping: (state, action) => {
+      state.isTyping = action.payload;
+    },
     setPlayerMinimapPosition: (state, action) => {
       // logger('info', `[gameStateSlice] setPlayerMinimapPosition received payload:`, action.payload);
       state.playerMinimapPosition = action.payload;
@@ -190,6 +194,7 @@ export const {
   setPartyNum,
   setState,
   setPlayerMinimapPosition, // Export the new action
+  setIsTyping,
 } = gameStateSlice.actions;
 
 export default gameStateSlice;

@@ -208,13 +208,8 @@ async function mainLoop() {
           await sleep(pathFollowerConfig.specialWaypointDelayMs);
         } else if (targetWaypoint.type === 'Action') {
           logger('info', `Executing 'Action' waypoint.`);
-          keypress.sendKey(parseInt(appState.global.windowId, 10), 'f12');
-          await sleep(1500);
-          keypress.sendKey(parseInt(appState.global.windowId, 10), 'f11');
-          await sleep(100);
-          keypress.sendKey(parseInt(appState.global.windowId, 10), 'f10');
-          await sleep(100);
-          keypress.sendKey(parseInt(appState.global.windowId, 10), 'f9');
+          keypress.rotate(parseInt(appState.global.windowId, 10));
+          await sleep(500);
         }
       } finally {
         parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setActionPaused', payload: false });

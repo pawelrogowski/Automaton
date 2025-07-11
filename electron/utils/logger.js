@@ -48,8 +48,8 @@ export function createLogger(config = {}) {
     }
 
     const now = new Date();
-    // Format timestamp as YYYY-MM-DD HH:MM:SS
-    const timestamp = now.toISOString().slice(0, 19).replace('T', ' ');
+    // Format timestamp as YYYY-MM-DD HH:MM:SS.sss
+    const timestamp = now.toISOString().replace('T', ' ').slice(0, 23);
     const tag = levelDetails.tag;
     const consoleMethod = levelDetails.consoleMethod;
 

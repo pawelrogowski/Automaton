@@ -33,6 +33,7 @@ const initialState = {
   standTime: 0, // Time in ms the player has been stationary
   pathfindingStatus: 'IDLE', // To store the status from the native module
   isActionPaused: false,
+  actionScriptFeedback: null, // For feedback from action scripts
   waypointSections: {
     default: {
       name: 'Default',
@@ -92,6 +93,11 @@ const cavebotSlice = createSlice({
 
     setStandTime: (state, action) => {
       state.standTime = action.payload;
+    },
+
+    setActionScriptFeedback: (state, action) => {
+      // Used by cavebot action scripts to send data/status to the UI.
+      state.actionScriptFeedback = action.payload;
     },
 
     // --- WAYPOINT-SPECIFIC REDUCERS ---
@@ -277,6 +283,7 @@ export const {
   setwptSelection,
   setPathfindingFeedback,
   setStandTime,
+  setActionScriptFeedback,
   // Waypoints
   addWaypoint,
   removeWaypoint,

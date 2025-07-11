@@ -1,23 +1,56 @@
-import { parentPort, workerData } from 'worker_threads';
+import { parentPort, workerData, threadId } from 'worker_threads';
+import { performance } from 'perf_hooks';
+import { appendFile } from 'fs/promises';
+import path from 'path';
 import { LuaFactory } from 'wasmoon';
 import { createLogger } from '../utils/logger.js';
-import { createLuaApi } from './luaApi.js'; // Import the new API creator
+import { createLuaApi } from './luaApi.js';
+import { preprocessLuaScript } from './luaScriptProcessor.js';
 
-const log = createLogger(); // Use default logger configuration
+// --- Worker Configuration ---
+const { enableMemoryLogging = false } = workerData;
+
+// --- Memory Usage Logging (Conditional) ---
+const LOG_INTERVAL_MS = 10000; // 10 seconds
+const LOG_FILE_NAME = `lua-script-worker-${threadId}-memory-usage.log`;
+const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
+let lastLogTime = 0;
+
+const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
+
+async function logMemoryUsage() {
+  try {
+    const memoryUsage = process.memoryUsage();
+    const timestamp = new Date().toISOString();
+    const logEntry =
+      `${timestamp} | ` +
+      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
+      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
+      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
+      `External: ${toMB(memoryUsage.external)} MB\n`;
+
+    await appendFile(LOG_FILE_PATH, logEntry);
+  } catch (error) {
+    console.error(`[MemoryLogger][Thread ${threadId}] Failed to write to memory log file:`, error);
+  }
+}
+// --- End of Memory Usage Logging ---
+
+const log = createLogger();
 
 let lua;
 let currentState = {};
-let scriptConfig = {}; // To store id, code, loopMin, loopMax for this specific worker
-let loopInterval = null; // To manage the persistent loop
+let scriptConfig = {};
+let loopInterval = null;
+let asyncFunctionNames = [];
+let keepAliveInterval = null;
 
-/**
- * Pre-processes a Lua script string to automatically append :await() to 'wait(args)' calls.
- * @param {string} scriptCode The original Lua script string.
- * @returns {string} The processed Lua script string.
- */
-function preprocessLuaScript(scriptCode) {
-  const processedCode = scriptCode.replace(/\bwait\s*\([^)]*\)/g, '$&:await()');
-  return processedCode;
+// --- Keep Alive Function ---
+function keepAlive() {
+  if (keepAliveInterval) return;
+  keepAliveInterval = setInterval(() => {
+    // This empty interval prevents the worker from exiting when idle.
+  }, 60 * 60 * 1000); // Run once per hour
 }
 
 async function initializeLuaVM() {
@@ -25,9 +58,6 @@ async function initializeLuaVM() {
   try {
     const factory = new LuaFactory();
     lua = await factory.createEngine();
-
-    // Expose functions from the Lua API to the Lua global environment
-    // This is now handled by updateLuaApiGlobals to ensure latest currentState is used
     log('info', `[Lua Script Worker ${scriptConfig.id}] Lua VM initialized successfully.`);
   } catch (error) {
     log('error', `[Lua Script Worker ${scriptConfig.id}] Error initializing Lua VM:`, error);
@@ -35,7 +65,6 @@ async function initializeLuaVM() {
   }
 }
 
-// Reverted to exposing only gameState properties directly to Lua globals.
 function exposeGameStateToLua(luaInstance) {
   if (!luaInstance || !currentState.gameState) return;
   for (const key in currentState.gameState) {
@@ -46,18 +75,53 @@ function exposeGameStateToLua(luaInstance) {
   }
 }
 
-// New function to update Lua global API functions with the latest state
 function updateLuaApiGlobals() {
   if (!lua) return;
-  const luaApi = createLuaApi(scriptConfig.id, currentState);
-  for (const funcName in luaApi) {
-    if (Object.hasOwnProperty.call(luaApi, funcName)) {
-      lua.global.set(funcName, luaApi[funcName]);
+  const { api, asyncFunctionNames: newAsyncNames } = createLuaApi({
+    type: 'script',
+    getState: () => currentState,
+    postSystemMessage: (message) => parentPort.postMessage(message),
+    logger: log,
+    id: scriptConfig.id,
+  });
+  asyncFunctionNames = newAsyncNames;
+  for (const funcName in api) {
+    if (Object.hasOwnProperty.call(api, funcName)) {
+      lua.global.set(funcName, api[funcName]);
     }
   }
   log('debug', `[Lua Script Worker ${scriptConfig.id}] Lua API globals updated with latest state.`);
 }
 
+// --- [NEW] --- Logic for one-shot execution (for Cavebot Actions)
+async function executeOneShot() {
+  log('info', `[Lua Script Worker ${scriptConfig.id}] Executing one-shot script.`);
+  if (!lua || !scriptConfig.code || !scriptConfig.code.trim()) {
+    parentPort.postMessage({
+      type: 'scriptExecutionResult',
+      id: scriptConfig.id,
+      success: false,
+      error: 'No script code provided or Lua VM not ready.',
+    });
+    return;
+  }
+
+  try {
+    // Ensure the latest state is available to the script
+    exposeGameStateToLua(lua);
+    updateLuaApiGlobals();
+    await lua.doString(preprocessLuaScript(scriptConfig.code, asyncFunctionNames));
+    // Report success back to the workerManager
+    parentPort.postMessage({ type: 'scriptExecutionResult', id: scriptConfig.id, success: true });
+  } catch (error) {
+    const errorMessage = error.message || String(error);
+    log('error', `[Lua Script Worker ${scriptConfig.id}] Error executing one-shot script:`, errorMessage);
+    // Report failure back to the workerManager
+    parentPort.postMessage({ type: 'scriptExecutionResult', id: scriptConfig.id, success: false, error: errorMessage });
+  }
+}
+
+// --- Logic for persistent script execution (existing)
 async function executeScriptLoop() {
   log('debug', `[Lua Script Worker ${scriptConfig.id}] Entering executeScriptLoop. Script enabled: ${scriptConfig.enabled}`);
   if (!lua || !scriptConfig.enabled) {
@@ -67,23 +131,19 @@ async function executeScriptLoop() {
   }
 
   if (!scriptConfig.code.trim()) {
-    // Check if code is empty or just whitespace
     log('debug', `[Lua Script Worker ${scriptConfig.id}] Script code is empty. Skipping execution for this iteration.`);
-    // Do not stop the loop, just skip execution and proceed to delay
   } else {
     log('info', `[Lua Script Worker ${scriptConfig.id}] Executing script code.`);
     try {
       exposeGameStateToLua(lua);
-      await lua.doString(preprocessLuaScript(scriptConfig.code));
+      await lua.doString(preprocessLuaScript(scriptConfig.code, asyncFunctionNames));
       parentPort.postMessage({ type: 'scriptResult', success: true, scriptId: scriptConfig.id });
     } catch (error) {
       log('error', `[Lua Script Worker ${scriptConfig.id}] Error executing script:`, error);
       parentPort.postMessage({ type: 'scriptError', success: false, scriptId: scriptConfig.id, error: error.message });
-      // Do NOT stop the loop on error; allow it to continue after the delay.
     }
   }
 
-  // Calculate random delay
   const min = scriptConfig.loopMin || 100;
   const max = scriptConfig.loopMax || 200;
   const delay = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -97,7 +157,7 @@ function startScriptLoop() {
     clearTimeout(loopInterval);
   }
   log('info', `[Lua Script Worker ${scriptConfig.id}] Starting script loop.`);
-  executeScriptLoop(); // Start immediately
+  executeScriptLoop();
 }
 
 function stopScriptLoop() {
@@ -108,65 +168,75 @@ function stopScriptLoop() {
   }
 }
 
+// --- [MODIFIED] --- The main message handler now decides the execution path
 parentPort.on('message', async (message) => {
-  log('debug', `[Lua Script Worker ${scriptConfig.id}] Received message: ${message.type}`);
+  // --- Integrated Memory Logging Check ---
+  const now = performance.now();
+  if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
+    await logMemoryUsage();
+    lastLogTime = now;
+  }
+  // --- End of Integrated Memory Logging Check ---
+
   if (message.type === 'init') {
     scriptConfig = message.script;
     log('info', `[Lua Script Worker ${scriptConfig.id}] Initializing with config:`, scriptConfig);
     await initializeLuaVM();
-    updateLuaApiGlobals(); // Initial exposure of API functions
-    if (scriptConfig.enabled) {
-      startScriptLoop();
-    }
-  } else if (message.type === 'stateUpdate') {
-    currentState = message.state;
-    if (lua) {
-      exposeGameStateToLua(lua);
-      updateLuaApiGlobals(); // Update API functions with latest state
-    }
-  } else if (message.type === 'updateScriptConfig') {
-    const oldCode = scriptConfig.code;
-    const oldLoopMin = scriptConfig.loopMin;
-    const oldLoopMax = scriptConfig.loopMax;
-    const wasEnabled = scriptConfig.enabled; // Capture current enabled state before update
+    updateLuaApiGlobals(); // Initial update
 
-    scriptConfig = { ...scriptConfig, ...message.updates };
-    log('debug', `[Lua Script Worker ${scriptConfig.id}] Received script config update:`, message.updates);
-
-    const isNowEnabled = scriptConfig.enabled;
-
-    // Determine if a restart is truly necessary
-    const codeChanged = oldCode !== scriptConfig.code;
-    const loopMinChanged = oldLoopMin !== scriptConfig.loopMin;
-    const loopMaxChanged = oldLoopMax !== scriptConfig.loopMax;
-    const enabledStateChangedToTrue = !wasEnabled && isNowEnabled; // Script was disabled, now enabled
-
-    if (codeChanged || loopMinChanged || loopMaxChanged || enabledStateChangedToTrue) {
-      log(
-        'info',
-        `[Lua Script Worker ${scriptConfig.id}] Script configuration changed (code: ${codeChanged}, loopMin: ${loopMinChanged}, loopMax: ${loopMaxChanged}, enabled: ${enabledStateChangedToTrue}), restarting loop.`,
-      );
-      stopScriptLoop();
+    // Check the script type to decide what to do
+    if (scriptConfig.type === 'oneshot') {
+      // This is a cavebot action script. Execute it once and report back.
+      await executeOneShot();
+    } else {
+      // This is a persistent or hotkey script. Start the loop if enabled.
       if (scriptConfig.enabled) {
-        // Only start if it's currently enabled
         startScriptLoop();
       }
-    } else if (wasEnabled && !isNowEnabled) {
-      // Script was enabled, now disabled
-      log('info', `[Lua Script Worker ${scriptConfig.id}] Script disabled, stopping loop.`);
+      // Keep the worker alive
+      keepAlive();
+    }
+  } else if (message.type === 'update') {
+    scriptConfig = message.script;
+    if (scriptConfig.enabled) {
+      startScriptLoop();
+    } else {
       stopScriptLoop();
     }
-    // If only logs or other non-critical properties changed, and script was already enabled, do nothing.
-  } else if (message.type === 'stopScript') {
-    stopScriptLoop();
+  } else {
+    // For all other messages, it's a state update.
+    currentState = message;
+    if (lua) {
+      // Keep the Lua environment's globals in sync with the app state.
+      exposeGameStateToLua(lua);
+      updateLuaApiGlobals();
+    }
   }
 });
 
 parentPort.on('close', () => {
   log('info', `[Lua Script Worker ${scriptConfig.id}] Worker closing.`);
   stopScriptLoop();
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+  }
   if (lua) {
     lua.close();
     lua = null;
   }
 });
+
+// --- Worker Initialization ---
+(async () => {
+  if (enableMemoryLogging) {
+    try {
+      const header = `\n--- New Session Started at ${new Date().toISOString()} for Thread ${threadId} ---\n`;
+      await appendFile(LOG_FILE_PATH, header);
+      log('info', `[MemoryLogger][Thread ${threadId}] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
+      lastLogTime = performance.now();
+      await logMemoryUsage();
+    } catch (error) {
+      log('error', `[MemoryLogger][Thread ${threadId}] Could not initialize memory log file:`, error);
+    }
+  }
+})();

@@ -1,7 +1,6 @@
-// screenMonitor/ruleProcessor.js
 import parseMathCondition from '../../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../../utils/areStatusConditionsMet.js';
-import { keyPress, keyPressManaSync } from '../../keyboardControll/keyPress.js';
+import { keyPress, keyPressMultiple, getIsTyping } from '../../keyboardControll/keyPress.js';
 import { createLogger } from '../../utils/logger.js';
 
 const log = createLogger({ info: true, error: true, warn: true });
@@ -55,6 +54,11 @@ class RuleProcessor {
     const logSteps = config.logging.logRuleProcessingSteps;
     const logExec = config.logging.logRuleExecutionDetails;
     const now = Date.now();
+
+    if (getIsTyping()) {
+      if (logSteps) console.log('[RuleProc] Skipping cycle: Typing is in progress.');
+      return;
+    }
 
     if (logSteps) console.log(`[RuleProc] --- Cycle Start (Time: ${now}) ---`);
 
@@ -624,16 +628,10 @@ class RuleProcessor {
         } else {
           if (logExec) console.warn(`[RuleProc] PartyHeal Rune ${ruleId}: No valid target found.`);
         }
-      } else if (isManaSync) {
-        // Covers 'manaSyncNormal' and 'manaSyncForced'
-        const pressNumber = executionType === 'manaSyncForced' ? 1 : 1; // V1 logic
-        if (logExec) console.log(`[RuleProc] Executing ManaSync keypress for ${ruleId} (Key: ${rule.key}, Type: ${executionType})`);
-        keyPressManaSync(globalConfig.windowId, rule.key, pressNumber); // V1 call
-        actionSent = true;
       } else {
         // 'standard' rules: userRule, equipRule, actionBarItem (non-rune party heal)
         if (logExec) console.log(`[RuleProc] Executing Standard keypress for ${ruleId} (Key: ${rule.key})`);
-        keyPress(globalConfig.windowId, rule.key, rule); // V1 call for standard
+        keyPress(globalConfig.windowId, rule.key, { speed: 'fast' });
         actionSent = true;
       }
 
