@@ -112,7 +112,7 @@ const LuaEditorModal = ({ isOpen, initialValue, onClose, onSave }) => {
   return (
     <ModalOverlay onClick={onClose}>
       <ModalContent onClick={(e) => e.stopPropagation()}>
-        <ModalHeader>Edit Action Script (Lua)</ModalHeader>
+        <ModalHeader>Edit Script (Lua)</ModalHeader>
         <ModalBody>
           {/* --- This is the new CodeMirror editor with the correct extension --- */}
           <CodeMirror

@@ -192,7 +192,8 @@ const EditableCoordinatesCell = React.memo(({ row: { original }, updateMyData })
   );
 });
 
-const LuaActionCell = React.memo(({ value, row: { original }, onEditAction }) => (
+// --- MODIFICATION: Renamed for clarity ---
+const LuaScriptCell = React.memo(({ value, row: { original }, onEditAction }) => (
   <div onDoubleClick={() => onEditAction(original)} style={{ width: '100%', height: '100%', cursor: 'pointer' }}>
     {value ? (
       <pre style={{ margin: 0, padding: '2px', whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</pre>
@@ -201,6 +202,7 @@ const LuaActionCell = React.memo(({ value, row: { original }, onEditAction }) =>
     )}
   </div>
 ));
+// --- END MODIFICATION ---
 
 const EditableCheckboxCell = React.memo(({ value: initialValue, row: { original }, column: { id }, updateMyData }) => (
   <input
@@ -333,16 +335,22 @@ const WaypointTable = () => {
 
   const handleOpenModal = useCallback((waypoint) => setModalState({ isOpen: true, waypoint }), []);
   const handleCloseModal = () => setModalState({ isOpen: false, waypoint: null });
+
+  // --- MODIFICATION: This is the most critical fix. Save to 'script' property. ---
   const handleSaveModal = useCallback(
     (code) => {
-      if (modalState.waypoint) updateWaypointData(modalState.waypoint.id, { action: code });
+      if (modalState.waypoint) {
+        updateWaypointData(modalState.waypoint.id, { script: code });
+      }
       handleCloseModal();
     },
     [modalState.waypoint, updateWaypointData],
   );
+  // --- END MODIFICATION ---
 
   const data = useMemo(() => (viewMode === 'waypoints' ? waypoints : specialAreas), [viewMode, waypoints, specialAreas]);
 
+  // --- MODIFICATION: Update the column definition to use 'script' ---
   const waypointCols = useMemo(
     () => [
       { Header: '#', accessor: (r, i) => i + 1, id: 'displayId', width: 39 },
@@ -351,15 +359,16 @@ const WaypointTable = () => {
         accessor: 'type',
         width: 80,
         Cell: EditableSelectCell,
-        options: ['Node', 'Stand', 'Shovel', 'Rope', 'Machete', 'Ladder', 'Use', 'Action', 'Lure', 'Attack'],
+        options: ['Node', 'Stand', 'Shovel', 'Rope', 'Machete', 'Ladder', 'Use', 'Script', 'Lure', 'Attack'],
       },
       { Header: 'Label', accessor: 'label', width: 75, Cell: EditableStringCell },
       { Header: 'Coordinates', accessor: 'x', width: 134, Cell: EditableCoordinatesCell },
       { Header: 'Range', accessor: 'range', width: 51, Cell: EditableNumberCell },
-      { Header: 'Action', accessor: 'action', width: 275, Cell: LuaActionCell },
+      { Header: 'Script', accessor: 'script', width: 275, Cell: LuaScriptCell }, // Header, accessor, and Cell updated
     ],
     [],
   );
+  // --- END MODIFICATION ---
 
   const specialAreaCols = useMemo(
     () => [
@@ -478,7 +487,7 @@ const WaypointTable = () => {
         </div>
         <LuaEditorModal
           isOpen={modalState.isOpen}
-          initialValue={modalState.waypoint?.action || ''}
+          initialValue={modalState.waypoint?.script || ''}
           onClose={handleCloseModal}
           onSave={handleSaveModal}
         />

@@ -9,19 +9,17 @@ import { createRegion } from './screenMonitor/modules/utils.js';
 import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
-// Destructure workerData, providing a default for the logging flag.
 const { enableMemoryLogging, sharedData } = workerData;
 
 // --- Memory Usage Logging (Conditional) ---
 const LOG_INTERVAL_MS = 10000; // 10 seconds
 const LOG_FILE_NAME = 'region-monitor-memory-usage.log';
 const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
-let lastLogTime = 0; // Will be initialized properly if logging is enabled.
+let lastLogTime = 0;
 
 const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
 
 async function logMemoryUsage() {
-  // This function will only be called if enableMemoryLogging is true.
   try {
     const memoryUsage = process.memoryUsage();
     const timestamp = new Date().toISOString();
@@ -31,7 +29,6 @@ async function logMemoryUsage() {
       `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
       `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
       `External: ${toMB(memoryUsage.external)} MB\n`;
-
     await appendFile(LOG_FILE_PATH, logEntry);
   } catch (error) {
     console.error('[MemoryLogger] Failed to write to memory log file:', error);
@@ -55,8 +52,6 @@ let lastRegionUpdateTime = 0;
 const REGION_UPDATE_INTERVAL_MS = 1000;
 
 async function findAndDispatchRegions(buffer, metadata) {
-  // This function remains unchanged
-  // console.log('[RegionMonitor] Searching for all UI regions...');
   const fullSearchArea = { x: 0, y: 0, width: metadata.width, height: metadata.height };
   const foundRegions = {};
 
@@ -71,6 +66,7 @@ async function findAndDispatchRegions(buffer, metadata) {
       return;
     }
 
+    // --- Static Sized Regions ---
     if (startRegions.healthBar)
       foundRegions.healthBar = { x: startRegions.healthBar.x, y: startRegions.healthBar.y, width: 94, height: 14 };
     if (startRegions.manaBar) foundRegions.manaBar = { x: startRegions.manaBar.x, y: startRegions.manaBar.y, width: 94, height: 14 };
@@ -88,12 +84,16 @@ async function findAndDispatchRegions(buffer, metadata) {
     if (startRegions.minimapFloorIndicatorColumn)
       foundRegions.minimapFloorIndicatorColumn = createRegion(startRegions.minimapFloorIndicatorColumn, 2, 63);
 
+    // --- Dynamic Bounding-Box Regions ---
     const findBoundingRectBatch = (startSeq, endSeq, ...args) =>
       findBoundingRect(findSequences.findSequencesNativeBatch, buffer, startSeq, endSeq, ...args);
+
     const battleListRegion = findBoundingRectBatch(regionColorSequences.battleListStart, regionColorSequences.battleListEnd, 160, 600);
     if (battleListRegion?.startFound) foundRegions.battleList = battleListRegion;
+
     const partyListRegion = findBoundingRectBatch(regionColorSequences.partyListStart, regionColorSequences.partyListEnd, 160, 200);
     if (partyListRegion?.startFound) foundRegions.partyList = partyListRegion;
+
     const overallActionBarsRegion = findBoundingRectBatch(
       regionColorSequences.hotkeyBarBottomStart,
       regionColorSequences.hotkeyBarBottomEnd,
@@ -102,18 +102,38 @@ async function findAndDispatchRegions(buffer, metadata) {
     );
     if (overallActionBarsRegion?.startFound) foundRegions.overallActionBars = overallActionBarsRegion;
 
-    foundRegions.gameLog = { x: 808, y: 695, width: 125, height: 11 };
-    foundRegions.gameWorld = { x: 330, y: 6, width: 1086, height: 796 };
+    // --- Game World Detection and Tile Size Calculation ---
+    const gameWorldRegion = findBoundingRectBatch(
+      regionColorSequences.gameWorldStart,
+      regionColorSequences.gameWorldEnd,
+      metadata.width,
+      metadata.height,
+    );
 
+    if (gameWorldRegion?.startFound && gameWorldRegion?.endFound) {
+      foundRegions.gameWorld = gameWorldRegion;
+
+      const TILES_HORIZONTAL = 15;
+      const TILES_VERTICAL = 11;
+      const tileWidth = Math.round(gameWorldRegion.width / TILES_HORIZONTAL);
+      const tileHeight = Math.round(gameWorldRegion.height / TILES_VERTICAL);
+
+      foundRegions.tileSize = { width: tileWidth, height: tileHeight };
+    }
+    // --- End Game World Section ---
+
+    // --- Hardcoded Regions (if any remain) ---
+    foundRegions.gameLog = { x: 808, y: 695, width: 125, height: 11 };
+
+    // --- Dispatch to Redux ---
     parentPort.postMessage({
       storeUpdate: true,
       type: setAllRegions.type,
       payload: foundRegions,
     });
-    if (Object.keys(foundRegions).length > 0) {
-      // console.log('[RegionMonitor] Successfully found and dispatched regions.');
-    } else {
-      console.warn('[RegionMonitor] No regions found to dispatch.');
+
+    if (Object.keys(foundRegions).length <= 1) {
+      // console.warn('[RegionMonitor] No dynamic regions found to dispatch.');
     }
   } catch (error) {
     console.error('[RegionMonitor] Error during region location:', error);
@@ -129,13 +149,10 @@ async function mainLoop() {
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
       const now = performance.now();
 
-      // --- Integrated Memory Logging Check ---
-      // This block only runs if the feature is enabled.
       if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
         await logMemoryUsage();
-        lastLogTime = now; // Reset the timer
+        lastLogTime = now;
       }
-      // --- End of Integrated Memory Logging Check ---
 
       if (newFrameCounter <= lastProcessedFrameCounter) continue;
 
@@ -173,19 +190,17 @@ parentPort.on('message', (message) => {
 async function startWorker() {
   console.log('[RegionMonitor] Worker starting up...');
 
-  // --- Initialize Logger if Enabled ---
   if (enableMemoryLogging) {
     try {
       const header = `\n--- New Session Started at ${new Date().toISOString()} ---\n`;
       await appendFile(LOG_FILE_PATH, header);
       console.log(`[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
-      lastLogTime = performance.now(); // Initialize the timer
-      await logMemoryUsage(); // Perform an initial log right away
+      lastLogTime = performance.now();
+      await logMemoryUsage();
     } catch (error) {
       console.error('[MemoryLogger] Could not initialize memory log file:', error);
     }
   }
-  // --- End of Logger Initialization ---
 
   mainLoop();
 }

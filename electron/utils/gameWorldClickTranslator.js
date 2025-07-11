@@ -1,34 +1,39 @@
-const TILE_WIDTH = 64;
-const TILE_HEIGHT = 64;
-
-// Game world region from electron/workers/regionMonitor.js
-const GAME_WORLD_REGION = { x: 330, y: 6, width: 1086, height: 796 };
-
-// Player's fixed position on the screen within the game world window (0-indexed)
+// Player's fixed position on the screen within the game world window (0-indexed).
+// This is a design constant representing the center of the viewport.
 const PLAYER_SCREEN_TILE_X = 7; // 8th tile from the left
 const PLAYER_SCREEN_TILE_Y = 5; // 6th tile from the top
 
 /**
- * Generates a random integer between min (inclusive) and max (inclusive).
- */
-function getRandomInt(min, max) {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/**
  * Translates absolute in-game world coordinates to absolute screen coordinates for clicking.
- * Assumes playerMinimapPosition is the global coordinate of the tile the player is currently on.
+ * This function is pure and relies on dynamically detected region data passed as arguments.
+ *
  * @param {number} targetGameX - The target absolute X coordinate in the game world.
  * @param {number} targetGameY - The target absolute Y coordinate in the game world.
- * @param {{x: number, y: number, z: number}} playerMinimapPosition - The player's current absolute position in the game world (from gameStateSlice).
+ * @param {{x: number, y: number, z: number}} playerMinimapPosition - The player's current absolute position.
+ * @param {object} gameWorldRegion - The dynamically found gameWorld region object {x, y, width, height}.
+ * @param {object} tileSize - The dynamically calculated tile size object {width, height}.
  * @param {'topLeft' | 'topRight' | 'bottomLeft' | 'bottomRight' | 'center'} [targetPoint='center'] - The specific point within the tile to target.
  * @returns {{x: number, y: number}|null} The absolute screen coordinates for the click, or null if inputs are invalid.
  */
-export function getAbsoluteGameWorldClickCoordinates(targetGameX, targetGameY, playerMinimapPosition, targetPoint = 'center') {
+export function getAbsoluteGameWorldClickCoordinates(
+  targetGameX,
+  targetGameY,
+  playerMinimapPosition,
+  gameWorldRegion,
+  tileSize,
+  targetPoint = 'center',
+) {
+  // --- Input Validation ---
   if (!playerMinimapPosition) {
-    console.error('Missing playerMinimapPosition for game world coordinate translation.');
+    console.error('[ClickTranslator] Missing playerMinimapPosition for coordinate translation.');
+    return null;
+  }
+  if (!gameWorldRegion || !gameWorldRegion.width || !gameWorldRegion.height) {
+    console.error('[ClickTranslator] Missing or invalid gameWorldRegion for coordinate translation.');
+    return null;
+  }
+  if (!tileSize || !tileSize.width || !tileSize.height) {
+    console.error('[ClickTranslator] Missing or invalid tileSize for coordinate translation.');
     return null;
   }
 
@@ -36,13 +41,13 @@ export function getAbsoluteGameWorldClickCoordinates(targetGameX, targetGameY, p
   const deltaTilesX = targetGameX - playerMinimapPosition.x;
   const deltaTilesY = targetGameY - playerMinimapPosition.y;
 
-  // Calculate the top-left pixel of the player's tile on screen
-  const playerScreenPixelX_topLeft = GAME_WORLD_REGION.x + PLAYER_SCREEN_TILE_X * TILE_WIDTH;
-  const playerScreenPixelY_topLeft = GAME_WORLD_REGION.y + PLAYER_SCREEN_TILE_Y * TILE_HEIGHT;
+  // Calculate the top-left pixel of the player's tile on screen using dynamic data
+  const playerScreenPixelX_topLeft = gameWorldRegion.x + PLAYER_SCREEN_TILE_X * tileSize.width;
+  const playerScreenPixelY_topLeft = gameWorldRegion.y + PLAYER_SCREEN_TILE_Y * tileSize.height;
 
   // Calculate the top-left pixel of the target tile on screen
-  let targetTileScreenPixelX = playerScreenPixelX_topLeft + deltaTilesX * TILE_WIDTH;
-  let targetTileScreenPixelY = playerScreenPixelY_topLeft + deltaTilesY * TILE_HEIGHT;
+  const targetTileScreenPixelX = playerScreenPixelX_topLeft + deltaTilesX * tileSize.width;
+  const targetTileScreenPixelY = playerScreenPixelY_topLeft + deltaTilesY * tileSize.height;
 
   // Adjust based on targetPoint within the tile
   let finalClickX = targetTileScreenPixelX;
@@ -50,24 +55,23 @@ export function getAbsoluteGameWorldClickCoordinates(targetGameX, targetGameY, p
 
   switch (targetPoint) {
     case 'topRight':
-      finalClickX += TILE_WIDTH;
+      finalClickX += tileSize.width;
       break;
     case 'bottomLeft':
-      finalClickY += TILE_HEIGHT;
+      finalClickY += tileSize.height;
       break;
     case 'bottomRight':
-      finalClickX += TILE_WIDTH - 3;
-      finalClickY += TILE_HEIGHT - 3;
+      // Subtract a couple of pixels to ensure the click is inside the boundary
+      finalClickX += tileSize.width - 2;
+      finalClickY += tileSize.height - 2;
       break;
     case 'center':
-    default:
-      finalClickX += TILE_WIDTH / 2;
-      finalClickY += TILE_HEIGHT / 2;
-      // Apply randomization for center clicks
-      finalClickX += getRandomInt(-15, 15);
-      finalClickY += getRandomInt(-15, 15);
+    default: // Default to center for safety
+      finalClickX += tileSize.width / 2;
+      finalClickY += tileSize.height / 2;
       break;
   }
 
-  return { x: finalClickX, y: finalClickY };
+  // Return the final, rounded coordinates to ensure they are integers
+  return { x: Math.round(finalClickX), y: Math.round(finalClickY) };
 }

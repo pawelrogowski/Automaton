@@ -160,7 +160,7 @@ const Layout = () => {
       y, // Use the adjusted y
       z, // z remains the same
       range: 1,
-      action: defaultAction,
+      script: defaultAction,
     };
 
     dispatch(addWaypoint(newWaypointPayload));
@@ -408,7 +408,7 @@ const Layout = () => {
                 <SidebarButton text={'Machete'} onClick={() => handleAddWaypoint('Machete')}></SidebarButton>
                 <SidebarButton text={'Ladder'} onClick={() => handleAddWaypoint('Ladder')}></SidebarButton>
                 <SidebarButton text={'Use'} onClick={() => handleAddWaypoint('Use')}></SidebarButton>
-                <SidebarButton text={'Action'} onClick={() => handleAddWaypoint('Action')}></SidebarButton>
+                <SidebarButton text={'Script'} onClick={() => handleAddWaypoint('Script')}></SidebarButton>
                 <SidebarButton text={'Lure'} onClick={() => handleAddWaypoint('Lure')}></SidebarButton>
               </div>
 

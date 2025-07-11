@@ -1,28 +1,11 @@
 import { keyPress, keyPressMultiple, type as typeText, rotate, getIsTyping } from '../keyboardControll/keyPress.js';
 import { wait } from './exposedLuaFunctions.js';
-import { setActionPaused, setenabled as setCavebotEnabled, setActionScriptFeedback } from '../../frontend/redux/slices/cavebotSlice.js';
+import { setActionPaused, setenabled as setCavebotEnabled, setScriptFeedback } from '../../frontend/redux/slices/cavebotSlice.js';
 
-/**
- * Creates a consolidated table of functions to be exposed to a Lua environment.
- * The API is context-aware and will expose different functions based on the
- * type of worker that is creating it ('script' or 'cavebot').
- *
- * @param {object} context - The context object from the calling worker.
- * @param {'script'|'cavebot'} context.type - The type of worker.
- * @param {function} context.getState - A function that returns the latest full Redux state.
- * @param {function} context.postSystemMessage - A function to post a non-Redux message to the parent (e.g., parentPort.postMessage).
- * @param {function} context.logger - The worker's logger instance.
- * @param {string} [context.id] - The script ID (for 'script' type).
- * @param {function} [context.postStoreUpdate] - Dispatches a Redux action (for 'cavebot' type).
- * @param {function} [context.advanceToNextWaypoint] - Advances cavebot to the next waypoint (for 'cavebot' type).
- * @param {function} [context.goToLabel] - Jumps cavebot to a labeled waypoint (for 'cavebot' type).
- * @returns {object} An object containing the API functions to be exposed to Lua.
- */
-export function createLuaApi(context) {
+export const createLuaApi = (context) => {
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
 
-  // Define which functions are async and need to be awaited in Lua.
   const asyncFunctionNames = ['wait', 'keyPress', 'keyPressMultiple', 'type', 'rotate'];
 
   const getWindowId = () => {
@@ -30,14 +13,52 @@ export function createLuaApi(context) {
     return state?.global?.windowId;
   };
 
-  // --- Base API (available to all Lua workers) ---
   const baseApi = {
-    // Logging and System
+    // --- NEW FUNCTION START ---
+    getDistanceTo: (x, y, z) => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!playerPos) {
+        logger('warn', '[Lua/getDistanceTo] Could not determine player position from state.');
+        return 9999; // Return a large number if player position is unknown
+      }
+
+      // If a Z coordinate is provided, check if we are on the same floor.
+      // If not, the distance is effectively infinite for pathfinding purposes.
+      if (z !== undefined && playerPos.z !== z) {
+        return 9999;
+      }
+
+      // Calculate Chebyshev distance (the number of steps on a grid)
+      const chebyshevDist = Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
+      return chebyshevDist;
+    },
+    // --- NEW FUNCTION END ---
+
+    isLocation: (range = 0) => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const { waypointSections, currentSection, wptId } = state.cavebot;
+      if (!playerPos || !wptId || !waypointSections || !waypointSections[currentSection]) {
+        logger('warn', '[Lua/isLocation] Could not determine player or waypoint position from state.');
+        return false;
+      }
+      const targetWpt = waypointSections[currentSection].waypoints.find((wp) => wp.id === wptId);
+      if (!targetWpt) {
+        logger('warn', `[Lua/isLocation] Could not find current waypoint with ID: ${wptId}`);
+        return false;
+      }
+      if (playerPos.z !== targetWpt.z) {
+        return false;
+      }
+      const chebyshevDist = Math.max(Math.abs(playerPos.x - targetWpt.x), Math.abs(playerPos.y - targetWpt.y));
+      return chebyshevDist <= range;
+    },
     log: (level, ...messages) => {
       const validLevels = ['error', 'warn', 'info', 'debug'];
       const normalizedLevel = String(level).toLowerCase();
       const message = messages.map(String).join(' ');
-
       if (validLevels.includes(normalizedLevel)) {
         logger(normalizedLevel, `[Lua/${scriptName}] ${message}`);
       } else {
@@ -50,8 +71,7 @@ export function createLuaApi(context) {
       if (type === 'script') {
         postSystemMessage({ type: 'luaPrint', scriptId: id, message });
       } else {
-        // For cavebot, we use a dedicated redux action for feedback.
-        context.postStoreUpdate('cavebot/setActionScriptFeedback', { timestamp: Date.now(), message });
+        context.postStoreUpdate('cavebot/setScriptFeedback', { timestamp: Date.now(), message });
       }
     },
     alert: () => {
@@ -59,27 +79,23 @@ export function createLuaApi(context) {
       postSystemMessage({ type: 'play_alert' });
     },
     wait: wait,
-
-    // Keyboard & Mouse
     keyPress: (key, options = {}) => {
       const windowId = getWindowId();
       if (!windowId) throw new Error('Window ID not available for keyPress.');
-      const { speed, ...restOptions } = options; // Destructure speed, but don't pass it to keyPress
+      const { speed, ...restOptions } = options;
       return keyPress(String(windowId), key, restOptions);
     },
     keyPressMultiple: (key, options = {}) => {
       const windowId = getWindowId();
       if (!windowId) throw new Error('Window ID not available for keyPressMultiple.');
-      const { speed, ...restOptions } = options; // Destructure speed, but don't pass it to keyPressMultiple
+      const { speed, ...restOptions } = options;
       return keyPressMultiple(String(windowId), key, restOptions);
     },
     type: (...args) => {
       const windowId = getWindowId();
       if (!windowId) throw new Error('Window ID not available for type.');
-
       let startAndEndWithEnter = true;
       let texts = [];
-
       if (typeof args[0] === 'boolean') {
         startAndEndWithEnter = args[0];
         texts = args.slice(1).map(String);
@@ -94,16 +110,13 @@ export function createLuaApi(context) {
       return rotate(String(windowId), direction);
     },
     isTyping: () => getIsTyping(),
-
-    // Read-only State Getters
     getGameState: () => getState().gameState || {},
     getCavebotState: () => getState().cavebot || {},
     getGlobalState: () => getState().global || {},
   };
 
-  // --- Cavebot-specific API ---
   if (type === 'cavebot') {
-    const { postStoreUpdate, advanceToNextWaypoint, goToLabel } = context;
+    const { postStoreUpdate } = context;
     const cavebotApi = {
       pauseActions: (paused) => {
         logger('info', `[Lua/Cavebot] Setting action paused state to: ${paused}`);
@@ -113,19 +126,10 @@ export function createLuaApi(context) {
         logger('info', `[Lua/Cavebot] Setting cavebot enabled state to: ${enabled}`);
         postStoreUpdate('cavebot/setenabled', !!enabled);
       },
-      skipWaypoint: () => {
-        logger('info', '[Lua/Cavebot] Advancing to next waypoint.');
-        advanceToNextWaypoint();
-      },
-      goToLabel: (label) => {
-        logger('info', `[Lua/Cavebot] Attempting to go to label: "${label}"`);
-        goToLabel(label);
-      },
     };
     const finalApi = { ...baseApi, ...cavebotApi };
     return { api: finalApi, asyncFunctionNames };
   }
 
-  // For 'script' type, return only the base API
   return { api: baseApi, asyncFunctionNames };
-}
+};
