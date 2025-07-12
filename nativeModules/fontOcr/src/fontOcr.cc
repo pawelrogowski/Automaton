@@ -10,9 +10,12 @@
 #include <iomanip>
 #include <map>
 #include <queue>
+#include <cctype>
+#include <sstream>
+#include <emmintrin.h> // Required for SSE2 SIMD intrinsics
 
 // --- Configuration ---
-const bool ENABLE_BENCHMARKING = false;
+const bool ENABLE_BENCHMARKING = true;
 
 // --- Globals & Structs ---
 static bool color_lookup[256][256][256] = {false};
@@ -22,7 +25,9 @@ struct CharTemplate {
     uint32_t width;
     uint32_t height;
     uint32_t offset;
-    std::vector<uint8_t> rgba_data;
+    std::vector<uint8_t> mask_data;
+    // **NEW: Pre-computed offsets of font pixels for hyper-optimized search**
+    std::vector<std::pair<uint8_t, uint8_t>> font_pixel_offsets;
 };
 
 struct FoundChar {
@@ -45,45 +50,35 @@ inline bool is_valid_font_color_fast(const uint8_t r, const uint8_t g, const uin
     return color_lookup[r][g][b];
 }
 
-// FINAL, ROBUST MATCH FUNCTION: Handles multi-colored characters correctly.
-bool PerfectMatchTest_Final(
-    const uint8_t* screen_data, const uint32_t screen_width,
+bool PerfectMatchTest_SIMD(
+    const uint8_t* screen_mask, const uint32_t roi_w,
     const uint32_t match_x, const uint32_t match_y,
     const CharTemplate& tpl
 ) {
     for (uint32_t ty = 0; ty < tpl.height; ++ty) {
-        for (uint32_t tx = 0; tx < tpl.width; ++tx) {
-            const size_t tpl_idx = (ty * tpl.width + tx) * 4;
-            const uint8_t tpl_r = tpl.rgba_data[tpl_idx];
-            const uint8_t tpl_g = tpl.rgba_data[tpl_idx + 1];
-            const uint8_t tpl_b = tpl.rgba_data[tpl_idx + 2];
+        const uint8_t* tpl_mask_row = &tpl.mask_data[ty * tpl.width];
+        const uint8_t* screen_mask_row = &screen_mask[(match_y + ty) * roi_w + match_x];
 
-            const size_t screen_idx = ((match_y + ty) * screen_width + (match_x + tx)) * 4;
-            const uint8_t screen_r = screen_data[screen_idx + 2];
-            const uint8_t screen_g = screen_data[screen_idx + 1];
-            const uint8_t screen_b = screen_data[screen_idx + 0];
-
-            if (is_magic_color(tpl_r, tpl_g, tpl_b)) {
-                // If template expects a font pixel, the screen pixel MUST be a valid font color.
-                if (!is_valid_font_color_fast(screen_r, screen_g, screen_b)) {
-                    return false;
-                }
-            } else { // Template expects a background pixel.
-                // If template expects a background pixel, the screen pixel MUST NOT be a valid font color.
-                if (is_valid_font_color_fast(screen_r, screen_g, screen_b)) {
-                    return false;
+        for (uint32_t tx = 0; tx < tpl.width; tx += 16) {
+            if (tx + 15 < tpl.width) {
+                __m128i tpl_chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(tpl_mask_row + tx));
+                __m128i screen_chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(screen_mask_row + tx));
+                __m128i comparison = _mm_cmpeq_epi8(tpl_chunk, screen_chunk);
+                int mask = _mm_movemask_epi8(comparison);
+                if (mask != 0xFFFF) return false;
+            } else {
+                for (uint32_t tail_tx = tx; tail_tx < tpl.width; ++tail_tx) {
+                    if (tpl_mask_row[tail_tx] != screen_mask_row[tail_tx]) return false;
                 }
             }
         }
     }
-
-    return true; // The template pattern matches perfectly.
+    return true;
 }
 
 // --- N-API Functions ---
 
 Napi::Value LoadFontAtlas(const Napi::CallbackInfo& info) {
-    // This function is correct and unchanged
     Napi::Env env = info.Env();
     if (info.Length() < 1 || !info[0].IsObject()) {
         Napi::TypeError::New(env, "Expected an object as the font atlas").ThrowAsJavaScriptException();
@@ -102,14 +97,29 @@ Napi::Value LoadFontAtlas(const Napi::CallbackInfo& info) {
         tpl.width = jsTpl.Get("width").As<Napi::Number>().Uint32Value();
         tpl.height = jsTpl.Get("height").As<Napi::Number>().Uint32Value();
         tpl.offset = jsTpl.Get("offset").As<Napi::Number>().Uint32Value();
-        tpl.rgba_data.assign(tplData.Data(), tplData.Data() + tplData.Length());
+
+        std::vector<uint8_t> rgba_data(tplData.Data(), tplData.Data() + tplData.Length());
+
+        tpl.mask_data.reserve(tpl.width * tpl.height);
+        for (size_t j = 0; j < rgba_data.size(); j += 4) {
+            bool is_font = is_magic_color(rgba_data[j], rgba_data[j+1], rgba_data[j+2]);
+            tpl.mask_data.push_back(is_font ? 1 : 0);
+            if (is_font) {
+                uint32_t pixel_index = j / 4;
+                uint8_t dx = pixel_index % tpl.width;
+                uint8_t dy = pixel_index / tpl.width;
+                tpl.font_pixel_offsets.push_back({dx, dy});
+            }
+        }
         fontAtlas.push_back(tpl);
     }
+
     const std::vector<std::tuple<uint8_t, uint8_t, uint8_t>> VALID_FONT_COLORS = {
         {240, 240, 0},   {96, 248, 248},  {32, 160, 255},  {247, 95, 95},
         {144, 144, 144}, {223, 223, 223}, {240, 240, 240}, {244, 244, 244},
-        {170, 170, 170}, {255, 255, 255}
+        {170, 170, 170}, {255, 255, 255}, {192, 192, 192}
     };
+
     memset(color_lookup, 0, sizeof(color_lookup));
     for (const auto& color : VALID_FONT_COLORS) {
         color_lookup[std::get<0>(color)][std::get<1>(color)][std::get<2>(color)] = true;
@@ -120,7 +130,10 @@ Napi::Value LoadFontAtlas(const Napi::CallbackInfo& info) {
 Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
     auto start_time = std::chrono::high_resolution_clock::now();
     Napi::Env env = info.Env();
-    if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) { /* error handling */ }
+    if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) {
+        Napi::TypeError::New(env, "Invalid arguments").ThrowAsJavaScriptException();
+        return env.Null();
+    }
 
     Napi::Buffer<uint8_t> screenBuffer = info[0].As<Napi::Buffer<uint8_t>>();
     Napi::Object roi = info[1].As<Napi::Object>();
@@ -131,34 +144,35 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
     const uint32_t roi_w = roi.Get("width").As<Napi::Number>().Uint32Value();
     const uint32_t roi_h = roi.Get("height").As<Napi::Number>().Uint32Value();
 
+    std::vector<uint8_t> screen_mask(roi_w * roi_h);
+    for (uint32_t y = 0; y < roi_h; ++y) {
+        for (uint32_t x = 0; x < roi_w; ++x) {
+            const size_t screen_idx = ((roi_y + y) * screen_width + (roi_x + x)) * 4;
+            screen_mask[y * roi_w + x] = is_valid_font_color_fast(screen_data[screen_idx + 2], screen_data[screen_idx + 1], screen_data[screen_idx + 0]) ? 1 : 0;
+        }
+    }
+
     std::vector<FoundChar> final_chars;
     std::vector<bool> consumed(roi_w * roi_h, false);
 
-    const int SEARCH_RADIUS_X = 8;
-    const int SEARCH_RADIUS_Y = 16;
-
     for (uint32_t y = 0; y < roi_h; ++y) {
         for (uint32_t x = 0; x < roi_w; ++x) {
-            if (consumed[y * roi_w + x]) continue;
-
-            const size_t screen_idx = ((roi_y + y) * screen_width + (roi_x + x)) * 4;
-            if (!is_valid_font_color_fast(screen_data[screen_idx + 2], screen_data[screen_idx + 1], screen_data[screen_idx + 0])) {
+            if (consumed[y * roi_w + x] || screen_mask[y * roi_w + x] == 0) {
                 continue;
             }
 
             std::vector<FoundChar> candidates;
-            int start_y = std::max(0, (int)y - SEARCH_RADIUS_Y);
-            int start_x = std::max(0, (int)x - SEARCH_RADIUS_X);
+            // **NEW HYPER-OPTIMIZED SEARCH**
+            for (const auto& tpl : fontAtlas) {
+                for (const auto& offset : tpl.font_pixel_offsets) {
+                    int potential_cx = x - offset.first;
+                    int potential_cy = y - offset.second;
 
-            for (int cy = start_y; cy <= (int)y; ++cy) {
-                for (int cx = start_x; cx <= (int)x; ++cx) {
-                    for (const auto& tpl : fontAtlas) {
-                        if (cx + tpl.width > roi_w || cy + tpl.height > roi_h) continue;
-                        if (x < cx || x >= cx + tpl.width || y < cy || y >= cy + tpl.height) continue;
+                    if (potential_cx < 0 || potential_cy < 0) continue;
+                    if (static_cast<uint32_t>(potential_cx) + tpl.width > roi_w || static_cast<uint32_t>(potential_cy) + tpl.height > roi_h) continue;
 
-                        if (PerfectMatchTest_Final(screen_data, screen_width, roi_x + cx, roi_y + cy, tpl)) {
-                            candidates.push_back({tpl.character, (uint32_t)(roi_x + cx), (uint32_t)(roi_y + cy), tpl.width, tpl.height, tpl.offset});
-                        }
+                    if (PerfectMatchTest_SIMD(screen_mask.data(), roi_w, potential_cx, potential_cy, tpl)) {
+                        candidates.push_back({tpl.character, (uint32_t)(roi_x + potential_cx), (uint32_t)(roi_y + potential_cy), tpl.width, tpl.height, tpl.offset});
                     }
                 }
             }
@@ -170,24 +184,27 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
                     });
 
                 FoundChar best_match = *best_it;
-                final_chars.push_back(best_match);
 
                 uint32_t local_x_start = best_match.x - roi_x;
                 uint32_t local_y_start = best_match.y - roi_y;
+
+                // Check if this character has already been consumed by a larger one
+                if (consumed[local_y_start * roi_w + local_x_start]) {
+                    continue;
+                }
+
+                final_chars.push_back(best_match);
+
                 for (uint32_t my = 0; my < best_match.height; ++my) {
                     for (uint32_t mx = 0; mx < best_match.width; ++mx) {
-                        uint32_t consumed_y = local_y_start + my;
-                        uint32_t consumed_x = local_x_start + mx;
-                        if (consumed_y < roi_h && consumed_x < roi_w) {
-                            consumed[consumed_y * roi_w + consumed_x] = true;
-                        }
+                        consumed[(local_y_start + my) * roi_w + (local_x_start + mx)] = true;
                     }
                 }
             }
         }
     }
 
-    // --- Line Assembly (Unchanged, your original code is fine here) ---
+    // STAGE 2: Assemble the found characters into clean lines (unchanged).
     std::string final_result = "";
     if (!final_chars.empty()) {
         std::map<uint32_t, std::vector<FoundChar>> lines_map;
@@ -202,24 +219,51 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
                     break;
                 }
             }
-            if (!added) { lines_map[line_top_y].push_back(character); }
+            if (!added) {
+                lines_map[line_top_y].push_back(character);
+            }
         }
-        const int32_t SPACE_THRESHOLD = 4; // Your preferred value
-        bool first_line = true;
+
+        const int32_t SPACE_THRESHOLD = 4;
+        bool first_line_written = true;
         for (auto& pair : lines_map) {
             auto& line = pair.second;
+            if (line.empty()) continue;
+
             std::sort(line.begin(), line.end(), [](const FoundChar& a, const FoundChar& b) { return a.x < b.x; });
-            if (!first_line) final_result += "\n";
-            first_line = false;
-            if (!line.empty()) {
-                final_result += line[0].character;
-                for (size_t j = 1; j < line.size(); ++j) {
-                    const auto& prev = line[j-1];
-                    const auto& curr = line[j];
-                    int32_t gap = curr.x - (prev.x + prev.width);
-                    if (gap >= SPACE_THRESHOLD) { final_result += ' '; }
-                    final_result += curr.character;
+
+            std::string raw_line_str;
+            raw_line_str += line[0].character;
+            for (size_t j = 1; j < line.size(); ++j) {
+                const auto& prev = line[j-1];
+                const auto& curr = line[j];
+                int32_t gap = curr.x - (prev.x + prev.width);
+                if (gap >= SPACE_THRESHOLD) {
+                    raw_line_str += ' ';
                 }
+                raw_line_str += curr.character;
+            }
+
+            std::stringstream ss(raw_line_str);
+            std::string word;
+            std::string clean_line_str;
+            bool first_word = true;
+            while (ss >> word) {
+                if (!word.empty() && isalnum(static_cast<unsigned char>(word[0]))) {
+                    if (!first_word) {
+                        clean_line_str += ' ';
+                    }
+                    clean_line_str += word;
+                    first_word = false;
+                }
+            }
+
+            if (!clean_line_str.empty()) {
+                if (!first_line_written) {
+                    final_result += "\n";
+                }
+                final_result += clean_line_str;
+                first_line_written = false;
             }
         }
     }
@@ -227,7 +271,7 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
     if (ENABLE_BENCHMARKING) {
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-        std::cout << "[OCR BENCHMARK Final] Chars: " << final_chars.size()
+        std::cout << "[OCR BENCHMARK w/HYPER-OPT] Chars: " << final_chars.size()
                   << " | Time: " << duration.count() << " us" << std::endl;
     }
 

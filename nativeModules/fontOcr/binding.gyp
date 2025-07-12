@@ -21,8 +21,10 @@
             "-march=native",    # Generate code for the specific CPU it's compiled on
             "-mtune=native",    # Tune instruction scheduling for the specific CPU
             "-flto",            # Enable Link-Time Optimization
-            "-fno-exceptions"   # Disable C++ exceptions for smaller, faster code
-          ]
+            "-fno-exceptions",   # Disable C++ exceptions for smaller, faster code
+            "-fopenmp"
+          ],
+          "ldflags": [ "-fopenmp" ]
         }]
       ]
     }

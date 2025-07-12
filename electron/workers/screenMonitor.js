@@ -1,5 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
+import fs from 'fs'; // Added for file system operations
 import {
   regionColorSequences,
   resourceBars,
@@ -37,9 +38,6 @@ let state = null; // This will be the full Redux state
 let lastProcessedFrameCounter = -1;
 let lastKnownGoodHealthPercentage = null;
 let lastKnownGoodManaPercentage = null;
-let lastNotPossibleTimestamp = 0;
-let lastThereIsNoWayTimestamp = 0;
-const MESSAGE_UPDATE_INTERVAL = 300;
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
 
@@ -123,24 +121,27 @@ async function mainLoop() {
 
       const searchResults = findSequences.findSequencesNativeBatch(bufferView, searchTasks);
 
-      if (regions.gameLog) {
-        const detectedText = fontOcr.recognizeText(bufferView, regions.gameLog);
-        console.log(detectedText);
-        if (detectedText) {
-          const now = Date.now();
-          if (detectedText.includes('Sorry, not possible.')) {
-            if (now - lastNotPossibleTimestamp > MESSAGE_UPDATE_INTERVAL) {
-              parentPort.postMessage({ storeUpdate: true, type: setNotPossibleTimestamp.type });
-              lastNotPossibleTimestamp = now;
-            }
-          } else if (detectedText.includes('There is no way.')) {
-            if (now - lastThereIsNoWayTimestamp > MESSAGE_UPDATE_INTERVAL) {
-              parentPort.postMessage({ storeUpdate: true, type: setThereIsNoWayTimestamp.type });
-              lastThereIsNoWayTimestamp = now;
-            }
-          }
-        }
+      // --- MODIFICATION START ---
+      // OCR the entire image, measure performance, and save the result to a text file.
+      try {
+        const fullImageRegion = { x: 0, y: 0, width, height };
+
+        const startTime = performance.now();
+        const detectedText = fontOcr.recognizeText(bufferView, fullImageRegion);
+        const endTime = performance.now();
+
+        const duration = endTime - startTime;
+        const fileHeader = `OCR processing time: ${duration.toFixed(2)} ms\n---\n`;
+        const fileContent = fileHeader + (detectedText || '');
+
+        // Overwrite the file with the new OCR text and performance data on each iteration.
+        fs.writeFileSync('ocr_output.txt', fileContent, 'utf-8');
+      } catch (ocrError) {
+        console.error('[ScreenMonitor] OCR process failed:', ocrError);
+        // Optionally, write an error to the file so you know it failed.
+        fs.writeFileSync('ocr_output.txt', 'OCR process failed.', 'utf-8');
       }
+      // --- MODIFICATION END ---
 
       const { newHealthPercentage, newManaPercentage } =
         regions.healthBar && regions.manaBar
