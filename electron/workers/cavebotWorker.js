@@ -144,7 +144,6 @@ const goToSection = async (sectionName) => {
   }
 };
 
-// --- NEW FUNCTION START ---
 const goToWpt = async (index) => {
   const userIndex = parseInt(index, 10);
   if (isNaN(userIndex) || userIndex < 1) {
@@ -164,7 +163,6 @@ const goToWpt = async (index) => {
     logger('warn', `goToWpt received an out-of-bounds index: ${userIndex}. Section only has ${waypoints.length} waypoints.`);
   }
 };
-// --- NEW FUNCTION END ---
 
 const awaitStateChange = (condition, timeoutMs) => {
   return new Promise((resolve) => {
@@ -238,7 +236,7 @@ const initialize = async () => {
       advanceToNextWaypoint,
       goToLabel,
       goToSection,
-      goToWpt, // --- Pass the new function to the executor context
+      goToWpt,
     });
     const initialized = await luaExecutor.initialize();
     if (!initialized) {
@@ -559,14 +557,40 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     return;
   }
   logger('info', `Initiating new map click movement. Reason: ${reason}.`);
-  let clickTargetWaypoint = path[path.length - 1];
+
+  // --- MODIFICATION START ---
+  // Find the furthest tile on the path that is reachable via a single map click.
+  let furthestReachableTile = null;
+  let furthestReachableTileIndex = -1;
   for (let i = 0; i < path.length; i++) {
     if (getChebyshevDistance(playerMinimapPosition, path[i]) <= config.mapClickMaxDistance) {
-      clickTargetWaypoint = path[i];
+      furthestReachableTile = path[i];
+      furthestReachableTileIndex = i;
     } else {
+      // The path is sorted by distance, so we can stop once a tile is out of range.
       break;
     }
   }
+
+  // This check handles cases where the path is empty or no tile is in range for some reason.
+  if (!furthestReachableTile) {
+    logger('error', 'Could not determine a map click target on the path.');
+    return;
+  }
+
+  let clickTargetWaypoint = furthestReachableTile;
+
+  // If the furthest reachable tile is the *actual last tile* of the path, click the one before it.
+  const isLastTileOfPath = furthestReachableTileIndex === path.length - 1;
+  if (isLastTileOfPath && path.length > 1) {
+    clickTargetWaypoint = path[path.length - 2];
+    logger(
+      'info',
+      `Final target is within range; clicking tile before last to ensure arrival: [${clickTargetWaypoint.x}, ${clickTargetWaypoint.y}]`,
+    );
+  }
+  // --- MODIFICATION END ---
+
   const clickCoords = getAbsoluteClickCoordinates(clickTargetWaypoint.x, clickTargetWaypoint.y, playerMinimapPosition, minimapRegionDef);
   if (!clickCoords) {
     logger('error', `Could not get absolute click coordinates for ${clickTargetWaypoint.x},${clickTargetWaypoint.y}.`);

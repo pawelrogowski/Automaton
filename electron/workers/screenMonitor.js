@@ -1,7 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import { appendFile } from 'fs/promises';
-import path from 'path';
 import {
   regionColorSequences,
   resourceBars,
@@ -22,33 +20,7 @@ import fontOcr from 'font-ocr';
 import fontAtlasData from '../../font_atlas/font-data.js';
 
 // --- Worker Configuration ---
-const { enableMemoryLogging = false, sharedData } = workerData;
-
-// --- Memory Usage Logging (Conditional) ---
-const LOG_INTERVAL_MS = 10000; // 10 seconds
-const LOG_FILE_NAME = 'screen-monitor-memory-usage.log';
-const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
-let lastLogTime = 0;
-
-const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
-
-async function logMemoryUsage() {
-  try {
-    const memoryUsage = process.memoryUsage();
-    const timestamp = new Date().toISOString();
-    const logEntry =
-      `${timestamp} | ` +
-      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
-      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
-      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
-      `External: ${toMB(memoryUsage.external)} MB\n`;
-
-    await appendFile(LOG_FILE_PATH, logEntry);
-  } catch (error) {
-    console.error('[MemoryLogger] Failed to write to memory log file:', error);
-  }
-}
-// --- End of Memory Usage Logging ---
+const { sharedData } = workerData;
 
 // --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
@@ -107,14 +79,6 @@ async function mainLoop() {
     try {
       Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastProcessedFrameCounter, 200);
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
-      const now = performance.now();
-
-      // --- Integrated Memory Logging Check ---
-      if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
-        await logMemoryUsage();
-        lastLogTime = now;
-      }
-      // --- End of Integrated Memory Logging Check ---
 
       if (newFrameCounter <= lastProcessedFrameCounter) continue;
 
@@ -161,6 +125,7 @@ async function mainLoop() {
 
       if (regions.gameLog) {
         const detectedText = fontOcr.recognizeText(bufferView, regions.gameLog);
+        console.log(detectedText);
         if (detectedText) {
           const now = Date.now();
           if (detectedText.includes('Sorry, not possible.')) {
@@ -240,18 +205,6 @@ parentPort.on('message', (message) => {
 
 async function startWorker() {
   console.log('[ScreenMonitor] Worker starting up...');
-
-  if (enableMemoryLogging) {
-    try {
-      const header = `\n--- New Session Started at ${new Date().toISOString()} ---\n`;
-      await appendFile(LOG_FILE_PATH, header);
-      console.log(`[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
-      lastLogTime = performance.now();
-      await logMemoryUsage();
-    } catch (error) {
-      console.error('[MemoryLogger] Could not initialize memory log file:', error);
-    }
-  }
 
   try {
     await fontOcr.loadFontAtlas(fontAtlasData);

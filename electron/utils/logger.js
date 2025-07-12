@@ -15,7 +15,7 @@ export function createLogger(config = {}) {
   const defaultConfig = {
     error: true,
     warn: false,
-    info: true,
+    info: false,
     debug: false,
     colors: true,
   };

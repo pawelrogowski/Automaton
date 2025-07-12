@@ -5,17 +5,12 @@ import { preprocessLuaScript } from './luaScriptProcessor.js';
 
 /**
  * Manages a persistent Lua VM instance for the Cavebot worker.
+ * This allows for stateful script execution across multiple waypoint actions,
+ * providing a shared context for all cavebot-related Lua scripts.
  */
 export class CavebotLuaExecutor {
   /**
    * @param {object} context - The context from the cavebot worker.
-   * @param {import('../utils/logger.js').Logger} context.logger - The logger instance.
-   * @param {function} context.postStoreUpdate - Function to dispatch actions to Redux.
-   * @param {function} context.getState - Function to get the latest application state.
-   * @param {function} context.advanceToNextWaypoint - Function to advance to the next waypoint.
-   * @param {function} context.goToLabel - Function to jump to a specific waypoint label.
-   * @param {function} context.goToSection - Function to jump to a specific waypoint section.
-   * @param {function} context.goToWpt - Function to jump to a specific waypoint index.
    */
   constructor(context) {
     this.lua = null;
@@ -24,16 +19,18 @@ export class CavebotLuaExecutor {
     this.isInitialized = false;
     this.asyncFunctionNames = [];
     this.navigationOccurred = false;
-
     this.logger('info', '[CavebotLuaExecutor] Instance created.');
   }
 
+  /**
+   * Initializes the Lua VM and prepares it for execution.
+   * @returns {Promise<boolean>}
+   */
   async initialize() {
     this.logger('info', '[CavebotLuaExecutor] Initializing Lua VM...');
     try {
       const factory = new LuaFactory();
       this.lua = await factory.createEngine();
-      this._exposeApiToLua();
       this.isInitialized = true;
       this.logger('info', '[CavebotLuaExecutor] Lua VM initialized successfully.');
       return true;
@@ -44,96 +41,88 @@ export class CavebotLuaExecutor {
     }
   }
 
-  _exposeApiToLua() {
+  /**
+   * Creates the full API and exposes it to the Lua global scope.
+   * This method is called before each script execution to ensure the API
+   * has access to the latest state and context.
+   * @private
+   */
+  _syncApiToLua() {
     if (!this.lua) return;
 
-    const { api: baseApi, asyncFunctionNames } = createLuaApi({
+    // 1. Get the complete API from the central factory.
+    const { api, asyncFunctionNames, stateObject } = createLuaApi({
       type: 'cavebot',
-      ...this.context,
+      ...this.context, // Pass the cavebot worker's context, including direct navigation functions.
       postSystemMessage: (message) => parentPort.postMessage(message),
     });
 
     this.asyncFunctionNames = asyncFunctionNames;
 
-    const navigationApi = {
-      skipWaypoint: () => {
-        this.navigationOccurred = true;
-        this.logger('info', '[Lua/Cavebot] Advancing to next waypoint via skipWaypoint().');
-        this.context.advanceToNextWaypoint();
-      },
-      goToLabel: (label) => {
-        this.navigationOccurred = true;
-        this.logger('info', `[Lua/Cavebot] Attempting to go to label: "${label}"`);
-        this.context.goToLabel(label);
-      },
-      goToSection: (sectionName) => {
-        this.navigationOccurred = true;
-        this.logger('info', `[Lua/Cavebot] Attempting to go to section: "${sectionName}"`);
-        this.context.goToSection(sectionName);
-      },
-      // --- NEW FUNCTION START ---
-      goToWpt: (index) => {
-        this.navigationOccurred = true;
-        this.logger('info', `[Lua/Cavebot] Attempting to go to waypoint index: ${index}`);
-        this.context.goToWpt(index);
-      },
-      // --- NEW FUNCTION END ---
-    };
-
-    const finalApi = { ...baseApi, ...navigationApi };
-
-    for (const funcName in finalApi) {
-      if (Object.hasOwnProperty.call(finalApi, funcName)) {
-        this.lua.global.set(funcName, finalApi[funcName]);
+    // 2. Wrap the navigation functions to track their usage.
+    // This is critical for the cavebot worker to know if a script handled its own flow control.
+    const wrappedApi = { ...api };
+    const navFuncs = ['skipWaypoint', 'goToLabel', 'goToSection', 'goToWpt'];
+    navFuncs.forEach((funcName) => {
+      if (api[funcName]) {
+        wrappedApi[funcName] = (...args) => {
+          this.navigationOccurred = true; // Set the flag
+          return api[funcName](...args); // Call the original function
+        };
       }
+    });
+
+    // 3. Expose the final API and state object to Lua.
+    for (const funcName in wrappedApi) {
+      this.lua.global.set(funcName, wrappedApi[funcName]);
     }
-    this.logger('debug', '[CavebotLuaExecutor] Cavebot Lua API exposed to VM.');
+    this.lua.global.set('__BOT_STATE__', stateObject);
+
+    this.logger('debug', '[CavebotLuaExecutor] Cavebot Lua API and state synced to VM.');
   }
 
-  _syncGameStateToLua() {
-    if (!this.lua) return;
-    const fullState = this.context.getState();
-    const stateSlicesToExpose = {
-      gameState: fullState.gameState,
-      cavebot: fullState.cavebot,
-      global: fullState.global,
-    };
-    for (const sliceName in stateSlicesToExpose) {
-      if (Object.hasOwnProperty.call(stateSlicesToExpose, sliceName)) {
-        const value = stateSlicesToExpose[sliceName];
-        this.lua.global.set(sliceName, value === null || value === undefined ? this.lua.nil : value);
-      }
-    }
-  }
-
+  /**
+   * Executes a string of Lua code.
+   * @param {string} scriptCode - The Lua code to execute.
+   * @returns {Promise<{success: boolean, navigationOccurred: boolean, error?: string}>}
+   */
   async executeScript(scriptCode) {
-    if (!this.isInitialized || !this.lua) {
-      this.logger('error', '[CavebotLuaExecutor] Cannot execute script: VM not initialized.');
+    if (!this.isInitialized) {
       return { success: false, error: 'Lua VM is not initialized.', navigationOccurred: false };
     }
-    if (!scriptCode || !scriptCode.trim()) {
+    if (!scriptCode?.trim()) {
       return { success: true, navigationOccurred: false };
     }
+
     this.logger('info', '[CavebotLuaExecutor] Executing script...');
-    this.navigationOccurred = false;
+    this.navigationOccurred = false; // Reset flag before each run.
+
     try {
-      this._syncGameStateToLua();
+      this._syncApiToLua();
       const processedCode = preprocessLuaScript(scriptCode, this.asyncFunctionNames);
       await this.lua.doString(processedCode);
       return { success: true, navigationOccurred: this.navigationOccurred };
     } catch (error) {
       const errorMessage = error.message || String(error);
       this.logger('error', '[CavebotLuaExecutor] Script execution failed:', errorMessage);
+
+      // Log the error to the specific waypoint's log in the UI.
+      const scriptId = this.context.getState().cavebot.wptId;
+      this.context.postStoreUpdate('cavebot/addWaypointLogEntry', { id: scriptId, message: `[ERROR] ${errorMessage}` });
+
       return { success: false, error: errorMessage, navigationOccurred: this.navigationOccurred };
     }
   }
 
+  /**
+   * Safely closes the Lua VM.
+   */
   destroy() {
     if (this.lua) {
       this.lua.close();
       this.lua = null;
       this.isInitialized = false;
-      this.logger('info', '[CavebotLuaExecutor] Lua VM destroyed and resources released.');
+      this.logger('info', '[CavebotLuaExecutor] Lua VM destroyed.');
     }
   }
 }

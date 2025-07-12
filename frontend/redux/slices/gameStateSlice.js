@@ -45,7 +45,7 @@ const initialState = {
     whiteSkull: false,
     redSkull: false,
   },
-  playerMinimapPosition: { x: null, y: null, z: null }, // New state for player position
+  playerMinimapPosition: { x: 0, y: 0, z: 0 },
 };
 
 const ITEM_DIMENSION = 34; // Each item is 34x34 pixels
