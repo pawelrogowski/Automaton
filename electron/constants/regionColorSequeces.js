@@ -314,6 +314,50 @@ const regionColorSequences = {
       [114, 114, 114],
     ],
   },
+  chatboxMainStart: {
+    direction: 'vertical',
+    offset: { x: 1, y: 9 },
+    sequence: [
+      [112, 112, 113],
+      [116, 116, 117],
+      [73, 74, 74],
+      [76, 76, 77],
+      [117, 117, 117],
+      [60, 60, 60],
+      [27, 27, 28],
+    ],
+  },
+  chatboxMainEnd: {
+    direction: 'vertical',
+    offset: { x: -7, y: 3 },
+    sequence: [
+      [159, 159, 159],
+      [160, 160, 160],
+      [104, 104, 104],
+      [10, 10, 10],
+    ],
+  },
+  skillsWidgetStart: {
+    direction: 'horizontal',
+    offset: { x: -3, y: 13 },
+    sequence: [
+      [170, 143, 100],
+      [188, 174, 103],
+      [55, 55, 55],
+      [65, 65, 65],
+    ],
+  },
+  skillsWidgetEnd: {
+    direction: 'horizontal',
+    offset: { x: -11, y: 1 },
+    sequence: [
+      [108, 108, 108],
+      [160, 160, 160],
+      [81, 81, 81],
+      [67, 67, 67],
+      [67, 67, 67],
+    ],
+  },
 };
 
 export default regionColorSequences;

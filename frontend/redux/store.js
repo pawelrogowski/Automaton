@@ -7,6 +7,7 @@ import cavebotSlice from './slices/cavebotSlice.js';
 import targetingSlice from './slices/targetingSlice.js';
 import statusMessagesSlice from './slices/statusMessagesSlice.js';
 import regionCoordinatesSlice from './slices/regionCoordinatesSlice.js';
+import ocrSlice from './slices/ocrSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
   // If the action comes from the backend, let it pass through to the reducer.
@@ -28,6 +29,7 @@ const store = configureStore({
     targeting: targetingSlice.reducer,
     statusMessages: statusMessagesSlice.reducer,
     regionCoordinates: regionCoordinatesSlice.reducer,
+    ocr: ocrSlice.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });

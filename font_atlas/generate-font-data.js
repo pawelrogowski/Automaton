@@ -1,18 +1,10 @@
 // generate-font-data.js
-// Reads the existing font data file, preserves manually entered 'offset' values,
-// and updates width/height from the actual PNG files. This version uses a robust
-// regex parser to correctly handle all special characters.
-
 const fs = require('fs');
 const path = require('path');
-const sharp = require('sharp');
+const { PNG } = require('pngjs');
 
-// --- CONFIGURATION ---
-
-const FONT_DIR = './';
-const DATA_FILE = './font-data.js';
-const REQUIRED_CHARS_STRING =
-  'abcdefghijklmnopqrstuvwxyz' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' + '0123456789' + '[];\'\\,./-=_+{}:"|>?<`!@#$%^&*()_+';
+const PNG_DIR = './png';
+const OUTPUT_HEADER_FILE = './src/font_atlas_data.h';
 
 const FILENAME_TO_CHAR_MAP = {
   space: ' ',
@@ -49,119 +41,169 @@ const FILENAME_TO_CHAR_MAP = {
   caret: '^',
 };
 
-// --- SCRIPT LOGIC ---
+const MANUAL_OFFSETS = {
+  '!': 1,
+  '"': 0,
+  '#': 1,
+  $: 0,
+  '%': 1,
+  '&': 1,
+  "'": 0,
+  '(': 0,
+  ')': 0,
+  '*': 0,
+  '+': 2,
+  ',': 7,
+  '-': 5,
+  '.': 7,
+  '/': 0,
+  0: 1,
+  1: 1,
+  2: 1,
+  3: 1,
+  4: 1,
+  5: 1,
+  6: 1,
+  7: 1,
+  8: 1,
+  9: 1,
+  ':': 3,
+  ';': 3,
+  '<': 2,
+  '=': 3,
+  '>': 2,
+  '?': 1,
+  '@': 1,
+  A: 1,
+  B: 1,
+  C: 1,
+  D: 1,
+  E: 1,
+  F: 1,
+  G: 1,
+  H: 1,
+  I: 1,
+  J: 1,
+  K: 1,
+  L: 1,
+  M: 1,
+  N: 1,
+  O: 1,
+  P: 1,
+  Q: 1,
+  R: 1,
+  S: 1,
+  T: 1,
+  U: 1,
+  V: 0,
+  W: 1,
+  X: 1,
+  Y: 1,
+  Z: 1,
+  '[': 0,
+  '\\': 0,
+  ']': 0,
+  '^': 1,
+  _: 10,
+  '`': 0,
+  a: 3,
+  b: 0,
+  c: 3,
+  d: 0,
+  e: 3,
+  f: 0,
+  g: 3,
+  h: 0,
+  i: 1,
+  j: 1,
+  k: 0,
+  l: 0,
+  m: 3,
+  n: 3,
+  o: 3,
+  p: 3,
+  q: 3,
+  r: 3,
+  s: 3,
+  t: 1,
+  u: 3,
+  v: 3,
+  w: 3,
+  x: 3,
+  y: 3,
+  z: 3,
+  '{': 0,
+  '|': 0,
+  '}': 0,
+};
 
-const CHAR_TO_FILENAME_MAP = Object.fromEntries(Object.entries(FILENAME_TO_CHAR_MAP).map(([filename, char]) => [char, filename]));
-
-function parseExistingData(filePath) {
-  if (!fs.existsSync(filePath)) {
-    console.log(`No existing ${filePath} found. A new file will be created.`);
-    return {};
-  }
-
-  console.log(`Loading existing data from ${filePath}...`);
-  const fileContent = fs.readFileSync(filePath, 'utf8');
-  const existingData = {};
-
-  // THE CRITICAL FIX: A robust regex that correctly handles escaped characters.
-  const entryRegex = /'((?:\\.|[^'\\])*)':\s*{\s*width:\s*\d+,\s*height:\s*\d+,\s*offset:\s*(\d+)/g;
-
-  let match;
-  while ((match = entryRegex.exec(fileContent)) !== null) {
-    // match[1] is the captured character (e.g., 'A', '\'', '\\').
-    // match[2] is the captured offset value.
-    const char = match[1];
-    const offset = parseInt(match[2], 10);
-    existingData[char] = { offset };
-  }
-
-  if (Object.keys(existingData).length === 0) {
-    console.warn(`Warning: Could not parse any entries from ${filePath}. It might be empty or malformed. A new file will be generated.`);
-  } else {
-    console.log(`Successfully parsed and preserved offsets for ${Object.keys(existingData).length} entries.`);
-  }
-  return existingData;
+function isMagicColor(r, g, b) {
+  return r === 255 && g === 0 && b === 255;
 }
 
-async function generateData() {
-  console.log(`Starting font data update...`);
+async function generateCppHeader() {
+  console.log('Starting C++ header generation...');
+  const pngFiles = fs.readdirSync(PNG_DIR).filter((f) => f.endsWith('.png'));
+  let cppEntries = [];
 
-  const existingData = parseExistingData(DATA_FILE);
-  const fontDataMap = new Map();
-  const requiredCharsSet = new Set(REQUIRED_CHARS_STRING.split(''));
+  for (const file of pngFiles) {
+    const filenameBase = path.basename(file, '.png');
+    const char = FILENAME_TO_CHAR_MAP[filenameBase] || (filenameBase.length === 1 ? filenameBase : null);
+    if (!char) continue;
 
-  for (const char of requiredCharsSet) {
-    const filenameBase = CHAR_TO_FILENAME_MAP[char] || char;
-    const fullPath = path.join(FONT_DIR, `${filenameBase}.png`);
+    const buffer = fs.readFileSync(path.join(PNG_DIR, file));
+    const png = PNG.sync.read(buffer);
+    const fontPixelOffsets = [];
+    const bgPixelOffsets = [];
 
-    const existingEntry = existingData[char];
-    const preservedOffset = existingEntry ? existingEntry.offset : 0;
-
-    let width = 0;
-    let height = 0;
-
-    if (fs.existsSync(fullPath)) {
-      const metadata = await sharp(fullPath).metadata();
-      width = metadata.width;
-      height = metadata.height;
+    for (let y = 0; y < png.height; y++) {
+      for (let x = 0; x < png.width; x++) {
+        const idx = (png.width * y + x) << 2;
+        if (isMagicColor(png.data[idx], png.data[idx + 1], png.data[idx + 2])) {
+          fontPixelOffsets.push(`{${x},${y}}`);
+        } else {
+          bgPixelOffsets.push(`{${x},${y}}`);
+        }
+      }
     }
 
-    fontDataMap.set(char, {
-      width,
-      height,
-      offset: preservedOffset,
-      filenameBase,
-    });
+    const characterKey = char.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const entry = `
+    {
+        CharTemplate tpl;
+        tpl.character = '${characterKey}';
+        tpl.width = ${png.width};
+        tpl.height = ${png.height};
+        tpl.offset = ${MANUAL_OFFSETS[char] ?? 0};
+        tpl.font_pixel_offsets = {${fontPixelOffsets.join(', ')}};
+        tpl.bg_pixel_offsets = {${bgPixelOffsets.join(', ')}};
+        fontAtlas.push_back(std::move(tpl));
+    }`;
+    cppEntries.push(entry);
   }
 
-  const sortedChars = Array.from(fontDataMap.keys()).sort();
-  const fontDataEntries = sortedChars.map((char) => {
-    const data = fontDataMap.get(char);
-    const characterKey = `'${char.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  // **THE FIX: Include the new structs header instead of a forward declaration.**
+  const headerContent = `// font_atlas_data.h
+// Generated by generate-font-data.js on ${new Date().toISOString()}
+// DO NOT EDIT THIS FILE MANUALLY
 
-    // Generate clean, comment-free output
-    return `  ${characterKey}: {
-    width: ${data.width},
-    height: ${data.height},
-    offset: ${data.offset},
-    data: loadCharData('${data.filenameBase}')
-  }`;
-  });
+#pragma once
+#include "ocr_structs.h" // Include the full struct definitions
 
-  const fileContent = `// font-data.js
-// Generated by the generate-font-data.js script on ${new Date().toISOString()}
-
-/**
- * This is a placeholder for the function you use to load PNG data.
- * It should take a filename base (e.g., 'A', 'bracket_open') and return
- * the character's pixel data as a Node.js Buffer.
- *
- * @param {string} charFilenameBase - The base name of the PNG file (e.g., 'A', 'bracket_open').
- * @returns {Buffer}
- */
-function loadCharData(charFilenameBase) {
-  // In your real code, this function reads a file like \`\${charFilenameBase}.png\`
-  // and returns its pixel data as a Node.js Buffer.
-  // This is just an example placeholder.
-  // import fs from 'fs';
-  // import path from 'path';
-  // return fs.readFileSync(path.join(__dirname, 'fonts', \`\${charFilenameBase}.png\`));
-  return Buffer.from([]);
+inline void HardcodedInitializeFontAtlas(std::vector<CharTemplate>& fontAtlas) {
+    if (!fontAtlas.empty()) return;
+    fontAtlas.reserve(${cppEntries.length});
+${cppEntries.join('')}
 }
-
-export default {
-${fontDataEntries.join(',\n')}
-};
 `;
 
-  fs.writeFileSync(DATA_FILE, fileContent);
-
-  console.log(`\nSuccess! ✨`);
-  console.log(`Updated ${DATA_FILE} with ${fontDataMap.size} total entries.`);
-  console.log(`You can now safely run this script again after making changes.`);
+  const outputDir = path.dirname(OUTPUT_HEADER_FILE);
+  if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(OUTPUT_HEADER_FILE, headerContent);
+  console.log(`\nSuccess! Generated C++ header file at: ${OUTPUT_HEADER_FILE}`);
 }
 
-generateData().catch((error) => {
-  console.error('\nAn error occurred:', error.message);
+generateCppHeader().catch((err) => {
+  console.error('\nAn error occurred:', err);
   process.exit(1);
 });

@@ -395,6 +395,13 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current region coordinates slice"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#ocrState"
+                img={tibia} // Reusing tibia icon for OCR State
+                text={'OCR Output'}
+                imageWidth="32px"
+                tooltip="View the current OCR output slice"
+              ></SideBarNavButton>
             </>
           )}
 

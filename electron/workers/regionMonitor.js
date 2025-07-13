@@ -97,10 +97,21 @@ async function findAndDispatchRegions(buffer, metadata) {
     const overallActionBarsRegion = findBoundingRectBatch(
       regionColorSequences.hotkeyBarBottomStart,
       regionColorSequences.hotkeyBarBottomEnd,
-      600,
+      2000,
       100,
     );
     if (overallActionBarsRegion?.startFound) foundRegions.overallActionBars = overallActionBarsRegion;
+
+    const skillsWidgetRegion = findBoundingRectBatch(
+      regionColorSequences.skillsWidgetStart,
+      regionColorSequences.skillsWidgetEnd,
+      170,
+      1000,
+    );
+    if (skillsWidgetRegion?.startFound) foundRegions.skillsWidget = skillsWidgetRegion;
+
+    const chatboxMainRegion = findBoundingRectBatch(regionColorSequences.chatboxMainStart, regionColorSequences.chatboxMainEnd, 1400, 1000);
+    if (chatboxMainRegion?.startFound) foundRegions.chatboxMain = chatboxMainRegion;
 
     // --- Game World Detection and Tile Size Calculation ---
     const gameWorldRegion = findBoundingRectBatch(

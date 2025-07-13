@@ -1,6 +1,4 @@
 import { parentPort, workerData } from 'worker_threads';
-import { performance } from 'perf_hooks';
-import fs from 'fs'; // Added for file system operations
 import {
   regionColorSequences,
   resourceBars,
@@ -10,17 +8,14 @@ import {
   actionBarItems,
   equippedItems,
 } from '../constants/index.js';
-import { setNotPossibleTimestamp, setThereIsNoWayTimestamp } from '../../frontend/redux/slices/statusMessagesSlice.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import findSequences from 'find-sequences-native';
-import fontOcr from 'font-ocr';
-import fontAtlasData from '../../font_atlas/font-data.js';
-
-// --- Worker Configuration ---
+import pkg from 'font-ocr';
+const { recognizeText } = pkg;
 const { sharedData } = workerData;
 
 // --- Shared Buffer Setup ---
@@ -34,7 +29,7 @@ const FRAME_COUNTER_INDEX = 0,
 const HEADER_SIZE = 8;
 
 // --- State Variables ---
-let state = null; // This will be the full Redux state
+let state = null;
 let lastProcessedFrameCounter = -1;
 let lastKnownGoodHealthPercentage = null;
 let lastKnownGoodManaPercentage = null;
@@ -121,28 +116,6 @@ async function mainLoop() {
 
       const searchResults = findSequences.findSequencesNativeBatch(bufferView, searchTasks);
 
-      // --- MODIFICATION START ---
-      // OCR the entire image, measure performance, and save the result to a text file.
-      try {
-        const fullImageRegion = { x: 0, y: 0, width, height };
-
-        const startTime = performance.now();
-        const detectedText = fontOcr.recognizeText(bufferView, fullImageRegion);
-        const endTime = performance.now();
-
-        const duration = endTime - startTime;
-        const fileHeader = `OCR processing time: ${duration.toFixed(2)} ms\n---\n`;
-        const fileContent = fileHeader + (detectedText || '');
-
-        // Overwrite the file with the new OCR text and performance data on each iteration.
-        fs.writeFileSync('ocr_output.txt', fileContent, 'utf-8');
-      } catch (ocrError) {
-        console.error('[ScreenMonitor] OCR process failed:', ocrError);
-        // Optionally, write an error to the file so you know it failed.
-        fs.writeFileSync('ocr_output.txt', 'OCR process failed.', 'utf-8');
-      }
-      // --- MODIFICATION END ---
-
       const { newHealthPercentage, newManaPercentage } =
         regions.healthBar && regions.manaBar
           ? {
@@ -191,6 +164,11 @@ async function mainLoop() {
       };
       parentPort.postMessage({ storeUpdate: true, type: 'gameState/updateGameStateFromMonitorData', payload: currentStateUpdate });
 
+      // OCR processing is now handled by ocrWorker.js
+      // if (Object.keys(ocrUpdates).length > 0) {
+      //   parentPort.postMessage({ storeUpdate: true, type: 'ocr/setOcrRegionsText', payload: ocrUpdates });
+      // }
+
       if (state?.global?.isBotEnabled) runRules(currentStateUpdate);
       lastProcessedFrameCounter = newFrameCounter;
     } catch (err) {
@@ -204,16 +182,10 @@ parentPort.on('message', (message) => {
   state = message;
 });
 
-async function startWorker() {
+// The startWorker function is now much simpler.
+// No need to load anything, the C++ module handles it internally.
+function startWorker() {
   console.log('[ScreenMonitor] Worker starting up...');
-
-  try {
-    await fontOcr.loadFontAtlas(fontAtlasData);
-    console.log('[ScreenMonitor] Font atlas loaded.');
-  } catch (e) {
-    console.error('[ScreenMonitor] CRITICAL: Failed to load font atlas.', e);
-  }
-
   mainLoop();
 }
 

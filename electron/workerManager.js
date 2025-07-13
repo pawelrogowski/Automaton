@@ -185,7 +185,7 @@ class WorkerManager {
 
     try {
       const workerPath = this.getWorkerPath(name);
-      const needsSharedScreen = ['captureWorker', 'screenMonitor', 'minimapMonitor', 'regionMonitor'].includes(name);
+      const needsSharedScreen = ['captureWorker', 'screenMonitor', 'minimapMonitor', 'regionMonitor', 'ocrWorker'].includes(name);
 
       const workerData = {
         paths: paths || this.paths,
@@ -282,9 +282,12 @@ class WorkerManager {
       if (!this.workers.has('regionMonitor')) this.startWorker('regionMonitor');
       if (!this.workers.has('screenMonitor')) this.startWorker('screenMonitor');
       if (!this.workers.has('minimapMonitor')) this.startWorker('minimapMonitor');
+      if (!this.workers.has('ocrWorker')) this.startWorker('ocrWorker'); // Start the new OCR worker
       if (cavebotEnabled && !this.workers.has('cavebotWorker')) this.startWorker('cavebotWorker', null, this.paths);
     } else {
-      ['captureWorker', 'regionMonitor', 'screenMonitor', 'minimapMonitor', 'cavebotWorker'].forEach((w) => this.stopWorker(w));
+      ['captureWorker', 'regionMonitor', 'screenMonitor', 'minimapMonitor', 'ocrWorker', 'cavebotWorker'].forEach((w) =>
+        this.stopWorker(w),
+      );
       if (this.sharedScreenState) {
         log('info', '[Worker Manager] Clearing SharedArrayBuffers.');
         this.sharedScreenState = null;
@@ -292,9 +295,7 @@ class WorkerManager {
     }
 
     const allPersistentScripts = state.lua.persistentScripts;
-    const runningScriptWorkerIds = new Set(
-      Array.from(this.workers.keys()).filter((name) => /^[0-9a-fA-F]{8}-/.test(name)),
-    );
+    const runningScriptWorkerIds = new Set(Array.from(this.workers.keys()).filter((name) => /^[0-9a-fA-F]{8}-/.test(name)));
 
     // Stop workers for scripts that have been removed
     for (const workerId of runningScriptWorkerIds) {
@@ -329,7 +330,12 @@ class WorkerManager {
     // Send the full state to all workers except captureWorker
     for (const [name, workerEntry] of this.workers) {
       if (workerEntry.worker && name !== 'captureWorker') {
-        workerEntry.worker.postMessage(state);
+        // Only send the full state if the worker is not a one-shot Lua script worker.
+        // One-shot Lua script workers receive their script config on init and don't need the full state.
+        const isOneShotLua = /^[0-9a-fA-F]{8}-/.test(name);
+        if (!isOneShotLua) {
+          workerEntry.worker.postMessage(state);
+        }
       }
     }
   }

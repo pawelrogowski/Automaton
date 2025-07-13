@@ -27,6 +27,8 @@ const GameState = () => {
         return state.statusMessages;
       case '#regionCoordinatesState':
         return state.regionCoordinates;
+      case '#ocrState':
+        return state.ocr;
     }
   });
 
@@ -48,6 +50,8 @@ const GameState = () => {
         return 'Status Messages';
       case '#regionCoordinatesState':
         return 'Region Coordinates';
+      case '#ocrState':
+        return 'OCR Output';
     }
   };
 
