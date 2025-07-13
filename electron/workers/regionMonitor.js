@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import { appendFile } from 'fs/promises';
+import { appendFile, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { regionColorSequences } from '../constants/index.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
@@ -16,6 +16,9 @@ const LOG_INTERVAL_MS = 10000; // 10 seconds
 const LOG_FILE_NAME = 'region-monitor-memory-usage.log';
 const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
 let lastLogTime = 0;
+
+const PERF_LOG_FILE_NAME = 'region-monitor-performance.json';
+const PERF_LOG_FILE_PATH = path.join(process.cwd(), PERF_LOG_FILE_NAME);
 
 const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
 
@@ -51,14 +54,76 @@ let lastProcessedFrameCounter = -1;
 let lastRegionUpdateTime = 0;
 const REGION_UPDATE_INTERVAL_MS = 1000;
 
+async function updatePerformanceLog(durationMs, width, height) {
+  let summary = {
+    sessionLength: 0,
+    highestTimeMs: 0,
+    lowestTimeMs: Infinity,
+    totalDurationMs: 0,
+    totalPixels: 0,
+    meanDurationMs: 0, // For Welford's algorithm
+    sumOfSquaredDifferences: 0, // For Welford's algorithm
+  };
+
+  try {
+    const fileContent = await readFile(PERF_LOG_FILE_PATH, 'utf8');
+    const parsedData = JSON.parse(fileContent);
+    // Check if the parsed data is a valid summary object (not an old 'entries' format)
+    if (parsedData && typeof parsedData.sessionLength === 'number') {
+      summary = parsedData;
+    } else {
+      console.warn('[PerformanceTracker] Old or malformed performance log file detected. Starting new summary.');
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      console.log('[PerformanceTracker] Performance log file not found, creating new one.');
+    } else {
+      console.error('[PerformanceTracker] Error reading performance log file:', error);
+    }
+  }
+
+  summary.sessionLength++;
+  summary.highestTimeMs = Math.max(summary.highestTimeMs, durationMs);
+  summary.lowestTimeMs = Math.min(summary.lowestTimeMs, durationMs);
+  summary.totalDurationMs += durationMs;
+  summary.totalPixels += width * height;
+
+  // Welford's algorithm for calculating mean and variance incrementally
+  const oldMean = summary.meanDurationMs;
+  summary.meanDurationMs += (durationMs - oldMean) / summary.sessionLength;
+  summary.sumOfSquaredDifferences += (durationMs - oldMean) * (durationMs - summary.meanDurationMs);
+
+  const averageMs = summary.totalDurationMs / summary.sessionLength;
+  const jitterMs = summary.sessionLength > 1 ? Math.sqrt(summary.sumOfSquaredDifferences / (summary.sessionLength - 1)) : 0;
+  const totalMegapixels = summary.totalPixels / (1024 * 1024);
+  const megapixelsPerSecond = summary.totalDurationMs > 0 ? totalMegapixels / (summary.totalDurationMs / 1000) : 0;
+
+  summary.averageMs = averageMs;
+  summary.jitterMs = jitterMs;
+  summary.totalMegapixels = totalMegapixels;
+  summary.megapixelsPerSecond = megapixelsPerSecond;
+
+  try {
+    await writeFile(PERF_LOG_FILE_PATH, JSON.stringify(summary, null, 2)); // Write the full summary object
+    console.log('[PerformanceTracker] Performance summary updated.');
+  } catch (error) {
+    console.error('[PerformanceTracker] Error writing performance log file:', error);
+  }
+}
+
 async function findAndDispatchRegions(buffer, metadata) {
   const fullSearchArea = { x: 0, y: 0, width: metadata.width, height: metadata.height };
   const foundRegions = {};
 
   try {
+    const startTime = performance.now();
     const initialSearchResults = findSequences.findSequencesNativeBatch(buffer, {
       main: { sequences: regionColorSequences, searchArea: fullSearchArea, occurrence: 'first' },
     });
+    const endTime = performance.now();
+    const durationMs = endTime - startTime;
+
+    await updatePerformanceLog(durationMs, metadata.width, metadata.height);
 
     const startRegions = initialSearchResults.main;
     if (!startRegions) {

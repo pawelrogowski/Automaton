@@ -1,13 +1,13 @@
 #include <napi.h>
 #include <vector>
 #include <string>
-#include <map>
 #include <set>
 #include <cstdint>
 #include <thread>
 #include <cmath>
 #include <algorithm>
-#include <unordered_map> // Use unordered_map for performance
+#include <unordered_map>
+#include <atomic> // --- CHANGE: Required for std::atomic ---
 
 // SSE2/AVX intrinsics
 #include <immintrin.h>
@@ -47,8 +47,8 @@ struct FoundCoords {
     }
 };
 
-using FirstCandidateMap = std::map<std::string, std::pair<FirstCandidate, FirstCandidate>>;
-using AllCandidateMap = std::map<std::string, std::pair<std::set<FoundCoords>, std::set<FoundCoords>>>;
+using FirstCandidateMap = std::unordered_map<std::string, std::pair<FirstCandidate, FirstCandidate>>;
+using AllCandidateMap = std::unordered_map<std::string, std::pair<std::set<FoundCoords>, std::set<FoundCoords>>>;
 
 struct SearchTask {
     std::string taskName;
@@ -64,15 +64,14 @@ struct WorkerData {
     uint32_t bufferHeight;
     uint32_t stride;
     size_t bgraDataLength;
-    uint32_t startRow;
-    uint32_t endRow;
     const std::vector<SearchTask>& tasks;
     FirstCandidateMap* localFirstResults;
     AllCandidateMap* localAllResults;
+    // --- CHANGE: Replaced fixed rows with a pointer to a shared atomic counter ---
+    std::atomic<uint32_t>* next_row_to_process;
 };
 
-// --- Helper Functions ---
-
+// --- Helper Functions (Unchanged) ---
 bool ParseColorSequence(Napi::Env env, const Napi::Array& jsSequence, std::vector<uint32_t>& outHashes) {
     outHashes.clear();
     outHashes.reserve(jsSequence.Length());
@@ -150,11 +149,11 @@ bool ParseTargetSequences(
     return true;
 }
 
-// --- Verification Function (The original "slow path") ---
+// --- Verification Function (Unchanged) ---
 void VerifyAndRecordMatch(
     const WorkerData& data,
     const SequenceDefinition& seqDef,
-    const SearchTask& task, // Pass in the current task
+    const SearchTask& task,
     uint32_t x,
     uint32_t y
 ) {
@@ -213,73 +212,78 @@ void VerifyAndRecordMatch(
     }
 }
 
-// --- Worker Thread Function (AVX2-Optimized) ---
+// --- Worker Thread Function (Now with Dynamic Scheduling) ---
 void FindSequencesWorker(const WorkerData& data) {
-    // REFACTORED: Use a map to find unique colors first, avoiding vector alignment warnings.
-    std::unordered_map<uint32_t, bool> unique_colors;
-    for (const auto& task : data.tasks) {
-        for (const auto& pair : task.firstColorLookup) {
-            unique_colors[pair.first] = true;
+    // --- CHANGE: Define a chunk size for dynamic scheduling. ---
+    // Each thread will process this many rows at a time before getting more work.
+    const uint32_t chunk_size = 16;
+
+    // --- CHANGE: The main loop now dynamically fetches chunks of rows to process. ---
+    while (true) {
+        // Atomically get the next starting row and increment the shared counter.
+        uint32_t startY = data.next_row_to_process->fetch_add(chunk_size);
+
+        // If the starting row is past the end of the buffer, there's no more work.
+        if (startY >= data.bufferHeight) {
+            break;
         }
-    }
 
-    std::vector<__m256i> first_color_vectors;
-    for (const auto& color_pair : unique_colors) {
-        uint32_t rgb_hash = color_pair.first;
-        uint32_t r = (rgb_hash >> 16) & 0xFF;
-        uint32_t g = (rgb_hash >> 8) & 0xFF;
-        uint32_t b = rgb_hash & 0xFF;
-        // FIX: Correctly construct the 32-bit integer to match the BGRA memory layout
-        // when read as a little-endian uint32_t. Alpha is 0xFF.
-        uint32_t bgra_val = (0xFF << 24) | (r << 16) | (g << 8) | b;
-        first_color_vectors.push_back(_mm256_set1_epi32(bgra_val));
-    }
+        // Determine the end row for this chunk, ensuring it doesn't go past the buffer height.
+        uint32_t endY = std::min(startY + chunk_size, data.bufferHeight);
 
-    if (first_color_vectors.empty()) {
-        return;
-    }
+        // Now, process this chunk of rows for every task.
+        for (const auto& task : data.tasks) {
+            if (task.firstColorLookup.empty()) {
+                continue;
+            }
 
-    for (const auto& task : data.tasks) {
-        uint32_t startY = std::max(data.startRow, task.searchArea.y);
-        uint32_t endY = std::min(data.endRow, task.searchArea.y + task.searchArea.height);
-        uint32_t startX = task.searchArea.x;
-        uint32_t endX = task.searchArea.x + task.searchArea.width;
+            // Find the intersection of our dynamically assigned chunk and the task's search area.
+            uint32_t task_startY = std::max(startY, task.searchArea.y);
+            uint32_t task_endY = std::min(endY, task.searchArea.y + task.searchArea.height);
+            uint32_t startX = task.searchArea.x;
+            uint32_t endX = task.searchArea.x + task.searchArea.width;
 
-        for (uint32_t y = startY; y < endY; ++y) {
-            const uint8_t* row_ptr = data.bgraData + (y * data.stride);
+            for (uint32_t y = task_startY; y < task_endY; ++y) {
+                const uint8_t* row_ptr = data.bgraData + (y * data.stride);
+                const uint32_t prefetch_distance_pixels = 64;
 
-            for (uint32_t x = startX; x < endX; ) {
-                if (x + 8 <= endX) {
-                    __m256i screen_chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row_ptr + x * 4));
-
-                    int found_mask = 0;
-                    for (const auto& color_vec : first_color_vectors) {
-                        __m256i cmp_result = _mm256_cmpeq_epi32(screen_chunk, color_vec);
-                        found_mask |= _mm256_movemask_ps(_mm256_castsi256_ps(cmp_result));
+                uint32_t x = startX;
+                for (; x + 8 <= endX; x += 8) {
+                    if (x + prefetch_distance_pixels < endX) {
+                        _mm_prefetch(reinterpret_cast<const char*>(row_ptr + (x + prefetch_distance_pixels) * 4), _MM_HINT_T0);
                     }
 
-                    if (found_mask != 0) {
-                        for (int j = 0; j < 8; ++j) {
-                            if ((found_mask >> j) & 1) {
-                                uint32_t current_x = x + j;
-                                size_t pixelOffset = (y * data.stride) + (current_x * 4);
-                                uint32_t r_val = data.bgraData[pixelOffset + 2];
-                                uint32_t g_val = data.bgraData[pixelOffset + 1];
-                                uint32_t b_val = data.bgraData[pixelOffset + 0];
-                                uint32_t currentColorHash = (r_val << 16) | (g_val << 8) | b_val;
+                    __m256i screen_chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row_ptr + x * 4));
 
-                                auto lookupIt = task.firstColorLookup.find(currentColorHash);
-                                if (lookupIt != task.firstColorLookup.end()) {
-                                    for (const auto& seqDef : lookupIt->second) {
-                                        VerifyAndRecordMatch(data, seqDef, task, current_x, y);
+                    for (const auto& color_pair : task.firstColorLookup) {
+                        uint32_t rgb_hash = color_pair.first;
+                        const std::vector<SequenceDefinition>& sequences_for_color = color_pair.second;
+
+                        uint32_t r = (rgb_hash >> 16) & 0xFF;
+                        uint32_t g = (rgb_hash >> 8) & 0xFF;
+                        uint32_t b = rgb_hash & 0xFF;
+                        uint32_t bgra_val = (0xFF << 24) | (r << 16) | (g << 8) | b;
+                        __m256i target_color_vec = _mm256_set1_epi32(bgra_val);
+
+                        __m256i cmp_result = _mm256_cmpeq_epi32(screen_chunk, target_color_vec);
+                        int found_mask = _mm256_movemask_ps(_mm256_castsi256_ps(cmp_result));
+
+                        if (found_mask != 0) {
+                            for (int j = 0; j < 8; ++j) {
+                                if ((found_mask >> j) & 1) {
+                                    for (const auto& seqDef : sequences_for_color) {
+                                        VerifyAndRecordMatch(data, seqDef, task, x + j, y);
                                     }
                                 }
                             }
                         }
                     }
-                    x += 8;
-                } else {
+                }
+
+                for (; x < endX; ++x) {
                     size_t pixelOffset = (y * data.stride) + (x * 4);
+                    if (pixelOffset + 3 >= data.bgraDataLength) continue;
+
                     uint32_t r_val = data.bgraData[pixelOffset + 2];
                     uint32_t g_val = data.bgraData[pixelOffset + 1];
                     uint32_t b_val = data.bgraData[pixelOffset + 0];
@@ -291,7 +295,6 @@ void FindSequencesWorker(const WorkerData& data) {
                             VerifyAndRecordMatch(data, seqDef, task, x, y);
                         }
                     }
-                    x++;
                 }
             }
         }
@@ -334,15 +337,16 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
     std::vector<std::thread> threads;
     std::vector<FirstCandidateMap> threadFirstResults(numThreads);
     std::vector<AllCandidateMap> threadAllResults(numThreads);
-    uint32_t rowsPerThread = (bufferHeight + numThreads - 1) / numThreads;
+
+    // --- CHANGE: Create the shared atomic counter for the work queue. ---
+    std::atomic<uint32_t> next_row_to_process(0);
 
     for (unsigned int i = 0; i < numThreads; ++i) {
-        uint32_t startRow = i * rowsPerThread;
-        uint32_t endRow = std::min(startRow + rowsPerThread, bufferHeight);
-        if (startRow >= endRow) continue;
+        // --- CHANGE: No longer pre-calculating rows. Just spawn the threads. ---
         threads.emplace_back(FindSequencesWorker, WorkerData{
             bgraData, bufferWidth, bufferHeight, stride, bgraDataLength,
-            startRow, endRow, std::ref(tasks), &threadFirstResults[i], &threadAllResults[i]
+            std::ref(tasks), &threadFirstResults[i], &threadAllResults[i],
+            &next_row_to_process // Pass a pointer to the shared counter
         });
     }
     for (auto& t : threads) { t.join(); }
@@ -353,6 +357,7 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
         if (task.occurrenceMode == "first") {
             FirstCandidateMap finalFirstResults;
             for (const auto& name : task.targetNames) { finalFirstResults[name]; }
+
             for (const auto& localMap : threadFirstResults) {
                 for (const auto& pair : localMap) {
                     if (finalFirstResults.count(pair.first)) {
@@ -385,6 +390,7 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
         } else { // "all"
             AllCandidateMap finalAllResults;
             for (const auto& name : task.targetNames) { finalAllResults[name]; }
+
             for (const auto& localMap : threadAllResults) {
                 for (const auto& pair : localMap) {
                     if (finalAllResults.count(pair.first)) {
@@ -412,7 +418,6 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
                     coordsArray = Napi::Array::New(env, backupSet.size());
                     size_t idx = 0;
                     for (const auto& coords : backupSet) {
-                        // FIX: Corrected Npi -> Napi typo
                         Napi::Object obj = Napi::Object::New(env);
                         obj.Set("x", coords.x);
                         obj.Set("y", coords.y);
@@ -430,7 +435,7 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
     return finalResultsByTask;
 }
 
-// --- BATCH N-API FUNCTION (Now a simple wrapper) ---
+// --- BATCH N-API FUNCTION (Unchanged) ---
 Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) {
@@ -440,7 +445,7 @@ Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
     return PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), info[1].As<Napi::Object>());
 }
 
-// --- ORIGINAL FUNCTION (Now a wrapper for backward compatibility) ---
+// --- ORIGINAL FUNCTION (Unchanged) ---
 Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Object searchTasks = Napi::Object::New(env);
@@ -468,7 +473,7 @@ Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
     return batchResult.As<Napi::Object>().Get("defaultTask");
 }
 
-// --- Module Initialization ---
+// --- Module Initialization (Unchanged) ---
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("findSequencesNative", Napi::Function::New(env, FindSequencesNative));
     exports.Set("findSequencesNativeBatch", Napi::Function::New(env, FindSequencesNativeBatch));
