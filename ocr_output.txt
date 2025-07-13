@@ -1,2 +1,0 @@
-OCR processing time (gameLog): 0.05 ms
----

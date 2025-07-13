@@ -7,12 +7,12 @@
 #include <cmath>
 #include <algorithm>
 #include <unordered_map>
-#include <atomic> // --- CHANGE: Required for std::atomic ---
+#include <atomic>
 
 // SSE2/AVX intrinsics
 #include <immintrin.h>
 
-// --- Constants & Data Structures ---
+// --- Constants & Data Structures (Unchanged) ---
 const uint32_t ANY_COLOR_HASH = 0xFFFFFFFF;
 
 struct SearchArea {
@@ -35,7 +35,7 @@ struct SequenceDefinition {
 struct FirstCandidate {
     int x = 0;
     int y = 0;
-    size_t pixelIndex = -1; // Use -1 as max value
+    size_t pixelIndex = -1;
 };
 
 struct FoundCoords {
@@ -67,7 +67,6 @@ struct WorkerData {
     const std::vector<SearchTask>& tasks;
     FirstCandidateMap* localFirstResults;
     AllCandidateMap* localAllResults;
-    // --- CHANGE: Replaced fixed rows with a pointer to a shared atomic counter ---
     std::atomic<uint32_t>* next_row_to_process;
 };
 
@@ -212,32 +211,22 @@ void VerifyAndRecordMatch(
     }
 }
 
-// --- Worker Thread Function (Now with Dynamic Scheduling) ---
+// --- Worker Thread Function (Unchanged) ---
 void FindSequencesWorker(const WorkerData& data) {
-    // --- CHANGE: Define a chunk size for dynamic scheduling. ---
-    // Each thread will process this many rows at a time before getting more work.
     const uint32_t chunk_size = 16;
 
-    // --- CHANGE: The main loop now dynamically fetches chunks of rows to process. ---
     while (true) {
-        // Atomically get the next starting row and increment the shared counter.
         uint32_t startY = data.next_row_to_process->fetch_add(chunk_size);
-
-        // If the starting row is past the end of the buffer, there's no more work.
         if (startY >= data.bufferHeight) {
             break;
         }
-
-        // Determine the end row for this chunk, ensuring it doesn't go past the buffer height.
         uint32_t endY = std::min(startY + chunk_size, data.bufferHeight);
 
-        // Now, process this chunk of rows for every task.
         for (const auto& task : data.tasks) {
             if (task.firstColorLookup.empty()) {
                 continue;
             }
 
-            // Find the intersection of our dynamically assigned chunk and the task's search area.
             uint32_t task_startY = std::max(startY, task.searchArea.y);
             uint32_t task_endY = std::min(endY, task.searchArea.y + task.searchArea.height);
             uint32_t startX = task.searchArea.x;
@@ -338,15 +327,30 @@ Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffe
     std::vector<FirstCandidateMap> threadFirstResults(numThreads);
     std::vector<AllCandidateMap> threadAllResults(numThreads);
 
-    // --- CHANGE: Create the shared atomic counter for the work queue. ---
+    // --- FIX: Pre-allocate buckets in unordered_maps to prevent re-hashing ---
+    // 1. Find the total number of unique sequence names across all tasks.
+    std::set<std::string> all_unique_names;
+    for (const auto& task : tasks) {
+        all_unique_names.insert(task.targetNames.begin(), task.targetNames.end());
+    }
+    size_t unique_name_count = all_unique_names.size();
+
+    // 2. Reserve space in each thread's local map.
+    if (unique_name_count > 0) {
+        for (unsigned int i = 0; i < numThreads; ++i) {
+            threadFirstResults[i].reserve(unique_name_count);
+            threadAllResults[i].reserve(unique_name_count);
+        }
+    }
+    // --- End of Fix ---
+
     std::atomic<uint32_t> next_row_to_process(0);
 
     for (unsigned int i = 0; i < numThreads; ++i) {
-        // --- CHANGE: No longer pre-calculating rows. Just spawn the threads. ---
         threads.emplace_back(FindSequencesWorker, WorkerData{
             bgraData, bufferWidth, bufferHeight, stride, bgraDataLength,
             std::ref(tasks), &threadFirstResults[i], &threadAllResults[i],
-            &next_row_to_process // Pass a pointer to the shared counter
+            &next_row_to_process
         });
     }
     for (auto& t : threads) { t.join(); }
