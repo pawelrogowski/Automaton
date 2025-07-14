@@ -44,7 +44,7 @@ const IS_RUNNING_INDEX = 3;
 const WINDOW_ID_INDEX = 4;
 
 const captureInstance = X11RegionCapture ? new X11RegionCapture.X11RegionCapture() : null;
-let targetFps = 10;
+let targetFps = 20;
 let isCapturing = false;
 
 async function delay(ms) {

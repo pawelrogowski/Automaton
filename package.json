@@ -1,5 +1,5 @@
 {
-  "name": "nexus_clear_core",
+  "name": "prime_grid_node_relay",
   "version": "1.3.5b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -19,8 +19,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.nexus_clear_core",
-    "productName": "Nexus Clear Core",
+    "appId": "com.electron.prime_grid_node_relay",
+    "productName": "Prime Grid Node Relay",
     "directories": {
       "output": "dist",
       "buildResources": "build"

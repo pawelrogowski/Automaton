@@ -105,6 +105,18 @@ async function processOcrRegions(buffer, metadata) {
     ocrUpdates.chatboxMain = ''; // Clear if region is not found
   }
 
+  if (regions.chatboxSecondary) {
+    try {
+      const detectedText = recognizeText(buffer, regions.chatboxSecondary, CHATBOX_MAIN_COLORS);
+      ocrUpdates.chatboxSecondary = detectedText || '';
+    } catch (ocrError) {
+      console.error('[OcrWorker] OCR process failed for chatboxSecondary:', ocrError);
+      ocrUpdates.chatboxSecondary = ''; // Clear on error
+    }
+  } else {
+    ocrUpdates.chatboxSecondary = ''; // Clear if region is not found
+  }
+
   if (Object.keys(ocrUpdates).length > 0) {
     parentPort.postMessage({ storeUpdate: true, type: 'ocr/setOcrRegionsText', payload: ocrUpdates });
   }
