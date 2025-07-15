@@ -1,3 +1,4 @@
+//  findSequences.cc  – leak-proof, fast, drop-in replacement (FINAL CORRECTED)
 #include <napi.h>
 #include <vector>
 #include <string>
@@ -9,164 +10,141 @@
 #include <unordered_map>
 #include <atomic>
 
-// SSE2/AVX intrinsics
 #include <immintrin.h>
 
-// --- Constants & Data Structures (Unchanged) ---
+// ---------- Constants ----------
 const uint32_t ANY_COLOR_HASH = 0xFFFFFFFF;
 
+// ---------- Structures ----------
 struct SearchArea {
-    uint32_t x = 0;
-    uint32_t y = 0;
-    uint32_t width = 0;
-    uint32_t height = 0;
+    uint32_t x = 0, y = 0, width = 0, height = 0;
     bool active = false;
 };
 
 struct SequenceDefinition {
     std::string name;
     std::vector<uint32_t> sequenceHashes;
-    std::string direction;
-    int offsetX = 0;
-    int offsetY = 0;
-    std::string variant;
+    std::string direction = "horizontal";
+    int offsetX = 0, offsetY = 0;
+    std::string variant = "primary";
 };
 
 struct FirstCandidate {
-    int x = 0;
-    int y = 0;
-    size_t pixelIndex = -1;
+    int x = 0, y = 0;
+    size_t pixelIndex = static_cast<size_t>(-1);
 };
 
 struct FoundCoords {
-    int x;
-    int y;
-    bool operator<(const FoundCoords& other) const {
-        if (y != other.y) return y < other.y;
-        return x < other.x;
+    int x, y;
+    bool operator<(const FoundCoords& o) const {
+        return y != o.y ? y < o.y : x < o.x;
     }
 };
 
 using FirstCandidateMap = std::unordered_map<std::string, std::pair<FirstCandidate, FirstCandidate>>;
-using AllCandidateMap = std::unordered_map<std::string, std::pair<std::set<FoundCoords>, std::set<FoundCoords>>>;
+using AllCandidateMap   = std::unordered_map<std::string, std::pair<std::set<FoundCoords>, std::set<FoundCoords>>>;
 
 struct SearchTask {
     std::string taskName;
     std::unordered_map<uint32_t, std::vector<SequenceDefinition>> firstColorLookup;
     std::vector<std::string> targetNames;
     SearchArea searchArea;
-    std::string occurrenceMode;
+    std::string occurrenceMode = "first";
 };
 
 struct WorkerData {
     const uint8_t* bgraData;
-    uint32_t bufferWidth;
-    uint32_t bufferHeight;
-    uint32_t stride;
+    uint32_t bufferWidth, bufferHeight, stride;
     size_t bgraDataLength;
     const std::vector<SearchTask>& tasks;
     FirstCandidateMap* localFirstResults;
     AllCandidateMap* localAllResults;
-    std::atomic<uint32_t>* next_row_to_process;
+    std::atomic<uint32_t>* next_row;
 };
 
-// --- Helper Functions (Unchanged) ---
-bool ParseColorSequence(Napi::Env env, const Napi::Array& jsSequence, std::vector<uint32_t>& outHashes) {
-    outHashes.clear();
-    outHashes.reserve(jsSequence.Length());
-    for (uint32_t i = 0; i < jsSequence.Length(); ++i) {
-        Napi::Value element = jsSequence.Get(i);
-        if (element.IsString() && element.As<Napi::String>().Utf8Value() == "any") {
-            outHashes.push_back(ANY_COLOR_HASH);
-        } else if (element.IsArray()) {
-            Napi::Array colorArray = element.As<Napi::Array>();
-            if (colorArray.Length() != 3) return false;
-            uint32_t r = colorArray.Get((uint32_t)0).As<Napi::Number>().Uint32Value();
-            uint32_t g = colorArray.Get((uint32_t)1).As<Napi::Number>().Uint32Value();
-            uint32_t b = colorArray.Get((uint32_t)2).As<Napi::Number>().Uint32Value();
-            outHashes.push_back((r << 16) | (g << 8) | b);
-        } else {
-            return false;
+// ---------- RAII helper ----------
+template <typename T>
+struct AutoClear {
+    T& c;
+    explicit AutoClear(T& container) : c(container) {}
+    ~AutoClear() { c.clear(); }
+};
+
+// ---------- Parsing utilities (Unchanged) ----------
+bool ParseColorSequence(Napi::Env env, const Napi::Array& jsSeq, std::vector<uint32_t>& out) {
+    out.clear();
+    uint32_t len = jsSeq.Length();
+    out.reserve(len);
+    for (uint32_t i = 0; i < len; ++i) {
+        Napi::Value v = jsSeq.Get(i);
+        if (v.IsString() && v.As<Napi::String>().Utf8Value() == "any") {
+            out.push_back(ANY_COLOR_HASH);
+            continue;
         }
+        if (!v.IsArray()) return false;
+        Napi::Array arr = v.As<Napi::Array>();
+        if (arr.Length() != 3) return false;
+        uint32_t r = arr.Get(0u).As<Napi::Number>().Uint32Value();
+        uint32_t g = arr.Get(1u).As<Napi::Number>().Uint32Value();
+        uint32_t b = arr.Get(2u).As<Napi::Number>().Uint32Value();
+        out.push_back((r << 16) | (g << 8) | b);
     }
     return true;
 }
 
-bool ParseTargetSequences(
-    Napi::Env env,
-    const Napi::Object& jsSequences,
-    std::unordered_map<uint32_t, std::vector<SequenceDefinition>>& firstColorLookup,
-    std::vector<std::string>& targetNames
-) {
+bool ParseTargetSequences(Napi::Env env,
+                          const Napi::Object& jsSequences,
+                          std::unordered_map<uint32_t, std::vector<SequenceDefinition>>& firstColorLookup,
+                          std::vector<std::string>& targetNames) {
     firstColorLookup.clear();
     targetNames.clear();
     Napi::Array names = jsSequences.GetPropertyNames();
-    targetNames.reserve(names.Length());
-
-    for (uint32_t i = 0; i < names.Length(); ++i) {
+    uint32_t n = names.Length();
+    targetNames.reserve(n);
+    for (uint32_t i = 0; i < n; ++i) {
         Napi::Value keyVal = names.Get(i);
         if (!keyVal.IsString()) continue;
-        Napi::String nameString = keyVal.As<Napi::String>();
-        std::string targetName = nameString.Utf8Value();
-        targetNames.push_back(targetName);
-
-        Napi::Object config = jsSequences.Get(nameString).As<Napi::Object>();
-        std::string direction = config.Has("direction") ? config.Get("direction").As<Napi::String>().Utf8Value() : "horizontal";
-        int offsetX = 0, offsetY = 0;
-        if (config.Has("offset")) {
-            Napi::Object offsetObj = config.Get("offset").As<Napi::Object>();
-            if (offsetObj.Has("x")) offsetX = offsetObj.Get("x").As<Napi::Number>().Int32Value();
-            if (offsetObj.Has("y")) offsetY = offsetObj.Get("y").As<Napi::Number>().Int32Value();
+        std::string name = keyVal.As<Napi::String>().Utf8Value();
+        targetNames.emplace_back(name);
+        Napi::Object cfg = jsSequences.Get(keyVal).As<Napi::Object>();
+        SequenceDefinition def;
+        def.name = name;
+        def.direction = cfg.Has("direction") ? cfg.Get("direction").As<Napi::String>().Utf8Value() : "horizontal";
+        if (cfg.Has("offset")) {
+            Napi::Object off = cfg.Get("offset").As<Napi::Object>();
+            def.offsetX = off.Has("x") ? off.Get("x").As<Napi::Number>().Int32Value() : 0;
+            def.offsetY = off.Has("y") ? off.Get("y").As<Napi::Number>().Int32Value() : 0;
         }
-
-        if (config.Has("sequence")) {
-            SequenceDefinition primarySeqDef;
-            primarySeqDef.name = targetName;
-            primarySeqDef.direction = direction;
-            primarySeqDef.offsetX = offsetX;
-            primarySeqDef.offsetY = offsetY;
-            primarySeqDef.variant = "primary";
-            if (!ParseColorSequence(env, config.Get("sequence").As<Napi::Array>(), primarySeqDef.sequenceHashes)) return false;
-            if (!primarySeqDef.sequenceHashes.empty() && primarySeqDef.sequenceHashes[0] != ANY_COLOR_HASH) {
-                firstColorLookup[primarySeqDef.sequenceHashes[0]].push_back(primarySeqDef);
-            }
+        if (cfg.Has("sequence")) {
+            def.variant = "primary";
+            if (!ParseColorSequence(env, cfg.Get("sequence").As<Napi::Array>(), def.sequenceHashes)) return false;
+            if (!def.sequenceHashes.empty() && def.sequenceHashes[0] != ANY_COLOR_HASH)
+                firstColorLookup[def.sequenceHashes[0]].push_back(def);
         }
-
-        if (config.Has("backupSequence")) {
-            SequenceDefinition backupSeqDef;
-            backupSeqDef.name = targetName;
-            backupSeqDef.direction = direction;
-            backupSeqDef.offsetX = offsetX;
-            backupSeqDef.offsetY = offsetY;
-            backupSeqDef.variant = "backup";
-            if (!ParseColorSequence(env, config.Get("backupSequence").As<Napi::Array>(), backupSeqDef.sequenceHashes)) return false;
-            if (!backupSeqDef.sequenceHashes.empty() && backupSeqDef.sequenceHashes[0] != ANY_COLOR_HASH) {
-                firstColorLookup[backupSeqDef.sequenceHashes[0]].push_back(backupSeqDef);
-            }
+        if (cfg.Has("backupSequence")) {
+            SequenceDefinition back = def;
+            back.variant = "backup";
+            if (!ParseColorSequence(env, cfg.Get("backupSequence").As<Napi::Array>(), back.sequenceHashes)) return false;
+            if (!back.sequenceHashes.empty() && back.sequenceHashes[0] != ANY_COLOR_HASH)
+                firstColorLookup[back.sequenceHashes[0]].push_back(back);
         }
     }
     return true;
 }
 
-// --- Verification Function (Unchanged) ---
-void VerifyAndRecordMatch(
-    const WorkerData& data,
-    const SequenceDefinition& seqDef,
-    const SearchTask& task,
-    uint32_t x,
-    uint32_t y
-) {
+// ---------- Verification Function ----------
+void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqDef, const SearchTask& task, uint32_t x, uint32_t y) {
     const size_t seqLen = seqDef.sequenceHashes.size();
+    if (seqLen == 0) return;
     bool match = true;
-    size_t pixelOffset = (y * data.stride) + (x * 4);
 
     if (seqDef.direction == "horizontal") {
         if (x + seqLen > data.bufferWidth) return;
         for (size_t j = 1; j < seqLen; ++j) {
             uint32_t expectedColor = seqDef.sequenceHashes[j];
             if (expectedColor == ANY_COLOR_HASH) continue;
-            size_t nextPixelOffset = pixelOffset + j * 4;
-            if (nextPixelOffset + 3 >= data.bgraDataLength) { match = false; break; }
+            size_t nextPixelOffset = (y * data.stride) + ((x + j) * 4);
+            if (nextPixelOffset + 2 >= data.bgraDataLength) { match = false; break; }
             uint32_t actualColor = (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 2]) << 16) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 1]) << 8) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset]));
             if (actualColor != expectedColor) { match = false; break; }
         }
@@ -175,8 +153,8 @@ void VerifyAndRecordMatch(
         for (size_t j = 1; j < seqLen; ++j) {
             uint32_t expectedColor = seqDef.sequenceHashes[j];
             if (expectedColor == ANY_COLOR_HASH) continue;
-            size_t nextPixelOffset = pixelOffset + j * data.stride;
-            if (nextPixelOffset + 3 >= data.bgraDataLength) { match = false; break; }
+            size_t nextPixelOffset = ((y + j) * data.stride) + (x * 4);
+            if (nextPixelOffset + 2 >= data.bgraDataLength) { match = false; break; }
             uint32_t actualColor = (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 2]) << 16) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset + 1]) << 8) | (static_cast<uint32_t>(data.bgraData[nextPixelOffset]));
             if (actualColor != expectedColor) { match = false; break; }
         }
@@ -186,102 +164,74 @@ void VerifyAndRecordMatch(
         size_t currentPixelIndex = y * data.bufferWidth + x;
         int foundX = static_cast<int>(x) + seqDef.offsetX;
         int foundY = static_cast<int>(y) + seqDef.offsetY;
-
         if (task.occurrenceMode == "first") {
             auto& candidatePair = (*data.localFirstResults)[seqDef.name];
             if (seqDef.variant == "primary") {
-                if (candidatePair.first.pixelIndex == (size_t)-1 || currentPixelIndex < candidatePair.first.pixelIndex) {
+                if (candidatePair.first.pixelIndex == static_cast<size_t>(-1) || currentPixelIndex < candidatePair.first.pixelIndex) {
                     candidatePair.first = {foundX, foundY, currentPixelIndex};
                 }
             } else {
-                if (candidatePair.first.pixelIndex == (size_t)-1) {
-                    if (candidatePair.second.pixelIndex == (size_t)-1 || currentPixelIndex < candidatePair.second.pixelIndex) {
+                if (candidatePair.first.pixelIndex == static_cast<size_t>(-1)) {
+                    if (candidatePair.second.pixelIndex == static_cast<size_t>(-1) || currentPixelIndex < candidatePair.second.pixelIndex) {
                         candidatePair.second = {foundX, foundY, currentPixelIndex};
                     }
                 }
             }
-        } else { // "all"
+        } else {
             auto& candidatePair = (*data.localAllResults)[seqDef.name];
-            if (seqDef.variant == "primary") {
-                candidatePair.first.insert({foundX, foundY});
-            } else {
-                candidatePair.second.insert({foundX, foundY});
-            }
+            if (seqDef.variant == "primary") candidatePair.first.insert({foundX, foundY});
+            else candidatePair.second.insert({foundX, foundY});
         }
     }
 }
 
-// --- Worker Thread Function (Unchanged) ---
-void FindSequencesWorker(const WorkerData& data) {
-    const uint32_t chunk_size = 16;
-
+// ---------- Worker function ----------
+void FindSequencesWorker(const WorkerData& d) {
+    const uint32_t chunk = 16;
     while (true) {
-        uint32_t startY = data.next_row_to_process->fetch_add(chunk_size);
-        if (startY >= data.bufferHeight) {
-            break;
-        }
-        uint32_t endY = std::min(startY + chunk_size, data.bufferHeight);
+        uint32_t startY = d.next_row->fetch_add(chunk);
+        if (startY >= d.bufferHeight) break;
+        uint32_t endY = std::min(startY + chunk, d.bufferHeight);
 
-        for (const auto& task : data.tasks) {
-            if (task.firstColorLookup.empty()) {
-                continue;
-            }
-
-            uint32_t task_startY = std::max(startY, task.searchArea.y);
-            uint32_t task_endY = std::min(endY, task.searchArea.y + task.searchArea.height);
+        for (const SearchTask& task : d.tasks) {
+            if (task.firstColorLookup.empty()) continue;
+            uint32_t taskStartY = std::max(startY, task.searchArea.y);
+            uint32_t taskEndY   = std::min(endY, task.searchArea.y + task.searchArea.height);
             uint32_t startX = task.searchArea.x;
-            uint32_t endX = task.searchArea.x + task.searchArea.width;
+            uint32_t endX   = task.searchArea.x + task.searchArea.width;
 
-            for (uint32_t y = task_startY; y < task_endY; ++y) {
-                const uint8_t* row_ptr = data.bgraData + (y * data.stride);
-                const uint32_t prefetch_distance_pixels = 64;
-
+            for (uint32_t y = taskStartY; y < taskEndY; ++y) {
+                const uint8_t* row = d.bgraData + y * d.stride;
                 uint32_t x = startX;
                 for (; x + 8 <= endX; x += 8) {
-                    if (x + prefetch_distance_pixels < endX) {
-                        _mm_prefetch(reinterpret_cast<const char*>(row_ptr + (x + prefetch_distance_pixels) * 4), _MM_HINT_T0);
-                    }
-
-                    __m256i screen_chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row_ptr + x * 4));
-
-                    for (const auto& color_pair : task.firstColorLookup) {
-                        uint32_t rgb_hash = color_pair.first;
-                        const std::vector<SequenceDefinition>& sequences_for_color = color_pair.second;
-
-                        uint32_t r = (rgb_hash >> 16) & 0xFF;
-                        uint32_t g = (rgb_hash >> 8) & 0xFF;
-                        uint32_t b = rgb_hash & 0xFF;
-                        uint32_t bgra_val = (0xFF << 24) | (r << 16) | (g << 8) | b;
-                        __m256i target_color_vec = _mm256_set1_epi32(bgra_val);
-
-                        __m256i cmp_result = _mm256_cmpeq_epi32(screen_chunk, target_color_vec);
-                        int found_mask = _mm256_movemask_ps(_mm256_castsi256_ps(cmp_result));
-
-                        if (found_mask != 0) {
+                    __m256i chunkVec = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row + x * 4));
+                    for (const auto& [color, seqs] : task.firstColorLookup) {
+                        uint32_t r = (color >> 16) & 0xFF;
+                        uint32_t g = (color >> 8)  & 0xFF;
+                        uint32_t b =  color        & 0xFF;
+                        uint32_t target_bgra = (0xFF << 24) | (r << 16) | (g << 8) | b;
+                        __m256i target = _mm256_set1_epi32(target_bgra);
+                        __m256i cmp    = _mm256_cmpeq_epi32(chunkVec, target);
+                        int mask       = _mm256_movemask_ps(_mm256_castsi256_ps(cmp));
+                        if (mask) {
                             for (int j = 0; j < 8; ++j) {
-                                if ((found_mask >> j) & 1) {
-                                    for (const auto& seqDef : sequences_for_color) {
-                                        VerifyAndRecordMatch(data, seqDef, task, x + j, y);
+                                if (mask & (1 << j)) {
+                                    for (const SequenceDefinition& seq : seqs) {
+                                        VerifyAndRecordMatch(d, seq, task, x + j, y);
                                     }
                                 }
                             }
                         }
                     }
                 }
-
                 for (; x < endX; ++x) {
-                    size_t pixelOffset = (y * data.stride) + (x * 4);
-                    if (pixelOffset + 3 >= data.bgraDataLength) continue;
-
-                    uint32_t r_val = data.bgraData[pixelOffset + 2];
-                    uint32_t g_val = data.bgraData[pixelOffset + 1];
-                    uint32_t b_val = data.bgraData[pixelOffset + 0];
-                    uint32_t currentColorHash = (r_val << 16) | (g_val << 8) | b_val;
-
-                    auto lookupIt = task.firstColorLookup.find(currentColorHash);
-                    if (lookupIt != task.firstColorLookup.end()) {
-                        for (const auto& seqDef : lookupIt->second) {
-                            VerifyAndRecordMatch(data, seqDef, task, x, y);
+                    const uint8_t* pixel = row + x * 4;
+                    uint32_t r = pixel[2], g = pixel[1], b = pixel[0];
+                    uint32_t currentColorHash = (r << 16) | (g << 8) | b;
+                    auto it = task.firstColorLookup.find(currentColorHash);
+                    if (it != task.firstColorLookup.end()) {
+                        for (const SequenceDefinition& seq : it->second) {
+                            VerifyAndRecordMatch(d, seq, task, x, y);
                         }
                     }
                 }
@@ -290,156 +240,125 @@ void FindSequencesWorker(const WorkerData& data) {
     }
 }
 
-// --- C++ Helper function to contain the core logic ---
+// ---------- Core search ----------
 Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffer, const Napi::Object& jsSearchTasks) {
-    if (imageBuffer.Length() < 8) { return env.Null(); }
+    if (imageBuffer.Length() < 8) return env.Null();
     uint8_t* bufferData = imageBuffer.Data();
-    uint32_t bufferWidth = *reinterpret_cast<uint32_t*>(bufferData);
+    uint32_t bufferWidth  = *reinterpret_cast<uint32_t*>(bufferData);
     uint32_t bufferHeight = *reinterpret_cast<uint32_t*>(bufferData + 4);
-    uint8_t* bgraData = bufferData + 8;
-    size_t bgraDataLength = imageBuffer.Length() - 8;
-    uint32_t stride = bufferWidth * 4;
+    uint8_t* bgraData     = bufferData + 8;
+
+    // --- FINAL FIX: Calculate the length from the header, not the buffer object's length. ---
+    // This makes the module robust and allows JS to pass a single, large buffer view safely.
+    size_t   bgraLen      = static_cast<size_t>(bufferWidth) * bufferHeight * 4;
+
+    // Add a safety check to ensure the buffer is actually large enough for the data described in its own header.
+    if (imageBuffer.Length() < bgraLen + 8) {
+        return env.Null();
+    }
+
+    // The stride is based on the width read from the header.
+    uint32_t stride       = bufferWidth * 4;
 
     std::vector<SearchTask> tasks;
-    Napi::Array taskNames = jsSearchTasks.GetPropertyNames();
-    for (uint32_t i = 0; i < taskNames.Length(); ++i) {
-        SearchTask task;
-        Napi::Value keyVal = taskNames.Get(i);
+    AutoClear<std::vector<SearchTask>> _acTasks(tasks);
+    Napi::Array names = jsSearchTasks.GetPropertyNames();
+    uint32_t n = names.Length();
+    for (uint32_t i = 0; i < n; ++i) {
+        Napi::Value keyVal = names.Get(i);
         if (!keyVal.IsString()) continue;
-        task.taskName = keyVal.As<Napi::String>().Utf8Value();
-        Napi::Object taskConfig = jsSearchTasks.Get(task.taskName).As<Napi::Object>();
-        if (!ParseTargetSequences(env, taskConfig.Get("sequences").As<Napi::Object>(), task.firstColorLookup, task.targetNames)) {
-            return env.Null();
-        }
-        task.occurrenceMode = taskConfig.Get("occurrence").As<Napi::String>().Utf8Value();
-        Napi::Object jsSearchArea = taskConfig.Get("searchArea").As<Napi::Object>();
-        task.searchArea.x = jsSearchArea.Get("x").As<Napi::Number>().Uint32Value();
-        task.searchArea.y = jsSearchArea.Get("y").As<Napi::Number>().Uint32Value();
-        task.searchArea.width = jsSearchArea.Get("width").As<Napi::Number>().Uint32Value();
-        task.searchArea.height = jsSearchArea.Get("height").As<Napi::Number>().Uint32Value();
+        std::string taskName = keyVal.As<Napi::String>().Utf8Value();
+        Napi::Object cfg = jsSearchTasks.Get(keyVal).As<Napi::Object>();
+        SearchTask task;
+        task.taskName = taskName;
+        if (!ParseTargetSequences(env, cfg.Get("sequences").As<Napi::Object>(), task.firstColorLookup, task.targetNames)) return env.Null();
+        task.occurrenceMode = cfg.Get("occurrence").As<Napi::String>().Utf8Value();
+        Napi::Object areaObj = cfg.Get("searchArea").As<Napi::Object>();
+        task.searchArea.x      = areaObj.Get("x").As<Napi::Number>().Uint32Value();
+        task.searchArea.y      = areaObj.Get("y").As<Napi::Number>().Uint32Value();
+        task.searchArea.width  = areaObj.Get("width").As<Napi::Number>().Uint32Value();
+        task.searchArea.height = areaObj.Get("height").As<Napi::Number>().Uint32Value();
         task.searchArea.active = true;
-        tasks.push_back(task);
+        tasks.emplace_back(std::move(task));
     }
 
-    unsigned int numThreads = std::min((unsigned int)std::thread::hardware_concurrency(), bufferHeight);
-    if (numThreads == 0) numThreads = 1;
-    std::vector<std::thread> threads;
+    unsigned numThreads = std::min((unsigned)std::thread::hardware_concurrency(), bufferHeight);
+    if (!numThreads) numThreads = 1;
     std::vector<FirstCandidateMap> threadFirstResults(numThreads);
-    std::vector<AllCandidateMap> threadAllResults(numThreads);
-
-    // --- FIX: Pre-allocate buckets in unordered_maps to prevent re-hashing ---
-    // 1. Find the total number of unique sequence names across all tasks.
-    std::set<std::string> all_unique_names;
-    for (const auto& task : tasks) {
-        all_unique_names.insert(task.targetNames.begin(), task.targetNames.end());
+    std::vector<AllCandidateMap>   threadAllResults(numThreads);
+    std::set<std::string> uniqueNames;
+    for (const auto& t : tasks) uniqueNames.insert(t.targetNames.begin(), t.targetNames.end());
+    for (unsigned i = 0; i < numThreads; ++i) {
+        threadFirstResults[i].reserve(uniqueNames.size());
+        threadAllResults[i].reserve(uniqueNames.size());
     }
-    size_t unique_name_count = all_unique_names.size();
 
-    // 2. Reserve space in each thread's local map.
-    if (unique_name_count > 0) {
-        for (unsigned int i = 0; i < numThreads; ++i) {
-            threadFirstResults[i].reserve(unique_name_count);
-            threadAllResults[i].reserve(unique_name_count);
-        }
-    }
-    // --- End of Fix ---
-
-    std::atomic<uint32_t> next_row_to_process(0);
-
-    for (unsigned int i = 0; i < numThreads; ++i) {
+    std::atomic<uint32_t> nextRow(0);
+    std::vector<std::thread> threads;
+    for (unsigned i = 0; i < numThreads; ++i) {
         threads.emplace_back(FindSequencesWorker, WorkerData{
-            bgraData, bufferWidth, bufferHeight, stride, bgraDataLength,
-            std::ref(tasks), &threadFirstResults[i], &threadAllResults[i],
-            &next_row_to_process
+            bgraData, bufferWidth, bufferHeight, stride, bgraLen,
+            tasks, &threadFirstResults[i], &threadAllResults[i], &nextRow
         });
     }
-    for (auto& t : threads) { t.join(); }
+    for (auto& t : threads) t.join();
 
-    Napi::Object finalResultsByTask = Napi::Object::New(env);
-    for (const auto& task : tasks) {
+    Napi::Object finalResults = Napi::Object::New(env);
+    for (const SearchTask& task : tasks) {
         Napi::Object taskResult = Napi::Object::New(env);
         if (task.occurrenceMode == "first") {
-            FirstCandidateMap finalFirstResults;
-            for (const auto& name : task.targetNames) { finalFirstResults[name]; }
-
+            FirstCandidateMap merged;
+            for (const std::string& name : task.targetNames) merged[name];
             for (const auto& localMap : threadFirstResults) {
-                for (const auto& pair : localMap) {
-                    if (finalFirstResults.count(pair.first)) {
-                        auto& finalPair = finalFirstResults.at(pair.first);
-                        if (pair.second.first.pixelIndex != (size_t)-1 && (finalPair.first.pixelIndex == (size_t)-1 || pair.second.first.pixelIndex < finalPair.first.pixelIndex)) {
-                            finalPair.first = pair.second.first;
-                        }
-                        if (finalPair.first.pixelIndex == (size_t)-1 && pair.second.second.pixelIndex != (size_t)-1 && (finalPair.second.pixelIndex == (size_t)-1 || pair.second.second.pixelIndex < finalPair.second.pixelIndex)) {
-                            finalPair.second = pair.second.second;
-                        }
+                for (const auto& [name, pair] : localMap) {
+                    if (merged.count(name)) {
+                        auto& best = merged.at(name);
+                        if (pair.first.pixelIndex != static_cast<size_t>(-1) && (best.first.pixelIndex == static_cast<size_t>(-1) || pair.first.pixelIndex < best.first.pixelIndex)) best.first = pair.first;
+                        if (best.first.pixelIndex == static_cast<size_t>(-1) && pair.second.pixelIndex != static_cast<size_t>(-1) && (best.second.pixelIndex == static_cast<size_t>(-1) || pair.second.pixelIndex < best.second.pixelIndex)) best.second = pair.second;
                     }
                 }
             }
-            for (const auto& name : task.targetNames) {
-                const auto& finalPair = finalFirstResults.at(name);
-                if (finalPair.first.pixelIndex != (size_t)-1) {
-                    Napi::Object coords = Napi::Object::New(env);
-                    coords.Set("x", finalPair.first.x);
-                    coords.Set("y", finalPair.first.y);
-                    taskResult.Set(name, coords);
-                } else if (finalPair.second.pixelIndex != (size_t)-1) {
-                    Napi::Object coords = Napi::Object::New(env);
-                    coords.Set("x", finalPair.second.x);
-                    coords.Set("y", finalPair.second.y);
-                    taskResult.Set(name, coords);
+            for (const std::string& name : task.targetNames) {
+                const auto& pair = merged.at(name);
+                if (pair.first.pixelIndex != static_cast<size_t>(-1)) {
+                    Napi::Object c = Napi::Object::New(env); c.Set("x", pair.first.x); c.Set("y", pair.first.y);
+                    taskResult.Set(name, c);
+                } else if (pair.second.pixelIndex != static_cast<size_t>(-1)) {
+                    Napi::Object c = Napi::Object::New(env); c.Set("x", pair.second.x); c.Set("y", pair.second.y);
+                    taskResult.Set(name, c);
                 } else {
                     taskResult.Set(name, env.Null());
                 }
             }
-        } else { // "all"
-            AllCandidateMap finalAllResults;
-            for (const auto& name : task.targetNames) { finalAllResults[name]; }
-
+        } else {
+            AllCandidateMap merged;
+            for (const std::string& name : task.targetNames) merged[name];
             for (const auto& localMap : threadAllResults) {
-                for (const auto& pair : localMap) {
-                    if (finalAllResults.count(pair.first)) {
-                        auto& finalPair = finalAllResults.at(pair.first);
-                        finalPair.first.insert(pair.second.first.begin(), pair.second.first.end());
-                        finalPair.second.insert(pair.second.second.begin(), pair.second.second.end());
+                for (const auto& [name, pair] : localMap) {
+                    if (merged.count(name)) {
+                        merged[name].first.insert(pair.first.begin(), pair.first.end());
+                        merged[name].second.insert(pair.second.begin(), pair.second.end());
                     }
                 }
             }
-            for (const auto& name : task.targetNames) {
-                const auto& finalPair = finalAllResults.at(name);
-                const auto& primarySet = finalPair.first;
-                const auto& backupSet = finalPair.second;
-                Napi::Array coordsArray;
-                if (!primarySet.empty()) {
-                    coordsArray = Napi::Array::New(env, primarySet.size());
-                    size_t idx = 0;
-                    for (const auto& coords : primarySet) {
-                        Napi::Object obj = Napi::Object::New(env);
-                        obj.Set("x", coords.x);
-                        obj.Set("y", coords.y);
-                        coordsArray[idx++] = obj;
-                    }
-                } else if (!backupSet.empty()) {
-                    coordsArray = Napi::Array::New(env, backupSet.size());
-                    size_t idx = 0;
-                    for (const auto& coords : backupSet) {
-                        Napi::Object obj = Napi::Object::New(env);
-                        obj.Set("x", coords.x);
-                        obj.Set("y", coords.y);
-                        coordsArray[idx++] = obj;
-                    }
-                } else {
-                    coordsArray = Napi::Array::New(env);
+            for (const std::string& name : task.targetNames) {
+                const auto& [pri, bak] = merged.at(name);
+                const auto& resultSet = !pri.empty() ? pri : bak;
+                Napi::Array arr = Napi::Array::New(env, resultSet.size());
+                size_t idx = 0;
+                for (const FoundCoords& fc : resultSet) {
+                    Napi::Object c = Napi::Object::New(env); c.Set("x", fc.x); c.Set("y", fc.y);
+                    arr[idx++] = c;
                 }
-                taskResult.Set(name, coordsArray);
+                taskResult.Set(name, arr);
             }
         }
-        finalResultsByTask.Set(task.taskName, taskResult);
+        finalResults.Set(task.taskName, taskResult);
     }
-
-    return finalResultsByTask;
+    return finalResults;
 }
 
-// --- BATCH N-API FUNCTION (Unchanged) ---
+// ---------- Public wrappers ----------
 Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) {
@@ -449,7 +368,6 @@ Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
     return PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), info[1].As<Napi::Object>());
 }
 
-// --- ORIGINAL FUNCTION (Unchanged) ---
 Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Object searchTasks = Napi::Object::New(env);
@@ -461,23 +379,19 @@ Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
         searchArea = info[2].As<Napi::Object>();
     } else {
         uint8_t* bufferData = info[0].As<Napi::Buffer<uint8_t>>().Data();
-        uint32_t bufferWidth = *reinterpret_cast<uint32_t*>(bufferData);
-        uint32_t bufferHeight = *reinterpret_cast<uint32_t*>(bufferData + 4);
-        searchArea.Set("x", 0);
-        searchArea.Set("y", 0);
-        searchArea.Set("width", bufferWidth);
-        searchArea.Set("height", bufferHeight);
+        uint32_t w = *reinterpret_cast<uint32_t*>(bufferData);
+        uint32_t h = *reinterpret_cast<uint32_t*>(bufferData + 4);
+        searchArea.Set("x", 0); searchArea.Set("y", 0);
+        searchArea.Set("width", w); searchArea.Set("height", h);
     }
     singleTask.Set("searchArea", searchArea);
     searchTasks.Set("defaultTask", singleTask);
     Napi::Value batchResult = PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), searchTasks);
-    if (batchResult.IsNull() || !batchResult.IsObject()) {
-        return env.Null();
-    }
+    if (batchResult.IsNull() || !batchResult.IsObject()) return env.Null();
     return batchResult.As<Napi::Object>().Get("defaultTask");
 }
 
-// --- Module Initialization (Unchanged) ---
+// ---------- Module registration ----------
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("findSequencesNative", Napi::Function::New(env, FindSequencesNative));
     exports.Set("findSequencesNativeBatch", Napi::Function::New(env, FindSequencesNativeBatch));

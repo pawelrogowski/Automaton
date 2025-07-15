@@ -10,6 +10,16 @@ import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
 const log = createLogger();
 
+const DEFAULT_WORKER_CONFIG = {
+  captureWorker: true,
+  regionMonitor: true,
+  screenMonitor: true,
+  minimapMonitor: true,
+  ocrWorker: true,
+  cavebotWorker: true,
+  enableLuaScriptWorkers: true,
+};
+
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
@@ -26,6 +36,7 @@ class WorkerManager {
     this.restartAttempts = new Map();
     this.restartTimeouts = new Map();
     this.sharedScreenState = null;
+    this.workerConfig = {};
     this.paths = {
       utils: null,
       workers: null,
@@ -278,12 +289,13 @@ class WorkerManager {
       const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
       Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
 
-      if (!this.workers.has('captureWorker')) this.startWorker('captureWorker');
-      if (!this.workers.has('regionMonitor')) this.startWorker('regionMonitor');
-      if (!this.workers.has('screenMonitor')) this.startWorker('screenMonitor');
-      if (!this.workers.has('minimapMonitor')) this.startWorker('minimapMonitor');
-      if (!this.workers.has('ocrWorker')) this.startWorker('ocrWorker'); // Start the new OCR worker
-      if (cavebotEnabled && !this.workers.has('cavebotWorker')) this.startWorker('cavebotWorker', null, this.paths);
+      if (this.workerConfig.captureWorker && !this.workers.has('captureWorker')) this.startWorker('captureWorker');
+      if (this.workerConfig.regionMonitor && !this.workers.has('regionMonitor')) this.startWorker('regionMonitor');
+      if (this.workerConfig.screenMonitor && !this.workers.has('screenMonitor')) this.startWorker('screenMonitor');
+      if (this.workerConfig.minimapMonitor && !this.workers.has('minimapMonitor')) this.startWorker('minimapMonitor');
+      if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker')) this.startWorker('ocrWorker'); // Start the new OCR worker
+      if (cavebotEnabled && this.workerConfig.cavebotWorker && !this.workers.has('cavebotWorker'))
+        this.startWorker('cavebotWorker', null, this.paths);
     } else {
       ['captureWorker', 'regionMonitor', 'screenMonitor', 'minimapMonitor', 'ocrWorker', 'cavebotWorker'].forEach((w) =>
         this.stopWorker(w),
@@ -305,25 +317,32 @@ class WorkerManager {
     }
 
     // Start new workers or update existing ones
-    for (const script of allPersistentScripts) {
-      const workerName = script.id;
-      const workerEntry = this.workers.get(workerName);
+    if (this.workerConfig.enableLuaScriptWorkers) {
+      for (const script of allPersistentScripts) {
+        const workerName = script.id;
+        const workerEntry = this.workers.get(workerName);
 
-      if (!workerEntry) {
-        // This is a new script, start a worker for it.
-        this.startWorker(workerName, script, this.paths);
-      } else {
-        // Worker exists, check for changes that require a restart vs. a simple message.
-        const oldConfig = workerEntry.config;
-        if (oldConfig.code !== script.code || oldConfig.loopMin !== script.loopMin || oldConfig.loopMax !== script.loopMax) {
-          // If the core logic changes, a restart is necessary.
-          this.restartWorker(workerName, script);
-        } else if (oldConfig.enabled !== script.enabled) {
-          // If only the enabled status changes, just send a message.
-          workerEntry.worker.postMessage({ type: 'update', script });
-          // Update the config in the manager to reflect the new state.
-          workerEntry.config = script;
+        if (!workerEntry) {
+          // This is a new script, start a worker for it.
+          this.startWorker(workerName, script, this.paths);
+        } else {
+          // Worker exists, check for changes that require a restart vs. a simple message.
+          const oldConfig = workerEntry.config;
+          if (oldConfig.code !== script.code || oldConfig.loopMin !== script.loopMin || oldConfig.loopMax !== script.loopMax) {
+            // If the core logic changes, a restart is necessary.
+            this.restartWorker(workerName, script);
+          } else if (oldConfig.enabled !== script.enabled) {
+            // If only the enabled status changes, just send a message.
+            workerEntry.worker.postMessage({ type: 'update', script });
+            // Update the config in the manager to reflect the new state.
+            workerEntry.config = script;
+          }
         }
+      }
+    } else {
+      // If Lua script workers are disabled, stop any currently running ones
+      for (const workerId of runningScriptWorkerIds) {
+        this.stopWorker(workerId);
       }
     }
 
@@ -340,8 +359,9 @@ class WorkerManager {
     }
   }
 
-  initialize(app, cwd) {
+  initialize(app, cwd, config = {}) {
     this.setupPaths(app, cwd);
+    this.workerConfig = { ...DEFAULT_WORKER_CONFIG, ...config };
     log('info', '[Worker Manager] Initializing and subscribing to store updates.');
     store.subscribe(this.handleStoreUpdate);
   }

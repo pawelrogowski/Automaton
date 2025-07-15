@@ -1,37 +1,35 @@
+/**
+ * @file ocrWorker.js
+ * @summary A dedicated worker for performing Optical Character Recognition (OCR) on specific screen regions.
+ *
+ * @description
+ * This worker's responsibility is to extract text from predefined regions of the screen,
+ * such as chat logs or skill widgets. It relies on the `region-monitor` worker to first
+ * locate these regions.
+ *
+ * Key Architectural Decisions:
+ * 1.  **CPU-Friendly Throttling:** The main loop is architected to "work-then-sleep".
+ *     After each OCR cycle, it calculates the time remaining until the next interval
+ *     and puts the worker thread to sleep. This ensures the worker consumes virtually
+ *     zero CPU while idle.
+ *
+ * 2.  **Data Snapshotting:** To ensure data consistency for the OCR process, the worker
+ *     creates a single, private copy (a "snapshot") of the shared screen buffer at the
+ *     beginning of each loop. This prevents race conditions and memory accumulation.
+ *
+ * 3.  **State-Driven:** The worker remains idle until it receives the necessary
+ *     region coordinates from the main thread's global state. All operations are
+ *     based on the last known good state.
+ */
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import { appendFile } from 'fs/promises';
-import path from 'path';
 import pkg from 'font-ocr';
 const { recognizeText } = pkg;
 
 // --- Worker Configuration ---
-const { enableMemoryLogging, sharedData } = workerData;
-
-// --- Memory Usage Logging (Conditional) ---
-const LOG_INTERVAL_MS = 10000; // 10 seconds
-const LOG_FILE_NAME = 'ocr-worker-memory-usage.log';
-const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
-let lastLogTime = 0;
-
-const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
-
-async function logMemoryUsage() {
-  try {
-    const memoryUsage = process.memoryUsage();
-    const timestamp = new Date().toISOString();
-    const logEntry =
-      `${timestamp} | ` +
-      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
-      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
-      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
-      `External: ${toMB(memoryUsage.external)} MB\n`;
-    await appendFile(LOG_FILE_PATH, logEntry);
-  } catch (error) {
-    console.error('[MemoryLogger] Failed to write to memory log file:', error);
-  }
-}
-// --- End of Memory Usage Logging ---
+const { sharedData } = workerData;
+const SCAN_INTERVAL_MS = 200; // OCR is expensive and doesn't need to be real-time.
 
 // --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[OcrWorker] Shared data not provided.');
@@ -43,78 +41,66 @@ const FRAME_COUNTER_INDEX = 0,
   IS_RUNNING_INDEX = 3;
 const HEADER_SIZE = 8;
 
+const sharedBufferView = Buffer.from(imageSAB);
+
 // --- State Variables ---
 let state = null;
 let lastProcessedFrameCounter = -1;
-const OCR_UPDATE_INTERVAL_MS = 100; // Approximately 10 FPS (1000ms / 100ms = 10 frames)
-let lastOcrUpdateTime = 0;
 
-// Define the color palettes for each region.
-const GAME_LOG_COLORS = [[240, 240, 240]];
+// --- Self-Contained Utilities ---
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const SKILLS_WIDGET_COLORS = [
-  [192, 192, 192],
-  [68, 173, 37],
-];
-
-const CHATBOX_MAIN_COLORS = [
-  [240, 240, 0],
-  [248, 96, 96],
-  [240, 240, 240],
-  [96, 248, 248],
-  [32, 160, 255],
-  [160, 160, 255],
-  [0, 240, 0],
-];
-
+// --- Core OCR Logic ---
 async function processOcrRegions(buffer, metadata) {
   const { regions } = state.regionCoordinates;
   const ocrUpdates = {};
 
+  // The recognizeText function expects a buffer containing the header.
+  // Our snapshot already includes this, so we can pass it directly.
+
   if (regions.gameLog) {
     try {
-      const detectedText = recognizeText(buffer, regions.gameLog, GAME_LOG_COLORS);
-      ocrUpdates.gameLog = detectedText || '';
+      ocrUpdates.gameLog = recognizeText(buffer, regions.gameLog, [[240, 240, 240]]) || '';
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for gameLog:', ocrError);
-      ocrUpdates.gameLog = ''; // Clear on error
     }
-  } else {
-    ocrUpdates.gameLog = ''; // Clear if region is not found
   }
+
   if (regions.skillsWidget) {
     try {
-      const detectedText = recognizeText(buffer, regions.skillsWidget, SKILLS_WIDGET_COLORS);
-      ocrUpdates.skillsWidget = detectedText || '';
+      ocrUpdates.skillsWidget =
+        recognizeText(buffer, regions.skillsWidget, [
+          [192, 192, 192],
+          [68, 173, 37],
+        ]) || '';
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for skillsWidget:', ocrError);
-      ocrUpdates.skillsWidget = ''; // Clear on error
     }
-  } else {
-    ocrUpdates.skillsWidget = ''; // Clear if region is not found
   }
+
+  const chatColors = [
+    [240, 240, 0],
+    [248, 96, 96],
+    [240, 240, 240],
+    [96, 248, 248],
+    [32, 160, 255],
+    [160, 160, 255],
+    [0, 240, 0],
+  ];
   if (regions.chatboxMain) {
     try {
-      const detectedText = recognizeText(buffer, regions.chatboxMain, CHATBOX_MAIN_COLORS);
-      ocrUpdates.chatboxMain = detectedText || '';
+      ocrUpdates.chatboxMain = recognizeText(buffer, regions.chatboxMain, chatColors) || '';
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for chatboxMain:', ocrError);
-      ocrUpdates.chatboxMain = ''; // Clear on error
     }
-  } else {
-    ocrUpdates.chatboxMain = ''; // Clear if region is not found
   }
 
   if (regions.chatboxSecondary) {
     try {
-      const detectedText = recognizeText(buffer, regions.chatboxSecondary, CHATBOX_MAIN_COLORS);
-      ocrUpdates.chatboxSecondary = detectedText || '';
+      ocrUpdates.chatboxSecondary = recognizeText(buffer, regions.chatboxSecondary, chatColors) || '';
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for chatboxSecondary:', ocrError);
-      ocrUpdates.chatboxSecondary = ''; // Clear on error
     }
-  } else {
-    ocrUpdates.chatboxSecondary = ''; // Clear if region is not found
   }
 
   if (Object.keys(ocrUpdates).length > 0) {
@@ -122,48 +108,48 @@ async function processOcrRegions(buffer, metadata) {
   }
 }
 
+/**
+ * The main execution loop for the worker.
+ */
 async function mainLoop() {
-  console.log('[OcrWorker] Worker main loop started.');
-
   while (true) {
+    const loopStartTime = performance.now();
+
     try {
-      Atomics.wait(syncArray, FRAME_COUNTER_INDEX, lastProcessedFrameCounter, 50); // Wait for new frame or timeout
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
-      const now = performance.now();
 
-      if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
-        await logMemoryUsage();
-        lastLogTime = now;
-      }
+      // Only proceed if there's a new frame and we have the necessary state from the main thread.
+      if (newFrameCounter > lastProcessedFrameCounter && state?.regionCoordinates?.regions) {
+        if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
+          const width = Atomics.load(syncArray, WIDTH_INDEX);
+          const height = Atomics.load(syncArray, HEIGHT_INDEX);
+          const { regions } = state.regionCoordinates;
 
-      if (newFrameCounter <= lastProcessedFrameCounter) continue;
+          if (Object.keys(regions).length > 0 && width > 0 && height > 0) {
+            lastProcessedFrameCounter = newFrameCounter;
 
-      if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        continue;
-      }
+            const metadata = { width, height, frameCounter: newFrameCounter };
+            const bufferSize = HEADER_SIZE + width * height * 4;
 
-      if (!state || !state.regionCoordinates || Object.keys(state.regionCoordinates.regions).length === 0) {
-        lastProcessedFrameCounter = newFrameCounter;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        continue;
-      }
+            // Create a single, private snapshot of the buffer for this cycle.
+            const bufferSnapshot = Buffer.alloc(bufferSize);
+            sharedBufferView.copy(bufferSnapshot, 0, 0, bufferSize);
 
-      if (now - lastOcrUpdateTime > OCR_UPDATE_INTERVAL_MS) {
-        const width = Atomics.load(syncArray, WIDTH_INDEX);
-        const height = Atomics.load(syncArray, HEIGHT_INDEX);
-        if (width > 0 && height > 0) {
-          const bufferSize = HEADER_SIZE + width * height * 4;
-          const bufferView = Buffer.from(imageSAB, 0, bufferSize);
-          const metadata = { width, height, frameCounter: newFrameCounter };
-          await processOcrRegions(bufferView, metadata);
-          lastOcrUpdateTime = now;
+            await processOcrRegions(bufferSnapshot, metadata);
+          }
         }
       }
-      lastProcessedFrameCounter = newFrameCounter;
     } catch (err) {
       console.error('[OcrWorker] Fatal error in main loop:', err);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    // --- CPU-Friendly Throttling Logic ---
+    const loopEndTime = performance.now();
+    const elapsedTime = loopEndTime - loopStartTime;
+    const delayTime = Math.max(0, SCAN_INTERVAL_MS - elapsedTime);
+
+    if (delayTime > 0) {
+      await delay(delayTime);
     }
   }
 }
@@ -172,21 +158,8 @@ parentPort.on('message', (message) => {
   state = message;
 });
 
-async function startWorker() {
+function startWorker() {
   console.log('[OcrWorker] Worker starting up...');
-
-  if (enableMemoryLogging) {
-    try {
-      const header = `\n--- New Session Started at ${new Date().toISOString()} ---\n`;
-      await appendFile(LOG_FILE_PATH, header);
-      console.log(`[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
-      lastLogTime = performance.now();
-      await logMemoryUsage();
-    } catch (error) {
-      console.error('[MemoryLogger] Could not initialize memory log file:', error);
-    }
-  }
-
   mainLoop();
 }
 

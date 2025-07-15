@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
     //   createMainWindow();
     // });
     createMainWindow();
-    workerManager.initialize(app, cwd);
+    workerManager.initialize(app, cwd, {}); // Pass an empty config to use default (all disabled)
 
     // --- Start Main Process Memory Logging ---
     (async () => {

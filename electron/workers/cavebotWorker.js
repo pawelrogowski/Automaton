@@ -16,7 +16,7 @@ const logger = createLogger({ info: false, error: true, debug: false });
 const config = {
   stuckTimeThresholdMs: 600,
   stuckCooldownMs: 600,
-  sorryNotPossibleLingerMs: 1000,
+  sorryNotPossibleLingerMs: 5000,
   thereIsNoWayLingerMs: 5000,
   keyboardFailureThreshold: 2,
   keyboardFailureWindowMs: 10000,
@@ -30,7 +30,7 @@ const config = {
   mapClickStandTimeThresholdMs: 600,
   standardWalkDelayMs: 0,
   approachWalkDelayMs: 300,
-  approachDistanceThreshold: 2,
+  approachDistanceThreshold: 3,
   moveConfirmTimeoutMs: 500,
   standWaypointDelayMs: 0,
   toolHotkeyWaitMs: 150,
