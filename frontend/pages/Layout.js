@@ -402,6 +402,13 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current OCR output slice"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#targetingState"
+                img={tibia} // Reusing tibia icon for Targeting State
+                text={'Targeting State'}
+                imageWidth="32px"
+                tooltip="View the current targeting slice"
+              ></SideBarNavButton>
             </>
           )}
 
@@ -486,6 +493,15 @@ const Layout = () => {
                     <li>Alt+3 - Switch to preset 3</li>
                     <li>Alt+4 - Switch to preset 4</li>
                     <li>Alt+5 - Switch to preset 5</li>
+                    <li>Alt+Escape - Toggle all main sections (Healing, Cavebot, Scripts, Targeting) on/off. Remembers previous states.</li>
+                    <li>Alt+C - Toggle Cavebot section enabled/disabled.</li>
+                    <li>Alt+H - Toggle Healing/Rules section enabled/disabled.</li>
+                    <li>Alt+S - Toggle Lua Scripts section enabled/disabled.</li>
+                    <li>Alt+T - Toggle Targeting section enabled/disabled.</li>
+                    <li>
+                      Alt+B - Toggle all main sections (Healing, Cavebot, Scripts, Targeting) on/off. If sections are in mixed states, first
+                      enables all, then disables all on next press.
+                    </li>
                   </ol>
                 }
               />

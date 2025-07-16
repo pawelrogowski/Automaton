@@ -31,7 +31,7 @@ const normalizeLuaScripts = (luaState) => {
 const user_data_path = app.getPath('userData');
 const auto_load_file_path = path.join(user_data_path, 'autoLoadRules.json');
 
-// No changes needed here, it already saves the entire store state
+// Save state excluding window-specific data
 export const saveRulesToFile = async (callback) => {
   try {
     const dialog_result = await dialog.showSaveDialog({
@@ -41,7 +41,19 @@ export const saveRulesToFile = async (callback) => {
 
     if (!dialog_result.canceled && dialog_result.filePath) {
       const save_file_path = dialog_result.filePath.endsWith('.json') ? dialog_result.filePath : `${dialog_result.filePath}.json`;
-      await fs.writeFile(save_file_path, JSON.stringify(store.getState(), null, 2));
+      const state = store.getState();
+
+      // Create a filtered state that excludes window-specific data
+      const filteredState = {
+        ...state,
+        global: {
+          ...state.global,
+          windowId: undefined,
+          windowTitle: undefined,
+        },
+      };
+
+      await fs.writeFile(save_file_path, JSON.stringify(filteredState, null, 2));
       showNotification(`📥 Saved | ${path.basename(save_file_path)}`);
     }
     callback();
@@ -67,10 +79,14 @@ export const loadRulesFromFile = async (callback) => {
 
       // Check for each slice before setting state to avoid errors with old/malformed files
       if (loaded_state.rules) setGlobalState('rules/setState', loaded_state.rules);
-      if (loaded_state.global) setGlobalState('global/setState', loaded_state.global);
+      if (loaded_state.global) {
+        // Exclude windowId and windowTitle from global state
+        const { windowId, windowTitle, ...globalWithoutWindow } = loaded_state.global;
+        setGlobalState('global/setState', globalWithoutWindow);
+      }
       if (loaded_state.lua) setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      // ADD THIS LINE
       if (loaded_state.cavebot) setGlobalState('cavebot/setState', loaded_state.cavebot);
+      if (loaded_state.targeting) setGlobalState('targeting/setState', loaded_state.targeting);
 
       showNotification(`📤 Loaded | ${path.basename(file_path)}`);
     }
@@ -82,12 +98,21 @@ export const loadRulesFromFile = async (callback) => {
   }
 };
 
-// No changes needed here, it already saves the entire store state
+// Auto-save state excluding window-specific data
 const perform_auto_save = async () => {
   try {
     const state = store.getState();
     if (Object.keys(state).length > 0) {
-      await fs.writeFile(auto_load_file_path, JSON.stringify(state, null, 2));
+      // Create a filtered state that excludes window-specific data
+      const filteredState = {
+        ...state,
+        global: {
+          ...state.global,
+          windowId: undefined,
+          windowTitle: undefined,
+        },
+      };
+      await fs.writeFile(auto_load_file_path, JSON.stringify(filteredState, null, 2));
     }
   } catch (error) {
     console.error('Failed to auto-save rules:', error);
@@ -107,10 +132,14 @@ export const autoLoadRules = async () => {
 
     if (Object.keys(loaded_state).length > 0) {
       if (loaded_state.rules) setGlobalState('rules/setState', loaded_state.rules);
-      if (loaded_state.global) setGlobalState('global/setState', loaded_state.global);
+      if (loaded_state.global) {
+        // Exclude windowId and windowTitle from global state
+        const { windowId, windowTitle, ...globalWithoutWindow } = loaded_state.global;
+        setGlobalState('global/setState', globalWithoutWindow);
+      }
       if (loaded_state.lua) setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      // ADD THIS LINE
       if (loaded_state.cavebot) setGlobalState('cavebot/setState', loaded_state.cavebot);
+      if (loaded_state.targeting) setGlobalState('targeting/setState', loaded_state.targeting);
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -124,7 +153,8 @@ export const autoLoadRules = async () => {
 let previous_rules_state = null;
 let previous_global_state = null;
 let previous_lua_state = null;
-let previous_cavebot_state = null; // <-- ADD THIS LINE
+let previous_cavebot_state = null;
+let previous_targeting_state = null;
 
 const has_state_changed = (new_state, prev_state) => {
   if (prev_state === null) return true;
@@ -135,16 +165,15 @@ const has_state_changed = (new_state, prev_state) => {
 };
 
 store.subscribe(() => {
-  // ADD cavebot to destructuring
-  const { rules, global, lua, cavebot } = store.getState();
+  const { rules, global, lua, cavebot, targeting } = store.getState();
 
   const rules_changed = has_state_changed(rules, previous_rules_state);
   const global_changed = has_state_changed(global, previous_global_state);
   const lua_changed = has_state_changed(lua, previous_lua_state);
   const cavebot_changed = has_state_changed(cavebot, previous_cavebot_state);
+  const targeting_changed = has_state_changed(targeting, previous_targeting_state);
 
-  // ADD cavebot_changed to the condition
-  if (rules_changed || global_changed || lua_changed || cavebot_changed) {
+  if (rules_changed || global_changed || lua_changed || cavebot_changed || targeting_changed) {
     auto_save_rules();
 
     // Update previous state only if it changed
@@ -152,5 +181,6 @@ store.subscribe(() => {
     if (global_changed) previous_global_state = { ...global };
     if (lua_changed) previous_lua_state = { ...lua };
     if (cavebot_changed) previous_cavebot_state = { ...cavebot };
+    if (targeting_changed) previous_targeting_state = { ...targeting };
   }
 });

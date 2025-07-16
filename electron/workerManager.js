@@ -148,6 +148,19 @@ class WorkerManager {
     }
     // --- [NEW] --- Handle the one-shot script execution request from cavebotWorker
     else if (message.command === 'executeLuaScript') {
+      const state = store.getState();
+      const { enabled: luaEnabled } = state.lua;
+
+      if (!luaEnabled) {
+        log('info', `[Worker Manager] Skipping one-shot Lua script execution: ${id} - Lua scripts are disabled`);
+        // Send failure response back to cavebotWorker
+        const cavebotWorkerEntry = this.workers.get('cavebotWorker');
+        if (cavebotWorkerEntry?.worker) {
+          cavebotWorkerEntry.worker.postMessage({ type: 'script-finished', id, success: false, error: 'Lua scripts are disabled' });
+        }
+        return;
+      }
+
       const { script, id } = message.payload;
       log('info', `[Worker Manager] Received request to execute one-shot Lua script: ${id}`);
       // Use the unique ID as the worker's name to track it.
@@ -283,6 +296,7 @@ class WorkerManager {
     const state = store.getState();
     const { windowId } = state.global;
     const { enabled: cavebotEnabled } = state.cavebot;
+    const { enabled: luaEnabled } = state.lua;
 
     if (windowId) {
       if (!this.sharedScreenState) this.createSharedBuffers();
@@ -317,7 +331,7 @@ class WorkerManager {
     }
 
     // Start new workers or update existing ones
-    if (this.workerConfig.enableLuaScriptWorkers) {
+    if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
       for (const script of allPersistentScripts) {
         const workerName = script.id;
         const workerEntry = this.workers.get(workerName);
@@ -340,7 +354,7 @@ class WorkerManager {
         }
       }
     } else {
-      // If Lua script workers are disabled, stop any currently running ones
+      // If Lua scripts are disabled via luaSlice.enabled = false, stop all running scripts
       for (const workerId of runningScriptWorkerIds) {
         this.stopWorker(workerId);
       }
@@ -349,10 +363,11 @@ class WorkerManager {
     // Send the full state to all workers except captureWorker
     for (const [name, workerEntry] of this.workers) {
       if (workerEntry.worker && name !== 'captureWorker') {
-        // Only send the full state if the worker is not a one-shot Lua script worker.
+        // Send the full state to all workers except captureWorker and one-shot Lua scripts.
         // One-shot Lua script workers receive their script config on init and don't need the full state.
-        const isOneShotLua = /^[0-9a-fA-F]{8}-/.test(name);
-        if (!isOneShotLua) {
+        // Persistent Lua script workers (identified by UUID) *do* need continuous state updates.
+        const isPersistentLua = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(name);
+        if (name !== 'captureWorker' && (!isPersistentLua || workerEntry.config?.type !== 'oneshot')) {
           workerEntry.worker.postMessage(state);
         }
       }

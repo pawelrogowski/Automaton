@@ -4,6 +4,7 @@ import ruleSlice from '../frontend/redux/slices/ruleSlice.js';
 import gameStateSlice from '../frontend/redux/slices/gameStateSlice.js';
 import luaSlice from '../frontend/redux/slices/luaSlice.js';
 import cavebotSlice from '../frontend/redux/slices/cavebotSlice.js';
+import targetingSlice from '../frontend/redux/slices/targetingSlice.js';
 import statusMessagesSlice from '../frontend/redux/slices/statusMessagesSlice.js';
 import regionCoordinatesSlice from '../frontend/redux/slices/regionCoordinatesSlice.js';
 
@@ -13,6 +14,7 @@ const rootReducer = combineReducers({
   rules: ruleSlice.reducer,
   lua: luaSlice.reducer,
   cavebot: cavebotSlice.reducer,
+  targeting: targetingSlice.reducer,
   statusMessages: statusMessagesSlice.reducer,
   regionCoordinates: regionCoordinatesSlice.reducer,
 });

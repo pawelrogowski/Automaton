@@ -29,6 +29,8 @@ const GameState = () => {
         return state.regionCoordinates;
       case '#ocrState':
         return state.ocr;
+      case '#targetingState': // Add case for targetingState
+        return state.targeting; // Return targeting state slice
     }
   });
 
@@ -52,6 +54,8 @@ const GameState = () => {
         return 'Region Coordinates';
       case '#ocrState':
         return 'OCR Output';
+      case '#targetingState': // Add case for targetingState
+        return 'Targeting State'; // Return targeting state slice
     }
   };
 

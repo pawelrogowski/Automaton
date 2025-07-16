@@ -7,6 +7,12 @@ const initialState = {
   isBotEnabled: false,
   refreshRate: 32,
   notificationsEnabled: true,
+  previousSectionStates: {
+    rules: false,
+    cavebot: false,
+    lua: false,
+    targeting: false,
+  },
 };
 
 const globalSlice = createSlice({
@@ -45,9 +51,13 @@ const globalSlice = createSlice({
 
       return newState;
     },
+    setPreviousSectionStates: (state, action) => {
+      state.previousSectionStates = action.payload;
+    },
+    resetPreviousSectionStates: (state) => {
+      state.previousSectionStates = initialState.previousSectionStates;
+    },
   },
-
-
 });
 
 export const {
@@ -58,6 +68,8 @@ export const {
   toggleNotifications,
   toggleisBotEnabled,
   setState,
+  setPreviousSectionStates,
+  resetPreviousSectionStates,
 } = globalSlice.actions;
 
 export default globalSlice;

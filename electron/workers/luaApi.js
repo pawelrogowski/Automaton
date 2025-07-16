@@ -10,41 +10,46 @@ import { setActionPaused, setenabled as setCavebotEnabled } from '../../frontend
  * @returns {object} The state shortcut object.
  */
 const createStateShortcutObject = (getState, type) => {
-  const state = getState();
-  const { gameState, cavebot } = state;
   const shortcuts = {};
 
-  if (!gameState) return {};
-
   // --- Game State Getters (Available in ALL script types) ---
-  Object.defineProperty(shortcuts, 'hppc', { get: () => gameState.hppc, enumerable: true });
-  Object.defineProperty(shortcuts, 'mppc', { get: () => gameState.mppc, enumerable: true });
-  Object.defineProperty(shortcuts, 'isLoggedIn', { get: () => gameState.isLoggedIn, enumerable: true });
-  Object.defineProperty(shortcuts, 'isChatOff', { get: () => gameState.isChatOff, enumerable: true });
-  Object.defineProperty(shortcuts, 'monsterNum', { get: () => gameState.monsterNum, enumerable: true });
-  Object.defineProperty(shortcuts, 'partyNum', { get: () => gameState.partyNum, enumerable: true });
-  Object.defineProperty(shortcuts, 'isTyping', { get: () => gameState.isTyping, enumerable: true });
+  Object.defineProperty(shortcuts, 'hppc', { get: () => getState().gameState?.hppc, enumerable: true });
+  Object.defineProperty(shortcuts, 'mppc', { get: () => getState().gameState?.mppc, enumerable: true });
+  Object.defineProperty(shortcuts, 'isLoggedIn', { get: () => getState().gameState?.isLoggedIn, enumerable: true });
+  Object.defineProperty(shortcuts, 'isChatOff', { get: () => getState().gameState?.isChatOff, enumerable: true });
+  Object.defineProperty(shortcuts, 'monsterNum', { get: () => getState().gameState?.monsterNum, enumerable: true });
+  Object.defineProperty(shortcuts, 'partyNum', { get: () => getState().gameState?.partyNum, enumerable: true });
+  Object.defineProperty(shortcuts, 'isTyping', { get: () => getState().gameState?.isTyping, enumerable: true });
+  Object.defineProperty(shortcuts, 'isOnline', { get: () => getState().gameState?.isLoggedIn, enumerable: true }); // Re-added isOnline
 
-  for (const status in gameState.characterStatus) {
-    Object.defineProperty(shortcuts, status, { get: () => gameState.characterStatus[status], enumerable: true });
+  const gameState = getState().gameState;
+  if (gameState && gameState.characterStatus) {
+    for (const status in gameState.characterStatus) {
+      Object.defineProperty(shortcuts, status, { get: () => getState().gameState.characterStatus[status], enumerable: true });
+    }
   }
 
   Object.defineProperty(shortcuts, 'pos', {
     get: () => {
-      const pos = gameState.playerMinimapPosition || {};
+      const pos = getState().gameState?.playerMinimapPosition || {};
       return { x: pos.x, y: pos.y, z: pos.z };
     },
     enumerable: true,
   });
 
   // --- Cavebot-Specific Getters ---
-  if (type === 'cavebot' && cavebot) {
-    Object.defineProperty(shortcuts, 'cavebot', { get: () => cavebot.enabled, enumerable: true });
-    Object.defineProperty(shortcuts, 'section', { get: () => cavebot.waypointSections[cavebot.currentSection]?.name, enumerable: true });
+  const cavebotState = getState().cavebot;
+  if (type === 'cavebot' && cavebotState) {
+    Object.defineProperty(shortcuts, 'cavebot', { get: () => getState().cavebot?.enabled, enumerable: true });
+    Object.defineProperty(shortcuts, 'section', {
+      get: () => getState().cavebot?.waypointSections[getState().cavebot?.currentSection]?.name,
+      enumerable: true,
+    });
     Object.defineProperty(shortcuts, 'wpt', {
       get: () => {
-        const currentWaypoints = cavebot.waypointSections[cavebot.currentSection]?.waypoints || [];
-        const currentWptIndex = currentWaypoints.findIndex((wp) => wp.id === cavebot.wptId);
+        const currentCavebotState = getState().cavebot;
+        const currentWaypoints = currentCavebotState?.waypointSections[currentCavebotState?.currentSection]?.waypoints || [];
+        const currentWptIndex = currentWaypoints.findIndex((wp) => wp.id === currentCavebotState?.wptId);
         const currentWpt = currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
         if (currentWpt) {
           return {
@@ -54,7 +59,7 @@ const createStateShortcutObject = (getState, type) => {
             z: currentWpt.z,
             type: currentWpt.type,
             label: currentWpt.label,
-            distance: cavebot.wptDistance,
+            distance: currentCavebotState.wptDistance,
           };
         }
         return null;
@@ -106,8 +111,9 @@ export const createLuaApi = (context) => {
     },
     alert: () => postSystemMessage({ type: 'play_alert' }),
     wait: wait,
-    keyPress: (key, options = {}) => keyPress(String(getWindowId()), key, options),
-    keyPressMultiple: (key, options = {}) => keyPressMultiple(String(getWindowId()), key, options),
+    keyPress: (key, modifier = null) => keyPress(String(getWindowId()), key, { modifier }),
+    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
+      keyPressMultiple(String(getWindowId()), key, { count, modifier, delayMs }),
     type: (...args) => {
       let [startAndEndWithEnter, ...texts] = typeof args[0] === 'boolean' ? args : [true, ...args];
       return typeText(String(getWindowId()), texts.map(String), startAndEndWithEnter);
