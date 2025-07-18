@@ -1,9 +1,12 @@
-import { workerData } from 'worker_threads';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const keypress = require(workerData.paths.useItemOn);
+import mouseController from 'mouse-controller';
+import { keyPress } from '../keyboardControll/keyPress.js';
 
 function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
-  keycoordinates.useKeyOnCoordinates(parseInt(targetWindowId), key, parseInt(targetX), parseInt(targetY));
+  // First press the key
+  keyPress(parseInt(targetWindowId), key);
+
+  // Then perform left click on coordinates
+  mouseController.leftClick(parseInt(targetWindowId), parseInt(targetX), parseInt(targetY));
 }
+
 export default useItemOnCoordinates;

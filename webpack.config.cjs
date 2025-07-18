@@ -1,9 +1,6 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
-// REMOVED: No longer need the Webpack plugin as the React part is gone.
-// const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
-
 module.exports = {
   entry: './frontend/index.js',
   output: {
@@ -93,10 +90,6 @@ module.exports = {
     // It copies the pre-built Monaco files to your output directory.
     new CopyWebpackPlugin({
       patterns: [
-        {
-          from: 'node_modules/monaco-editor/min/vs',
-          to: 'monaco-editor/min/vs',
-        },
         {
           from: 'resources/preprocessed_minimaps',
           to: 'resources/preprocessed_minimaps',

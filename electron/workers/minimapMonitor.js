@@ -28,11 +28,11 @@ import { performance } from 'perf_hooks';
 import { floorLevelIndicators } from '../constants/index.js';
 import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
-import { MinimapMatcher } from '../utils/minimapMatcher.js';
+import { MinimapMatcher, setMinimapResourcesPath } from '../utils/minimapMatcher.js';
 import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
-const { sharedData } = workerData;
+const { sharedData, paths } = workerData;
 const SCAN_INTERVAL_MS = 1; // Minimap position doesn't need to update as frequently.
 const logger = createLogger({ info: true, error: true, debug: false });
 
@@ -190,6 +190,13 @@ parentPort.on('message', (newState) => {
 
 async function start() {
   logger('info', 'Minimap monitor worker started. Waiting for global state...');
+
+  // Set the minimap resources path from workerData
+  if (paths?.minimapResources) {
+    setMinimapResourcesPath(paths.minimapResources);
+    logger('info', `Minimap resources path set to: ${paths.minimapResources}`);
+  }
+
   if (!minimapMatcher.isLoaded) {
     await minimapMatcher.loadMapData();
   }

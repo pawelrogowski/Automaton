@@ -40,6 +40,7 @@ class WorkerManager {
     this.paths = {
       utils: null,
       workers: null,
+      minimapResources: null,
     };
 
     this.handleWorkerError = this.handleWorkerError.bind(this);
@@ -51,10 +52,12 @@ class WorkerManager {
   setupPaths(app, cwd) {
     if (app.isPackaged) {
       this.paths.utils = path.join(app.getAppPath(), '..', 'resources', 'x11utils');
+      this.paths.minimapResources = path.join(app.getAppPath(), '..', 'resources', 'preprocessed_minimaps');
     } else {
       this.paths.utils = path.join(cwd, '..', 'resources', 'x11utils');
+      this.paths.minimapResources = path.join(cwd, '..', 'resources', 'preprocessed_minimaps');
     }
-    this.paths.useItemOn = path.join(this.paths.utils, 'useItemOn.node');
+    // Removed deprecated useItemOn path
 
     if (!app.isPackaged) {
       log('info', '[Worker Manager] Paths initialized:', this.paths);

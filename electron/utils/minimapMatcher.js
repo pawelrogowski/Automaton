@@ -5,7 +5,26 @@ import MinimapMatcherNative from 'minimap_matcher-native';
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
-const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
+let PREPROCESSED_BASE_DIR = null;
+
+// Allow setting the base directory externally (e.g., from workerData)
+export const setMinimapResourcesPath = (basePath) => {
+  PREPROCESSED_BASE_DIR = basePath;
+};
+
+const getPreprocessedBaseDir = () => {
+  if (!PREPROCESSED_BASE_DIR) {
+    // Fallback for backward compatibility
+    const getResourcesPath = () => {
+      if (process.resourcesPath) {
+        return process.resourcesPath;
+      }
+      return process.cwd();
+    };
+    return path.join(getResourcesPath(), 'resources', 'preprocessed_minimaps');
+  }
+  return PREPROCESSED_BASE_DIR;
+};
 const LANDMARK_SIZE = 3;
 // The landmark pattern is now packed at 4-bits per pixel.
 // The C++ addon will now work with 25-byte keys instead of 49-byte keys.
@@ -43,17 +62,18 @@ class MinimapMatcher {
   async loadMapData() {
     if (this.isLoaded) return;
     try {
-      const paletteFilePath = path.join(PREPROCESSED_BASE_DIR, 'palette.json');
+      const baseDir = getPreprocessedBaseDir();
+      const paletteFilePath = path.join(baseDir, 'palette.json');
       const palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
 
       const landmarkData = new Map();
 
-      const zLevelDirs = (await fs.readdir(PREPROCESSED_BASE_DIR, { withFileTypes: true }))
+      const zLevelDirs = (await fs.readdir(baseDir, { withFileTypes: true }))
         .filter((d) => d.isDirectory() && d.name.startsWith('z'))
         .map((d) => parseInt(d.name.substring(1), 10));
 
       for (const z of zLevelDirs) {
-        const zLevelDir = path.join(PREPROCESSED_BASE_DIR, `z${z}`);
+        const zLevelDir = path.join(baseDir, `z${z}`);
         try {
           const landmarkBuffer = await fs.readFile(path.join(zLevelDir, 'landmarks.bin'));
           const landmarks = [];

@@ -25,6 +25,7 @@ export const selectActiveWindow = async () => {
     getMainWindow().setTitle(``);
     setGlobalState('global/setWindowTitle', windowTitle);
     setGlobalState('global/setWindowId', windowId);
+    console.log(windowId, windowTitle);
 
     const screenMonitorWorkerEntry = workerManager.workers.get('screenMonitor');
     const minimapMonitorWorkerEntry = workerManager.workers.get('minimapMonitor');

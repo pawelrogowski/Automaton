@@ -38,8 +38,8 @@ import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 250; // ~23.8 FPS. The target time between scans.
-const FULL_SCAN_INTERVAL_MS = 500; // Force a full discovery scan at least this often.
+const SCAN_INTERVAL_MS = 50; // ~23.8 FPS. The target time between scans.
+const FULL_SCAN_INTERVAL_MS = 250; // Force a full discovery scan at least this often.
 
 // --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');

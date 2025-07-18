@@ -1,4 +1,7 @@
 import { keyPress, keyPressMultiple, type as typeText, rotate, getIsTyping } from '../keyboardControll/keyPress.js';
+import mouseController from 'mouse-controller';
+import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
+import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
 import { setActionPaused, setenabled as setCavebotEnabled } from '../../frontend/redux/slices/cavebotSlice.js';
 
@@ -20,7 +23,7 @@ const createStateShortcutObject = (getState, type) => {
   Object.defineProperty(shortcuts, 'monsterNum', { get: () => getState().gameState?.monsterNum, enumerable: true });
   Object.defineProperty(shortcuts, 'partyNum', { get: () => getState().gameState?.partyNum, enumerable: true });
   Object.defineProperty(shortcuts, 'isTyping', { get: () => getState().gameState?.isTyping, enumerable: true });
-  Object.defineProperty(shortcuts, 'isOnline', { get: () => getState().gameState?.isLoggedIn, enumerable: true }); // Re-added isOnline
+  Object.defineProperty(shortcuts, 'isOnline', { get: () => getState().gameState?.isLoggedIn, enumerable: true });
 
   const gameState = getState().gameState;
   if (gameState && gameState.characterStatus) {
@@ -79,7 +82,18 @@ const createStateShortcutObject = (getState, type) => {
 export const createLuaApi = (context) => {
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
-  const asyncFunctionNames = ['wait', 'keyPress', 'keyPressMultiple', 'type', 'rotate'];
+  const asyncFunctionNames = [
+    'wait',
+    'keyPress',
+    'keyPressMultiple',
+    'type',
+    'rotate',
+    'leftClick',
+    'rightClick',
+    'mapClick',
+    'drag',
+    'dragAbsolute',
+  ];
   const getWindowId = () => getState()?.global?.windowId;
 
   const baseApi = {
@@ -120,6 +134,194 @@ export const createLuaApi = (context) => {
     },
     rotate: (direction) => rotate(String(getWindowId()), direction),
     isTyping: () => getIsTyping(),
+
+    // --- Mouse Click Functions (Async with 100ms delay) ---
+    leftClick: async (x, y, position = 'bottomRight') => {
+      const windowId = String(getWindowId());
+      const state = getState();
+
+      // Game world coordinates only
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!gameWorld || !tileSize || !playerPos) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform game left-click: missing region data or player position`);
+        return false;
+      }
+      const clickCoords = getAbsoluteGameWorldClickCoordinates(x, y, playerPos, gameWorld, tileSize, position);
+      if (!clickCoords) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform game left-click: invalid coordinates`);
+        return false;
+      }
+      mouseController.leftClick(parseInt(windowId), clickCoords.x, clickCoords.y);
+      await wait(100); // 100ms delay after click
+      return true;
+    },
+
+    rightClick: async (x, y, position = 'bottomRight') => {
+      const windowId = String(getWindowId());
+      const state = getState();
+
+      // Game world coordinates only
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!gameWorld || !tileSize || !playerPos) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform game right-click: missing region data or player position`);
+        return false;
+      }
+      const clickCoords = getAbsoluteGameWorldClickCoordinates(x, y, playerPos, gameWorld, tileSize, position);
+      if (!clickCoords) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform game right-click: invalid coordinates`);
+        return false;
+      }
+      mouseController.rightClick(parseInt(windowId), clickCoords.x, clickCoords.y);
+      await wait(100); // 100ms delay after click
+      return true;
+    },
+
+    // --- Minimap Click Function (Async with 100ms delay) ---
+    mapClick: async (x, y, position = 'center') => {
+      const windowId = String(getWindowId());
+      const state = getState();
+
+      // Minimap coordinates
+      const minimapRegionDef = state.regionCoordinates?.regions?.minimapFull;
+      const playerPos = state.gameState?.playerMinimapPosition;
+      if (!minimapRegionDef || !playerPos) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform minimap click: missing region data or player position`);
+        return false;
+      }
+      const clickCoords = getAbsoluteClickCoordinates(x, y, playerPos, minimapRegionDef);
+      if (!clickCoords) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform minimap click: invalid coordinates`);
+        return false;
+      }
+      mouseController.leftClick(parseInt(windowId), clickCoords.x, clickCoords.y);
+      await wait(100); // 100ms delay after click
+      return true;
+    },
+
+    // --- Drag Functions (Async with 100ms delay) ---
+    drag: async (startX, startY, endX, endY, button = 'left') => {
+      const windowId = String(getWindowId());
+      const state = getState();
+
+      // Game world tile coordinates
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!gameWorld || !tileSize || !playerPos) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform drag: missing region data or player position`);
+        return false;
+      }
+
+      // Use bottomRight as default position for both start and end
+      const startCoords = getAbsoluteGameWorldClickCoordinates(startX, startY, playerPos, gameWorld, tileSize, 'bottomRight');
+      const endCoords = getAbsoluteGameWorldClickCoordinates(endX, endY, playerPos, gameWorld, tileSize, 'bottomRight');
+
+      if (!startCoords || !endCoords) {
+        logger('warn', `[Lua/${scriptName}] Cannot perform drag: invalid coordinates`);
+        return false;
+      }
+
+      // Move to start position
+      mouseController.mouseMove(parseInt(windowId), startCoords.x, startCoords.y);
+      await wait(50);
+
+      // Press button down
+      if (button === 'right') {
+        mouseController.rightMouseDown(parseInt(windowId), startCoords.x, startCoords.y);
+      } else {
+        mouseController.mouseDown(parseInt(windowId), startCoords.x, startCoords.y);
+      }
+      await wait(100);
+
+      // Move to end position
+      mouseController.mouseMove(parseInt(windowId), endCoords.x, endCoords.y);
+      await wait(100);
+
+      // Release button
+      if (button === 'right') {
+        mouseController.rightMouseUp(parseInt(windowId), endCoords.x, endCoords.y);
+      } else {
+        mouseController.mouseUp(parseInt(windowId), endCoords.x, endCoords.y);
+      }
+      await wait(100);
+
+      return true;
+    },
+
+    dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
+      const windowId = String(getWindowId());
+
+      // Direct window coordinates without translation
+      mouseController.mouseMove(parseInt(windowId), startX, startY);
+      await wait(50);
+
+      // Press button down
+      if (button === 'right') {
+        mouseController.rightMouseDown(parseInt(windowId), startX, startY);
+      } else {
+        mouseController.mouseDown(parseInt(windowId), startX, startY);
+      }
+      await wait(100);
+
+      // Move to end position
+      mouseController.mouseMove(parseInt(windowId), endX, endY);
+      await wait(100);
+
+      // Release button
+      if (button === 'right') {
+        mouseController.rightMouseUp(parseInt(windowId), endX, endY);
+      } else {
+        mouseController.mouseUp(parseInt(windowId), endX, endY);
+      }
+      await wait(100);
+
+      return true;
+    },
+
+    // --- Helper Functions for Tile Movement ---
+    tileToCoordinate: (tileX, tileY, position = 'bottomRight') => {
+      const state = getState();
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!gameWorld || !tileSize || !playerPos) {
+        logger('warn', `[Lua/${scriptName}] Cannot convert tile to coordinate: missing region data`);
+        return null;
+      }
+
+      const coords = getAbsoluteGameWorldClickCoordinates(tileX, tileY, playerPos, gameWorld, tileSize, position);
+      return coords ? { x: coords.x, y: coords.y } : null;
+    },
+
+    coordinateToTile: (screenX, screenY) => {
+      const state = getState();
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!gameWorld || !tileSize || !playerPos) {
+        logger('warn', `[Lua/${scriptName}] Cannot convert coordinate to tile: missing region data`);
+        return null;
+      }
+
+      // Calculate relative position from game world origin
+      const relX = screenX - gameWorld.x;
+      const relY = screenY - gameWorld.y;
+
+      // Convert to tile coordinates
+      const tileX = Math.floor(relX / tileSize.width) + playerPos.x - Math.floor(gameWorld.width / tileSize.width / 2);
+      const tileY = Math.floor(relY / tileSize.height) + playerPos.y - Math.floor(gameWorld.height / tileSize.height / 2);
+
+      return { x: tileX, y: tileY };
+    },
   };
 
   let navigationApi = {};
