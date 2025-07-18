@@ -7,6 +7,8 @@ import cavebotSlice from '../frontend/redux/slices/cavebotSlice.js';
 import targetingSlice from '../frontend/redux/slices/targetingSlice.js';
 import statusMessagesSlice from '../frontend/redux/slices/statusMessagesSlice.js';
 import regionCoordinatesSlice from '../frontend/redux/slices/regionCoordinatesSlice.js';
+import ocrSlice from '../frontend/redux/slices/ocrSlice.js';
+import uiValuesSlice from '../frontend/redux/slices/uiValuesSlice.js';
 
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
@@ -17,6 +19,8 @@ const rootReducer = combineReducers({
   targeting: targetingSlice.reducer,
   statusMessages: statusMessagesSlice.reducer,
   regionCoordinates: regionCoordinatesSlice.reducer,
+  ocr: ocrSlice.reducer,
+  uiValues: uiValuesSlice.reducer,
 });
 
 const store = configureStore({

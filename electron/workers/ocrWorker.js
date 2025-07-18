@@ -26,6 +26,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import pkg from 'font-ocr';
 const { recognizeText } = pkg;
+import { ocrParsers } from './ocrWorker/parsers.js';
 
 // --- Worker Configuration ---
 const { sharedData } = workerData;
@@ -60,7 +61,8 @@ async function processOcrRegions(buffer, metadata) {
 
   if (regions.gameLog) {
     try {
-      ocrUpdates.gameLog = recognizeText(buffer, regions.gameLog, [[240, 240, 240]]) || '';
+      const rawText = recognizeText(buffer, regions.gameLog, [[240, 240, 240]]) || '';
+      ocrUpdates.gameLog = rawText;
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for gameLog:', ocrError);
     }
@@ -68,11 +70,12 @@ async function processOcrRegions(buffer, metadata) {
 
   if (regions.skillsWidget) {
     try {
-      ocrUpdates.skillsWidget =
+      const rawText =
         recognizeText(buffer, regions.skillsWidget, [
           [192, 192, 192],
           [68, 173, 37],
         ]) || '';
+      ocrUpdates.skillsWidget = rawText;
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for skillsWidget:', ocrError);
     }
@@ -87,9 +90,11 @@ async function processOcrRegions(buffer, metadata) {
     [160, 160, 255],
     [0, 240, 0],
   ];
+
   if (regions.chatboxMain) {
     try {
-      ocrUpdates.chatboxMain = recognizeText(buffer, regions.chatboxMain, chatColors) || '';
+      const rawText = recognizeText(buffer, regions.chatboxMain, chatColors) || '';
+      ocrUpdates.chatboxMain = rawText;
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for chatboxMain:', ocrError);
     }
@@ -97,14 +102,181 @@ async function processOcrRegions(buffer, metadata) {
 
   if (regions.chatboxSecondary) {
     try {
-      ocrUpdates.chatboxSecondary = recognizeText(buffer, regions.chatboxSecondary, chatColors) || '';
+      const rawText = recognizeText(buffer, regions.chatboxSecondary, chatColors) || '';
+      ocrUpdates.chatboxSecondary = rawText;
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for chatboxSecondary:', ocrError);
     }
   }
 
+  const chatBoxTabRowColors = [
+    [223, 223, 223],
+    [247, 95, 95],
+    [127, 127, 127],
+  ];
+
+  if (regions.chatBoxTabRow) {
+    try {
+      const rawText = recognizeText(buffer, regions.chatBoxTabRow, chatBoxTabRowColors) || '';
+      ocrUpdates.chatBoxTabRow = rawText;
+    } catch (ocrError) {
+      console.error('[OcrWorker] OCR process failed for chatBoxTabRow:', ocrError);
+    }
+  }
+
+  // Send OCR updates (raw text)
   if (Object.keys(ocrUpdates).length > 0) {
     parentPort.postMessage({ storeUpdate: true, type: 'ocr/setOcrRegionsText', payload: ocrUpdates });
+  }
+
+  // Parse skillsWidget data from OCR results
+  if (ocrUpdates.skillsWidget) {
+    try {
+      const rawText = ocrUpdates.skillsWidget;
+
+      // Handle direct array/object returns from OCR
+      let skillsWidgetArray = [];
+
+      // Check if we already have an array (direct return from OCR)
+      if (Array.isArray(rawText)) {
+        skillsWidgetArray = rawText;
+      }
+      // Check if we have an object that might be the OCR result
+      else if (typeof rawText === 'object' && rawText !== null) {
+        if (rawText.text) {
+          skillsWidgetArray = [rawText];
+        } else if (Array.isArray(rawText.data)) {
+          skillsWidgetArray = rawText.data;
+        } else {
+          skillsWidgetArray = Object.values(rawText).filter((item) => item && typeof item === 'object' && item.text !== undefined);
+        }
+      }
+      // Handle string data (JSON string or other)
+      else if (typeof rawText === 'string') {
+        const textToParse = rawText.trim();
+        if (!textToParse) return;
+
+        if (textToParse === '[object Object]' || textToParse.includes('[object Object]')) return;
+
+        try {
+          const parsed = JSON.parse(textToParse);
+          if (Array.isArray(parsed)) {
+            skillsWidgetArray = parsed;
+          } else if (parsed && typeof parsed === 'object') {
+            skillsWidgetArray = [parsed];
+          }
+        } catch (jsonError) {
+          const textMatches = textToParse.match(/"text"\s*:\s*"([^"]*)"/g);
+          if (textMatches) {
+            skillsWidgetArray = textMatches.map((match, index) => ({
+              text: match.match(/"([^"]*)"/)[1],
+              x: index * 100,
+              y: 0,
+            }));
+          }
+        }
+      }
+
+      // Filter valid items
+      const validItems = skillsWidgetArray.filter((item) => item && typeof item === 'object' && item.text && item.text.trim());
+
+      if (validItems.length > 0) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'uiValues/updateSkillsWidget',
+          payload: validItems,
+        });
+      }
+    } catch (error) {
+      console.error('[OcrWorker] Error in skillsWidget processing:', error);
+    }
+  }
+
+  // Parse chatboxMain data from OCR results
+  if (ocrUpdates.chatboxMain) {
+    try {
+      let ocrDataArray = [];
+
+      // Handle the actual OCR data format from recognizeText
+      if (Array.isArray(ocrUpdates.chatboxMain)) {
+        ocrDataArray = ocrUpdates.chatboxMain;
+      } else if (typeof ocrUpdates.chatboxMain === 'object' && ocrUpdates.chatboxMain !== null) {
+        // Handle single object case
+        ocrDataArray = [ocrUpdates.chatboxMain];
+      } else {
+        return;
+      }
+
+      // Send OCR data array for parsing in uiValuesSlice
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateRegionData',
+        payload: {
+          region: 'chatboxMain',
+          data: ocrDataArray,
+        },
+      });
+    } catch (error) {
+      console.error('[OcrWorker] Error in chatboxMain processing:', error);
+    }
+  }
+
+  // Parse chatboxSecondary data from OCR results
+  if (ocrUpdates.chatboxSecondary) {
+    try {
+      let ocrDataArray = [];
+
+      // Handle the actual OCR data format from recognizeText
+      if (Array.isArray(ocrUpdates.chatboxSecondary)) {
+        ocrDataArray = ocrUpdates.chatboxSecondary;
+      } else if (typeof ocrUpdates.chatboxSecondary === 'object' && ocrUpdates.chatboxSecondary !== null) {
+        // Handle single object case
+        ocrDataArray = [ocrUpdates.chatboxSecondary];
+      } else {
+        return;
+      }
+
+      // Send OCR data array for parsing in uiValuesSlice
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateRegionData',
+        payload: {
+          region: 'chatboxSecondary',
+          data: ocrDataArray,
+        },
+      });
+    } catch (error) {
+      console.error('[OcrWorker] Error in chatboxSecondary processing:', error);
+    }
+  }
+
+  // Parse chatBoxTabRow data from OCR results
+  if (ocrUpdates.chatBoxTabRow) {
+    try {
+      let ocrDataArray = [];
+
+      // Handle the actual OCR data format from recognizeText
+      if (Array.isArray(ocrUpdates.chatBoxTabRow)) {
+        ocrDataArray = ocrUpdates.chatBoxTabRow;
+      } else if (typeof ocrUpdates.chatBoxTabRow === 'object' && ocrUpdates.chatBoxTabRow !== null) {
+        // Handle single object case
+        ocrDataArray = [ocrUpdates.chatBoxTabRow];
+      } else {
+        return;
+      }
+
+      // Send OCR data array for parsing in uiValuesSlice
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateRegionData',
+        payload: {
+          region: 'chatBoxTabRow',
+          data: ocrDataArray,
+        },
+      });
+    } catch (error) {
+      console.error('[OcrWorker] Error in chatBoxTabRow processing:', error);
+    }
   }
 }
 

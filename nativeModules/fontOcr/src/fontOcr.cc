@@ -23,13 +23,16 @@ const bool ENABLE_BENCHMARKING = false;
 // --- Global State ---
 static std::vector<CharTemplate> fontAtlas;
 
-// --- CHANGE: Updated struct to hold click coordinates ---
+// --- CHANGE: Updated struct to hold click coordinates and color ---
 struct TextContext {
     std::string text;
     uint32_t x;
     uint32_t y;
     uint32_t clickX;
     uint32_t clickY;
+    uint8_t colorR;
+    uint8_t colorG;
+    uint8_t colorB;
 };
 
 // --- Helper Functions (Unchanged) ---
@@ -243,6 +246,9 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
                 current_context.y = start_char_of_context->y - start_char_of_context->offset;
                 current_context.clickX = current_context.x + (context_right - current_context.x) / 2;
                 current_context.clickY = current_context.y + start_char_of_context->height / 2;
+                current_context.colorR = start_char_of_context->r;
+                current_context.colorG = start_char_of_context->g;
+                current_context.colorB = start_char_of_context->b;
                 final_contexts.push_back(current_context);
 
                 // Start a new context
@@ -265,6 +271,9 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
         current_context.y = start_char_of_context->y - start_char_of_context->offset;
         current_context.clickX = current_context.x + (context_right - current_context.x) / 2;
         current_context.clickY = current_context.y + start_char_of_context->height / 2;
+        current_context.colorR = start_char_of_context->r;
+        current_context.colorG = start_char_of_context->g;
+        current_context.colorB = start_char_of_context->b;
         final_contexts.push_back(current_context);
     }
 
@@ -287,6 +296,13 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
         clickObj.Set("x", Napi::Number::New(env, context.clickX));
         clickObj.Set("y", Napi::Number::New(env, context.clickY));
         contextObj.Set("click", clickObj);
+
+        // --- CHANGE: Add color information ---
+        Napi::Object colorObj = Napi::Object::New(env);
+        colorObj.Set("r", Napi::Number::New(env, context.colorR));
+        colorObj.Set("g", Napi::Number::New(env, context.colorG));
+        colorObj.Set("b", Napi::Number::New(env, context.colorB));
+        contextObj.Set("color", colorObj);
 
         resultArray.Set(i, contextObj);
     }

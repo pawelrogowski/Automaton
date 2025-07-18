@@ -11,6 +11,10 @@ const GameState = () => {
 
   // Determine which state slice to display based on the hash
   const stateToDisplay = useSelector((state) => {
+    console.log('[GameState] Current hash:', hash);
+    console.log('[GameState] Available state keys:', Object.keys(state));
+    console.log('[GameState] uiValues state:', state.uiValues);
+
     switch (hash) {
       case '#globalState':
         return state.global;
@@ -31,6 +35,9 @@ const GameState = () => {
         return state.ocr;
       case '#targetingState': // Add case for targetingState
         return state.targeting; // Return targeting state slice
+      case '#uiValuesState':
+        console.log('[GameState] Returning uiValues:', state.uiValues);
+        return state.uiValues; // Return uiValues state slice
     }
   });
 
@@ -56,6 +63,8 @@ const GameState = () => {
         return 'OCR Output';
       case '#targetingState': // Add case for targetingState
         return 'Targeting State'; // Return targeting state slice
+      case '#uiValuesState':
+        return 'UI Values (Skills Widget)';
     }
   };
 

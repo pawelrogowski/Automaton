@@ -8,6 +8,7 @@ import targetingSlice from './slices/targetingSlice.js';
 import statusMessagesSlice from './slices/statusMessagesSlice.js';
 import regionCoordinatesSlice from './slices/regionCoordinatesSlice.js';
 import ocrSlice from './slices/ocrSlice.js';
+import uiValuesSlice from './slices/uiValuesSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
   // If the action comes from the backend, let it pass through to the reducer.
@@ -30,6 +31,7 @@ const store = configureStore({
     statusMessages: statusMessagesSlice.reducer,
     regionCoordinates: regionCoordinatesSlice.reducer,
     ocr: ocrSlice.reducer,
+    uiValues: uiValuesSlice.reducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
 });

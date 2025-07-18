@@ -14,7 +14,7 @@
  *
  * 2.  **SEARCHING State (The Source of Truth):**
  *     On startup or after a change is detected, the worker performs a full-screen
- *     scan. This scan is the ONLY source of truth for the application's state. It
+ *     scan. This scan is the ONLY source of truth freor the application's state. It
  *     dispatches the complete set of found regions. If any verifiable regions are
  *     found, it transitions to the MONITORING state.
  *
@@ -208,6 +208,15 @@ async function performFullScan(buffer, metadata) {
       metadata,
     );
     if (chatboxSecondaryRegion?.startFound) foundRegions.chatboxSecondary = chatboxSecondaryRegion;
+    const chatBoxTabRowRegion = findBoundingRect(
+      buffer,
+      regionColorSequences.chatBoxTabRowStart,
+      regionColorSequences.chatBoxTabRowEnd,
+      1400,
+      1000,
+      metadata,
+    );
+    if (chatBoxTabRowRegion?.startFound) foundRegions.chatBoxTabRow = chatBoxTabRowRegion;
     const gameWorldRegion = findBoundingRect(
       buffer,
       regionColorSequences.gameWorldStart,

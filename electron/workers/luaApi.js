@@ -24,6 +24,10 @@ const createStateShortcutObject = (getState, type) => {
   Object.defineProperty(shortcuts, 'partyNum', { get: () => getState().gameState?.partyNum, enumerable: true });
   Object.defineProperty(shortcuts, 'isTyping', { get: () => getState().gameState?.isTyping, enumerable: true });
   Object.defineProperty(shortcuts, 'isOnline', { get: () => getState().gameState?.isLoggedIn, enumerable: true });
+  Object.defineProperty(shortcuts, 'activeTab', {
+    get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
+    enumerable: true,
+  });
 
   const gameState = getState().gameState;
   if (gameState && gameState.characterStatus) {
@@ -93,6 +97,7 @@ export const createLuaApi = (context) => {
     'mapClick',
     'drag',
     'dragAbsolute',
+    'focusTab',
   ];
   const getWindowId = () => getState()?.global?.windowId;
 
@@ -321,6 +326,30 @@ export const createLuaApi = (context) => {
       const tileY = Math.floor(relY / tileSize.height) + playerPos.y - Math.floor(gameWorld.height / tileSize.height / 2);
 
       return { x: tileX, y: tileY };
+    },
+
+    // --- Chat Tab Functions ---
+    focusTab: async (tabName) => {
+      const state = getState();
+      const tabs = state.uiValues?.chatboxTabs?.tabs;
+
+      if (!tabs || !tabName) {
+        logger('warn', `[Lua/${scriptName}] Cannot focus tab: missing tab data or tab name`);
+        return false;
+      }
+
+      const tab = tabs[tabName];
+      if (!tab || !tab.tabPosition) {
+        logger('warn', `[Lua/${scriptName}] Cannot focus tab: tab "${tabName}" not found or missing position`);
+        return false;
+      }
+
+      const windowId = String(getWindowId());
+      const { x, y } = tab.tabPosition;
+
+      mouseController.leftClick(parseInt(windowId), x, y);
+      await wait(100); // 100ms delay after click
+      return true;
     },
   };
 

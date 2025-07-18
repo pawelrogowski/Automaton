@@ -409,6 +409,13 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current targeting slice"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#uiValuesState"
+                img={tibia} // Reusing tibia icon for UI Values State
+                text={'UI Values'}
+                imageWidth="32px"
+                tooltip="View the current UI values slice (skills widget data)"
+              ></SideBarNavButton>
             </>
           )}
 
