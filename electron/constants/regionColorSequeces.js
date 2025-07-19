@@ -446,7 +446,7 @@ const regionColorSequences = {
       [39, 103, 18],
     ],
   },
-  connectionLostOkButton: {
+  connectionLostCloseButton: {
     direction: 'horizontal',
     offset: { x: 129, y: 117 },
     sequence: [

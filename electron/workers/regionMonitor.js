@@ -126,32 +126,86 @@ async function performFullScan(buffer, metadata) {
   const foundRegions = {};
   const searchArea = { x: 0, y: 0, width: metadata.width, height: metadata.height };
   try {
-    const simpleSequences = Object.fromEntries(
-      Object.entries(regionColorSequences).filter(([key]) => !key.endsWith('Start') && !key.endsWith('End')),
-    );
-    const searchResults = findSequences.findSequencesNativeBatch(buffer, {
-      main: { sequences: simpleSequences, searchArea, occurrence: 'first' },
-    });
-    const startRegions = searchResults.main;
+    // Separate sequences into different categories
+    const regularRegions = {};
+    const closeButtons = {};
+    const okButtons = {};
 
-    if (startRegions) {
-      if (startRegions.healthBar)
-        foundRegions.healthBar = { x: startRegions.healthBar.x, y: startRegions.healthBar.y, width: 94, height: 14 };
-      if (startRegions.manaBar) foundRegions.manaBar = { x: startRegions.manaBar.x, y: startRegions.manaBar.y, width: 94, height: 14 };
-      if (startRegions.cooldownBar || startRegions.cooldownBarFallback)
-        foundRegions.cooldowns = createRegion(startRegions.cooldownBar || startRegions.cooldownBarFallback, 56, 4);
-      if (startRegions.statusBar) foundRegions.statusBar = createRegion(startRegions.statusBar, 104, 9);
-      if (startRegions.amuletSlot) foundRegions.amuletSlot = createRegion(startRegions.amuletSlot, 32, 32);
-      if (startRegions.ringSlot) foundRegions.ringSlot = createRegion(startRegions.ringSlot, 32, 32);
-      if (startRegions.bootsSlot) foundRegions.bootsSlot = createRegion(startRegions.bootsSlot, 32, 32);
-      if (startRegions.onlineMarker)
-        foundRegions.onlineMarker = createRegion(startRegions.onlineMarker, 1, regionColorSequences.onlineMarker.sequence.length);
-      if (startRegions.chatOff) foundRegions.chatOff = createRegion(startRegions.chatOff, regionColorSequences.chatOff.sequence.length, 1);
-      if (startRegions.minimapFull) foundRegions.minimapFull = createRegion(startRegions.minimapFull, 106, 109);
-      if (startRegions.minimapFloorIndicatorColumn)
-        foundRegions.minimapFloorIndicatorColumn = createRegion(startRegions.minimapFloorIndicatorColumn, 2, 63);
-      if (startRegions.preyWindow)
-        foundRegions.preyWindow = { x: startRegions.preyWindow.x, y: startRegions.preyWindow.y, width: 657, height: 503 };
+    for (const [key, config] of Object.entries(regionColorSequences)) {
+      if (key.endsWith('Start') || key.endsWith('End')) continue;
+
+      if (key.endsWith('CloseButton')) {
+        closeButtons[key] = config;
+      } else if (key.endsWith('OkButton')) {
+        okButtons[key] = config;
+      } else {
+        regularRegions[key] = config;
+      }
+    }
+
+    // Initialize special button objects
+    foundRegions.closeButtons = {};
+    foundRegions.okButtons = {};
+
+    // Process regular regions
+    if (Object.keys(regularRegions).length > 0) {
+      const regularResults = findSequences.findSequencesNativeBatch(buffer, {
+        main: { sequences: regularRegions, searchArea, occurrence: 'first' },
+      });
+      const startRegions = regularResults.main;
+
+      if (startRegions) {
+        if (startRegions.healthBar)
+          foundRegions.healthBar = { x: startRegions.healthBar.x, y: startRegions.healthBar.y, width: 94, height: 14 };
+        if (startRegions.manaBar) foundRegions.manaBar = { x: startRegions.manaBar.x, y: startRegions.manaBar.y, width: 94, height: 14 };
+        if (startRegions.cooldownBar || startRegions.cooldownBarFallback)
+          foundRegions.cooldowns = createRegion(startRegions.cooldownBar || startRegions.cooldownBarFallback, 56, 4);
+        if (startRegions.statusBar) foundRegions.statusBar = createRegion(startRegions.statusBar, 104, 9);
+        if (startRegions.amuletSlot) foundRegions.amuletSlot = createRegion(startRegions.amuletSlot, 32, 32);
+        if (startRegions.ringSlot) foundRegions.ringSlot = createRegion(startRegions.ringSlot, 32, 32);
+        if (startRegions.bootsSlot) foundRegions.bootsSlot = createRegion(startRegions.bootsSlot, 32, 32);
+        if (startRegions.onlineMarker)
+          foundRegions.onlineMarker = createRegion(startRegions.onlineMarker, 1, regionColorSequences.onlineMarker.sequence.length);
+        if (startRegions.chatOff)
+          foundRegions.chatOff = createRegion(startRegions.chatOff, regionColorSequences.chatOff.sequence.length, 1);
+        if (startRegions.minimapFull) foundRegions.minimapFull = createRegion(startRegions.minimapFull, 106, 109);
+        if (startRegions.minimapFloorIndicatorColumn)
+          foundRegions.minimapFloorIndicatorColumn = createRegion(startRegions.minimapFloorIndicatorColumn, 2, 63);
+        if (startRegions.preyWindow)
+          foundRegions.preyWindow = { x: startRegions.preyWindow.x, y: startRegions.preyWindow.y, width: 657, height: 503 };
+      }
+    }
+
+    // Process close buttons (1x1 regions)
+    if (Object.keys(closeButtons).length > 0) {
+      const closeButtonResults = findSequences.findSequencesNativeBatch(buffer, {
+        closeButtons: { sequences: closeButtons, searchArea, occurrence: 'first' },
+      });
+      const foundCloseButtons = closeButtonResults.closeButtons;
+      if (foundCloseButtons) {
+        for (const [key, position] of Object.entries(foundCloseButtons)) {
+          if (position && position.x !== undefined && position.y !== undefined) {
+            const cleanKey = key.replace(/CloseButton$/, '');
+            foundRegions.closeButtons[cleanKey] = createRegion(position, 1, 1);
+          }
+        }
+      }
+    }
+
+    // Process OK buttons (1x1 regions)
+    if (Object.keys(okButtons).length > 0) {
+      const okButtonResults = findSequences.findSequencesNativeBatch(buffer, {
+        okButtons: { sequences: okButtons, searchArea, occurrence: 'first' },
+      });
+      const foundOkButtons = okButtonResults.okButtons;
+      if (foundOkButtons) {
+        for (const [key, position] of Object.entries(foundOkButtons)) {
+          if (position && position.x !== undefined && position.y !== undefined) {
+            const cleanKey = key.replace(/OkButton$/, '');
+            foundRegions.okButtons[cleanKey] = createRegion(position, 1, 1);
+          }
+        }
+      }
     }
 
     const battleListRegion = findBoundingRect(
