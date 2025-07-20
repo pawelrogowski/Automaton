@@ -1,9 +1,13 @@
 import { createSlice } from '@reduxjs/toolkit';
 
+const DEBOUNCE_DELAY = 500; // 500ms debounce delay
+
 const initialState = {
   enabled: false, // State for Lua scripts enable/disable
   persistentScripts: [], // Array to hold persistent Lua script objects
   hotkeyScripts: [], // Array to hold hotkey Lua script objects
+  _lastEnabledChange: 0, // Internal timestamp for debouncing
+  _lastScriptToggle: {}, // Internal timestamps for individual script debouncing
 };
 
 const luaSlice = createSlice({
@@ -127,6 +131,19 @@ const luaSlice = createSlice({
      */
     togglePersistentScript: (state, action) => {
       const scriptIdToToggle = action.payload;
+      const now = Date.now();
+
+      // Ensure _lastScriptToggle exists
+      if (!state._lastScriptToggle) {
+        state._lastScriptToggle = {};
+      }
+
+      // Check if this script was toggled recently
+      const lastToggle = state._lastScriptToggle[scriptIdToToggle] || 0;
+      if (now - lastToggle < DEBOUNCE_DELAY) {
+        return; // Skip if toggled within debounce delay
+      }
+
       const script = state.persistentScripts.find((script) => script.id === scriptIdToToggle);
       if (script) {
         script.enabled = !script.enabled;
@@ -137,6 +154,9 @@ const luaSlice = createSlice({
         if (script.log.length > MAX_LOG_SIZE) {
           script.log.splice(0, script.log.length - MAX_LOG_SIZE);
         }
+
+        // Update last toggle timestamp
+        state._lastScriptToggle[scriptIdToToggle] = now;
       }
     },
 
@@ -148,7 +168,20 @@ const luaSlice = createSlice({
       return newState;
     },
     setenabled: (state, action) => {
+      const now = Date.now();
+
+      // Ensure _lastEnabledChange exists
+      if (typeof state._lastEnabledChange !== 'number') {
+        state._lastEnabledChange = 0;
+      }
+
+      // Check if enabled state was changed recently
+      if (now - state._lastEnabledChange < DEBOUNCE_DELAY) {
+        return; // Skip if changed within debounce delay
+      }
+
       state.enabled = action.payload;
+      state._lastEnabledChange = now;
     },
   },
 });

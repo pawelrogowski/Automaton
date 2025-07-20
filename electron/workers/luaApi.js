@@ -408,57 +408,119 @@ export const createLuaApi = (context) => {
       const windowId = String(getWindowId());
       const state = getState();
 
+      console.log('[LOGIN] === LOGIN FUNCTION STARTED ===');
+      console.log('[LOGIN] Window ID:', windowId);
+      console.log('[LOGIN] Target character:', character);
+      console.log('[LOGIN] Email provided:', email ? 'Yes' : 'No');
+      console.log('[LOGIN] Initial state keys:', Object.keys(state || {}));
+      console.log('[LOGIN] Region coordinates available:', !!state.regionCoordinates);
+      console.log('[LOGIN] Online marker status:', !!state.regionCoordinates?.regions?.onlineMarker);
+
       // 1. Check if we are online
       if (state.regionCoordinates?.regions?.onlineMarker) {
+        console.log('[LOGIN] Player already online - skipping login');
         logger('info', `[Lua/${scriptName}] Player is already online, skipping login`);
         return false;
       }
 
+      console.log('[LOGIN] Player not online - proceeding with login');
       logger('info', `[Lua/${scriptName}] Starting login process for character: ${character}`);
 
       // 2. Check if loginModal is visible
       const loginModal = state.regionCoordinates?.regions?.loginModal;
+      console.log('[LOGIN] Login modal found:', !!loginModal);
+      if (loginModal) {
+        console.log('[LOGIN] Login modal position:', {
+          x: loginModal.x,
+          y: loginModal.y,
+          width: loginModal.width,
+          height: loginModal.height,
+        });
+        console.log('[LOGIN] Login modal children:', Object.keys(loginModal.children || {}));
+      }
+
       if (!loginModal) {
+        console.log('[LOGIN] ERROR: loginModal not found in state');
         logger('warn', `[Lua/${scriptName}] loginModal not found`);
         return false;
       }
 
       // 3. Press escape to ensure login modal is focused
+      console.log('[LOGIN] Pressing Escape to focus login modal');
       await keyPress(windowId, 'Escape');
       await wait(100);
 
       // 4. Click on email input and type email
       const emailInput = loginModal.children?.emailInput;
+      console.log('[LOGIN] Email input found:', !!emailInput);
+      if (emailInput) {
+        console.log('[LOGIN] Email input position:', { x: emailInput.x, y: emailInput.y });
+      }
+
       if (!emailInput) {
+        console.log('[LOGIN] ERROR: emailInput not found');
         logger('warn', `[Lua/${scriptName}] emailInput not found`);
         return false;
       }
 
+      console.log('[LOGIN] Clicking email input field');
       mouseController.leftClick(parseInt(windowId), emailInput.x, emailInput.y);
       await wait(50);
+      console.log('[LOGIN] Typing email:', email);
       await typeText(windowId, [email], false);
       await wait(100);
 
       // 5. Click on password input and type password
       const passwordInput = loginModal.children?.passwordInput;
+      console.log('[LOGIN] Password input found:', !!passwordInput);
+      if (passwordInput) {
+        console.log('[LOGIN] Password input position:', { x: passwordInput.x, y: passwordInput.y });
+      }
+
       if (!passwordInput) {
+        console.log('[LOGIN] ERROR: passwordInput not found');
         logger('warn', `[Lua/${scriptName}] passwordInput not found`);
         return false;
       }
 
+      console.log('[LOGIN] Clicking password input field');
       mouseController.leftClick(parseInt(windowId), passwordInput.x, passwordInput.y);
       await wait(50);
+      console.log('[LOGIN] Typing password (hidden)');
       await typeText(windowId, [password], false);
       await wait(100);
 
       // 6. Press enter to submit login
+      console.log('[LOGIN] Pressing Enter to submit login form');
       await keyPress(windowId, 'Enter');
-      await wait(2000);
+      console.log('[LOGIN] Waiting 2 seconds for login processing...');
+      await wait(200);
 
-      // 7. Check if selectCharacterModal is visible
-      const selectCharacterModal = state.regionCoordinates?.regions?.selectCharacterModal;
+      // 7. Wait for and check if selectCharacterModal is visible
+      // Refresh state after login submission
+      console.log('[LOGIN] Checking for character selection modal...');
+      let currentState = getState();
+      let selectCharacterModal = currentState.regionCoordinates?.regions?.selectCharacterModal;
+      console.log('[LOGIN] Initial character modal check:', !!selectCharacterModal);
+
+      // Wait up to 10 seconds for the character selection modal to appear
+      const maxWaitForModal = 10000;
+      const modalCheckInterval = 500;
+      let modalWaitTime = 0;
+
+      console.log('[LOGIN] Starting wait loop for character modal...');
+      while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
+        console.log(`[LOGIN] Waiting for modal... (${modalWaitTime}ms elapsed)`);
+        await wait(modalCheckInterval);
+        modalWaitTime += modalCheckInterval;
+        currentState = getState();
+        selectCharacterModal = currentState.regionCoordinates?.regions?.selectCharacterModal;
+        console.log(`[LOGIN] Modal check after ${modalWaitTime}ms:`, !!selectCharacterModal);
+      }
+
       if (!selectCharacterModal) {
-        logger('warn', `[Lua/${scriptName}] selectCharacterModal not found after login attempt`);
+        console.log(`[LOGIN] ERROR: selectCharacterModal not found after ${modalWaitTime}ms wait`);
+        logger('warn', `[Lua/${scriptName}] selectCharacterModal not found after login attempt (waited ${modalWaitTime}ms)`);
         // Press escape 3 times and stop
         for (let i = 0; i < 3; i++) {
           await keyPress(windowId, 'Escape');
@@ -467,10 +529,23 @@ export const createLuaApi = (context) => {
         return false;
       }
 
-      // 8. Get OCR data for character selection
-      const ocrData = state.uiValues?.regionData?.selectCharacterModal;
-      if (!ocrData || !Array.isArray(ocrData)) {
-        logger('warn', `[Lua/${scriptName}] No OCR data for character selection`);
+      console.log('[LOGIN] SUCCESS: Character selection modal found!');
+      console.log('[LOGIN] Modal details:', {
+        x: selectCharacterModal.x,
+        y: selectCharacterModal.y,
+        width: selectCharacterModal.width,
+        height: selectCharacterModal.height,
+      });
+
+      // 8. Get character selection data
+      console.log('[LOGIN] Retrieving character selection data...');
+      const characterData = currentState.uiValues?.selectCharacterModal;
+      console.log('[LOGIN] Character data found:', !!characterData);
+      console.log('[LOGIN] Character data structure:', characterData);
+
+      if (!characterData || !characterData.characters) {
+        console.log('[LOGIN] ERROR: No valid character data for selection');
+        logger('warn', `[Lua/${scriptName}] No character data for selection`);
         // Press escape 3 times and stop
         for (let i = 0; i < 3; i++) {
           await keyPress(windowId, 'Escape');
@@ -479,33 +554,67 @@ export const createLuaApi = (context) => {
         return false;
       }
 
-      // 9. Check if target character is visible
-      const characterTexts = ocrData.map((item) => item.text?.toLowerCase()).filter(Boolean);
+      // 9. Check if target character is available
+      let characters = characterData.characters;
+      let characterNames = Object.keys(characters);
       const targetCharacterLower = character.toLowerCase();
+      console.log('[LOGIN] Available characters:', characterNames);
+      console.log('[LOGIN] Target character (lowercase):', targetCharacterLower);
 
-      if (!characterTexts.some((text) => text.includes(targetCharacterLower))) {
+      let targetCharacterFound = characterNames.find((name) => name.toLowerCase().includes(targetCharacterLower));
+      console.log('[LOGIN] Target character found initially:', !!targetCharacterFound);
+
+      if (!targetCharacterFound) {
+        console.log('[LOGIN] Target character not visible, trying first letter approach');
         logger('info', `[Lua/${scriptName}] Target character not visible, trying first letter: ${character[0]}`);
 
         // Press first letter of character name
+        console.log('[LOGIN] Pressing first letter:', character[0].toUpperCase());
         await keyPress(windowId, character[0].toUpperCase());
         await wait(500);
 
-        // Check again after pressing first letter
-        const newState = getState();
-        const newOcrData = newState.uiValues?.regionData?.selectCharacterModal;
-        if (!newOcrData || !Array.isArray(newOcrData)) {
-          logger('warn', `[Lua/${scriptName}] Still no OCR data after first letter`);
-          // Press escape 3 times and stop
-          for (let i = 0; i < 3; i++) {
-            await keyPress(windowId, 'Escape');
-            await wait(100);
-          }
-          return false;
+        // Refresh state after pressing first letter
+        let updatedState = getState();
+        let updatedCharacterData = updatedState.uiValues?.selectCharacterModal;
+
+        // Wait for state to update after pressing first letter
+        const maxWaitForUpdate = 3000;
+        const updateCheckInterval = 200;
+        let updateWaitTime = 0;
+
+        console.log('[LOGIN] Starting wait loop for character data update...');
+        while ((!updatedCharacterData || !updatedCharacterData.characters) && updateWaitTime < maxWaitForUpdate) {
+          console.log(`[LOGIN] Waiting for character data update... (${updateWaitTime}ms elapsed)`);
+          await wait(updateCheckInterval);
+          updateWaitTime += updateCheckInterval;
+          updatedState = getState();
+          updatedCharacterData = updatedState.uiValues?.selectCharacterModal;
+          console.log(`[LOGIN] Character data check after ${updateWaitTime}ms:`, !!updatedCharacterData?.characters);
         }
 
-        const newCharacterTexts = newOcrData.map((item) => item.text?.toLowerCase()).filter(Boolean);
-        if (!newCharacterTexts.some((text) => text.includes(targetCharacterLower))) {
-          logger('warn', `[Lua/${scriptName}] Target character still not visible after first letter`);
+        if (updatedCharacterData && updatedCharacterData.characters) {
+          characters = updatedCharacterData.characters;
+          characterNames = Object.keys(characters);
+          console.log('[LOGIN] Updated available characters:', characterNames);
+
+          targetCharacterFound = characterNames.find((name) => name.toLowerCase().includes(targetCharacterLower));
+          console.log('[LOGIN] Target character found after first letter:', !!targetCharacterFound);
+
+          if (!targetCharacterFound) {
+            console.log('[LOGIN] ERROR: Target character still not visible after first letter');
+            logger('warn', `[Lua/${scriptName}] Target character still not visible after first letter`);
+            // Press escape 3 times and stop
+            for (let i = 0; i < 3; i++) {
+              await keyPress(windowId, 'Escape');
+              await wait(100);
+            }
+            return false;
+          }
+
+          console.log('[LOGIN] SUCCESS: Target character found after first letter press');
+        } else {
+          console.log(`[LOGIN] ERROR: No character data available after first letter (waited ${updateWaitTime}ms)`);
+          logger('warn', `[Lua/${scriptName}] No character data after first letter (waited ${updateWaitTime}ms)`);
           // Press escape 3 times and stop
           for (let i = 0; i < 3; i++) {
             await keyPress(windowId, 'Escape');
@@ -513,12 +622,16 @@ export const createLuaApi = (context) => {
           }
           return false;
         }
+      } else {
+        console.log('[LOGIN] SUCCESS: Target character found in initial character data');
       }
 
-      // 10. Find and click on the target character
-      const characterItem = ocrData.find((item) => item.text?.toLowerCase().includes(targetCharacterLower));
+      // 10. Click on the target character
+      const characterItem = characters[targetCharacterFound];
+      console.log('[LOGIN] Target character details:', characterItem);
 
-      if (!characterItem) {
+      if (!characterItem || !characterItem.position) {
+        console.log('[LOGIN] ERROR: Could not find target character coordinates');
         logger('warn', `[Lua/${scriptName}] Could not find target character coordinates`);
         // Press escape 3 times and stop
         for (let i = 0; i < 3; i++) {
@@ -529,28 +642,40 @@ export const createLuaApi = (context) => {
       }
 
       // Click on the character
-      mouseController.leftClick(parseInt(windowId), characterItem.x, characterItem.y);
+      console.log('[LOGIN] Clicking on target character at coordinates:', {
+        x: characterItem.position.x,
+        y: characterItem.position.y,
+      });
+      mouseController.leftClick(parseInt(windowId), characterItem.position.x, characterItem.position.y);
       await wait(100);
 
       // Press enter to select character
+      console.log('[LOGIN] Pressing Enter to select character');
       await keyPress(windowId, 'Enter');
 
       // 11. Wait for login to complete (check if online)
+      console.log('[LOGIN] Waiting for login completion...');
       const maxWaitTime = 5000;
       const checkInterval = 100;
       let elapsedTime = 0;
 
+      console.log('[LOGIN] Starting wait loop for online status...');
       while (elapsedTime < maxWaitTime) {
         await wait(checkInterval);
         elapsedTime += checkInterval;
 
         const currentState = getState();
-        if (currentState.regionCoordinates?.regions?.onlineMarker) {
+        const isOnline = !!currentState.regionCoordinates?.regions?.onlineMarker;
+        console.log(`[LOGIN] Online check after ${elapsedTime}ms:`, isOnline);
+
+        if (isOnline) {
+          console.log('[LOGIN] SUCCESS: Login completed, player is online!');
           logger('info', `[Lua/${scriptName}] Login successful, player is online`);
           return true;
         }
       }
 
+      console.log('[LOGIN] ERROR: Login timeout, player did not come online within 5 seconds');
       logger('warn', `[Lua/${scriptName}] Login timeout, player did not come online`);
       return false;
     },

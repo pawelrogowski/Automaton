@@ -52,6 +52,11 @@ const initialState = {
     accountStatus: null,
     lastUpdate: null,
   },
+  vipWidget: {
+    onlineVips: [],
+    offlineVips: [],
+    lastUpdate: null,
+  },
   // Future regions can be added here
 };
 
@@ -349,6 +354,9 @@ const uiValuesSlice = createSlice({
         state.chatboxTabs = parseChatTabsData(data);
       } else if (region === 'selectCharacterModal') {
         state.selectCharacterModal = parseSelectCharacterModalData(data);
+      } else if (region === 'vipWidget') {
+        state.vipWidget = data;
+        state.vipWidget.lastUpdate = Date.now();
       }
       // Add handlers for other regions as needed
     },
@@ -401,5 +409,8 @@ export const selectChatboxSecondaryLastUpdate = (state) => state.uiValues.chatbo
 export const selectChatboxTabs = (state) => state.uiValues.chatboxTabs;
 export const selectChatboxActiveTab = (state) => state.uiValues.chatboxTabs.activeTab;
 export const selectChatboxTabsList = (state) => state.uiValues.chatboxTabs.tabs;
+export const selectVipWidget = (state) => state.uiValues.vipWidget;
+export const selectOnlineVips = (state) => state.uiValues.vipWidget.onlineVips;
+export const selectOfflineVips = (state) => state.uiValues.vipWidget.offlineVips;
 
 export default uiValuesSlice;

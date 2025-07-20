@@ -501,6 +501,15 @@ const regionDefinitions = {
     },
     maxRight: 1400,
     maxDown: 1000,
+    ocrColors: [
+      [240, 240, 0],
+      [248, 96, 96],
+      [240, 240, 240],
+      [96, 248, 248],
+      [32, 160, 255],
+      [160, 160, 255],
+      [0, 240, 0],
+    ],
   },
   chatboxSecondary: {
     type: 'boundingBox',
@@ -528,6 +537,15 @@ const regionDefinitions = {
     },
     maxRight: 1400,
     maxDown: 1000,
+    ocrColors: [
+      [240, 240, 0],
+      [248, 96, 96],
+      [240, 240, 240],
+      [96, 248, 248],
+      [32, 160, 255],
+      [160, 160, 255],
+      [0, 240, 0],
+    ],
   },
   chatBoxTabRow: {
     type: 'boundingBox',
@@ -603,6 +621,10 @@ const regionDefinitions = {
     },
     maxRight: 170,
     maxDown: 1000,
+    ocrColors: [
+      [192, 192, 192],
+      [68, 173, 37],
+    ],
   },
   loginModal: {
     type: 'single',
@@ -671,6 +693,10 @@ const regionDefinitions = {
     ],
     width: 263,
     height: 266,
+    ocrColors: [
+      [244, 244, 244],
+      [192, 192, 192],
+    ],
     children: {
       ok: {
         type: 'fixed',
@@ -688,46 +714,45 @@ const regionDefinitions = {
       },
     },
   },
-  preyWindow: {
+  warningModal: {
     type: 'single',
     direction: 'horizontal',
-    offset: { x: -13, y: -6 },
+    offset: { x: -99, y: -10 },
     sequence: [
-      [229, 169, 24],
-      [25, 70, 10],
-      [39, 103, 18],
+      [52, 52, 51],
+      [144, 144, 144],
+      [144, 144, 144],
+      [144, 144, 144],
+      [58, 58, 58],
+      [55, 55, 54],
+      [144, 144, 144],
+      [144, 144, 144],
+      [144, 144, 144],
+      [57, 57, 56],
+      [52, 53, 52],
+      [49, 49, 49],
+      [144, 144, 144],
     ],
-    width: 657,
-    height: 503,
+    width: 250,
+    height: 157,
+    children: {
+      abort: {
+        type: 'fixed',
+        x: 213,
+        y: 137,
+        width: 5,
+        height: 5,
+      },
+    },
   },
-  connectionLostCloseButton: {
-    type: 'single',
-    direction: 'horizontal',
-    offset: { x: 129, y: 117 },
-    sequence: [
-      [56, 56, 56],
-      [144, 144, 144],
-      [144, 144, 144],
-      [52, 52, 52],
-      [64, 64, 64],
-      [55, 56, 56],
-      [144, 144, 144],
-      [144, 144, 144],
-      [67, 67, 67],
-      [52, 52, 52],
-      [144, 144, 144],
-      [144, 144, 144],
-      [48, 48, 48],
-    ],
-    width: 1,
-    height: 1,
-  },
+
   gameLog: {
     type: 'fixed',
     x: 808,
     y: 695,
     width: 125,
     height: 11,
+    ocrColors: [[240, 240, 240]],
   },
   onlineMarker: {
     type: 'single',
@@ -741,6 +766,34 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+  },
+  vipWidget: {
+    type: 'boundingBox',
+    maxRight: 176,
+    maxDown: 99999,
+    ocrColors: [
+      [248, 96, 96],
+      [96, 248, 96],
+    ],
+    start: {
+      direction: 'horizontal',
+      offset: { x: -9, y: -9 },
+      sequence: [
+        [118, 93, 57],
+        [108, 80, 41],
+        [102, 87, 38],
+        [121, 114, 48],
+      ],
+    },
+    end: {
+      direction: 'vertical',
+      offset: { x: 9, y: 6 },
+      sequence: [
+        [160, 160, 160],
+        [104, 104, 104],
+        [10, 10, 10],
+      ],
+    },
   },
 };
 

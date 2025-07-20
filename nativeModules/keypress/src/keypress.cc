@@ -117,6 +117,7 @@ protected:
         event.xkey.state = current_base_mods | modifiers_state;
 
         // Key Press
+        ForceFocus(display, target_window);
         event.type = KeyPress;
         XSendEvent(display, target_window, True, KeyPressMask, &event);
         XSync(display, False);
@@ -124,6 +125,7 @@ protected:
         usleep(get_human_delay(50, 20) * 1000); // Default delay for single key presses
 
         // Key Release
+        ForceFocus(display, target_window);
         event.type = KeyRelease;
         XSendEvent(display, target_window, True, KeyReleaseMask, &event);
         XSync(display, False);
@@ -189,12 +191,14 @@ protected:
             ev.xkey.state = mods;
 
             ev.type = KeyPress;
+            ForceFocus(d, w);
             XSendEvent(d, w, True, KeyPressMask, &ev);
             XSync(d, False);
 
             usleep(get_human_delay(20, 10) * 1000);
 
             ev.type = KeyRelease;
+            ForceFocus(d, w);
             XSendEvent(d, w, True, KeyReleaseMask, &ev);
             XSync(d, False);
         };
@@ -435,6 +439,7 @@ protected:
         event.xkey.keycode = ctrl_keycode;
 
         event.type = KeyPress;
+        ForceFocus(display, target_window);
         XSendEvent(display, target_window, True, KeyPressMask, &event);
         XSync(display, False);
         usleep(20 * 1000);
@@ -446,11 +451,13 @@ protected:
             event.xkey.state = ControlMask;
 
             event.type = KeyPress;
+            ForceFocus(display, target_window);
             XSendEvent(display, target_window, True, KeyPressMask, &event);
             XSync(display, False);
             usleep(((rand() % 41) + 30) * 1000);
 
             event.type = KeyRelease;
+            ForceFocus(display, target_window);
             XSendEvent(display, target_window, True, KeyReleaseMask, &event);
             XSync(display, False);
             usleep(((rand() % 41) + 25) * 1000);
@@ -458,6 +465,7 @@ protected:
 
         event.xkey.keycode = ctrl_keycode;
         event.type = KeyRelease;
+        ForceFocus(display, target_window);
         XSendEvent(display, target_window, True, KeyReleaseMask, &event);
         XSync(display, False);
 
