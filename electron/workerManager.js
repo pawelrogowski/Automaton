@@ -345,7 +345,10 @@ class WorkerManager {
         } else {
           // Worker exists, check for changes that require a restart vs. a simple message.
           const oldConfig = workerEntry.config;
-          if (oldConfig.code !== script.code || oldConfig.loopMin !== script.loopMin || oldConfig.loopMax !== script.loopMax) {
+          if (
+            oldConfig &&
+            (oldConfig.code !== script.code || oldConfig.loopMin !== script.loopMin || oldConfig.loopMax !== script.loopMax)
+          ) {
             // If the core logic changes, a restart is necessary.
             this.restartWorker(workerName, script);
           } else if (oldConfig.enabled !== script.enabled) {

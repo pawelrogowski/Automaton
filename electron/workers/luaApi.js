@@ -4,6 +4,9 @@ import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTra
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
 import { setActionPaused, setenabled as setCavebotEnabled } from '../../frontend/redux/slices/cavebotSlice.js';
+import { setenabled as setRulesEnabled } from '../../frontend/redux/slices/ruleSlice.js';
+import { setenabled as setTargetingEnabled } from '../../frontend/redux/slices/targetingSlice.js';
+import { setenabled as setLuaEnabled } from '../../frontend/redux/slices/luaSlice.js';
 
 /**
  * Creates an object with getters for convenient, direct access to state in Lua.
@@ -18,14 +21,37 @@ const createStateShortcutObject = (getState, type) => {
   // --- Game State Getters (Available in ALL script types) ---
   Object.defineProperty(shortcuts, 'hppc', { get: () => getState().gameState?.hppc, enumerable: true });
   Object.defineProperty(shortcuts, 'mppc', { get: () => getState().gameState?.mppc, enumerable: true });
-  Object.defineProperty(shortcuts, 'isLoggedIn', { get: () => getState().gameState?.isLoggedIn, enumerable: true });
   Object.defineProperty(shortcuts, 'isChatOff', { get: () => getState().gameState?.isChatOff, enumerable: true });
   Object.defineProperty(shortcuts, 'monsterNum', { get: () => getState().gameState?.monsterNum, enumerable: true });
   Object.defineProperty(shortcuts, 'partyNum', { get: () => getState().gameState?.partyNum, enumerable: true });
   Object.defineProperty(shortcuts, 'isTyping', { get: () => getState().gameState?.isTyping, enumerable: true });
-  Object.defineProperty(shortcuts, 'isOnline', { get: () => getState().gameState?.isLoggedIn, enumerable: true });
+  Object.defineProperty(shortcuts, 'isOnline', { get: () => !!getState().regionCoordinates?.regions?.onlineMarker, enumerable: true });
   Object.defineProperty(shortcuts, 'activeTab', {
     get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
+    enumerable: true,
+  });
+
+  // --- Action Items Getters ---
+  Object.defineProperty(shortcuts, 'actionItems', {
+    get: () => {
+      const hotkeyBarChildren = getState().regionCoordinates?.regions?.hotkeyBar?.children || {};
+      // Return a proxy that always returns boolean for any property access
+      return new Proxy(
+        {},
+        {
+          get(target, prop) {
+            const child = hotkeyBarChildren[prop];
+            return !!(child && child.x !== undefined && child.y !== undefined);
+          },
+          has(target, prop) {
+            return true; // Allow checking for any property
+          },
+          ownKeys() {
+            return Object.keys(hotkeyBarChildren);
+          },
+        },
+      );
+    },
     enumerable: true,
   });
 
@@ -75,6 +101,12 @@ const createStateShortcutObject = (getState, type) => {
     });
   }
 
+  // --- Bot Control State Variables ---
+  Object.defineProperty(shortcuts, '$healing', { get: () => getState().rules?.enabled, enumerable: true });
+  Object.defineProperty(shortcuts, '$targeting', { get: () => getState().targeting?.enabled, enumerable: true });
+  Object.defineProperty(shortcuts, '$cavebot', { get: () => getState().cavebot?.enabled, enumerable: true });
+  Object.defineProperty(shortcuts, '$scripts', { get: () => getState().lua?.enabled, enumerable: true });
+
   return shortcuts;
 };
 
@@ -98,6 +130,7 @@ export const createLuaApi = (context) => {
     'drag',
     'dragAbsolute',
     'focusTab',
+    'login',
   ];
   const getWindowId = () => getState()?.global?.windowId;
 
@@ -351,6 +384,176 @@ export const createLuaApi = (context) => {
       await wait(100); // 100ms delay after click
       return true;
     },
+
+    // --- Bot Control Functions ---
+    setTargeting: (enabled) => {
+      context.postStoreUpdate('targeting/setenabled', !!enabled);
+      logger('info', `[Lua/${scriptName}] Targeting ${enabled ? 'enabled' : 'disabled'}`);
+    },
+    setHealing: (enabled) => {
+      context.postStoreUpdate('rules/setenabled', !!enabled);
+      logger('info', `[Lua/${scriptName}] Healing (rules) ${enabled ? 'enabled' : 'disabled'}`);
+    },
+    setCavebot: (enabled) => {
+      context.postStoreUpdate('cavebot/setenabled', !!enabled);
+      logger('info', `[Lua/${scriptName}] Cavebot ${enabled ? 'enabled' : 'disabled'}`);
+    },
+    setScripts: (enabled) => {
+      context.postStoreUpdate('lua/setenabled', !!enabled);
+      logger('info', `[Lua/${scriptName}] Scripts ${enabled ? 'enabled' : 'disabled'}`);
+    },
+
+    // --- Login Function ---
+    login: async (email, password, character) => {
+      const windowId = String(getWindowId());
+      const state = getState();
+
+      // 1. Check if we are online
+      if (state.regionCoordinates?.regions?.onlineMarker) {
+        logger('info', `[Lua/${scriptName}] Player is already online, skipping login`);
+        return false;
+      }
+
+      logger('info', `[Lua/${scriptName}] Starting login process for character: ${character}`);
+
+      // 2. Check if loginModal is visible
+      const loginModal = state.regionCoordinates?.regions?.loginModal;
+      if (!loginModal) {
+        logger('warn', `[Lua/${scriptName}] loginModal not found`);
+        return false;
+      }
+
+      // 3. Press escape to ensure login modal is focused
+      await keyPress(windowId, 'Escape');
+      await wait(100);
+
+      // 4. Click on email input and type email
+      const emailInput = loginModal.children?.emailInput;
+      if (!emailInput) {
+        logger('warn', `[Lua/${scriptName}] emailInput not found`);
+        return false;
+      }
+
+      mouseController.leftClick(parseInt(windowId), emailInput.x, emailInput.y);
+      await wait(50);
+      await typeText(windowId, [email], false);
+      await wait(100);
+
+      // 5. Click on password input and type password
+      const passwordInput = loginModal.children?.passwordInput;
+      if (!passwordInput) {
+        logger('warn', `[Lua/${scriptName}] passwordInput not found`);
+        return false;
+      }
+
+      mouseController.leftClick(parseInt(windowId), passwordInput.x, passwordInput.y);
+      await wait(50);
+      await typeText(windowId, [password], false);
+      await wait(100);
+
+      // 6. Press enter to submit login
+      await keyPress(windowId, 'Enter');
+      await wait(2000);
+
+      // 7. Check if selectCharacterModal is visible
+      const selectCharacterModal = state.regionCoordinates?.regions?.selectCharacterModal;
+      if (!selectCharacterModal) {
+        logger('warn', `[Lua/${scriptName}] selectCharacterModal not found after login attempt`);
+        // Press escape 3 times and stop
+        for (let i = 0; i < 3; i++) {
+          await keyPress(windowId, 'Escape');
+          await wait(100);
+        }
+        return false;
+      }
+
+      // 8. Get OCR data for character selection
+      const ocrData = state.uiValues?.regionData?.selectCharacterModal;
+      if (!ocrData || !Array.isArray(ocrData)) {
+        logger('warn', `[Lua/${scriptName}] No OCR data for character selection`);
+        // Press escape 3 times and stop
+        for (let i = 0; i < 3; i++) {
+          await keyPress(windowId, 'Escape');
+          await wait(100);
+        }
+        return false;
+      }
+
+      // 9. Check if target character is visible
+      const characterTexts = ocrData.map((item) => item.text?.toLowerCase()).filter(Boolean);
+      const targetCharacterLower = character.toLowerCase();
+
+      if (!characterTexts.some((text) => text.includes(targetCharacterLower))) {
+        logger('info', `[Lua/${scriptName}] Target character not visible, trying first letter: ${character[0]}`);
+
+        // Press first letter of character name
+        await keyPress(windowId, character[0].toUpperCase());
+        await wait(500);
+
+        // Check again after pressing first letter
+        const newState = getState();
+        const newOcrData = newState.uiValues?.regionData?.selectCharacterModal;
+        if (!newOcrData || !Array.isArray(newOcrData)) {
+          logger('warn', `[Lua/${scriptName}] Still no OCR data after first letter`);
+          // Press escape 3 times and stop
+          for (let i = 0; i < 3; i++) {
+            await keyPress(windowId, 'Escape');
+            await wait(100);
+          }
+          return false;
+        }
+
+        const newCharacterTexts = newOcrData.map((item) => item.text?.toLowerCase()).filter(Boolean);
+        if (!newCharacterTexts.some((text) => text.includes(targetCharacterLower))) {
+          logger('warn', `[Lua/${scriptName}] Target character still not visible after first letter`);
+          // Press escape 3 times and stop
+          for (let i = 0; i < 3; i++) {
+            await keyPress(windowId, 'Escape');
+            await wait(100);
+          }
+          return false;
+        }
+      }
+
+      // 10. Find and click on the target character
+      const characterItem = ocrData.find((item) => item.text?.toLowerCase().includes(targetCharacterLower));
+
+      if (!characterItem) {
+        logger('warn', `[Lua/${scriptName}] Could not find target character coordinates`);
+        // Press escape 3 times and stop
+        for (let i = 0; i < 3; i++) {
+          await keyPress(windowId, 'Escape');
+          await wait(100);
+        }
+        return false;
+      }
+
+      // Click on the character
+      mouseController.leftClick(parseInt(windowId), characterItem.x, characterItem.y);
+      await wait(100);
+
+      // Press enter to select character
+      await keyPress(windowId, 'Enter');
+
+      // 11. Wait for login to complete (check if online)
+      const maxWaitTime = 5000;
+      const checkInterval = 100;
+      let elapsedTime = 0;
+
+      while (elapsedTime < maxWaitTime) {
+        await wait(checkInterval);
+        elapsedTime += checkInterval;
+
+        const currentState = getState();
+        if (currentState.regionCoordinates?.regions?.onlineMarker) {
+          logger('info', `[Lua/${scriptName}] Login successful, player is online`);
+          return true;
+        }
+      }
+
+      logger('warn', `[Lua/${scriptName}] Login timeout, player did not come online`);
+      return false;
+    },
   };
 
   let navigationApi = {};
@@ -401,7 +604,6 @@ export const createLuaApi = (context) => {
         if (arrayIndex < waypoints.length) postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
       },
       pauseActions: (paused) => postStoreUpdate('cavebot/setActionPaused', !!paused),
-      setCavebotEnabled: (enabled) => postStoreUpdate('cavebot/setenabled', !!enabled),
     };
   }
 

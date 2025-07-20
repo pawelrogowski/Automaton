@@ -1,4 +1,4 @@
-//  findSequences.cc  – leak-proof, fast, drop-in replacement (FINAL CORRECTED)
+//  findSequences.cc – ASYNC, leak-proof, fast, drop-in replacement
 #include <napi.h>
 #include <vector>
 #include <string>
@@ -15,7 +15,7 @@
 // ---------- Constants ----------
 const uint32_t ANY_COLOR_HASH = 0xFFFFFFFF;
 
-// ---------- Structures ----------
+// ---------- Structures (Unchanged) ----------
 struct SearchArea {
     uint32_t x = 0, y = 0, width = 0, height = 0;
     bool active = false;
@@ -62,13 +62,6 @@ struct WorkerData {
     std::atomic<uint32_t>* next_row;
 };
 
-// ---------- RAII helper ----------
-template <typename T>
-struct AutoClear {
-    T& c;
-    explicit AutoClear(T& container) : c(container) {}
-    ~AutoClear() { c.clear(); }
-};
 
 // ---------- Parsing utilities (Unchanged) ----------
 bool ParseColorSequence(Napi::Env env, const Napi::Array& jsSeq, std::vector<uint32_t>& out) {
@@ -132,7 +125,7 @@ bool ParseTargetSequences(Napi::Env env,
     return true;
 }
 
-// ---------- Verification Function ----------
+// ---------- Verification Function (Unchanged) ----------
 void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqDef, const SearchTask& task, uint32_t x, uint32_t y) {
     const size_t seqLen = seqDef.sequenceHashes.size();
     if (seqLen == 0) return;
@@ -185,7 +178,7 @@ void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqD
     }
 }
 
-// ---------- Worker function ----------
+// ---------- Worker function (Unchanged) ----------
 void FindSequencesWorker(const WorkerData& d) {
     const uint32_t chunk = 16;
     while (true) {
@@ -240,136 +233,215 @@ void FindSequencesWorker(const WorkerData& d) {
     }
 }
 
-// ---------- Core search ----------
-Napi::Value PerformSearch(Napi::Env env, const Napi::Buffer<uint8_t>& imageBuffer, const Napi::Object& jsSearchTasks) {
-    if (imageBuffer.Length() < 8) return env.Null();
-    uint8_t* bufferData = imageBuffer.Data();
-    uint32_t bufferWidth  = *reinterpret_cast<uint32_t*>(bufferData);
-    uint32_t bufferHeight = *reinterpret_cast<uint32_t*>(bufferData + 4);
-    uint8_t* bgraData     = bufferData + 8;
+// ---------- NEW: Async Worker Class ----------
+class SearchWorker : public Napi::AsyncWorker {
+public:
+    SearchWorker(Napi::Promise::Deferred deferred, const Napi::Buffer<uint8_t>& imageBuffer, const Napi::Object& jsSearchTasks, bool isBatch)
+        : Napi::AsyncWorker(deferred.Env()), deferred(deferred), isBatchCall(isBatch) {
 
-    // --- FINAL FIX: Calculate the length from the header, not the buffer object's length. ---
-    // This makes the module robust and allows JS to pass a single, large buffer view safely.
-    size_t   bgraLen      = static_cast<size_t>(bufferWidth) * bufferHeight * 4;
+        // 1. Keep a reference to the buffer to prevent GC while we're working
+        bufferRef = Napi::ObjectReference::New(imageBuffer, 1);
 
-    // Add a safety check to ensure the buffer is actually large enough for the data described in its own header.
-    if (imageBuffer.Length() < bgraLen + 8) {
-        return env.Null();
-    }
+        // 2. Parse buffer header
+        uint8_t* bufferData = imageBuffer.Data();
+        if (imageBuffer.Length() < 8) {
+            Napi::Error::New(Env(), "Buffer too small for header").ThrowAsJavaScriptException();
+            return;
+        }
+        bufferWidth = *reinterpret_cast<uint32_t*>(bufferData);
+        bufferHeight = *reinterpret_cast<uint32_t*>(bufferData + 4);
+        bgraData = bufferData + 8;
+        bgraDataLength = static_cast<size_t>(bufferWidth) * bufferHeight * 4;
+        stride = bufferWidth * 4;
 
-    // The stride is based on the width read from the header.
-    uint32_t stride       = bufferWidth * 4;
+        if (imageBuffer.Length() < bgraDataLength + 8) {
+            Napi::Error::New(Env(), "Buffer length does not match dimensions in header").ThrowAsJavaScriptException();
+            return;
+        }
 
-    std::vector<SearchTask> tasks;
-    AutoClear<std::vector<SearchTask>> _acTasks(tasks);
-    Napi::Array names = jsSearchTasks.GetPropertyNames();
-    uint32_t n = names.Length();
-    for (uint32_t i = 0; i < n; ++i) {
-        Napi::Value keyVal = names.Get(i);
-        if (!keyVal.IsString()) continue;
-        std::string taskName = keyVal.As<Napi::String>().Utf8Value();
-        Napi::Object cfg = jsSearchTasks.Get(keyVal).As<Napi::Object>();
-        SearchTask task;
-        task.taskName = taskName;
-        if (!ParseTargetSequences(env, cfg.Get("sequences").As<Napi::Object>(), task.firstColorLookup, task.targetNames)) return env.Null();
-        task.occurrenceMode = cfg.Get("occurrence").As<Napi::String>().Utf8Value();
-        Napi::Object areaObj = cfg.Get("searchArea").As<Napi::Object>();
-        task.searchArea.x      = areaObj.Get("x").As<Napi::Number>().Uint32Value();
-        task.searchArea.y      = areaObj.Get("y").As<Napi::Number>().Uint32Value();
-        task.searchArea.width  = areaObj.Get("width").As<Napi::Number>().Uint32Value();
-        task.searchArea.height = areaObj.Get("height").As<Napi::Number>().Uint32Value();
-        task.searchArea.active = true;
-        tasks.emplace_back(std::move(task));
-    }
-
-    unsigned numThreads = std::min((unsigned)std::thread::hardware_concurrency(), bufferHeight);
-    if (!numThreads) numThreads = 1;
-    std::vector<FirstCandidateMap> threadFirstResults(numThreads);
-    std::vector<AllCandidateMap>   threadAllResults(numThreads);
-    std::set<std::string> uniqueNames;
-    for (const auto& t : tasks) uniqueNames.insert(t.targetNames.begin(), t.targetNames.end());
-    for (unsigned i = 0; i < numThreads; ++i) {
-        threadFirstResults[i].reserve(uniqueNames.size());
-        threadAllResults[i].reserve(uniqueNames.size());
-    }
-
-    std::atomic<uint32_t> nextRow(0);
-    std::vector<std::thread> threads;
-    for (unsigned i = 0; i < numThreads; ++i) {
-        threads.emplace_back(FindSequencesWorker, WorkerData{
-            bgraData, bufferWidth, bufferHeight, stride, bgraLen,
-            tasks, &threadFirstResults[i], &threadAllResults[i], &nextRow
-        });
-    }
-    for (auto& t : threads) t.join();
-
-    Napi::Object finalResults = Napi::Object::New(env);
-    for (const SearchTask& task : tasks) {
-        Napi::Object taskResult = Napi::Object::New(env);
-        if (task.occurrenceMode == "first") {
-            FirstCandidateMap merged;
-            for (const std::string& name : task.targetNames) merged[name];
-            for (const auto& localMap : threadFirstResults) {
-                for (const auto& [name, pair] : localMap) {
-                    if (merged.count(name)) {
-                        auto& best = merged.at(name);
-                        if (pair.first.pixelIndex != static_cast<size_t>(-1) && (best.first.pixelIndex == static_cast<size_t>(-1) || pair.first.pixelIndex < best.first.pixelIndex)) best.first = pair.first;
-                        if (best.first.pixelIndex == static_cast<size_t>(-1) && pair.second.pixelIndex != static_cast<size_t>(-1) && (best.second.pixelIndex == static_cast<size_t>(-1) || pair.second.pixelIndex < best.second.pixelIndex)) best.second = pair.second;
-                    }
-                }
+        // 3. Parse search tasks (this happens on the main thread)
+        Napi::Array names = jsSearchTasks.GetPropertyNames();
+        uint32_t n = names.Length();
+        tasks.reserve(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            Napi::Value keyVal = names.Get(i);
+            if (!keyVal.IsString()) continue;
+            std::string taskName = keyVal.As<Napi::String>().Utf8Value();
+            Napi::Object cfg = jsSearchTasks.Get(keyVal).As<Napi::Object>();
+            SearchTask task;
+            task.taskName = taskName;
+            if (!ParseTargetSequences(Env(), cfg.Get("sequences").As<Napi::Object>(), task.firstColorLookup, task.targetNames)) {
+                 Napi::Error::New(Env(), "Failed to parse target sequences for task: " + taskName).ThrowAsJavaScriptException();
+                 return;
             }
-            for (const std::string& name : task.targetNames) {
-                const auto& pair = merged.at(name);
-                if (pair.first.pixelIndex != static_cast<size_t>(-1)) {
-                    Napi::Object c = Napi::Object::New(env); c.Set("x", pair.first.x); c.Set("y", pair.first.y);
-                    taskResult.Set(name, c);
-                } else if (pair.second.pixelIndex != static_cast<size_t>(-1)) {
-                    Napi::Object c = Napi::Object::New(env); c.Set("x", pair.second.x); c.Set("y", pair.second.y);
-                    taskResult.Set(name, c);
-                } else {
-                    taskResult.Set(name, env.Null());
+            task.occurrenceMode = cfg.Get("occurrence").As<Napi::String>().Utf8Value();
+            Napi::Object areaObj = cfg.Get("searchArea").As<Napi::Object>();
+            task.searchArea.x = areaObj.Get("x").As<Napi::Number>().Uint32Value();
+            task.searchArea.y = areaObj.Get("y").As<Napi::Number>().Uint32Value();
+            task.searchArea.width = areaObj.Get("width").As<Napi::Number>().Uint32Value();
+            task.searchArea.height = areaObj.Get("height").As<Napi::Number>().Uint32Value();
+            task.searchArea.active = true;
+            tasks.emplace_back(std::move(task));
+        }
+    }
+
+    ~SearchWorker() {}
+
+protected:
+    // This method runs on a worker thread.
+    // It has no access to N-API or V8.
+    void Execute() override {
+        unsigned numThreads = std::min((unsigned)std::thread::hardware_concurrency(), bufferHeight);
+        if (!numThreads) numThreads = 1;
+
+        std::vector<FirstCandidateMap> threadFirstResults(numThreads);
+        std::vector<AllCandidateMap> threadAllResults(numThreads);
+        std::set<std::string> uniqueNames;
+        for (const auto& t : tasks) uniqueNames.insert(t.targetNames.begin(), t.targetNames.end());
+        for (unsigned i = 0; i < numThreads; ++i) {
+            threadFirstResults[i].reserve(uniqueNames.size());
+            threadAllResults[i].reserve(uniqueNames.size());
+        }
+
+        std::atomic<uint32_t> nextRow(0);
+        std::vector<std::thread> threads;
+        for (unsigned i = 0; i < numThreads; ++i) {
+            threads.emplace_back(FindSequencesWorker, WorkerData{
+                bgraData, bufferWidth, bufferHeight, stride, bgraDataLength,
+                tasks, &threadFirstResults[i], &threadAllResults[i], &nextRow
+            });
+        }
+        for (auto& t : threads) t.join();
+
+        // Merge results from all threads into final result maps
+        for (const auto& localMap : threadFirstResults) {
+            for (const auto& [name, pair] : localMap) {
+                if (mergedFirstResults.find(name) == mergedFirstResults.end()) {
+                    mergedFirstResults[name] = pair;
+                    continue;
                 }
-            }
-        } else {
-            AllCandidateMap merged;
-            for (const std::string& name : task.targetNames) merged[name];
-            for (const auto& localMap : threadAllResults) {
-                for (const auto& [name, pair] : localMap) {
-                    if (merged.count(name)) {
-                        merged[name].first.insert(pair.first.begin(), pair.first.end());
-                        merged[name].second.insert(pair.second.begin(), pair.second.end());
-                    }
-                }
-            }
-            for (const std::string& name : task.targetNames) {
-                const auto& [pri, bak] = merged.at(name);
-                const auto& resultSet = !pri.empty() ? pri : bak;
-                Napi::Array arr = Napi::Array::New(env, resultSet.size());
-                size_t idx = 0;
-                for (const FoundCoords& fc : resultSet) {
-                    Napi::Object c = Napi::Object::New(env); c.Set("x", fc.x); c.Set("y", fc.y);
-                    arr[idx++] = c;
-                }
-                taskResult.Set(name, arr);
+                auto& best = mergedFirstResults.at(name);
+                if (pair.first.pixelIndex != static_cast<size_t>(-1) && (best.first.pixelIndex == static_cast<size_t>(-1) || pair.first.pixelIndex < best.first.pixelIndex)) best.first = pair.first;
+                if (best.first.pixelIndex == static_cast<size_t>(-1) && pair.second.pixelIndex != static_cast<size_t>(-1) && (best.second.pixelIndex == static_cast<size_t>(-1) || pair.second.pixelIndex < best.second.pixelIndex)) best.second = pair.second;
             }
         }
-        finalResults.Set(task.taskName, taskResult);
-    }
-    return finalResults;
-}
 
-// ---------- Public wrappers ----------
-Napi::Value FindSequencesNativeBatch(const Napi::CallbackInfo& info) {
+        for (const auto& localMap : threadAllResults) {
+            for (const auto& [name, pair] : localMap) {
+                mergedAllResults[name].first.insert(pair.first.begin(), pair.first.end());
+                mergedAllResults[name].second.insert(pair.second.begin(), pair.second.end());
+            }
+        }
+    }
+
+    // This method runs on the main event loop thread after Execute() is successful.
+    void OnOK() override {
+        Napi::Env env = Env();
+        Napi::HandleScope scope(env);
+
+        Napi::Object finalResults = Napi::Object::New(env);
+        for (const SearchTask& task : tasks) {
+            Napi::Object taskResult = Napi::Object::New(env);
+            if (task.occurrenceMode == "first") {
+                for (const std::string& name : task.targetNames) {
+                    auto it = mergedFirstResults.find(name);
+                    if (it == mergedFirstResults.end()) {
+                        taskResult.Set(name, env.Null());
+                        continue;
+                    }
+                    const auto& pair = it->second;
+                    if (pair.first.pixelIndex != static_cast<size_t>(-1)) {
+                        Napi::Object c = Napi::Object::New(env); c.Set("x", pair.first.x); c.Set("y", pair.first.y);
+                        taskResult.Set(name, c);
+                    } else if (pair.second.pixelIndex != static_cast<size_t>(-1)) {
+                        Napi::Object c = Napi::Object::New(env); c.Set("x", pair.second.x); c.Set("y", pair.second.y);
+                        taskResult.Set(name, c);
+                    } else {
+                        taskResult.Set(name, env.Null());
+                    }
+                }
+            } else { // "all"
+                for (const std::string& name : task.targetNames) {
+                    auto it = mergedAllResults.find(name);
+                    if (it == mergedAllResults.end()) {
+                         taskResult.Set(name, Napi::Array::New(env, 0));
+                         continue;
+                    }
+                    const auto& [pri, bak] = it->second;
+                    const auto& resultSet = !pri.empty() ? pri : bak;
+                    Napi::Array arr = Napi::Array::New(env, resultSet.size());
+                    size_t idx = 0;
+                    for (const FoundCoords& fc : resultSet) {
+                        Napi::Object c = Napi::Object::New(env); c.Set("x", fc.x); c.Set("y", fc.y);
+                        arr[idx++] = c;
+                    }
+                    taskResult.Set(name, arr);
+                }
+            }
+            finalResults.Set(task.taskName, taskResult);
+        }
+
+        // Release the buffer reference
+        bufferRef.Unref();
+
+        if (isBatchCall) {
+            deferred.Resolve(finalResults);
+        } else {
+            // For the single-task version, extract the result from the "defaultTask"
+            if (finalResults.Has("defaultTask")) {
+                deferred.Resolve(finalResults.Get("defaultTask"));
+            } else {
+                deferred.Resolve(env.Null()); // Should not happen if parsing was successful
+            }
+        }
+    }
+
+    void OnError(const Napi::Error& e) override {
+        // Release the buffer reference
+        bufferRef.Unref();
+        deferred.Reject(e.Value());
+    }
+
+private:
+    // Data passed from main thread to worker thread
+    Napi::ObjectReference bufferRef;
+    uint8_t* bgraData;
+    uint32_t bufferWidth, bufferHeight, stride;
+    size_t bgraDataLength;
+    std::vector<SearchTask> tasks;
+    bool isBatchCall;
+
+    // Promise control
+    Napi::Promise::Deferred deferred;
+
+    // Results computed in Execute() to be used in OnOK()
+    FirstCandidateMap mergedFirstResults;
+    AllCandidateMap mergedAllResults;
+};
+
+
+// ---------- NEW: Public Async Wrappers ----------
+Napi::Value FindSequencesAsyncBatch(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) {
         Napi::TypeError::New(env, "Expected (Buffer, Object searchTasks)").ThrowAsJavaScriptException();
         return env.Null();
     }
-    return PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), info[1].As<Napi::Object>());
+
+    auto deferred = Napi::Promise::Deferred::New(env);
+    auto worker = new SearchWorker(deferred, info[0].As<Napi::Buffer<uint8_t>>(), info[1].As<Napi::Object>(), true);
+    worker->Queue();
+    return deferred.Promise();
 }
 
-Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
+Napi::Value FindSequencesAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) {
+        Napi::TypeError::New(env, "Expected (Buffer, Object sequences, [Object searchArea], [String occurrence])").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    // Create a temporary batch-style task object for the single call
     Napi::Object searchTasks = Napi::Object::New(env);
     Napi::Object singleTask = Napi::Object::New(env);
     singleTask.Set("sequences", info[1]);
@@ -386,15 +458,17 @@ Napi::Value FindSequencesNative(const Napi::CallbackInfo& info) {
     }
     singleTask.Set("searchArea", searchArea);
     searchTasks.Set("defaultTask", singleTask);
-    Napi::Value batchResult = PerformSearch(env, info[0].As<Napi::Buffer<uint8_t>>(), searchTasks);
-    if (batchResult.IsNull() || !batchResult.IsObject()) return env.Null();
-    return batchResult.As<Napi::Object>().Get("defaultTask");
+
+    auto deferred = Napi::Promise::Deferred::New(env);
+    auto worker = new SearchWorker(deferred, info[0].As<Napi::Buffer<uint8_t>>(), searchTasks, false);
+    worker->Queue();
+    return deferred.Promise();
 }
 
 // ---------- Module registration ----------
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
-    exports.Set("findSequencesNative", Napi::Function::New(env, FindSequencesNative));
-    exports.Set("findSequencesNativeBatch", Napi::Function::New(env, FindSequencesNativeBatch));
+    exports.Set("findSequencesNative", Napi::Function::New(env, FindSequencesAsync));
+    exports.Set("findSequencesNativeBatch", Napi::Function::New(env, FindSequencesAsyncBatch));
     return exports;
 }
 

@@ -609,6 +609,13 @@ const mainLoop = async () => {
       currentActionStatus = CavebotActionStatus.IDLE;
       continue;
     }
+
+    // Check if user is online before performing any actions
+    if (!appState?.luaApi?.isOnline) {
+      currentActionStatus = CavebotActionStatus.IDLE;
+      await sleep(100);
+      continue;
+    }
     const { playerMinimapPosition } = appState.gameState;
     if (
       playerMinimapPosition &&
@@ -627,7 +634,26 @@ const mainLoop = async () => {
       lastLoggedPlayerPosition = { ...playerMinimapPosition };
     }
     const { waypointSections, currentSection, wptId } = appState.cavebot;
-    const targetWaypoint = waypointSections[currentSection]?.waypoints.find((wp) => wp.id === wptId);
+    let targetWaypoint = waypointSections[currentSection]?.waypoints.find((wp) => wp.id === wptId);
+
+    // Handle case when no current waypoint is selected
+    if (!targetWaypoint) {
+      // Find first section with waypoints
+      const firstSectionWithWaypoints = Object.keys(waypointSections).find(
+        (sectionId) => waypointSections[sectionId]?.waypoints?.length > 0,
+      );
+
+      if (firstSectionWithWaypoints) {
+        const firstWaypoint = waypointSections[firstSectionWithWaypoints].waypoints[0];
+        if (firstWaypoint) {
+          logger('info', `No current waypoint found. Selecting first waypoint of first section: ${firstWaypoint.id}`);
+          postStoreUpdate('cavebot/setCurrentWaypointSection', firstSectionWithWaypoints);
+          postStoreUpdate('cavebot/setwptId', firstWaypoint.id);
+          targetWaypoint = firstWaypoint;
+        }
+      }
+    }
+
     if (!targetWaypoint || !playerMinimapPosition) {
       await sleep(20);
       continue;

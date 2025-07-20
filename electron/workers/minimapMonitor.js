@@ -76,18 +76,37 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @returns {Buffer|null} A new Buffer containing only the raw pixel data, or null if invalid.
  */
 function extractBGRA(sourceBuffer, sourceWidth, rect) {
-  if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+  logger('debug', 'extractBGRA called with:', { rect, sourceWidth });
+
+  if (!rect || rect.width <= 0 || rect.height <= 0) {
+    logger('debug', 'extractBGRA: invalid rect', rect);
+    return null;
+  }
 
   const bytesPerPixel = 4;
   const targetSize = rect.width * rect.height * bytesPerPixel;
   const targetBuffer = Buffer.alloc(targetSize);
 
+  logger('debug', 'extractBGRA: extracting', {
+    targetSize,
+    sourceBufferLength: sourceBuffer.length,
+    expectedSourceEnd: HEADER_SIZE + (rect.y + rect.height - 1) * sourceWidth * bytesPerPixel + (rect.x + rect.width) * bytesPerPixel,
+  });
+
   for (let y = 0; y < rect.height; y++) {
     const sourceY = rect.y + y;
     const sourceRowStart = HEADER_SIZE + (sourceY * sourceWidth + rect.x) * bytesPerPixel;
     const targetRowStart = y * rect.width * bytesPerPixel;
+
+    if (sourceRowStart < 0 || sourceRowStart + rect.width * bytesPerPixel > sourceBuffer.length) {
+      logger('debug', 'extractBGRA: out of bounds access', { sourceRowStart, requiredBytes: rect.width * bytesPerPixel });
+      return null;
+    }
+
     sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * bytesPerPixel);
   }
+
+  logger('debug', 'extractBGRA: successfully extracted', targetSize, 'bytes');
   return targetBuffer;
 }
 
@@ -95,11 +114,15 @@ function extractBGRA(sourceBuffer, sourceWidth, rect) {
  * The core processing logic for analyzing the minimap.
  */
 async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
+  logger('debug', '=== Starting minimap processing ===');
+
   // If the raw pixel data of the minimap hasn't changed, there's no work to do.
   if (lastMinimapFrameData && lastMinimapFrameData.equals(minimapBuffer)) {
+    logger('debug', 'Minimap data unchanged, skipping processing');
     return;
   }
   lastMinimapFrameData = minimapBuffer;
+  logger('debug', 'Processing new minimap data');
 
   // Create a temporary buffer with a header for the native module call.
   const floorIndicatorSearchBuffer = Buffer.alloc(HEADER_SIZE + floorIndicatorBuffer.length);
@@ -107,37 +130,52 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
   floorIndicatorSearchBuffer.writeUInt32LE(63, 4); // height of floor indicator region
   floorIndicatorBuffer.copy(floorIndicatorSearchBuffer, HEADER_SIZE);
 
-  const searchResults = findSequences.findSequencesNativeBatch(floorIndicatorSearchBuffer, {
-    floor: { sequences: floorLevelIndicators, searchArea: { x: 0, y: 0, width: 2, height: 63 }, occurrence: 'first' },
-  });
+  logger('debug', 'Created floor indicator search buffer, length:', floorIndicatorSearchBuffer.length);
 
-  const foundFloor = searchResults.floor || {};
-  const floorKey = Object.keys(foundFloor).reduce(
-    (lowest, key) => (foundFloor[key] !== null && foundFloor[key].y < lowest.y ? { key, y: foundFloor[key].y } : lowest),
-    { key: null, y: Infinity },
-  ).key;
-  const detectedZ = floorKey !== null ? parseInt(floorKey, 10) : null;
-
-  if (detectedZ === null) {
-    return; // Can't determine floor, cannot proceed.
-  }
-
-  const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
-  for (let i = 0; i < minimapIndexData.length; i++) {
-    const p = i * 4;
-    const key = (minimapBuffer[p + 2] << 16) | (minimapBuffer[p + 1] << 8) | minimapBuffer[p];
-    minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
-  }
-
-  minimapMatcher.cancelCurrentSearch();
   try {
+    const searchResults = await findSequences.findSequencesNativeBatch(floorIndicatorSearchBuffer, {
+      floor: { sequences: floorLevelIndicators, searchArea: { x: 0, y: 0, width: 2, height: 63 }, occurrence: 'first' },
+    });
+
+    logger('debug', 'Floor indicator search results:', JSON.stringify(searchResults));
+
+    const foundFloor = searchResults.floor || {};
+    const floorKey = Object.keys(foundFloor).reduce(
+      (lowest, key) => (foundFloor[key] !== null && foundFloor[key].y < lowest.y ? { key, y: foundFloor[key].y } : lowest),
+      { key: null, y: Infinity },
+    ).key;
+    const detectedZ = floorKey !== null ? parseInt(floorKey, 10) : null;
+
+    logger('debug', 'Detected floor level:', detectedZ, 'from key:', floorKey);
+
+    if (detectedZ === null) {
+      logger('debug', 'Cannot determine floor level, aborting minimap processing');
+      return; // Can't determine floor, cannot proceed.
+    }
+
+    logger('debug', 'Creating minimap index data, buffer size:', minimapBuffer.length);
+    const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
+    for (let i = 0; i < minimapIndexData.length; i++) {
+      const p = i * 4;
+      const key = (minimapBuffer[p + 2] << 16) | (minimapBuffer[p + 1] << 8) | minimapBuffer[p];
+      minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
+    }
+
+    logger('debug', 'Minimap index data created, searching for position...');
+
+    minimapMatcher.cancelCurrentSearch();
     const result = await minimapMatcher.findPosition(minimapIndexData, MINIMAP_WIDTH, MINIMAP_HEIGHT, detectedZ);
+    logger('debug', 'Minimap search result:', JSON.stringify(result));
+
     if (result?.position) {
       const cleanPayload = { x: result.position.x, y: result.position.y, z: result.position.z };
+      logger('debug', 'Sending position update:', cleanPayload);
       parentPort.postMessage({ storeUpdate: true, type: 'gameState/setPlayerMinimapPosition', payload: cleanPayload });
+    } else {
+      logger('debug', 'No position found in minimap search result');
     }
   } catch (err) {
-    if (err.message !== 'Search cancelled') logger('error', `Minimap search failed: ${err.message}`);
+    logger('error', `Minimap processing error: ${err.message}`);
   }
 }
 
@@ -157,14 +195,31 @@ async function mainLoop() {
           const screenWidth = Atomics.load(syncArray, WIDTH_INDEX);
 
           if (minimapFull && minimapFloorIndicatorColumn && screenWidth > 0) {
+            // Debug logging to verify regions are found
+            logger(
+              'debug',
+              `Minimap regions found: minimapFull=${JSON.stringify(minimapFull)}, minimapFloorIndicatorColumn=${JSON.stringify(minimapFloorIndicatorColumn)}`,
+            );
             lastProcessedFrameCounter = newFrameCounter;
 
             // --- Correct Data Extraction ---
+            logger('debug', 'Extracting minimap data with region:', minimapFull);
             const minimapData = extractBGRA(sharedBufferView, screenWidth, minimapFull);
+            logger('debug', 'Extracting floor indicator data with region:', minimapFloorIndicatorColumn);
             const floorIndicatorData = extractBGRA(sharedBufferView, screenWidth, minimapFloorIndicatorColumn);
 
+            logger('debug', 'Data extraction results:', {
+              minimapData: !!minimapData,
+              minimapDataLength: minimapData?.length,
+              floorIndicatorData: !!floorIndicatorData,
+              floorIndicatorDataLength: floorIndicatorData?.length,
+            });
+
             if (minimapData && floorIndicatorData) {
+              logger('debug', 'Both data buffers extracted successfully, processing minimap...');
               await processMinimapData(minimapData, floorIndicatorData);
+            } else {
+              logger('debug', 'Data extraction failed, skipping minimap processing');
             }
           }
         }

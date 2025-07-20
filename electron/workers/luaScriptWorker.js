@@ -1,30 +1,8 @@
 import { parentPort, workerData, threadId } from 'worker_threads';
-import { performance } from 'perf_hooks';
-import { appendFile } from 'fs/promises';
-import path from 'path';
 import { LuaFactory } from 'wasmoon';
 import { createLogger } from '../utils/logger.js';
 import { createLuaApi } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
-
-const { enableMemoryLogging = false } = workerData;
-const LOG_INTERVAL_MS = 10000;
-const LOG_FILE_NAME = `lua-script-worker-${threadId}-memory-usage.log`;
-const LOG_FILE_PATH = path.join(process.cwd(), LOG_FILE_NAME);
-let lastLogTime = 0;
-
-const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
-
-const logMemoryUsage = async () => {
-  try {
-    const memoryUsage = process.memoryUsage();
-    const timestamp = new Date().toISOString();
-    const logEntry = `${timestamp} | RSS: ${toMB(memoryUsage.rss)} MB, HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, External: ${toMB(memoryUsage.external)} MB\n`;
-    await appendFile(LOG_FILE_PATH, logEntry);
-  } catch (error) {
-    console.error(`[MemoryLogger][Thread ${threadId}] Failed to write to memory log file:`, error);
-  }
-};
 
 const log = createLogger();
 let lua;
@@ -138,12 +116,6 @@ const stopScriptLoop = () => {
 };
 
 parentPort.on('message', async (message) => {
-  const now = performance.now();
-  if (enableMemoryLogging && now - lastLogTime > LOG_INTERVAL_MS) {
-    await logMemoryUsage();
-    lastLogTime = now;
-  }
-
   if (message.type === 'init') {
     scriptConfig = message.script;
     log('info', `[Lua Script Worker ${scriptConfig.id}] Initializing with config:`, scriptConfig);
@@ -173,15 +145,5 @@ parentPort.on('close', () => {
 });
 
 (async () => {
-  if (enableMemoryLogging) {
-    try {
-      const header = `\n--- New Session Started at ${new Date().toISOString()} for Thread ${threadId} ---\n`;
-      await appendFile(LOG_FILE_PATH, header);
-      log('info', `[MemoryLogger][Thread ${threadId}] Memory usage logging is active.`);
-      lastLogTime = performance.now();
-      await logMemoryUsage();
-    } catch (error) {
-      log('error', `[MemoryLogger][Thread ${threadId}] Could not initialize memory log file:`, error);
-    }
-  }
+  // Worker initialization complete
 })();

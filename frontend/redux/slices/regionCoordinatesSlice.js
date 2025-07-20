@@ -3,8 +3,14 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   regions: {
     // This object will be populated by the regionMonitor worker.
-    // Example structure after being populated:
-    // minimapFull: { x: 1808, y: 5, width: 106, height: 106 },
+    // Example structure after being populated (hierarchical):
+    // hotkeyBar: {
+    //   x: 100, y: 200, width: 300, height: 50,
+    //   children: {
+    //     actionBarSlot1: { x: 110, y: 210, width: 32, height: 32 },
+    //     actionBarSlot2: { x: 150, y: 210, width: 32, height: 32 }
+    //   }
+    // },
     // healthBar: { x: 1699, y: 312, width: 94, height: 14 },
     // ... etc.
   },

@@ -31,7 +31,6 @@ import {
   cooldownColorSequences,
   statusBarSequences,
   battleListSequences,
-  actionBarItems,
   equippedItems,
 } from '../constants/index.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
@@ -91,7 +90,10 @@ function runRules(ruleInput) {
   const currentPreset = state?.rules?.presets?.[state?.rules?.activePresetIndex];
   if (!currentPreset) return;
   try {
-    ruleProcessorInstance.processRules(currentPreset, ruleInput, state.global);
+    ruleProcessorInstance.processRules(currentPreset, ruleInput, {
+      ...state.global,
+      isOnline: state?.luaApi?.isOnline ?? false,
+    });
   } catch (error) {
     console.error('Rule processing error:', error);
   }
@@ -133,23 +135,6 @@ async function mainLoop() {
               searchTasks.cooldowns = { sequences: cooldownColorSequences, searchArea: regions.cooldowns, occurrence: 'first' };
             if (regions.statusBar)
               searchTasks.statusBar = { sequences: statusBarSequences, searchArea: regions.statusBar, occurrence: 'first' };
-            if (regions.amuletSlot) searchTasks.amulet = { sequences: equippedItems, searchArea: regions.amuletSlot, occurrence: 'first' };
-            if (regions.ringSlot) searchTasks.ring = { sequences: equippedItems, searchArea: regions.ringSlot, occurrence: 'first' };
-            if (regions.bootsSlot) searchTasks.boots = { sequences: equippedItems, searchArea: regions.bootsSlot, occurrence: 'first' };
-            if (regions.onlineMarker)
-              searchTasks.onlineMarker = {
-                sequences: { onlineMarker: regionColorSequences.onlineMarker },
-                searchArea: regions.onlineMarker,
-                occurrence: 'first',
-              };
-            if (regions.chatOff)
-              searchTasks.chatOff = {
-                sequences: { chatOff: regionColorSequences.chatOff },
-                searchArea: regions.chatOff,
-                occurrence: 'first',
-              };
-            if (regions.overallActionBars)
-              searchTasks.actionItems = { sequences: actionBarItems, searchArea: regions.overallActionBars, occurrence: 'first' };
             if (regions.battleList)
               searchTasks.battleList = {
                 sequences: { battleEntry: battleListSequences.battleEntry },
@@ -182,14 +167,29 @@ async function mainLoop() {
               characterStatus[key] = !!(searchResults.statusBar || {})[key];
             });
 
-            const equippedItemsResult = {
-              amulet: Object.keys(searchResults.amulet || {}).find((key) => searchResults.amulet[key] !== null) || 'Unknown',
-              ring: Object.keys(searchResults.ring || {}).find((key) => searchResults.ring[key] !== null) || 'Unknown',
-              boots: Object.keys(searchResults.boots || {}).find((key) => searchResults.boots[key] !== null) || 'Unknown',
+            const getEquippedItem = (slotRegion) => {
+              if (!slotRegion?.children) return 'Unknown';
+
+              const foundItems = Object.entries(slotRegion.children)
+                .filter(([key, child]) => child && child.x !== undefined && child.y !== undefined)
+                .map(([key]) => key);
+
+              if (foundItems.length === 0) return 'Empty';
+
+              // Handle empty slot detection
+              const emptySlot = foundItems.find((item) => item.includes('empty'));
+              if (emptySlot) return 'Empty';
+
+              // Return the first non-empty item found
+              const actualItem = foundItems.find((item) => !item.includes('empty'));
+              return actualItem || 'Empty';
             };
-            if (equippedItemsResult.amulet === 'emptyAmuletSlot') equippedItemsResult.amulet = 'Empty';
-            if (equippedItemsResult.ring === 'emptyRingSlot') equippedItemsResult.ring = 'Empty';
-            if (equippedItemsResult.boots === 'emptyBootsSlot') equippedItemsResult.boots = 'Empty';
+
+            const equippedItemsResult = {
+              amulet: getEquippedItem(regions.amuletSlot),
+              ring: getEquippedItem(regions.ringSlot),
+              boots: getEquippedItem(regions.bootsSlot),
+            };
 
             const currentStateUpdate = {
               hppc: lastKnownGoodHealthPercentage,
@@ -200,14 +200,19 @@ async function mainLoop() {
               characterStatus,
               monsterNum: (searchResults.battleList?.battleEntry || []).length,
               partyMembers: getPartyData(regions.partyList, bufferSnapshot, metadata),
-              activeActionItems: Object.fromEntries(Object.entries(searchResults.actionItems || {}).filter(([, val]) => val !== null)),
+              activeActionItems: regions.hotkeyBar?.children
+                ? Object.fromEntries(
+                    Object.entries(regions.hotkeyBar.children)
+                      .filter(([, child]) => child && child.x !== undefined && child.y !== undefined)
+                      .map(([key, child]) => [key, child]),
+                  )
+                : {},
               equippedItems: equippedItemsResult,
-              isLoggedIn: !!searchResults.onlineMarker?.onlineMarker,
-              isChatOff: !!searchResults.chatOff?.chatOff,
+              rulesEnabled: state?.rules?.enabled ?? false,
             };
             parentPort.postMessage({ storeUpdate: true, type: 'gameState/updateGameStateFromMonitorData', payload: currentStateUpdate });
 
-            if (state?.global?.isBotEnabled) runRules(currentStateUpdate);
+            if (state?.rules?.enabled) runRules(currentStateUpdate);
 
             // --- End of Analysis Cycle ---
           }

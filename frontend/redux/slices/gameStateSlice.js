@@ -5,9 +5,9 @@ const logger = createLogger({ info: true, error: true, debug: true });
 const initialState = {
   hppc: null,
   mppc: null,
-  isLoggedIn: false,
-  isChatOff: false,
   healingCd: false,
+  supportCd: false,
+  attackCd: false,
   supportCd: false,
   attackCd: false,
   monsterNum: 0,
@@ -75,8 +75,6 @@ const gameStateSlice = createSlice({
         partyMembers,
         activeActionItems, // This is the key we'll process
         equippedItems,
-        isLoggedIn,
-        isChatOff,
         playerMinimapPosition, // Add playerMinimapPosition to destructuring
       } = action.payload;
 
@@ -137,8 +135,6 @@ const gameStateSlice = createSlice({
         }
       }
 
-      if (isLoggedIn !== undefined) state.isLoggedIn = isLoggedIn;
-      if (isChatOff !== undefined) state.isChatOff = isChatOff;
       if (playerMinimapPosition !== undefined) {
         // logger('debug', `[gameStateSlice] updateGameStateFromMonitorData: Updating playerMinimapPosition with:`, playerMinimapPosition);
         state.playerMinimapPosition = playerMinimapPosition;

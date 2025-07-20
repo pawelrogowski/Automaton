@@ -4,7 +4,6 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   windowTitle: 'Press Alt+W on focused tibia window to attach bot',
   windowId: null,
-  isBotEnabled: false,
   refreshRate: 32,
   notificationsEnabled: true,
   previousSectionStates: {
@@ -28,23 +27,17 @@ const globalSlice = createSlice({
         state.actualFps = 0;
       }
     },
-    setIsisBotEnabled: (state, action) => {
-      state.isBotEnabled = action.payload;
-    },
     setRefreshRate: (state, action) => {
       state.refreshRate = Math.max(action.payload, 0);
     },
     toggleNotifications: (state) => {
       state.notificationsEnabled = !state.notificationsEnabled;
     },
-    toggleisBotEnabled: (state) => {
-      state.isBotEnabled = !state.isBotEnabled;
-    },
     setState: (state, action) => {
       const newState = { ...state };
 
       Object.keys(newState).forEach((key) => {
-        if (!['windowId', 'isBotEnabled', 'actualFps'].includes(key)) {
+        if (!['windowId', 'actualFps'].includes(key)) {
           newState[key] = action.payload[key];
         }
       });
@@ -63,10 +56,8 @@ const globalSlice = createSlice({
 export const {
   setWindowTitle,
   setWindowId,
-  setIsisBotEnabled,
   setRefreshRate,
   toggleNotifications,
-  toggleisBotEnabled,
   setState,
   setPreviousSectionStates,
   resetPreviousSectionStates,

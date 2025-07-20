@@ -46,6 +46,12 @@ const initialState = {
     tabs: {},
     lastUpdate: null,
   },
+  selectCharacterModal: {
+    selectedCharacter: null,
+    characters: {},
+    accountStatus: null,
+    lastUpdate: null,
+  },
   // Future regions can be added here
 };
 
@@ -243,6 +249,71 @@ function parseChatTabsData(ocrData) {
   };
 }
 
+/**
+ * Parses the raw OCR data from selectCharacterModal into structured character data.
+ * @param {Array} ocrData - Array of OCR text objects with x, y, text, click, and color properties.
+ * @returns {Object} Structured selectCharacterModal data.
+ */
+function parseSelectCharacterModalData(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) {
+    return initialState.selectCharacterModal;
+  }
+
+  const characters = {};
+  let selectedCharacter = null;
+  let accountStatus = null;
+
+  ocrData.forEach((item) => {
+    const text = item.text.trim();
+    if (!text) return;
+
+    // Check for account status
+    if (text.includes('Account Status:')) {
+      // Assuming "Free Account" or similar will follow "Account Status:"
+      // This is a simple heuristic, might need refinement based on actual OCR output
+      const nextItem = ocrData.find((next) => next.y > item.y && Math.abs(next.x - item.x) < 50); // Find next item roughly below "Account Status:"
+      if (nextItem) {
+        accountStatus = nextItem.text.trim();
+      }
+      return; // Skip adding "Account Status:" as a character
+    }
+
+    // Check for "Free Account" or similar if not already captured by "Account Status:"
+    if (text === 'Free Account' || text === 'Premium Account') {
+      if (!accountStatus) {
+        accountStatus = text;
+      }
+      return; // Skip adding account type as a character
+    }
+
+    // Assume remaining items are character names
+    characters[text] = {
+      name: text,
+      position: {
+        x: item.click.x,
+        y: item.click.y,
+      },
+      originalPosition: {
+        x: item.x,
+        y: item.y,
+      },
+      color: item.color,
+    };
+
+    // Check if this is the selected character (color [244, 244, 244])
+    if (item.color && item.color.r === 244 && item.color.g === 244 && item.color.b === 244) {
+      selectedCharacter = text;
+    }
+  });
+
+  return {
+    selectedCharacter,
+    characters,
+    accountStatus,
+    lastUpdate: Date.now(),
+  };
+}
+
 const uiValuesSlice = createSlice({
   name: 'uiValues',
   initialState,
@@ -276,6 +347,8 @@ const uiValuesSlice = createSlice({
         state.chatboxSecondary.lastUpdate = Date.now();
       } else if (region === 'chatBoxTabRow') {
         state.chatboxTabs = parseChatTabsData(data);
+      } else if (region === 'selectCharacterModal') {
+        state.selectCharacterModal = parseSelectCharacterModalData(data);
       }
       // Add handlers for other regions as needed
     },
@@ -297,6 +370,8 @@ const uiValuesSlice = createSlice({
       const region = action.payload;
       if (region === 'skillsWidget') {
         state.skillsWidget = initialState.skillsWidget;
+      } else if (region === 'selectCharacterModal') {
+        state.selectCharacterModal = initialState.selectCharacterModal;
       }
     },
 

@@ -217,16 +217,134 @@ protected:
             KeySym keysym = NoSymbol;
             unsigned int required_modifier = 0;
 
-            // --- FIX: Explicitly handle special characters that XStringToKeysym fails on ---
+            // --- FIX: Properly handle all characters including special symbols using correct key mappings ---
             if (c == ' ') {
                 keysym = XK_space;
             } else if (c == '\'') {
                 keysym = XK_apostrophe;
-            } else if (isalnum(c) || ispunct(c)) {
-                 keysym = XStringToKeysym(std::string(1, c).c_str());
-                 if (isupper(c) || std::string("!@#$%^&*()_+{}|:\"<>?~").find(c) != std::string::npos) {
+            } else if (c == '.') {
+                keysym = XK_period;
+            } else if (c == '@') {
+                // '@' is Shift+2 on US keyboards
+                keysym = XK_2;
+                required_modifier = ShiftMask;
+            } else if (c == ',') {
+                keysym = XK_comma;
+            } else if (c == '-') {
+                keysym = XK_minus;
+            } else if (c == '_') {
+                // '_' is Shift+- on US keyboards
+                keysym = XK_minus;
+                required_modifier = ShiftMask;
+            } else if (c == '+') {
+                // '+' is Shift+= on US keyboards
+                keysym = XK_equal;
+                required_modifier = ShiftMask;
+            } else if (c == '=') {
+                keysym = XK_equal;
+            } else if (c == '!') {
+                // '!' is Shift+1 on US keyboards
+                keysym = XK_1;
+                required_modifier = ShiftMask;
+            } else if (c == '#') {
+                // '#' is Shift+3 on US keyboards
+                keysym = XK_3;
+                required_modifier = ShiftMask;
+            } else if (c == '$') {
+                // '$' is Shift+4 on US keyboards
+                keysym = XK_4;
+                required_modifier = ShiftMask;
+            } else if (c == '%') {
+                // '%' is Shift+5 on US keyboards
+                keysym = XK_5;
+                required_modifier = ShiftMask;
+            } else if (c == '^') {
+                // '^' is Shift+6 on US keyboards
+                keysym = XK_6;
+                required_modifier = ShiftMask;
+            } else if (c == '&') {
+                // '&' is Shift+7 on US keyboards
+                keysym = XK_7;
+                required_modifier = ShiftMask;
+            } else if (c == '*') {
+                // '*' is Shift+8 on US keyboards
+                keysym = XK_8;
+                required_modifier = ShiftMask;
+            } else if (c == '(') {
+                // '(' is Shift+9 on US keyboards
+                keysym = XK_9;
+                required_modifier = ShiftMask;
+            } else if (c == ')') {
+                // ')' is Shift+0 on US keyboards
+                keysym = XK_0;
+                required_modifier = ShiftMask;
+            } else if (c == '{') {
+                // '{' is Shift+[ on US keyboards
+                keysym = XK_bracketleft;
+                required_modifier = ShiftMask;
+            } else if (c == '}') {
+                // '}' is Shift+] on US keyboards
+                keysym = XK_bracketright;
+                required_modifier = ShiftMask;
+            } else if (c == '|') {
+                // '|' is Shift+\ on US keyboards
+                keysym = XK_backslash;
+                required_modifier = ShiftMask;
+            } else if (c == ':') {
+                // ':' is Shift+; on US keyboards
+                keysym = XK_semicolon;
+                required_modifier = ShiftMask;
+            } else if (c == '"') {
+                // '"' is Shift+' on US keyboards
+                keysym = XK_apostrophe;
+                required_modifier = ShiftMask;
+            } else if (c == '<') {
+                // '<' is Shift+, on US keyboards
+                keysym = XK_comma;
+                required_modifier = ShiftMask;
+            } else if (c == '>') {
+                // '>' is Shift+. on US keyboards
+                keysym = XK_period;
+                required_modifier = ShiftMask;
+            } else if (c == '?') {
+                // '?' is Shift+/ on US keyboards
+                keysym = XK_slash;
+                required_modifier = ShiftMask;
+            } else if (c == '~') {
+                // '~' is Shift+` on US keyboards
+                keysym = XK_grave;
+                required_modifier = ShiftMask;
+            } else if (c == '`') {
+                keysym = XK_grave;
+            } else if (c == '/') {
+                keysym = XK_slash;
+            } else if (c == '\\') {
+                keysym = XK_backslash;
+            } else if (c == ';') {
+                keysym = XK_semicolon;
+            } else if (c == '[') {
+                keysym = XK_bracketleft;
+            } else if (c == ']') {
+                keysym = XK_bracketright;
+            } else if (isalpha(c)) {
+                if (isupper(c)) {
+                    keysym = XK_a + (tolower(c) - 'a');
                     required_modifier = ShiftMask;
-                 }
+                } else {
+                    keysym = XK_a + (c - 'a');
+                }
+            } else if (isdigit(c)) {
+                keysym = XK_0 + (c - '0');
+            } else {
+                // Fallback for any other characters using XStringToKeysym
+                keysym = XStringToKeysym(std::string(1, c).c_str());
+                if (keysym == NoSymbol) {
+                    // If XStringToKeysym fails, try the shifted version
+                    keysym = XStringToKeysym(std::string(1, tolower(c)).c_str());
+                    if (isupper(c)) {
+                        required_modifier = ShiftMask;
+                    }
+                }
             }
 
             if (keysym == NoSymbol) continue;

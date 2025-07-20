@@ -60,6 +60,18 @@ class RuleProcessor {
       return;
     }
 
+    // Check if user is online
+    if (!globalConfig.isOnline) {
+      if (logSteps) console.log('[RuleProc] Skipping cycle: User is not online.');
+      return;
+    }
+
+    // Check if rules are globally enabled
+    if (!gameState.rulesEnabled) {
+      if (logSteps) console.log('[RuleProc] Skipping cycle: Rules are globally disabled.');
+      return;
+    }
+
     if (logSteps) console.log(`[RuleProc] --- Cycle Start (Time: ${now}) ---`);
 
     // --- ManaSync Processing (largely V1 logic) ---
@@ -67,22 +79,12 @@ class RuleProcessor {
     let manaSyncRuleExecutedImmediately = attackCdChanged.executed;
 
     let manaSyncRuleExecutedFromWatch = false;
-    if (
-      !manaSyncRuleExecutedImmediately &&
-      gameState.attackCd &&
-      this.manaSyncWatchList.size > 0 &&
-      !this.actionTakenThisAttackCooldown
-    ) {
+    if (!manaSyncRuleExecutedImmediately && gameState.attackCd && this.manaSyncWatchList.size > 0 && !this.actionTakenThisAttackCooldown) {
       manaSyncRuleExecutedFromWatch = this._processManaSyncWatch(now, gameState, activePreset, globalConfig);
     }
 
     let manaSyncRuleForcedExecution = false;
-    if (
-      gameState.attackCd &&
-      !this.actionTakenThisAttackCooldown &&
-      !manaSyncRuleExecutedImmediately &&
-      !manaSyncRuleExecutedFromWatch
-    ) {
+    if (gameState.attackCd && !this.actionTakenThisAttackCooldown && !manaSyncRuleExecutedImmediately && !manaSyncRuleExecutedFromWatch) {
       // Ensure no other mana sync ran
       manaSyncRuleForcedExecution = this._processForcedManaSyncExecution(now, gameState, activePreset, globalConfig);
     }
@@ -204,7 +206,8 @@ class RuleProcessor {
             expectedEmptyItemKey = 'Empty';
           } else if (rule.targetSlot === 'ring') {
             expectedEmptyItemKey = 'Empty';
-          } else if (rule.targetSlot === 'boots') { // Add check for boots slot
+          } else if (rule.targetSlot === 'boots') {
+            // Add check for boots slot
             expectedEmptyItemKey = 'Empty';
           } else {
             // If targetSlot is none of the handled types, this condition cannot be met correctly.
@@ -346,13 +349,15 @@ class RuleProcessor {
         }
 
         // NEW LOGIC: Check for 'Create Rune' spell/action
-        const isCreateRuneAction =
-          requiredItemToClick.includes('create') && requiredItemToClick.includes('Rune');
+        const isCreateRuneAction = requiredItemToClick.includes('create') && requiredItemToClick.includes('Rune');
 
         if (isCreateRuneAction) {
           const blankRuneIsVisible = !!gameState.activeActionItems?.['blankRune'];
           if (!blankRuneIsVisible) {
-            if (logExec) console.log(`[RuleProc] Filter Fail (Item Avail): ${rule.id} - 'Create Rune' action requires 'blankRune' to be visible, but it's not.`);
+            if (logExec)
+              console.log(
+                `[RuleProc] Filter Fail (Item Avail): ${rule.id} - 'Create Rune' action requires 'blankRune' to be visible, but it's not.`,
+              );
             return false;
           }
         }
@@ -501,11 +506,7 @@ class RuleProcessor {
   _checkManaSyncConditions(rule, gameState) {
     /* V1 logic */
     const hpMet = parseMathCondition(rule.hpTriggerCondition ?? '>=', parseInt(rule.hpTriggerPercentage ?? 0, 10), gameState.hppc);
-    const manaMet = parseMathCondition(
-      rule.manaTriggerCondition ?? '<=',
-      parseInt(rule.manaTriggerPercentage ?? 100, 10),
-      gameState.mppc,
-    );
+    const manaMet = parseMathCondition(rule.manaTriggerCondition ?? '<=', parseInt(rule.manaTriggerPercentage ?? 100, 10), gameState.mppc);
     const statusMet = areCharStatusConditionsMet(rule, gameState);
     return { hpMet, manaMet, statusMet, all: hpMet && manaMet && statusMet };
   }
@@ -656,9 +657,7 @@ class RuleProcessor {
     const partyPositionIndex = parseInt(rule.partyPosition, 10);
     if (isNaN(partyPositionIndex) || partyPositionIndex < 0 || isNaN(hpTriggerPercentage)) return false;
     if (partyPositionIndex === 0) {
-      return gameState.partyMembers.some(
-        (m) => m.isActive && m.hppc != null && m.hppc > 0 && m.hppc <= hpTriggerPercentage,
-      );
+      return gameState.partyMembers.some((m) => m.isActive && m.hppc != null && m.hppc > 0 && m.hppc <= hpTriggerPercentage);
     } else {
       const targetMember = gameState.partyMembers?.[partyPositionIndex - 1];
       return (

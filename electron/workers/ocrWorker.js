@@ -26,7 +26,6 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import pkg from 'font-ocr';
 const { recognizeText } = pkg;
-import { ocrParsers } from './ocrWorker/parsers.js';
 
 // --- Worker Configuration ---
 const { sharedData } = workerData;
@@ -121,6 +120,20 @@ async function processOcrRegions(buffer, metadata) {
       ocrUpdates.chatBoxTabRow = rawText;
     } catch (ocrError) {
       console.error('[OcrWorker] OCR process failed for chatBoxTabRow:', ocrError);
+    }
+  }
+
+  // Process selectCharacterModal for OCR
+  if (regions.selectCharacterModal) {
+    try {
+      const rawText =
+        recognizeText(buffer, regions.selectCharacterModal, [
+          [244, 244, 244],
+          [192, 192, 192],
+        ]) || '';
+      ocrUpdates.selectCharacterModal = rawText;
+    } catch (ocrError) {
+      console.error('[OcrWorker] OCR process failed for selectCharacterModal:', ocrError);
     }
   }
 
@@ -276,6 +289,35 @@ async function processOcrRegions(buffer, metadata) {
       });
     } catch (error) {
       console.error('[OcrWorker] Error in chatBoxTabRow processing:', error);
+    }
+  }
+
+  // Parse selectCharacterModal data from OCR results
+  if (ocrUpdates.selectCharacterModal) {
+    try {
+      let ocrDataArray = [];
+
+      // Handle the actual OCR data format from recognizeText
+      if (Array.isArray(ocrUpdates.selectCharacterModal)) {
+        ocrDataArray = ocrUpdates.selectCharacterModal;
+      } else if (typeof ocrUpdates.selectCharacterModal === 'object' && ocrUpdates.selectCharacterModal !== null) {
+        // Handle single object case
+        ocrDataArray = [ocrUpdates.selectCharacterModal];
+      } else {
+        return;
+      }
+
+      // Send OCR data array for parsing in uiValuesSlice
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateRegionData',
+        payload: {
+          region: 'selectCharacterModal',
+          data: ocrDataArray,
+        },
+      });
+    } catch (error) {
+      console.error('[OcrWorker] Error in selectCharacterModal processing:', error);
     }
   }
 }
