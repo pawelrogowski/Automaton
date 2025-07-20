@@ -212,9 +212,9 @@ Napi::Value RecognizeText(const Napi::CallbackInfo& info) {
             return a.x < b.x;
         });
 
-        const int32_t LINE_Y_TOLERANCE = 2;
-        const int32_t SPACE_THRESHOLD = 4;
-        const int32_t CONTEXT_GAP_THRESHOLD = 12;
+        const int32_t LINE_Y_TOLERANCE = 0;
+        const int32_t SPACE_THRESHOLD = 6;
+        const int32_t CONTEXT_GAP_THRESHOLD = 15;
 
         TextContext current_context;
         const FoundChar* start_char_of_context = &final_chars.front();
