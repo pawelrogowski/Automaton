@@ -611,7 +611,8 @@ const mainLoop = async () => {
     }
 
     // Check if user is online before performing any actions
-    if (!appState?.luaApi?.isOnline) {
+
+    if (!appState.regionCoordinates?.regions?.onlineMarker) {
       currentActionStatus = CavebotActionStatus.IDLE;
       await sleep(100);
       continue;
