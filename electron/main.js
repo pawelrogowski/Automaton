@@ -31,7 +31,10 @@ async function logMainProcessMemoryUsage() {
 
     await appendFile(MAIN_LOG_FILE_PATH, logEntry);
   } catch (error) {
-    console.error('[Main MemoryLogger] Failed to write to memory log file:', error);
+    console.error(
+      '[Main MemoryLogger] Failed to write to memory log file:',
+      error,
+    );
   }
 }
 // --- End of Main Process Memory Logging Setup ---
@@ -86,7 +89,9 @@ app.whenReady().then(async () => {
       try {
         const header = `\n--- Main Process Session Started at ${new Date().toISOString()} ---\n`;
         await appendFile(MAIN_LOG_FILE_PATH, header);
-        console.log(`[Main MemoryLogger] Memory usage logging is active. Outputting to ${MAIN_LOG_FILE_PATH}`);
+        console.log(
+          `[Main MemoryLogger] Memory usage logging is active. Outputting to ${MAIN_LOG_FILE_PATH}`,
+        );
 
         // Log immediately on start
         await logMainProcessMemoryUsage();
@@ -94,7 +99,10 @@ app.whenReady().then(async () => {
         // Start the periodic logging. This is safe in the main process.
         setInterval(logMainProcessMemoryUsage, MAIN_LOG_INTERVAL_MS);
       } catch (error) {
-        console.error('[Main MemoryLogger] Could not initialize memory log file:', error);
+        console.error(
+          '[Main MemoryLogger] Could not initialize memory log file:',
+          error,
+        );
       }
     })();
     // --- End of Main Process Memory Logging ---

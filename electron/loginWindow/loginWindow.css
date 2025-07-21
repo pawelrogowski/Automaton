@@ -124,7 +124,7 @@ button:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   /* Ensure it behaves correctly within the flex/fixed positioning */
-  display: inline-block; 
+  display: inline-block;
   max-width: 100%; /* Prevent it from overflowing its container */
   vertical-align: bottom; /* Align better with the 'Device ID:' text */
 }

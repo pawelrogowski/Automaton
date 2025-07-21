@@ -33,10 +33,26 @@ store.subscribe(() => {
   windowTitle = global.windowTitle;
 
   // Log warnings if any slice is undefined, but don't prevent access
-  if (!rules) log('warn', '[Global Shortcuts] rules slice is undefined in store.getState()');
-  if (!cavebot) log('warn', '[Global Shortcuts] cavebot slice is undefined in store.getState()');
-  if (!lua) log('warn', '[Global Shortcuts] lua slice is undefined in store.getState()');
-  if (!targeting) log('warn', '[Global Shortcuts] targeting slice is undefined in store.getState()');
+  if (!rules)
+    log(
+      'warn',
+      '[Global Shortcuts] rules slice is undefined in store.getState()',
+    );
+  if (!cavebot)
+    log(
+      'warn',
+      '[Global Shortcuts] cavebot slice is undefined in store.getState()',
+    );
+  if (!lua)
+    log(
+      'warn',
+      '[Global Shortcuts] lua slice is undefined in store.getState()',
+    );
+  if (!targeting)
+    log(
+      'warn',
+      '[Global Shortcuts] targeting slice is undefined in store.getState()',
+    );
 });
 
 const soundCache = new Map();
@@ -92,7 +108,9 @@ const toggleSection = (sectionName, setEnabledAction) => {
   const currentEnabledState = state[sectionName]?.enabled ?? false;
   const newEnabledState = !currentEnabledState; // This is the state it will become
 
-  console.log(`[DEBUG] Toggling ${sectionName}: current=${currentEnabledState}, new=${newEnabledState}, action=${setEnabledAction}`);
+  console.log(
+    `[DEBUG] Toggling ${sectionName}: current=${currentEnabledState}, new=${newEnabledState}, action=${setEnabledAction}`,
+  );
 
   setGlobalState(setEnabledAction, newEnabledState); // Dispatch the action with the new state
 
@@ -102,10 +120,22 @@ const toggleSection = (sectionName, setEnabledAction) => {
   );
 };
 
-const debouncedToggleCavebot = debounce(() => toggleSection('cavebot', 'cavebot/setenabled'), debounceTime);
-const debouncedToggleHealing = debounce(() => toggleSection('rules', 'rules/setenabled'), debounceTime);
-const debouncedToggleScripts = debounce(() => toggleSection('lua', 'lua/setenabled'), debounceTime);
-const debouncedToggleTargeting = debounce(() => toggleSection('targeting', 'targeting/setenabled'), debounceTime);
+const debouncedToggleCavebot = debounce(
+  () => toggleSection('cavebot', 'cavebot/setenabled'),
+  debounceTime,
+);
+const debouncedToggleHealing = debounce(
+  () => toggleSection('rules', 'rules/setenabled'),
+  debounceTime,
+);
+const debouncedToggleScripts = debounce(
+  () => toggleSection('lua', 'lua/setenabled'),
+  debounceTime,
+);
+const debouncedToggleTargeting = debounce(
+  () => toggleSection('targeting', 'targeting/setenabled'),
+  debounceTime,
+);
 
 const debouncedToggleAllSections = debounce(() => {
   const state = store.getState();
@@ -134,7 +164,10 @@ const debouncedToggleAllSections = debounce(() => {
     setGlobalState('cavebot/setenabled', restoredStates.cavebot);
     setGlobalState('lua/setenabled', restoredStates.lua);
     setGlobalState('targeting/setenabled', restoredStates.targeting);
-    showNotification('Restored previous section states', getNotificationTitle());
+    showNotification(
+      'Restored previous section states',
+      getNotificationTitle(),
+    );
   } else {
     // If mixed, disable all and store current states
     setGlobalState('global/setPreviousSectionStates', allSections);
@@ -142,7 +175,10 @@ const debouncedToggleAllSections = debounce(() => {
     setGlobalState('cavebot/setenabled', false);
     setGlobalState('lua/setenabled', false);
     setGlobalState('targeting/setenabled', false);
-    showNotification('Mixed states detected, all sections disabled', getNotificationTitle());
+    showNotification(
+      'Mixed states detected, all sections disabled',
+      getNotificationTitle(),
+    );
   }
 }, debounceTime);
 
@@ -191,7 +227,10 @@ export const registerGlobalShortcuts = () => {
 
     for (let i = 0; i < 5; i++) {
       const presetKey = `Alt+${i + 1}`;
-      const debouncedSwitchToPreset = debounce(() => switchToPreset(i), debounceTime);
+      const debouncedSwitchToPreset = debounce(
+        () => switchToPreset(i),
+        debounceTime,
+      );
       globalShortcut.register(presetKey, debouncedSwitchToPreset);
     }
     log('info', '[Global Shortcuts] registered');

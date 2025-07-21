@@ -51,7 +51,10 @@ class MinimapMatcher {
         EXCLUDED_COLORS_RGB,
       });
     } catch (error) {
-      logger('error', `Failed to load native minimap matcher module: ${error.message}`);
+      logger(
+        'error',
+        `Failed to load native minimap matcher module: ${error.message}`,
+      );
       throw error;
     }
 
@@ -75,7 +78,9 @@ class MinimapMatcher {
       for (const z of zLevelDirs) {
         const zLevelDir = path.join(baseDir, `z${z}`);
         try {
-          const landmarkBuffer = await fs.readFile(path.join(zLevelDir, 'landmarks.bin'));
+          const landmarkBuffer = await fs.readFile(
+            path.join(zLevelDir, 'landmarks.bin'),
+          );
           const landmarks = [];
 
           // --- KEY CHANGE #2 ---
@@ -94,9 +99,15 @@ class MinimapMatcher {
           landmarkData.set(z, landmarks);
         } catch (e) {
           if (e.code === 'ENOENT') {
-            logger('warn', `No landmarks.bin found for Z=${z}. Position finding will be unavailable for this floor.`);
+            logger(
+              'warn',
+              `No landmarks.bin found for Z=${z}. Position finding will be unavailable for this floor.`,
+            );
           } else {
-            logger('error', `Could not load landmarks.bin for Z=${z}: ${e.message}`);
+            logger(
+              'error',
+              `Could not load landmarks.bin for Z=${z}: ${e.message}`,
+            );
           }
           landmarkData.set(z, []);
         }
@@ -128,15 +139,25 @@ class MinimapMatcher {
    */
   async findPosition(unpackedMinimap, minimapWidth, minimapHeight, targetZ) {
     if (!this.isLoaded) {
-      throw new Error('MinimapMatcher is not loaded. Call loadMapData() first.');
+      throw new Error(
+        'MinimapMatcher is not loaded. Call loadMapData() first.',
+      );
     }
 
-    const resultPromise = this.nativeMatcher.findPosition(unpackedMinimap, minimapWidth, minimapHeight, targetZ);
+    const resultPromise = this.nativeMatcher.findPosition(
+      unpackedMinimap,
+      minimapWidth,
+      minimapHeight,
+      targetZ,
+    );
 
     resultPromise
       .then((result) => {
         if (result && result.position) {
-          this.lastKnownPositionByZ.set(targetZ, { x: result.mapViewX, y: result.mapViewY });
+          this.lastKnownPositionByZ.set(targetZ, {
+            x: result.mapViewX,
+            y: result.mapViewY,
+          });
         }
       })
       .catch((err) => {

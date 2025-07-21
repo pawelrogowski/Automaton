@@ -6,7 +6,11 @@ function useItemOnCoordinates(targetWindowId, targetX, targetY, key) {
   keyPress(parseInt(targetWindowId), key);
 
   // Then perform left click on coordinates
-  mouseController.leftClick(parseInt(targetWindowId), parseInt(targetX), parseInt(targetY));
+  mouseController.leftClick(
+    parseInt(targetWindowId),
+    parseInt(targetX),
+    parseInt(targetY),
+  );
 }
 
 export default useItemOnCoordinates;

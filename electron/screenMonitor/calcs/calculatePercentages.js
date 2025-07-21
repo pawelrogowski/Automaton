@@ -11,10 +11,23 @@
  * @param {number} barPixelWidth - The width of the bar in pixels to analyze.
  * @returns {number} The calculated percentage (0-100) or -1 on error.
  */
-function calculatePercentages(fullFrameBuffer, fullFrameMeta, barAbsoluteCoords, validColors, barPixelWidth) {
+function calculatePercentages(
+  fullFrameBuffer,
+  fullFrameMeta,
+  barAbsoluteCoords,
+  validColors,
+  barPixelWidth,
+) {
   try {
     // 1. Validate Inputs
-    if (!fullFrameBuffer || fullFrameBuffer.length < 8 || !fullFrameMeta || !barAbsoluteCoords || !validColors || barPixelWidth <= 0) {
+    if (
+      !fullFrameBuffer ||
+      fullFrameBuffer.length < 8 ||
+      !fullFrameMeta ||
+      !barAbsoluteCoords ||
+      !validColors ||
+      barPixelWidth <= 0
+    ) {
       return -1;
     }
 
@@ -33,15 +46,27 @@ function calculatePercentages(fullFrameBuffer, fullFrameMeta, barAbsoluteCoords,
     const { x: absoluteBarStartX, y: absoluteBarStartY } = barAbsoluteCoords;
 
     // Ensure coordinates are within the buffer dimensions
-    if (absoluteBarStartX < 0 || absoluteBarStartX >= imageWidth || absoluteBarStartY < 0 || absoluteBarStartY >= imageHeight) {
+    if (
+      absoluteBarStartX < 0 ||
+      absoluteBarStartX >= imageWidth ||
+      absoluteBarStartY < 0 ||
+      absoluteBarStartY >= imageHeight
+    ) {
       return -1;
     }
 
-    const startIndexBytes = headerSize + absoluteBarStartY * imageStride + absoluteBarStartX * bytesPerPixel;
+    const startIndexBytes =
+      headerSize +
+      absoluteBarStartY * imageStride +
+      absoluteBarStartX * bytesPerPixel;
 
     // 4. Bounds Check
     const endIndexBytes = startIndexBytes + barPixelWidth * bytesPerPixel;
-    if (absoluteBarStartX + barPixelWidth > imageWidth || startIndexBytes < headerSize || endIndexBytes > fullFrameBuffer.length) {
+    if (
+      absoluteBarStartX + barPixelWidth > imageWidth ||
+      startIndexBytes < headerSize ||
+      endIndexBytes > fullFrameBuffer.length
+    ) {
       return -1;
     }
 

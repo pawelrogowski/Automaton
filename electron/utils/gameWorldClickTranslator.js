@@ -25,15 +25,21 @@ export function getAbsoluteGameWorldClickCoordinates(
 ) {
   // --- Input Validation ---
   if (!playerMinimapPosition) {
-    console.error('[ClickTranslator] Missing playerMinimapPosition for coordinate translation.');
+    console.error(
+      '[ClickTranslator] Missing playerMinimapPosition for coordinate translation.',
+    );
     return null;
   }
   if (!gameWorldRegion || !gameWorldRegion.width || !gameWorldRegion.height) {
-    console.error('[ClickTranslator] Missing or invalid gameWorldRegion for coordinate translation.');
+    console.error(
+      '[ClickTranslator] Missing or invalid gameWorldRegion for coordinate translation.',
+    );
     return null;
   }
   if (!tileSize || !tileSize.width || !tileSize.height) {
-    console.error('[ClickTranslator] Missing or invalid tileSize for coordinate translation.');
+    console.error(
+      '[ClickTranslator] Missing or invalid tileSize for coordinate translation.',
+    );
     return null;
   }
 
@@ -42,12 +48,16 @@ export function getAbsoluteGameWorldClickCoordinates(
   const deltaTilesY = targetGameY - playerMinimapPosition.y;
 
   // Calculate the top-left pixel of the player's tile on screen using dynamic data
-  const playerScreenPixelX_topLeft = gameWorldRegion.x + PLAYER_SCREEN_TILE_X * tileSize.width;
-  const playerScreenPixelY_topLeft = gameWorldRegion.y + PLAYER_SCREEN_TILE_Y * tileSize.height;
+  const playerScreenPixelX_topLeft =
+    gameWorldRegion.x + PLAYER_SCREEN_TILE_X * tileSize.width;
+  const playerScreenPixelY_topLeft =
+    gameWorldRegion.y + PLAYER_SCREEN_TILE_Y * tileSize.height;
 
   // Calculate the top-left pixel of the target tile on screen
-  const targetTileScreenPixelX = playerScreenPixelX_topLeft + deltaTilesX * tileSize.width;
-  const targetTileScreenPixelY = playerScreenPixelY_topLeft + deltaTilesY * tileSize.height;
+  const targetTileScreenPixelX =
+    playerScreenPixelX_topLeft + deltaTilesX * tileSize.width;
+  const targetTileScreenPixelY =
+    playerScreenPixelY_topLeft + deltaTilesY * tileSize.height;
 
   // Adjust based on targetPoint within the tile
   let finalClickX = targetTileScreenPixelX;

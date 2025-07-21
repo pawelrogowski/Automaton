@@ -148,7 +148,9 @@ async function generateCppHeader() {
 
   for (const file of pngFiles) {
     const filenameBase = path.basename(file, '.png');
-    const char = FILENAME_TO_CHAR_MAP[filenameBase] || (filenameBase.length === 1 ? filenameBase : null);
+    const char =
+      FILENAME_TO_CHAR_MAP[filenameBase] ||
+      (filenameBase.length === 1 ? filenameBase : null);
     if (!char) continue;
 
     const buffer = fs.readFileSync(path.join(PNG_DIR, file));

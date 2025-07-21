@@ -126,7 +126,11 @@ const buildAppMenu = () => {
 
   template.push({
     label: 'Developer',
-    submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }],
+    submenu: [
+      { role: 'reload' },
+      { role: 'forceReload' },
+      { role: 'toggleDevTools' },
+    ],
   });
 
   return Menu.buildFromTemplate(template);
@@ -168,12 +172,18 @@ export const createMainWindow = () => {
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     alwaysOnTop: true,
-    webPreferences: { nodeIntegration: false, contextIsolation: true, preload: path.join(dirname, '/preload.js') },
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(dirname, '/preload.js'),
+    },
   });
 
   // mainWindow.webContents.openDevTools();
 
-  mainWindow.loadURL(`file://${path.join(dirname, HTML_PATH)}`).catch((err) => console.error('Failed to load URL:', err));
+  mainWindow
+    .loadURL(`file://${path.join(dirname, HTML_PATH)}`)
+    .catch((err) => console.error('Failed to load URL:', err));
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();

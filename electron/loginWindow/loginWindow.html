@@ -21,7 +21,13 @@
         />
 
         <label for="password" data-label="Password:"></label>
-        <input type="password" id="password" name="password" placeholder="Password" required />
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="Password"
+          required
+        />
 
         <div class="remember-me" onclick="toggleCheckbox('remember-me')">
           <input type="checkbox" id="remember-me" name="remember-me" />
@@ -29,17 +35,20 @@
         </div>
 
         <!-- Add Auto Login checkbox -->
-        <div class="remember-me auto-login" onclick="toggleCheckbox('auto-login')">
+        <div
+          class="remember-me auto-login"
+          onclick="toggleCheckbox('auto-login')"
+        >
           <input type="checkbox" id="auto-login" name="auto-login" />
           <label for="auto-login">Auto Login</label>
         </div>
 
         <button type="submit">Login</button>
-        <div id="hardware-info">Device ID: <span id="hardware-id">Checking...</span></div>
+        <div id="hardware-info">
+          Device ID: <span id="hardware-id">Checking...</span>
+        </div>
       </form>
       <p id="message"></p>
-
-     
     </div>
     <script src="./loginWindow.js"></script>
     <script>

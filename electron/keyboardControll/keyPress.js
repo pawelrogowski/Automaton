@@ -10,7 +10,11 @@ export const keyPress = async (windowId, key, { modifier = null } = {}) => {
   await keypress.sendKey(parseInt(windowId), key, modifier);
 };
 
-export const keyPressMultiple = async (windowId, key, { count = 1, modifier = null, delayMs = 50 } = {}) => {
+export const keyPressMultiple = async (
+  windowId,
+  key,
+  { count = 1, modifier = null, delayMs = 50 } = {},
+) => {
   for (let i = 0; i < count; i++) {
     await keyPress(windowId, key, { modifier });
     if (i < count - 1) {
@@ -25,7 +29,7 @@ export const type = async (windowId, texts, startAndEndWithEnter = true) => {
     for (const text of texts) {
       await keypress.type(parseInt(windowId), text, startAndEndWithEnter);
       // Add a small delay between typing multiple strings to allow the game to process
-      await delay(150); 
+      await delay(150);
     }
   } finally {
     isTyping = false;

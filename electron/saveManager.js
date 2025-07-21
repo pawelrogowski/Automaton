@@ -11,18 +11,28 @@ const normalizeLuaScripts = (luaState) => {
 
   const normalizedState = { ...luaState };
 
-  if (normalizedState.persistentScripts && Array.isArray(normalizedState.persistentScripts)) {
-    normalizedState.persistentScripts = normalizedState.persistentScripts.map((script) => ({
-      ...script,
-      type: script.type || 'persistent', // Ensure type is 'persistent'
-    }));
+  if (
+    normalizedState.persistentScripts &&
+    Array.isArray(normalizedState.persistentScripts)
+  ) {
+    normalizedState.persistentScripts = normalizedState.persistentScripts.map(
+      (script) => ({
+        ...script,
+        type: script.type || 'persistent', // Ensure type is 'persistent'
+      }),
+    );
   }
 
-  if (normalizedState.hotkeyScripts && Array.isArray(normalizedState.hotkeyScripts)) {
-    normalizedState.hotkeyScripts = normalizedState.hotkeyScripts.map((script) => ({
-      ...script,
-      type: script.type || 'hotkey', // Ensure type is 'hotkey'
-    }));
+  if (
+    normalizedState.hotkeyScripts &&
+    Array.isArray(normalizedState.hotkeyScripts)
+  ) {
+    normalizedState.hotkeyScripts = normalizedState.hotkeyScripts.map(
+      (script) => ({
+        ...script,
+        type: script.type || 'hotkey', // Ensure type is 'hotkey'
+      }),
+    );
   }
 
   return normalizedState;
@@ -40,7 +50,9 @@ export const saveRulesToFile = async (callback) => {
     });
 
     if (!dialog_result.canceled && dialog_result.filePath) {
-      const save_file_path = dialog_result.filePath.endsWith('.json') ? dialog_result.filePath : `${dialog_result.filePath}.json`;
+      const save_file_path = dialog_result.filePath.endsWith('.json')
+        ? dialog_result.filePath
+        : `${dialog_result.filePath}.json`;
       const state = store.getState();
 
       // Create a filtered state that excludes window-specific data
@@ -53,7 +65,10 @@ export const saveRulesToFile = async (callback) => {
         },
       };
 
-      await fs.writeFile(save_file_path, JSON.stringify(filteredState, null, 2));
+      await fs.writeFile(
+        save_file_path,
+        JSON.stringify(filteredState, null, 2),
+      );
       showNotification(`📥 Saved | ${path.basename(save_file_path)}`);
     }
     callback();
@@ -78,15 +93,20 @@ export const loadRulesFromFile = async (callback) => {
       const loaded_state = JSON.parse(content);
 
       // Check for each slice before setting state to avoid errors with old/malformed files
-      if (loaded_state.rules) setGlobalState('rules/setState', loaded_state.rules);
+      if (loaded_state.rules)
+        setGlobalState('rules/setState', loaded_state.rules);
       if (loaded_state.global) {
         // Exclude windowId and windowTitle from global state
-        const { windowId, windowTitle, ...globalWithoutWindow } = loaded_state.global;
+        const { windowId, windowTitle, ...globalWithoutWindow } =
+          loaded_state.global;
         setGlobalState('global/setState', globalWithoutWindow);
       }
-      if (loaded_state.lua) setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      if (loaded_state.cavebot) setGlobalState('cavebot/setState', loaded_state.cavebot);
-      if (loaded_state.targeting) setGlobalState('targeting/setState', loaded_state.targeting);
+      if (loaded_state.lua)
+        setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
+      if (loaded_state.cavebot)
+        setGlobalState('cavebot/setState', loaded_state.cavebot);
+      if (loaded_state.targeting)
+        setGlobalState('targeting/setState', loaded_state.targeting);
 
       showNotification(`📤 Loaded | ${path.basename(file_path)}`);
     }
@@ -112,7 +132,10 @@ const perform_auto_save = async () => {
           windowTitle: undefined,
         },
       };
-      await fs.writeFile(auto_load_file_path, JSON.stringify(filteredState, null, 2));
+      await fs.writeFile(
+        auto_load_file_path,
+        JSON.stringify(filteredState, null, 2),
+      );
     }
   } catch (error) {
     console.error('Failed to auto-save rules:', error);
@@ -131,15 +154,20 @@ export const autoLoadRules = async () => {
     const loaded_state = JSON.parse(content);
 
     if (Object.keys(loaded_state).length > 0) {
-      if (loaded_state.rules) setGlobalState('rules/setState', loaded_state.rules);
+      if (loaded_state.rules)
+        setGlobalState('rules/setState', loaded_state.rules);
       if (loaded_state.global) {
         // Exclude windowId and windowTitle from global state
-        const { windowId, windowTitle, ...globalWithoutWindow } = loaded_state.global;
+        const { windowId, windowTitle, ...globalWithoutWindow } =
+          loaded_state.global;
         setGlobalState('global/setState', globalWithoutWindow);
       }
-      if (loaded_state.lua) setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      if (loaded_state.cavebot) setGlobalState('cavebot/setState', loaded_state.cavebot);
-      if (loaded_state.targeting) setGlobalState('targeting/setState', loaded_state.targeting);
+      if (loaded_state.lua)
+        setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
+      if (loaded_state.cavebot)
+        setGlobalState('cavebot/setState', loaded_state.cavebot);
+      if (loaded_state.targeting)
+        setGlobalState('targeting/setState', loaded_state.targeting);
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -171,9 +199,18 @@ store.subscribe(() => {
   const global_changed = has_state_changed(global, previous_global_state);
   const lua_changed = has_state_changed(lua, previous_lua_state);
   const cavebot_changed = has_state_changed(cavebot, previous_cavebot_state);
-  const targeting_changed = has_state_changed(targeting, previous_targeting_state);
+  const targeting_changed = has_state_changed(
+    targeting,
+    previous_targeting_state,
+  );
 
-  if (rules_changed || global_changed || lua_changed || cavebot_changed || targeting_changed) {
+  if (
+    rules_changed ||
+    global_changed ||
+    lua_changed ||
+    cavebot_changed ||
+    targeting_changed
+  ) {
     auto_save_rules();
 
     // Update previous state only if it changed

@@ -235,12 +235,7 @@ const actionBarItems = {
     categories: ['potion'],
     direction: 'vertical',
     offset: { x: 0, y: 0 },
-    sequence: [
-      [222, 3, 0],
-      'any',
-      'any',
-      [53,43,40],
-    ],
+    sequence: [[222, 3, 0], 'any', 'any', [53, 43, 40]],
   },
   ultimateHealthPotion: {
     name: 'Ultimate Health Potion',
@@ -432,8 +427,8 @@ const actionBarItems = {
   stoneSkinAmulet: {
     name: 'Stone Skin Amulet',
     iconName: 'Stone_Skin_Amulet',
-    categories: [ 'equipment'],
-    slot: "amulet",
+    categories: ['equipment'],
+    slot: 'amulet',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -461,7 +456,7 @@ const actionBarItems = {
     name: 'Might Ring',
     iconName: 'Might_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -610,7 +605,7 @@ const actionBarItems = {
     name: 'Energy Ring',
     iconName: 'Energy_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -630,15 +625,14 @@ const actionBarItems = {
       [88, 227, 177],
       [200, 255, 255],
       [57, 149, 118],
-      [0, 0, 0]
-
+      [0, 0, 0],
     ],
   },
   lifeRing: {
     name: 'Life Ring',
     iconName: 'Life_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -658,14 +652,14 @@ const actionBarItems = {
       [91, 206, 68],
       [175, 253, 171],
       [60, 137, 45],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   dwarvenRing: {
     name: 'Dwarven Ring',
     iconName: 'Dwarven_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -685,14 +679,14 @@ const actionBarItems = {
       [196, 196, 196],
       [255, 255, 255],
       [150, 150, 150],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   axeRing: {
     name: 'Axe Ring',
     iconName: 'Axe_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -712,14 +706,14 @@ const actionBarItems = {
       [137, 137, 137],
       [212, 212, 212],
       [91, 91, 91],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   clubRing: {
     name: 'Club Ring',
     iconName: 'Club_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -739,14 +733,14 @@ const actionBarItems = {
       [206, 68, 172],
       [253, 171, 221],
       [137, 45, 114],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   powerRing: {
     name: 'Power Ring',
     iconName: 'Power_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -766,14 +760,14 @@ const actionBarItems = {
       [124, 53, 197],
       [214, 147, 253],
       [79, 39, 119],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   stealthRing: {
     name: 'Stealth Ring',
     iconName: 'Stealth_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -793,14 +787,14 @@ const actionBarItems = {
       [68, 114, 206],
       [171, 186, 253],
       [45, 75, 137],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   swordRing: {
     name: 'Sword Ring',
     iconName: 'Sword_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -820,14 +814,14 @@ const actionBarItems = {
       [226, 122, 0],
       [255, 212, 121],
       [134, 73, 0],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   timeRing: {
     name: 'Time Ring',
     iconName: 'Time_Ring',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -847,14 +841,14 @@ const actionBarItems = {
       [66, 66, 66],
       [141, 141, 141],
       [20, 20, 20],
-      [0, 0, 0]
+      [0, 0, 0],
     ],
   },
   collarOfGreenPlasma: {
     name: 'Collar of Green Plasma',
     iconName: 'Collar_Of_Green_Plasma',
     categories: ['equipment'],
-    slot: "amulet",
+    slot: 'amulet',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -864,14 +858,13 @@ const actionBarItems = {
       [14, 107, 68],
       [120, 255, 198],
       [14, 107, 68],
-
     ],
   },
   collarOfOrangePlasma: {
     name: 'Collar of Orange Plasma',
     iconName: 'Collar_Of_Orange_Plasma',
     categories: ['equipment'],
-    slot: "amulet",
+    slot: 'amulet',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -887,7 +880,7 @@ const actionBarItems = {
     name: 'Collar of Red Plasma',
     iconName: 'Collar_Of_Red_Plasma',
     categories: ['equipment'],
-    slot: "amulet",
+    slot: 'amulet',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -903,7 +896,7 @@ const actionBarItems = {
     name: 'Collar of Blue Plasma',
     iconName: 'Collar_Of_Blue_Plasma',
     categories: ['equipment'],
-    slot: "amulet",
+    slot: 'amulet',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -919,7 +912,7 @@ const actionBarItems = {
     name: 'Ring of Green Plasma',
     iconName: 'Ring_Of_Green_Plasma',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -935,14 +928,13 @@ const actionBarItems = {
       [14, 107, 68],
       [210, 255, 236],
       [14, 107, 68],
-
     ],
   },
   ringOfRedPlasma: {
     name: 'Ring of Red Plasma',
     iconName: 'Ring_Of_Red_Plasma',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -964,7 +956,7 @@ const actionBarItems = {
     name: 'Ring of Orange Plasma',
     iconName: 'Ring_Of_Orange_Plasma',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -986,7 +978,7 @@ const actionBarItems = {
     name: 'Ring of Blue Plasma',
     iconName: 'Ring_Of_Blue_Plasma',
     categories: ['equipment'],
-    slot: "ring",
+    slot: 'ring',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -1001,14 +993,14 @@ const actionBarItems = {
       [69, 69, 69],
       [14, 51, 107],
       [210, 228, 255],
-      [14, 51, 107]
+      [14, 51, 107],
     ],
-  }, 
+  },
   softBoots: {
     name: 'Soft Boots',
     iconName: 'Soft_Boots',
     categories: ['equipment'],
-    slot: "boots",
+    slot: 'boots',
     direction: 'horizontal',
     offset: { x: 0, y: 0 },
     sequence: [
@@ -1131,7 +1123,7 @@ const actionBarItems = {
       [151, 99, 80],
       [185, 137, 102],
       [227, 166, 128],
-      [213, 192, 138]
+      [213, 192, 138],
     ],
   },
   exanaVis: {
@@ -1385,7 +1377,7 @@ const actionBarItems = {
       [42, 55, 70],
       [15, 15, 15],
       [46, 55, 71],
-      [37, 46, 60]
+      [37, 46, 60],
     ],
   },
   utitoTempo: {

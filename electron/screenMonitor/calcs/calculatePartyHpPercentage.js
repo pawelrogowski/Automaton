@@ -13,10 +13,22 @@
  */
 import calculatePercentages from './calculatePercentages.js'; // Assuming it's in the same folder
 
-function calculatePartyHpPercentage(fullFrameBuffer, fullFrameMeta, barAbsoluteCoords, validColors, barPixelWidth) {
+function calculatePartyHpPercentage(
+  fullFrameBuffer,
+  fullFrameMeta,
+  barAbsoluteCoords,
+  validColors,
+  barPixelWidth,
+) {
   // This function now just calls the main, more generic percentage calculator.
   // This reduces code duplication.
-  return calculatePercentages(fullFrameBuffer, fullFrameMeta, barAbsoluteCoords, validColors, barPixelWidth);
+  return calculatePercentages(
+    fullFrameBuffer,
+    fullFrameMeta,
+    barAbsoluteCoords,
+    validColors,
+    barPixelWidth,
+  );
 }
 
 export default calculatePartyHpPercentage;

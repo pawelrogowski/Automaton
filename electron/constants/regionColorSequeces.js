@@ -2,12 +2,30 @@ const regionColorSequences = {
   healthBar: {
     direction: 'horizontal',
     offset: { x: 5, y: 0 },
-    sequence: [[241, 97, 97], [219, 91, 91], [103, 55, 55], 'any', 'any', [120, 61, 64]],
+    sequence: [
+      [241, 97, 97],
+      [219, 91, 91],
+      [103, 55, 55],
+      'any',
+      'any',
+      [120, 61, 64],
+    ],
   },
   manaBar: {
     direction: 'horizontal',
     offset: { x: 9, y: 0 },
-    sequence: [[99, 96, 248], [95, 92, 219], [80, 79, 140], 'any', 'any', 'any', 'any', 'any', 'any', [61, 61, 125]],
+    sequence: [
+      [99, 96, 248],
+      [95, 92, 219],
+      [80, 79, 140],
+      'any',
+      'any',
+      'any',
+      'any',
+      'any',
+      'any',
+      [61, 61, 125],
+    ],
   },
   minimap: {
     direction: 'horizontal',
@@ -317,12 +335,28 @@ const regionColorSequences = {
   chatboxMainStart: {
     direction: 'vertical',
     offset: { x: 1, y: 5 },
-    sequence: [[112, 112, 113], [116, 116, 117], 'any', 'any', [117, 117, 117], 'any', [27, 27, 28]],
+    sequence: [
+      [112, 112, 113],
+      [116, 116, 117],
+      'any',
+      'any',
+      [117, 117, 117],
+      'any',
+      [27, 27, 28],
+    ],
   },
   chatboxSecondaryStart: {
     direction: 'horizontal',
     offset: { x: -1, y: 1 },
-    sequence: [[63, 63, 63], [27, 27, 28], 'any', 'any', [117, 117, 117], [63, 63, 63], [27, 27, 28]],
+    sequence: [
+      [63, 63, 63],
+      [27, 27, 28],
+      'any',
+      'any',
+      [117, 117, 117],
+      [63, 63, 63],
+      [27, 27, 28],
+    ],
   },
   chatboxMainEnd: {
     direction: 'vertical',
@@ -375,7 +409,15 @@ const regionColorSequences = {
   chatBoxTabRowStart: {
     direction: 'vertical',
     offset: { x: 13, y: -14 },
-    sequence: [[112, 112, 113], [116, 116, 117], 'any', 'any', [117, 117, 117], 'any', [27, 27, 28]],
+    sequence: [
+      [112, 112, 113],
+      [116, 116, 117],
+      'any',
+      'any',
+      [117, 117, 117],
+      'any',
+      [27, 27, 28],
+    ],
   },
   chatBoxTabRowEnd: {
     direction: 'horizontal',

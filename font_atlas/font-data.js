@@ -21,7 +21,10 @@ function loadCharData(charFilenameBase) {
     const png = PNG.sync.read(buffer);
     return png.data; // Return the raw RGBA buffer, which C++ expects
   } catch (error) {
-    console.error(`Failed to load font character: ${charFilenameBase}.png`, error);
+    console.error(
+      `Failed to load font character: ${charFilenameBase}.png`,
+      error,
+    );
     // Return an empty buffer on failure so the app doesn't crash
     return Buffer.from([]);
   }

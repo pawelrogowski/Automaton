@@ -74,7 +74,9 @@ async function getWindowDimensions(windowId) {
   xdotoolManager.init();
 
   try {
-    const output = await xdotoolManager.executeCommand(`getwindowgeometry ${windowId}`);
+    const output = await xdotoolManager.executeCommand(
+      `getwindowgeometry ${windowId}`,
+    );
     const dimensions = output.match(/Geometry: (\d+)x(\d+)/);
 
     if (!dimensions) {

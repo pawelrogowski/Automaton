@@ -38,14 +38,18 @@ async function checkHardwareId() {
   const hardwareIdElement = document.getElementById('hardware-id');
   try {
     hardwareIdElement.classList.remove('valid', 'invalid');
-    currentHardwareId = await window.electron.ipcRenderer.invoke('get-hardware-id');
+    currentHardwareId =
+      await window.electron.ipcRenderer.invoke('get-hardware-id');
 
     if (!currentHardwareId || currentHardwareId.includes('error')) {
       throw new Error('Invalid hardware ID');
     }
 
     const storedHardwareId = localStorage.getItem('validHardwareId');
-    const shortId = currentHardwareId.length > 53 ? `${currentHardwareId.slice(-10)}` : currentHardwareId;
+    const shortId =
+      currentHardwareId.length > 53
+        ? `${currentHardwareId.slice(-10)}`
+        : currentHardwareId;
     hardwareIdElement.textContent = shortId;
     hardwareIdElement.title = `Device Fingerprint: ${currentHardwareId}`;
 
@@ -53,7 +57,8 @@ async function checkHardwareId() {
       const isMatch = currentHardwareId === storedHardwareId;
       hardwareIdElement.classList.toggle('valid', isMatch);
       hardwareIdElement.classList.toggle('invalid', !isMatch);
-      if (!isMatch) showButtonMessage('New device detected', 'var(--error-message)');
+      if (!isMatch)
+        showButtonMessage('New device detected', 'var(--error-message)');
     }
   } catch (error) {
     console.error('Hardware check failed:', error);
@@ -83,25 +88,31 @@ async function attemptLogin() {
   setLoadingState(true);
 
   try {
-    const response = await fetch('https://automaton-login-server-h3kn.onrender.com/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Device-ID': currentHardwareId,
+    const response = await fetch(
+      'https://automaton-login-server-h3kn.onrender.com/login',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Device-ID': currentHardwareId,
+        },
+        body: JSON.stringify({
+          email: username,
+          password: password,
+          hardwareId: currentHardwareId,
+        }),
       },
-      body: JSON.stringify({
-        email: username,
-        password: password,
-        hardwareId: currentHardwareId,
-      }),
-    });
+    );
 
     const data = await response.json();
 
     if (response.ok) {
       localStorage.setItem('validHardwareId', currentHardwareId);
       if (rememberMe) {
-        localStorage.setItem('credentials', JSON.stringify({ username, password }));
+        localStorage.setItem(
+          'credentials',
+          JSON.stringify({ username, password }),
+        );
         if (autoLogin) {
           localStorage.setItem('autoLoginEnabled', 'true');
         } else {
@@ -115,10 +126,16 @@ async function attemptLogin() {
       await new Promise((resolve) => setTimeout(resolve, 1500));
       window.electron.ipcRenderer.send('login-success');
     } else {
-      showButtonMessage(data.message || `Error: ${response.status}`, 'var(--error-message)');
+      showButtonMessage(
+        data.message || `Error: ${response.status}`,
+        'var(--error-message)',
+      );
     }
   } catch (error) {
-    showButtonMessage('Connection error. Please try again.', 'var(--error-message)');
+    showButtonMessage(
+      'Connection error. Please try again.',
+      'var(--error-message)',
+    );
   } finally {
     setLoadingState(false);
   }

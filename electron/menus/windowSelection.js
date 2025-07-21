@@ -19,7 +19,10 @@ export const selectActiveWindow = async () => {
     const windowTitle = await getWindowName(windowId);
 
     if (!windowTitle.includes('Tibia')) {
-      setGlobalState('global/setWindowTitle', 'Please focus a Tibia window and press Alt+W');
+      setGlobalState(
+        'global/setWindowTitle',
+        'Please focus a Tibia window and press Alt+W',
+      );
       return;
     }
     getMainWindow().setTitle(``);
@@ -28,11 +31,19 @@ export const selectActiveWindow = async () => {
     console.log(windowId, windowTitle);
 
     const screenMonitorWorkerEntry = workerManager.workers.get('screenMonitor');
-    const minimapMonitorWorkerEntry = workerManager.workers.get('minimapMonitor');
+    const minimapMonitorWorkerEntry =
+      workerManager.workers.get('minimapMonitor');
     if (screenMonitorWorkerEntry && screenMonitorWorkerEntry.worker) {
-      log('info', '[windowSelection] Sending forceReinitialize command to workers');
-      screenMonitorWorkerEntry.worker.postMessage({ command: 'forceReinitialize' });
-      minimapMonitorWorkerEntry.worker.postMessage({ command: 'forceReinitialize' });
+      log(
+        'info',
+        '[windowSelection] Sending forceReinitialize command to workers',
+      );
+      screenMonitorWorkerEntry.worker.postMessage({
+        command: 'forceReinitialize',
+      });
+      minimapMonitorWorkerEntry.worker.postMessage({
+        command: 'forceReinitialize',
+      });
     }
   } catch (error) {
     log('error', '[windowSelection] Error getting active window ID: ' + error);

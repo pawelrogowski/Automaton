@@ -9,15 +9,24 @@ const MINIMAP_HEIGHT = 109; // From preprocessMinimaps.js
  * @param {{x: number, y: number, width: number, height: number}} minimapRegionDef - The screen coordinates and dimensions of the visible minimap.
  * @returns {{x: number, y: number}|null} The absolute screen coordinates for the click, or null if inputs are invalid.
  */
-export function getAbsoluteClickCoordinates(targetMapX, targetMapY, playerMinimapPosition, minimapRegionDef) {
+export function getAbsoluteClickCoordinates(
+  targetMapX,
+  targetMapY,
+  playerMinimapPosition,
+  minimapRegionDef,
+) {
   if (!playerMinimapPosition || !minimapRegionDef) {
-    console.error('Missing playerMinimapPosition or minimapRegionDef for coordinate translation.');
+    console.error(
+      'Missing playerMinimapPosition or minimapRegionDef for coordinate translation.',
+    );
     return null;
   }
 
   // Calculate relative pixel position on the visible minimap
-  const relativePixelX = targetMapX - playerMinimapPosition.x + MINIMAP_WIDTH / 2;
-  const relativePixelY = targetMapY - playerMinimapPosition.y + MINIMAP_HEIGHT / 2;
+  const relativePixelX =
+    targetMapX - playerMinimapPosition.x + MINIMAP_WIDTH / 2;
+  const relativePixelY =
+    targetMapY - playerMinimapPosition.y + MINIMAP_HEIGHT / 2;
 
   // Calculate absolute screen coordinates
   const absoluteClickX = minimapRegionDef.x + relativePixelX;
