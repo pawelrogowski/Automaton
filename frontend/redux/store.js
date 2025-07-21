@@ -15,6 +15,7 @@ const ipcMiddleware = () => (next) => (action) => {
   if (action.origin === 'backend') {
     return next(action);
   }
+
   const actionWithOrigin = { ...action, origin: 'renderer' };
   const serializedAction = JSON.stringify(actionWithOrigin);
   window.electron.ipcRenderer.send('state-change', serializedAction);
@@ -33,7 +34,8 @@ const store = configureStore({
     ocr: ocrSlice.reducer,
     uiValues: uiValuesSlice.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(ipcMiddleware),
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(ipcMiddleware),
 });
 
 export default store;

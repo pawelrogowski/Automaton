@@ -100,23 +100,44 @@ function advanceToNextWaypoint() {
   if (nextWpt) {
     logger('info', `Advancing to next target: ${nextWpt.id}`);
     isFirstActionOnNewTarget = true;
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setwptId', payload: nextWpt.id });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setwptId',
+      payload: nextWpt.id,
+    });
   }
 }
 async function handleZLevelChangeAction(clickCoords, actionType) {
   const initialZ = appState.gameState.playerMinimapPosition.z;
-  logger('info', `Performing '${actionType}' action, expecting Z-level change from ${initialZ}.`);
+  logger(
+    'info',
+    `Performing '${actionType}' action, expecting Z-level change from ${initialZ}.`,
+  );
   for (let i = 0; i < pathFollowerConfig.zLevelChangeRetries; i++) {
-    mouseController.rightClick(parseInt(appState.global.windowId, 10), clickCoords.x, clickCoords.y);
+    mouseController.rightClick(
+      parseInt(appState.global.windowId, 10),
+      clickCoords.x,
+      clickCoords.y,
+      appState.global.display || ':0',
+    );
     await sleep(pathFollowerConfig.zLevelChangeRetryDelayMs);
     if (appState.gameState.playerMinimapPosition.z !== initialZ) {
-      logger('info', `Z-level change successful! New Z: ${appState.gameState.playerMinimapPosition.z}`);
+      logger(
+        'info',
+        `Z-level change successful! New Z: ${appState.gameState.playerMinimapPosition.z}`,
+      );
       await sleep(pathFollowerConfig.ladderClickPostClickDelayMs);
       return true;
     }
-    logger('warn', `Attempt ${i + 1}/${pathFollowerConfig.zLevelChangeRetries}: Z-level did not change. Retrying...`);
+    logger(
+      'warn',
+      `Attempt ${i + 1}/${pathFollowerConfig.zLevelChangeRetries}: Z-level did not change. Retrying...`,
+    );
   }
-  logger('error', `Failed to change Z-level with '${actionType}' after ${pathFollowerConfig.zLevelChangeRetries} attempts.`);
+  logger(
+    'error',
+    `Failed to change Z-level with '${actionType}' after ${pathFollowerConfig.zLevelChangeRetries} attempts.`,
+  );
   return false;
 }
 
@@ -127,12 +148,23 @@ async function mainLoop() {
   while (true) {
     await sleep(5);
 
-    if (!appState || !appState.global?.windowId || !appState.cavebot?.enabled) continue;
+    if (!appState || !appState.global?.windowId || !appState.cavebot?.enabled)
+      continue;
 
     const { playerMinimapPosition } = appState.gameState;
-    const { waypointSections, currentSection, wptId, pathWaypoints, wptDistance, standTime, pathfindingStatus } = appState.cavebot;
+    const {
+      waypointSections,
+      currentSection,
+      wptId,
+      pathWaypoints,
+      wptDistance,
+      standTime,
+      pathfindingStatus,
+    } = appState.cavebot;
     const { statusMessages } = appState;
-    const targetWaypoint = waypointSections[currentSection]?.waypoints.find((wp) => wp.id === wptId);
+    const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
+      (wp) => wp.id === wptId,
+    );
     const minimapRegionDef = appState.regionCoordinates?.regions?.minimapFull;
 
     if (!targetWaypoint || !minimapRegionDef) {
@@ -144,7 +176,10 @@ async function mainLoop() {
       continue;
     }
     if (pathfindingStatus === 'NO_PATH_FOUND') {
-      logger('warn', `Pathfinder reported no path to waypoint ${targetWaypoint.id}. Skipping.`);
+      logger(
+        'warn',
+        `Pathfinder reported no path to waypoint ${targetWaypoint.id}. Skipping.`,
+      );
       advanceToNextWaypoint();
       continue;
     }
@@ -174,14 +209,27 @@ async function mainLoop() {
         }
 
         logger('info', logMessage);
-        const clickCoords = getAbsoluteGameWorldClickCoordinates(clickTarget.x, clickTarget.y, playerMinimapPosition, 'bottomRight');
+        const clickCoords = getAbsoluteGameWorldClickCoordinates(
+          clickTarget.x,
+          clickTarget.y,
+          playerMinimapPosition,
+          'bottomRight',
+        );
 
         if (clickCoords) {
-          parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setActionPaused', payload: true });
+          parentPort.postMessage({
+            storeUpdate: true,
+            type: 'cavebot/setActionPaused',
+            payload: true,
+          });
           try {
             await handleZLevelChangeAction(clickCoords, 'Ladder');
           } finally {
-            parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setActionPaused', payload: false });
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: 'cavebot/setActionPaused',
+              payload: false,
+            });
           }
         }
         actionTaken = true;
@@ -191,28 +239,49 @@ async function mainLoop() {
     // --- STEP 2: OTHER "ARRIVED" ACTIONS ---
     // If no ladder action was taken, check for other actions that happen upon arrival.
     if (!actionTaken && wptDistance === 0) {
-      logger('debug', `Arrived at waypoint ${targetWaypoint.id} (Type: ${targetWaypoint.type}).`);
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setActionPaused', payload: true });
+      logger(
+        'debug',
+        `Arrived at waypoint ${targetWaypoint.id} (Type: ${targetWaypoint.type}).`,
+      );
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setActionPaused',
+        payload: true,
+      });
       try {
         if (targetWaypoint.type === 'Shovel') {
-          logger('info', `On a ${targetWaypoint.type} waypoint. Clicking player's tile.`);
+          logger(
+            'info',
+            `On a ${targetWaypoint.type} waypoint. Clicking player's tile.`,
+          );
           const clickCoords = getAbsoluteGameWorldClickCoordinates(
             playerMinimapPosition.x,
             playerMinimapPosition.y,
             playerMinimapPosition,
             'center',
           );
-          if (clickCoords) await handleZLevelChangeAction(clickCoords, targetWaypoint.type);
+          if (clickCoords)
+            await handleZLevelChangeAction(clickCoords, targetWaypoint.type);
         } else if (targetWaypoint.type === 'Stand') {
-          logger('info', `Executing 'Stand' waypoint. Waiting for ${pathFollowerConfig.specialWaypointDelayMs}ms.`);
+          logger(
+            'info',
+            `Executing 'Stand' waypoint. Waiting for ${pathFollowerConfig.specialWaypointDelayMs}ms.`,
+          );
           await sleep(pathFollowerConfig.specialWaypointDelayMs);
         } else if (targetWaypoint.type === 'Action') {
           logger('info', `Executing 'Action' waypoint.`);
-          keypress.rotate(parseInt(appState.global.windowId, 10));
+          keypress.rotate(
+            parseInt(appState.global.windowId, 10),
+            appState.global.display || ':0',
+          );
           await sleep(500);
         }
       } finally {
-        parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setActionPaused', payload: false });
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'cavebot/setActionPaused',
+          payload: false,
+        });
       }
       actionTaken = true;
     }
@@ -227,12 +296,20 @@ async function mainLoop() {
     // If no actions were taken, perform standard walking.
     if (pathWaypoints && pathWaypoints.length > 0) {
       const isThereNoWayRecent =
-        statusMessages?.thereIsNoWay && Date.now() - statusMessages.thereIsNoWay < pathFollowerConfig.thereIsNoWayKeyboardOnlyDurationMs;
+        statusMessages?.thereIsNoWay &&
+        Date.now() - statusMessages.thereIsNoWay <
+          pathFollowerConfig.thereIsNoWayKeyboardOnlyDurationMs;
       const shouldUseKeyboard =
-        isThereNoWayRecent || !pathFollowerConfig.useMapclicks || wptDistance < pathFollowerConfig.switchToKeyboardDistance;
+        isThereNoWayRecent ||
+        !pathFollowerConfig.useMapclicks ||
+        wptDistance < pathFollowerConfig.switchToKeyboardDistance;
 
       if (shouldUseKeyboard) {
-        if (isThereNoWayRecent) logger('info', "'There is no way' detected. Forcing keyboard movement.");
+        if (isThereNoWayRecent)
+          logger(
+            'info',
+            "'There is no way' detected. Forcing keyboard movement.",
+          );
         const nextStep = pathWaypoints[0];
         const positionBeforeMove = { ...playerMinimapPosition };
         const moveKey = getDirectionKey(positionBeforeMove, nextStep);
@@ -246,20 +323,28 @@ async function mainLoop() {
             ? pathFollowerConfig.approachWalkDelayMs
             : pathFollowerConfig.standardWalkDelayMs;
         const moveStartTime = Date.now();
-        keypress.sendKey(parseInt(appState.global.windowId, 10), moveKey);
+        keypress.sendKey(
+          parseInt(appState.global.windowId, 10),
+          moveKey,
+          appState.global.display || ':0',
+        );
         await sleep(walkDelay);
         while (
           appState.gameState.playerMinimapPosition.x === positionBeforeMove.x &&
           appState.gameState.playerMinimapPosition.y === positionBeforeMove.y
         ) {
           if (Date.now() - moveStartTime > pathFollowerConfig.moveTimeoutMs) {
-            logger('warn', `Keyboard move timed out. The pathfinder will detect this and find a new route.`);
+            logger(
+              'warn',
+              `Keyboard move timed out. The pathfinder will detect this and find a new route.`,
+            );
             break;
           }
           await sleep(5);
         }
       } else {
-        const isCharacterWalking = standTime < pathFollowerConfig.mapClickStandTimeThresholdMs;
+        const isCharacterWalking =
+          standTime < pathFollowerConfig.mapClickStandTimeThresholdMs;
         if (isCharacterWalking && !isFirstActionOnNewTarget) {
           await sleep(5);
           continue;
@@ -267,7 +352,10 @@ async function mainLoop() {
         isFirstActionOnNewTarget = false;
         let clickTargetWaypoint = pathWaypoints[pathWaypoints.length - 1];
         for (let i = pathWaypoints.length - 1; i >= 0; i--) {
-          if (getDistance(playerMinimapPosition, pathWaypoints[i]) <= pathFollowerConfig.mapClickMaxDistance) {
+          if (
+            getDistance(playerMinimapPosition, pathWaypoints[i]) <=
+            pathFollowerConfig.mapClickMaxDistance
+          ) {
             clickTargetWaypoint = pathWaypoints[i];
             break;
           }
@@ -278,7 +366,12 @@ async function mainLoop() {
           playerMinimapPosition,
           minimapRegionDef,
         );
-        mouseController.leftClick(parseInt(appState.global.windowId, 10), clickCoords.x, clickCoords.y);
+        mouseController.leftClick(
+          parseInt(appState.global.windowId, 10),
+          clickCoords.x,
+          clickCoords.y,
+          appState.global.display || ':0',
+        );
         await sleep(pathFollowerConfig.mapClickPostClickDelayMs);
       }
     } else {
@@ -292,7 +385,10 @@ async function start() {
   logger('info', 'Path Follower worker started.');
   mainLoop().catch((e) => {
     logger('error', 'Critical error in main loop:', e);
-    if (parentPort) parentPort.postMessage({ fatalError: 'Path Follower worker main loop crashed.' });
+    if (parentPort)
+      parentPort.postMessage({
+        fatalError: 'Path Follower worker main loop crashed.',
+      });
     process.exit(1);
   });
 }

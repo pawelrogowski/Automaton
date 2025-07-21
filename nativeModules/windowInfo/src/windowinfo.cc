@@ -17,6 +17,7 @@ struct WindowInfo {
     int width;
     int height;
     bool visible;
+    std::string display_name; // New field for display name
 
     // Extra attributes from XWindowAttributes
     int borderWidth;
@@ -402,13 +403,14 @@ Napi::Object GetAllWindowInfo(const Napi::CallbackInfo& info) {
 // ---------------------------------------------------------------------
 // Extended window info collection for GetWindowList
 
-void CollectWindowInfo(Display* display, Window window, std::vector<WindowInfo>& results) {
+void CollectWindowInfo(Display* display, Window window, std::vector<WindowInfo>& results, const std::string& current_display_name) {
     XWindowAttributes attrs;
     if (!XGetWindowAttributes(display, window, &attrs))
         return;
 
     WindowInfo info;
     info.windowId = window;
+    info.display_name = current_display_name; // Store the display name
 
     // Basic info: name & class
     {
@@ -554,7 +556,7 @@ void CollectWindowInfo(Display* display, Window window, std::vector<WindowInfo>&
     unsigned int nchildren = 0;
     if (XQueryTree(display, window, &root_return, &parent_return, &children, &nchildren)) {
         for (unsigned int i = 0; i < nchildren; i++) {
-            CollectWindowInfo(display, children[i], results);
+            CollectWindowInfo(display, children[i], results, current_display_name); // Pass display name to recursive calls
         }
         if (children) {
             XFree(children);
@@ -567,76 +569,82 @@ void CollectWindowInfo(Display* display, Window window, std::vector<WindowInfo>&
 Napi::Array GetWindowList(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Array windowArray = Napi::Array::New(env);
+    std::vector<WindowInfo> all_results;
 
-    Display* display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return windowArray;
+    // Iterate through common display numbers
+    for (int i = 0; i <= 10; ++i) {
+        std::string display_name = ":" + std::to_string(i);
+        Display* display = XOpenDisplay(display_name.c_str());
+        if (!display) {
+            // Display not found or cannot be opened, try next
+            continue;
+        }
+
+        Window root = DefaultRootWindow(display);
+        CollectWindowInfo(display, root, all_results, display_name); // Pass display name
+        XCloseDisplay(display);
     }
-    Window root = DefaultRootWindow(display);
-    std::vector<WindowInfo> results;
-    CollectWindowInfo(display, root, results);
-    XCloseDisplay(display);
 
     uint32_t index = 0;
-    for (size_t i = 0; i < results.size(); i++) {
-        // Filter: only include if class is "Tibia" and dimensions > 100x100
-        if (results[i].className == "Tibia" && results[i].width > 100 && results[i].height > 100) {
+    for (size_t i = 0; i < all_results.size(); i++) {
+        // Filter: only include if name contains "Tibia" and dimensions > 100x100
+        if (all_results[i].name.find("Tibia") != std::string::npos && all_results[i].width > 100 && all_results[i].height > 100) {
             Napi::Object obj = Napi::Object::New(env);
-            obj.Set("windowId", Napi::Number::New(env, (double)results[i].windowId));
-            obj.Set("name", Napi::String::New(env, results[i].name));
-            obj.Set("class", Napi::String::New(env, results[i].className));
+            obj.Set("windowId", Napi::Number::New(env, (double)all_results[i].windowId));
+            obj.Set("name", Napi::String::New(env, all_results[i].name));
+            obj.Set("class", Napi::String::New(env, all_results[i].className));
+            obj.Set("display", Napi::String::New(env, all_results[i].display_name)); // Add display name
 
             // Geometry & basic attributes
             Napi::Object dimensions = Napi::Object::New(env);
-            dimensions.Set("x", Napi::Number::New(env, results[i].x));
-            dimensions.Set("y", Napi::Number::New(env, results[i].y));
-            dimensions.Set("width", Napi::Number::New(env, results[i].width));
-            dimensions.Set("height", Napi::Number::New(env, results[i].height));
-            dimensions.Set("visible", Napi::Boolean::New(env, results[i].visible));
-            dimensions.Set("borderWidth", Napi::Number::New(env, results[i].borderWidth));
-            dimensions.Set("depth", Napi::Number::New(env, results[i].depth));
-            dimensions.Set("colormap", Napi::Number::New(env, results[i].colormap));
+            dimensions.Set("x", Napi::Number::New(env, all_results[i].x));
+            dimensions.Set("y", Napi::Number::New(env, all_results[i].y));
+            dimensions.Set("width", Napi::Number::New(env, all_results[i].width));
+            dimensions.Set("height", Napi::Number::New(env, all_results[i].height));
+            dimensions.Set("visible", Napi::Boolean::New(env, all_results[i].visible));
+            dimensions.Set("borderWidth", Napi::Number::New(env, all_results[i].borderWidth));
+            dimensions.Set("depth", Napi::Number::New(env, all_results[i].depth));
+            dimensions.Set("colormap", Napi::Number::New(env, all_results[i].colormap));
             obj.Set("dimensions", dimensions);
 
             // WM hints
             Napi::Object wmHints = Napi::Object::New(env);
-            wmHints.Set("wmFlags", Napi::Number::New(env, results[i].wmFlags));
-            wmHints.Set("wmInput", Napi::Boolean::New(env, results[i].wmInput));
-            wmHints.Set("wmInitialState", Napi::Number::New(env, results[i].wmInitialState));
-            wmHints.Set("wmIconWindow", Napi::Number::New(env, (double)results[i].wmIconWindow));
-            wmHints.Set("wmIconPixmap", Napi::Number::New(env, (double)results[i].wmIconPixmap));
-            wmHints.Set("wmIconMask", Napi::Number::New(env, (double)results[i].wmIconMask));
-            wmHints.Set("wmWindowGroup", Napi::Number::New(env, (double)results[i].wmWindowGroup));
+            wmHints.Set("wmFlags", Napi::Number::New(env, all_results[i].wmFlags));
+            wmHints.Set("wmInput", Napi::Boolean::New(env, all_results[i].wmInput));
+            wmHints.Set("wmInitialState", Napi::Number::New(env, all_results[i].wmInitialState));
+            wmHints.Set("wmIconWindow", Napi::Number::New(env, (double)all_results[i].wmIconWindow));
+            wmHints.Set("wmIconPixmap", Napi::Number::New(env, (double)all_results[i].wmIconPixmap));
+            wmHints.Set("wmIconMask", Napi::Number::New(env, (double)all_results[i].wmIconMask));
+            wmHints.Set("wmWindowGroup", Napi::Number::New(env, (double)all_results[i].wmWindowGroup));
             obj.Set("wmHints", wmHints);
 
             // Normal hints
             Napi::Object normalHints = Napi::Object::New(env);
-            normalHints.Set("minWidth", Napi::Number::New(env, results[i].minWidth));
-            normalHints.Set("minHeight", Napi::Number::New(env, results[i].minHeight));
-            normalHints.Set("maxWidth", Napi::Number::New(env, results[i].maxWidth));
-            normalHints.Set("maxHeight", Napi::Number::New(env, results[i].maxHeight));
-            normalHints.Set("widthInc", Napi::Number::New(env, results[i].widthInc));
-            normalHints.Set("heightInc", Napi::Number::New(env, results[i].heightInc));
-            normalHints.Set("baseWidth", Napi::Number::New(env, results[i].baseWidth));
-            normalHints.Set("baseHeight", Napi::Number::New(env, results[i].baseHeight));
+            normalHints.Set("minWidth", Napi::Number::New(env, all_results[i].minWidth));
+            normalHints.Set("minHeight", Napi::Number::New(env, all_results[i].minHeight));
+            normalHints.Set("maxWidth", Napi::Number::New(env, all_results[i].maxWidth));
+            normalHints.Set("maxHeight", Napi::Number::New(env, all_results[i].maxHeight));
+            normalHints.Set("widthInc", Napi::Number::New(env, all_results[i].widthInc));
+            normalHints.Set("heightInc", Napi::Number::New(env, all_results[i].heightInc));
+            normalHints.Set("baseWidth", Napi::Number::New(env, all_results[i].baseWidth));
+            normalHints.Set("baseHeight", Napi::Number::New(env, all_results[i].baseHeight));
             obj.Set("normalHints", normalHints);
 
             // Extended properties
-            Napi::Array netWmStateArr = Napi::Array::New(env, results[i].netWmState.size());
-            for (size_t j = 0; j < results[i].netWmState.size(); j++) {
-                netWmStateArr.Set(j, Napi::String::New(env, results[i].netWmState[j]));
+            Napi::Array netWmStateArr = Napi::Array::New(env, all_results[i].netWmState.size());
+            for (size_t j = 0; j < all_results[i].netWmState.size(); j++) {
+                netWmStateArr.Set(j, Napi::String::New(env, all_results[i].netWmState[j]));
             }
             obj.Set("netWmState", netWmStateArr);
 
-            Napi::Array netWmWindowTypeArr = Napi::Array::New(env, results[i].netWmWindowType.size());
-            for (size_t j = 0; j < results[i].netWmWindowType.size(); j++) {
-                netWmWindowTypeArr.Set(j, Napi::String::New(env, results[i].netWmWindowType[j]));
+            Napi::Array netWmWindowTypeArr = Napi::Array::New(env, all_results[i].netWmWindowType.size());
+            for (size_t j = 0; j < all_results[i].netWmWindowType.size(); j++) {
+                netWmWindowTypeArr.Set(j, Napi::String::New(env, all_results[i].netWmWindowType[j]));
             }
             obj.Set("netWmWindowType", netWmWindowTypeArr);
 
-            if (results[i].hasNetWmPid) {
-                obj.Set("netWmPid", Napi::Number::New(env, results[i].netWmPid));
+            if (all_results[i].hasNetWmPid) {
+                obj.Set("netWmPid", Napi::Number::New(env, all_results[i].netWmPid));
             }
             windowArray.Set(index++, obj);
         }

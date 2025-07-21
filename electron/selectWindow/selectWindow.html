@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Select Tibia Window</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+        background-color: #2e2e2e;
+        color: #f0f0f0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: calc(100vh - 40px);
+      }
+      h1 {
+        color: #4caf50;
+        margin-bottom: 20px;
+      }
+      #window-list {
+        width: 80%;
+        max-width: 400px;
+        padding: 10px;
+        border-radius: 5px;
+        background-color: #3c3c3c;
+        color: #f0f0f0;
+        border: 1px solid #555;
+        margin-bottom: 20px;
+        height: 200px;
+        overflow-y: auto;
+      }
+      #window-list option {
+        padding: 5px;
+      }
+      button {
+        background-color: #4caf50;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        margin: 5px;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      button:disabled {
+        background-color: #666;
+        cursor: not-allowed;
+      }
+      #message {
+        color: #ffeb3b;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Select Tibia Window</h1>
+    <select id="window-list" size="10">
+      <option value="">Loading windows...</option>
+    </select>
+    <div style="display: flex">
+      <button id="select-button" disabled>Select Window</button>
+      <button id="refresh-button">Refresh List</button>
+      <button id="exit-button">Exit App</button>
+    </div>
+    <p id="message"></p>
+    <script src="./selectWindow.js"></script>
+  </body>
+</html>

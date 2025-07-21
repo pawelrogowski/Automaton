@@ -1,9 +1,18 @@
-import { keyPress, keyPressMultiple, type as typeText, rotate, getIsTyping } from '../keyboardControll/keyPress.js';
+import {
+  keyPress,
+  keyPressMultiple,
+  type as typeText,
+  rotate,
+  getIsTyping,
+} from '../keyboardControll/keyPress.js';
 import mouseController from 'mouse-controller';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
-import { setActionPaused, setenabled as setCavebotEnabled } from '../../frontend/redux/slices/cavebotSlice.js';
+import {
+  setActionPaused,
+  setenabled as setCavebotEnabled,
+} from '../../frontend/redux/slices/cavebotSlice.js';
 import { setenabled as setRulesEnabled } from '../../frontend/redux/slices/ruleSlice.js';
 import { setenabled as setTargetingEnabled } from '../../frontend/redux/slices/targetingSlice.js';
 import { setenabled as setLuaEnabled } from '../../frontend/redux/slices/luaSlice.js';
@@ -19,13 +28,34 @@ const createStateShortcutObject = (getState, type) => {
   const shortcuts = {};
 
   // --- Game State Getters (Available in ALL script types) ---
-  Object.defineProperty(shortcuts, 'hppc', { get: () => getState().gameState?.hppc, enumerable: true });
-  Object.defineProperty(shortcuts, 'mppc', { get: () => getState().gameState?.mppc, enumerable: true });
-  Object.defineProperty(shortcuts, 'isChatOff', { get: () => getState().gameState?.isChatOff, enumerable: true });
-  Object.defineProperty(shortcuts, 'monsterNum', { get: () => getState().gameState?.monsterNum, enumerable: true });
-  Object.defineProperty(shortcuts, 'partyNum', { get: () => getState().gameState?.partyNum, enumerable: true });
-  Object.defineProperty(shortcuts, 'isTyping', { get: () => getState().gameState?.isTyping, enumerable: true });
-  Object.defineProperty(shortcuts, 'isOnline', { get: () => !!getState().regionCoordinates?.regions?.onlineMarker, enumerable: true });
+  Object.defineProperty(shortcuts, 'hppc', {
+    get: () => getState().gameState?.hppc,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'mppc', {
+    get: () => getState().gameState?.mppc,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'isChatOff', {
+    get: () => getState().gameState?.isChatOff,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'monsterNum', {
+    get: () => getState().gameState?.monsterNum,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'partyNum', {
+    get: () => getState().gameState?.partyNum,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'isTyping', {
+    get: () => getState().gameState?.isTyping,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'isOnline', {
+    get: () => !!getState().regionCoordinates?.regions?.onlineMarker,
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'activeTab', {
     get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
     enumerable: true,
@@ -34,7 +64,8 @@ const createStateShortcutObject = (getState, type) => {
   // --- Action Items Getters ---
   Object.defineProperty(shortcuts, 'actionItems', {
     get: () => {
-      const hotkeyBarChildren = getState().regionCoordinates?.regions?.hotkeyBar?.children || {};
+      const hotkeyBarChildren =
+        getState().regionCoordinates?.regions?.hotkeyBar?.children || {};
       // Return a proxy that always returns boolean for any property access
       return new Proxy(
         {},
@@ -58,7 +89,10 @@ const createStateShortcutObject = (getState, type) => {
   const gameState = getState().gameState;
   if (gameState && gameState.characterStatus) {
     for (const status in gameState.characterStatus) {
-      Object.defineProperty(shortcuts, status, { get: () => getState().gameState.characterStatus[status], enumerable: true });
+      Object.defineProperty(shortcuts, status, {
+        get: () => getState().gameState.characterStatus[status],
+        enumerable: true,
+      });
     }
   }
 
@@ -73,17 +107,28 @@ const createStateShortcutObject = (getState, type) => {
   // --- Cavebot-Specific Getters ---
   const cavebotState = getState().cavebot;
   if (type === 'cavebot' && cavebotState) {
-    Object.defineProperty(shortcuts, 'cavebot', { get: () => getState().cavebot?.enabled, enumerable: true });
+    Object.defineProperty(shortcuts, 'cavebot', {
+      get: () => getState().cavebot?.enabled,
+      enumerable: true,
+    });
     Object.defineProperty(shortcuts, 'section', {
-      get: () => getState().cavebot?.waypointSections[getState().cavebot?.currentSection]?.name,
+      get: () =>
+        getState().cavebot?.waypointSections[getState().cavebot?.currentSection]
+          ?.name,
       enumerable: true,
     });
     Object.defineProperty(shortcuts, 'wpt', {
       get: () => {
         const currentCavebotState = getState().cavebot;
-        const currentWaypoints = currentCavebotState?.waypointSections[currentCavebotState?.currentSection]?.waypoints || [];
-        const currentWptIndex = currentWaypoints.findIndex((wp) => wp.id === currentCavebotState?.wptId);
-        const currentWpt = currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
+        const currentWaypoints =
+          currentCavebotState?.waypointSections[
+            currentCavebotState?.currentSection
+          ]?.waypoints || [];
+        const currentWptIndex = currentWaypoints.findIndex(
+          (wp) => wp.id === currentCavebotState?.wptId,
+        );
+        const currentWpt =
+          currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
         if (currentWpt) {
           return {
             id: currentWptIndex + 1,
@@ -102,10 +147,22 @@ const createStateShortcutObject = (getState, type) => {
   }
 
   // --- Bot Control State Variables ---
-  Object.defineProperty(shortcuts, '$healing', { get: () => getState().rules?.enabled, enumerable: true });
-  Object.defineProperty(shortcuts, '$targeting', { get: () => getState().targeting?.enabled, enumerable: true });
-  Object.defineProperty(shortcuts, '$cavebot', { get: () => getState().cavebot?.enabled, enumerable: true });
-  Object.defineProperty(shortcuts, '$scripts', { get: () => getState().lua?.enabled, enumerable: true });
+  Object.defineProperty(shortcuts, '$healing', {
+    get: () => getState().rules?.enabled,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, '$targeting', {
+    get: () => getState().targeting?.enabled,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, '$cavebot', {
+    get: () => getState().cavebot?.enabled,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, '$scripts', {
+    get: () => getState().lua?.enabled,
+    enumerable: true,
+  });
 
   return shortcuts;
 };
@@ -133,6 +190,7 @@ export const createLuaApi = (context) => {
     'login',
   ];
   const getWindowId = () => getState()?.global?.windowId;
+  const getDisplay = () => getState()?.global?.display || ':0';
 
   const baseApi = {
     getDistanceTo: (x, y, z) => {
@@ -145,32 +203,67 @@ export const createLuaApi = (context) => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
       const { waypointSections, currentSection, wptId } = state.cavebot;
-      if (!playerPos || !wptId || !waypointSections || !waypointSections[currentSection]) return false;
-      const targetWpt = waypointSections[currentSection].waypoints.find((wp) => wp.id === wptId);
+      if (
+        !playerPos ||
+        !wptId ||
+        !waypointSections ||
+        !waypointSections[currentSection]
+      )
+        return false;
+      const targetWpt = waypointSections[currentSection].waypoints.find(
+        (wp) => wp.id === wptId,
+      );
       if (!targetWpt || playerPos.z !== targetWpt.z) return false;
-      return Math.max(Math.abs(playerPos.x - targetWpt.x), Math.abs(playerPos.y - targetWpt.y)) <= range;
+      return (
+        Math.max(
+          Math.abs(playerPos.x - targetWpt.x),
+          Math.abs(playerPos.y - targetWpt.y),
+        ) <= range
+      );
     },
-    log: (level, ...messages) => logger(String(level).toLowerCase(), `[Lua/${scriptName}] ${messages.map(String).join(' ')}`),
+    log: (level, ...messages) =>
+      logger(
+        String(level).toLowerCase(),
+        `[Lua/${scriptName}] ${messages.map(String).join(' ')}`,
+      ),
     print: (...messages) => {
       const message = messages.map(String).join(' ');
       logger('info', `[Lua/${scriptName}] print: ${message}`);
       if (type === 'cavebot') {
         const scriptId = getState().cavebot.wptId;
-        context.postStoreUpdate('cavebot/addWaypointLogEntry', { id: scriptId, message: message });
+        context.postStoreUpdate('cavebot/addWaypointLogEntry', {
+          id: scriptId,
+          message: message,
+        });
       } else {
-        context.postStoreUpdate('lua/addLogEntry', { id: id, message: message });
+        context.postStoreUpdate('lua/addLogEntry', {
+          id: id,
+          message: message,
+        });
       }
     },
     alert: () => postSystemMessage({ type: 'play_alert' }),
     wait: wait,
-    keyPress: (key, modifier = null) => keyPress(String(getWindowId()), key, { modifier }),
+    keyPress: (key, modifier = null) =>
+      keyPress(String(getWindowId()), getDisplay(), key, { modifier }),
     keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
-      keyPressMultiple(String(getWindowId()), key, { count, modifier, delayMs }),
+      keyPressMultiple(String(getWindowId()), getDisplay(), key, {
+        count,
+        modifier,
+        delayMs,
+      }),
     type: (...args) => {
-      let [startAndEndWithEnter, ...texts] = typeof args[0] === 'boolean' ? args : [true, ...args];
-      return typeText(String(getWindowId()), texts.map(String), startAndEndWithEnter);
+      let [startAndEndWithEnter, ...texts] =
+        typeof args[0] === 'boolean' ? args : [true, ...args];
+      return typeText(
+        String(getWindowId()),
+        getDisplay(),
+        texts.map(String),
+        startAndEndWithEnter,
+      );
     },
-    rotate: (direction) => rotate(String(getWindowId()), direction),
+    rotate: (direction) =>
+      rotate(String(getWindowId()), getDisplay(), direction),
     isTyping: () => getIsTyping(),
 
     // --- Mouse Click Functions (Async with 100ms delay) ---
@@ -184,15 +277,33 @@ export const createLuaApi = (context) => {
       const playerPos = state.gameState?.playerMinimapPosition;
 
       if (!gameWorld || !tileSize || !playerPos) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform game left-click: missing region data or player position`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform game left-click: missing region data or player position`,
+        );
         return false;
       }
-      const clickCoords = getAbsoluteGameWorldClickCoordinates(x, y, playerPos, gameWorld, tileSize, position);
+      const clickCoords = getAbsoluteGameWorldClickCoordinates(
+        x,
+        y,
+        playerPos,
+        gameWorld,
+        tileSize,
+        position,
+      );
       if (!clickCoords) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform game left-click: invalid coordinates`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform game left-click: invalid coordinates`,
+        );
         return false;
       }
-      mouseController.leftClick(parseInt(windowId), clickCoords.x, clickCoords.y);
+      mouseController.leftClick(
+        parseInt(windowId),
+        clickCoords.x,
+        clickCoords.y,
+        getDisplay(),
+      );
       await wait(100); // 100ms delay after click
       return true;
     },
@@ -207,15 +318,33 @@ export const createLuaApi = (context) => {
       const playerPos = state.gameState?.playerMinimapPosition;
 
       if (!gameWorld || !tileSize || !playerPos) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform game right-click: missing region data or player position`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform game right-click: missing region data or player position`,
+        );
         return false;
       }
-      const clickCoords = getAbsoluteGameWorldClickCoordinates(x, y, playerPos, gameWorld, tileSize, position);
+      const clickCoords = getAbsoluteGameWorldClickCoordinates(
+        x,
+        y,
+        playerPos,
+        gameWorld,
+        tileSize,
+        position,
+      );
       if (!clickCoords) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform game right-click: invalid coordinates`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform game right-click: invalid coordinates`,
+        );
         return false;
       }
-      mouseController.rightClick(parseInt(windowId), clickCoords.x, clickCoords.y);
+      mouseController.rightClick(
+        parseInt(windowId),
+        clickCoords.x,
+        clickCoords.y,
+        getDisplay(),
+      );
       await wait(100); // 100ms delay after click
       return true;
     },
@@ -229,15 +358,31 @@ export const createLuaApi = (context) => {
       const minimapRegionDef = state.regionCoordinates?.regions?.minimapFull;
       const playerPos = state.gameState?.playerMinimapPosition;
       if (!minimapRegionDef || !playerPos) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform minimap click: missing region data or player position`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform minimap click: missing region data or player position`,
+        );
         return false;
       }
-      const clickCoords = getAbsoluteClickCoordinates(x, y, playerPos, minimapRegionDef);
+      const clickCoords = getAbsoluteClickCoordinates(
+        x,
+        y,
+        playerPos,
+        minimapRegionDef,
+      );
       if (!clickCoords) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform minimap click: invalid coordinates`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform minimap click: invalid coordinates`,
+        );
         return false;
       }
-      mouseController.leftClick(parseInt(windowId), clickCoords.x, clickCoords.y);
+      mouseController.leftClick(
+        parseInt(windowId),
+        clickCoords.x,
+        clickCoords.y,
+        getDisplay(),
+      );
       await wait(100); // 100ms delay after click
       return true;
     },
@@ -253,40 +398,87 @@ export const createLuaApi = (context) => {
       const playerPos = state.gameState?.playerMinimapPosition;
 
       if (!gameWorld || !tileSize || !playerPos) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform drag: missing region data or player position`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform drag: missing region data or player position`,
+        );
         return false;
       }
 
       // Use bottomRight as default position for both start and end
-      const startCoords = getAbsoluteGameWorldClickCoordinates(startX, startY, playerPos, gameWorld, tileSize, 'bottomRight');
-      const endCoords = getAbsoluteGameWorldClickCoordinates(endX, endY, playerPos, gameWorld, tileSize, 'bottomRight');
+      const startCoords = getAbsoluteGameWorldClickCoordinates(
+        startX,
+        startY,
+        playerPos,
+        gameWorld,
+        tileSize,
+        'bottomRight',
+      );
+      const endCoords = getAbsoluteGameWorldClickCoordinates(
+        endX,
+        endY,
+        playerPos,
+        gameWorld,
+        tileSize,
+        'bottomRight',
+      );
 
       if (!startCoords || !endCoords) {
-        logger('warn', `[Lua/${scriptName}] Cannot perform drag: invalid coordinates`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot perform drag: invalid coordinates`,
+        );
         return false;
       }
 
       // Move to start position
-      mouseController.mouseMove(parseInt(windowId), startCoords.x, startCoords.y);
+      mouseController.mouseMove(
+        parseInt(windowId),
+        startCoords.x,
+        startCoords.y,
+        getDisplay(),
+      );
       await wait(50);
 
       // Press button down
       if (button === 'right') {
-        mouseController.rightMouseDown(parseInt(windowId), startCoords.x, startCoords.y);
+        mouseController.rightMouseDown(
+          parseInt(windowId),
+          startCoords.x,
+          startCoords.y,
+        );
       } else {
-        mouseController.mouseDown(parseInt(windowId), startCoords.x, startCoords.y);
+        mouseController.mouseDown(
+          parseInt(windowId),
+          startCoords.x,
+          startCoords.y,
+        );
       }
       await wait(100);
 
       // Move to end position
-      mouseController.mouseMove(parseInt(windowId), endCoords.x, endCoords.y);
+      mouseController.mouseMove(
+        parseInt(windowId),
+        endCoords.x,
+        endCoords.y,
+        getDisplay(),
+      );
       await wait(100);
 
       // Release button
       if (button === 'right') {
-        mouseController.rightMouseUp(parseInt(windowId), endCoords.x, endCoords.y);
+        mouseController.rightMouseUp(
+          parseInt(windowId),
+          endCoords.x,
+          endCoords.y,
+        );
       } else {
-        mouseController.mouseUp(parseInt(windowId), endCoords.x, endCoords.y);
+        mouseController.mouseUp(
+          parseInt(windowId),
+          endCoords.x,
+          endCoords.y,
+          getDisplay(),
+        );
       }
       await wait(100);
 
@@ -297,26 +489,46 @@ export const createLuaApi = (context) => {
       const windowId = String(getWindowId());
 
       // Direct window coordinates without translation
-      mouseController.mouseMove(parseInt(windowId), startX, startY);
+      mouseController.mouseMove(
+        parseInt(windowId),
+        startX,
+        startY,
+        getDisplay(),
+      );
       await wait(50);
 
       // Press button down
       if (button === 'right') {
-        mouseController.rightMouseDown(parseInt(windowId), startX, startY);
+        mouseController.rightMouseDown(
+          parseInt(windowId),
+          startX,
+          startY,
+          getDisplay(),
+        );
       } else {
-        mouseController.mouseDown(parseInt(windowId), startX, startY);
+        mouseController.mouseDown(
+          parseInt(windowId),
+          startX,
+          startY,
+          getDisplay(),
+        );
       }
       await wait(100);
 
       // Move to end position
-      mouseController.mouseMove(parseInt(windowId), endX, endY);
+      mouseController.mouseMove(parseInt(windowId), endX, endY, getDisplay());
       await wait(100);
 
       // Release button
       if (button === 'right') {
-        mouseController.rightMouseUp(parseInt(windowId), endX, endY);
+        mouseController.rightMouseUp(
+          parseInt(windowId),
+          endX,
+          endY,
+          getDisplay(),
+        );
       } else {
-        mouseController.mouseUp(parseInt(windowId), endX, endY);
+        mouseController.mouseUp(parseInt(windowId), endX, endY, getDisplay());
       }
       await wait(100);
 
@@ -331,11 +543,21 @@ export const createLuaApi = (context) => {
       const playerPos = state.gameState?.playerMinimapPosition;
 
       if (!gameWorld || !tileSize || !playerPos) {
-        logger('warn', `[Lua/${scriptName}] Cannot convert tile to coordinate: missing region data`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot convert tile to coordinate: missing region data`,
+        );
         return null;
       }
 
-      const coords = getAbsoluteGameWorldClickCoordinates(tileX, tileY, playerPos, gameWorld, tileSize, position);
+      const coords = getAbsoluteGameWorldClickCoordinates(
+        tileX,
+        tileY,
+        playerPos,
+        gameWorld,
+        tileSize,
+        position,
+      );
       return coords ? { x: coords.x, y: coords.y } : null;
     },
 
@@ -346,7 +568,10 @@ export const createLuaApi = (context) => {
       const playerPos = state.gameState?.playerMinimapPosition;
 
       if (!gameWorld || !tileSize || !playerPos) {
-        logger('warn', `[Lua/${scriptName}] Cannot convert coordinate to tile: missing region data`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot convert coordinate to tile: missing region data`,
+        );
         return null;
       }
 
@@ -355,8 +580,14 @@ export const createLuaApi = (context) => {
       const relY = screenY - gameWorld.y;
 
       // Convert to tile coordinates
-      const tileX = Math.floor(relX / tileSize.width) + playerPos.x - Math.floor(gameWorld.width / tileSize.width / 2);
-      const tileY = Math.floor(relY / tileSize.height) + playerPos.y - Math.floor(gameWorld.height / tileSize.height / 2);
+      const tileX =
+        Math.floor(relX / tileSize.width) +
+        playerPos.x -
+        Math.floor(gameWorld.width / tileSize.width / 2);
+      const tileY =
+        Math.floor(relY / tileSize.height) +
+        playerPos.y -
+        Math.floor(gameWorld.height / tileSize.height / 2);
 
       return { x: tileX, y: tileY };
     },
@@ -367,20 +598,26 @@ export const createLuaApi = (context) => {
       const tabs = state.uiValues?.chatboxTabs?.tabs;
 
       if (!tabs || !tabName) {
-        logger('warn', `[Lua/${scriptName}] Cannot focus tab: missing tab data or tab name`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot focus tab: missing tab data or tab name`,
+        );
         return false;
       }
 
       const tab = tabs[tabName];
       if (!tab || !tab.tabPosition) {
-        logger('warn', `[Lua/${scriptName}] Cannot focus tab: tab "${tabName}" not found or missing position`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot focus tab: tab "${tabName}" not found or missing position`,
+        );
         return false;
       }
 
       const windowId = String(getWindowId());
       const { x, y } = tab.tabPosition;
 
-      mouseController.leftClick(parseInt(windowId), x, y);
+      mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
       await wait(100); // 100ms delay after click
       return true;
     },
@@ -388,19 +625,31 @@ export const createLuaApi = (context) => {
     // --- Bot Control Functions ---
     setTargeting: (enabled) => {
       context.postStoreUpdate('targeting/setenabled', !!enabled);
-      logger('info', `[Lua/${scriptName}] Targeting ${enabled ? 'enabled' : 'disabled'}`);
+      logger(
+        'info',
+        `[Lua/${scriptName}] Targeting ${enabled ? 'enabled' : 'disabled'}`,
+      );
     },
     setHealing: (enabled) => {
       context.postStoreUpdate('rules/setenabled', !!enabled);
-      logger('info', `[Lua/${scriptName}] Healing (rules) ${enabled ? 'enabled' : 'disabled'}`);
+      logger(
+        'info',
+        `[Lua/${scriptName}] Healing (rules) ${enabled ? 'enabled' : 'disabled'}`,
+      );
     },
     setCavebot: (enabled) => {
       context.postStoreUpdate('cavebot/setenabled', !!enabled);
-      logger('info', `[Lua/${scriptName}] Cavebot ${enabled ? 'enabled' : 'disabled'}`);
+      logger(
+        'info',
+        `[Lua/${scriptName}] Cavebot ${enabled ? 'enabled' : 'disabled'}`,
+      );
     },
     setScripts: (enabled) => {
       context.postStoreUpdate('lua/setenabled', !!enabled);
-      logger('info', `[Lua/${scriptName}] Scripts ${enabled ? 'enabled' : 'disabled'}`);
+      logger(
+        'info',
+        `[Lua/${scriptName}] Scripts ${enabled ? 'enabled' : 'disabled'}`,
+      );
     },
 
     // --- Login Function ---
@@ -413,18 +662,30 @@ export const createLuaApi = (context) => {
       console.log('[LOGIN] Target character:', character);
       console.log('[LOGIN] Email provided:', email ? 'Yes' : 'No');
       console.log('[LOGIN] Initial state keys:', Object.keys(state || {}));
-      console.log('[LOGIN] Region coordinates available:', !!state.regionCoordinates);
-      console.log('[LOGIN] Online marker status:', !!state.regionCoordinates?.regions?.onlineMarker);
+      console.log(
+        '[LOGIN] Region coordinates available:',
+        !!state.regionCoordinates,
+      );
+      console.log(
+        '[LOGIN] Online marker status:',
+        !!state.regionCoordinates?.regions?.onlineMarker,
+      );
 
       // 1. Check if we are online
       if (state.regionCoordinates?.regions?.onlineMarker) {
         console.log('[LOGIN] Player already online - skipping login');
-        logger('info', `[Lua/${scriptName}] Player is already online, skipping login`);
+        logger(
+          'info',
+          `[Lua/${scriptName}] Player is already online, skipping login`,
+        );
         return false;
       }
 
       console.log('[LOGIN] Player not online - proceeding with login');
-      logger('info', `[Lua/${scriptName}] Starting login process for character: ${character}`);
+      logger(
+        'info',
+        `[Lua/${scriptName}] Starting login process for character: ${character}`,
+      );
 
       // 2. Check if loginModal is visible
       const loginModal = state.regionCoordinates?.regions?.loginModal;
@@ -436,7 +697,10 @@ export const createLuaApi = (context) => {
           width: loginModal.width,
           height: loginModal.height,
         });
-        console.log('[LOGIN] Login modal children:', Object.keys(loginModal.children || {}));
+        console.log(
+          '[LOGIN] Login modal children:',
+          Object.keys(loginModal.children || {}),
+        );
       }
 
       if (!loginModal) {
@@ -447,14 +711,17 @@ export const createLuaApi = (context) => {
 
       // 3. Press escape to ensure login modal is focused
       console.log('[LOGIN] Pressing Escape to focus login modal');
-      await keyPress(windowId, 'Escape');
+      await keyPress(windowId, getDisplay(), 'Escape');
       await wait(100);
 
       // 4. Click on email input and type email
       const emailInput = loginModal.children?.emailInput;
       console.log('[LOGIN] Email input found:', !!emailInput);
       if (emailInput) {
-        console.log('[LOGIN] Email input position:', { x: emailInput.x, y: emailInput.y });
+        console.log('[LOGIN] Email input position:', {
+          x: emailInput.x,
+          y: emailInput.y,
+        });
       }
 
       if (!emailInput) {
@@ -464,17 +731,25 @@ export const createLuaApi = (context) => {
       }
 
       console.log('[LOGIN] Clicking email input field');
-      mouseController.leftClick(parseInt(windowId), emailInput.x, emailInput.y);
+      mouseController.leftClick(
+        parseInt(windowId),
+        emailInput.x,
+        emailInput.y,
+        getDisplay(),
+      );
       await wait(50);
       console.log('[LOGIN] Typing email:', email);
-      await typeText(windowId, [email], false);
+      await typeText(windowId, getDisplay(), [email], false);
       await wait(100);
 
       // 5. Click on password input and type password
       const passwordInput = loginModal.children?.passwordInput;
       console.log('[LOGIN] Password input found:', !!passwordInput);
       if (passwordInput) {
-        console.log('[LOGIN] Password input position:', { x: passwordInput.x, y: passwordInput.y });
+        console.log('[LOGIN] Password input position:', {
+          x: passwordInput.x,
+          y: passwordInput.y,
+        });
       }
 
       if (!passwordInput) {
@@ -484,15 +759,20 @@ export const createLuaApi = (context) => {
       }
 
       console.log('[LOGIN] Clicking password input field');
-      mouseController.leftClick(parseInt(windowId), passwordInput.x, passwordInput.y);
+      mouseController.leftClick(
+        parseInt(windowId),
+        passwordInput.x,
+        passwordInput.y,
+        getDisplay(),
+      );
       await wait(50);
       console.log('[LOGIN] Typing password (hidden)');
-      await typeText(windowId, [password], false);
+      await typeText(windowId, getDisplay(), [password], false);
       await wait(100);
 
       // 6. Press enter to submit login
       console.log('[LOGIN] Pressing Enter to submit login form');
-      await keyPress(windowId, 'Enter');
+      await keyPress(windowId, getDisplay(), 'Enter');
       console.log('[LOGIN] Waiting 2 seconds for login processing...');
       await wait(200);
 
@@ -500,8 +780,12 @@ export const createLuaApi = (context) => {
       // Refresh state after login submission
       console.log('[LOGIN] Checking for character selection modal...');
       let currentState = getState();
-      let selectCharacterModal = currentState.regionCoordinates?.regions?.selectCharacterModal;
-      console.log('[LOGIN] Initial character modal check:', !!selectCharacterModal);
+      let selectCharacterModal =
+        currentState.regionCoordinates?.regions?.selectCharacterModal;
+      console.log(
+        '[LOGIN] Initial character modal check:',
+        !!selectCharacterModal,
+      );
 
       // Wait up to 10 seconds for the character selection modal to appear
       const maxWaitForModal = 10000;
@@ -510,20 +794,31 @@ export const createLuaApi = (context) => {
 
       console.log('[LOGIN] Starting wait loop for character modal...');
       while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
-        console.log(`[LOGIN] Waiting for modal... (${modalWaitTime}ms elapsed)`);
+        console.log(
+          `[LOGIN] Waiting for modal... (${modalWaitTime}ms elapsed)`,
+        );
         await wait(modalCheckInterval);
         modalWaitTime += modalCheckInterval;
         currentState = getState();
-        selectCharacterModal = currentState.regionCoordinates?.regions?.selectCharacterModal;
-        console.log(`[LOGIN] Modal check after ${modalWaitTime}ms:`, !!selectCharacterModal);
+        selectCharacterModal =
+          currentState.regionCoordinates?.regions?.selectCharacterModal;
+        console.log(
+          `[LOGIN] Modal check after ${modalWaitTime}ms:`,
+          !!selectCharacterModal,
+        );
       }
 
       if (!selectCharacterModal) {
-        console.log(`[LOGIN] ERROR: selectCharacterModal not found after ${modalWaitTime}ms wait`);
-        logger('warn', `[Lua/${scriptName}] selectCharacterModal not found after login attempt (waited ${modalWaitTime}ms)`);
+        console.log(
+          `[LOGIN] ERROR: selectCharacterModal not found after ${modalWaitTime}ms wait`,
+        );
+        logger(
+          'warn',
+          `[Lua/${scriptName}] selectCharacterModal not found after login attempt (waited ${modalWaitTime}ms)`,
+        );
         // Press escape 3 times and stop
         for (let i = 0; i < 3; i++) {
-          await keyPress(windowId, 'Escape');
+          await keyPress(windowId, getDisplay(), 'Escape');
           await wait(100);
         }
         return false;
@@ -548,7 +843,7 @@ export const createLuaApi = (context) => {
         logger('warn', `[Lua/${scriptName}] No character data for selection`);
         // Press escape 3 times and stop
         for (let i = 0; i < 3; i++) {
-          await keyPress(windowId, 'Escape');
+          await keyPress(windowId, getDisplay(), 'Escape');
           await wait(100);
         }
         return false;
@@ -559,17 +854,33 @@ export const createLuaApi = (context) => {
       let characterNames = Object.keys(characters);
       const targetCharacterLower = character.toLowerCase();
       console.log('[LOGIN] Available characters:', characterNames);
-      console.log('[LOGIN] Target character (lowercase):', targetCharacterLower);
+      console.log(
+        '[LOGIN] Target character (lowercase):',
+        targetCharacterLower,
+      );
 
-      let targetCharacterFound = characterNames.find((name) => name.toLowerCase().includes(targetCharacterLower));
-      console.log('[LOGIN] Target character found initially:', !!targetCharacterFound);
+      let targetCharacterFound = characterNames.find((name) =>
+        name.toLowerCase().includes(targetCharacterLower),
+      );
+      console.log(
+        '[LOGIN] Target character found initially:',
+        !!targetCharacterFound,
+      );
 
       if (!targetCharacterFound) {
-        console.log('[LOGIN] Target character not visible, trying first letter approach');
-        logger('info', `[Lua/${scriptName}] Target character not visible, trying first letter: ${character[0]}`);
+        console.log(
+          '[LOGIN] Target character not visible, trying first letter approach',
+        );
+        logger(
+          'info',
+          `[Lua/${scriptName}] Target character not visible, trying first letter: ${character[0]}`,
+        );
 
         // Press first letter of character name
-        console.log('[LOGIN] Pressing first letter:', character[0].toUpperCase());
+        console.log(
+          '[LOGIN] Pressing first letter:',
+          character[0].toUpperCase(),
+        );
         await keyPress(windowId, character[0].toUpperCase());
         await wait(500);
 
@@ -583,13 +894,21 @@ export const createLuaApi = (context) => {
         let updateWaitTime = 0;
 
         console.log('[LOGIN] Starting wait loop for character data update...');
-        while ((!updatedCharacterData || !updatedCharacterData.characters) && updateWaitTime < maxWaitForUpdate) {
-          console.log(`[LOGIN] Waiting for character data update... (${updateWaitTime}ms elapsed)`);
+        while (
+          (!updatedCharacterData || !updatedCharacterData.characters) &&
+          updateWaitTime < maxWaitForUpdate
+        ) {
+          console.log(
+            `[LOGIN] Waiting for character data update... (${updateWaitTime}ms elapsed)`,
+          );
           await wait(updateCheckInterval);
           updateWaitTime += updateCheckInterval;
           updatedState = getState();
           updatedCharacterData = updatedState.uiValues?.selectCharacterModal;
-          console.log(`[LOGIN] Character data check after ${updateWaitTime}ms:`, !!updatedCharacterData?.characters);
+          console.log(
+            `[LOGIN] Character data check after ${updateWaitTime}ms:`,
+            !!updatedCharacterData?.characters,
+          );
         }
 
         if (updatedCharacterData && updatedCharacterData.characters) {
@@ -597,33 +916,52 @@ export const createLuaApi = (context) => {
           characterNames = Object.keys(characters);
           console.log('[LOGIN] Updated available characters:', characterNames);
 
-          targetCharacterFound = characterNames.find((name) => name.toLowerCase().includes(targetCharacterLower));
-          console.log('[LOGIN] Target character found after first letter:', !!targetCharacterFound);
+          targetCharacterFound = characterNames.find((name) =>
+            name.toLowerCase().includes(targetCharacterLower),
+          );
+          console.log(
+            '[LOGIN] Target character found after first letter:',
+            !!targetCharacterFound,
+          );
 
           if (!targetCharacterFound) {
-            console.log('[LOGIN] ERROR: Target character still not visible after first letter');
-            logger('warn', `[Lua/${scriptName}] Target character still not visible after first letter`);
+            console.log(
+              '[LOGIN] ERROR: Target character still not visible after first letter',
+            );
+            logger(
+              'warn',
+              `[Lua/${scriptName}] Target character still not visible after first letter`,
+            );
             // Press escape 3 times and stop
             for (let i = 0; i < 3; i++) {
-              await keyPress(windowId, 'Escape');
+              await keyPress(windowId, getDisplay(), 'Escape');
               await wait(100);
             }
             return false;
           }
 
-          console.log('[LOGIN] SUCCESS: Target character found after first letter press');
+          console.log(
+            '[LOGIN] SUCCESS: Target character found after first letter press',
+          );
         } else {
-          console.log(`[LOGIN] ERROR: No character data available after first letter (waited ${updateWaitTime}ms)`);
-          logger('warn', `[Lua/${scriptName}] No character data after first letter (waited ${updateWaitTime}ms)`);
+          console.log(
+            `[LOGIN] ERROR: No character data available after first letter (waited ${updateWaitTime}ms)`,
+          );
+          logger(
+            'warn',
+            `[Lua/${scriptName}] No character data after first letter (waited ${updateWaitTime}ms)`,
+          );
           // Press escape 3 times and stop
           for (let i = 0; i < 3; i++) {
-            await keyPress(windowId, 'Escape');
+            await keyPress(windowId, getDisplay(), 'Escape');
             await wait(100);
           }
           return false;
         }
       } else {
-        console.log('[LOGIN] SUCCESS: Target character found in initial character data');
+        console.log(
+          '[LOGIN] SUCCESS: Target character found in initial character data',
+        );
       }
 
       // 10. Click on the target character
@@ -631,11 +969,16 @@ export const createLuaApi = (context) => {
       console.log('[LOGIN] Target character details:', characterItem);
 
       if (!characterItem || !characterItem.position) {
-        console.log('[LOGIN] ERROR: Could not find target character coordinates');
-        logger('warn', `[Lua/${scriptName}] Could not find target character coordinates`);
+        console.log(
+          '[LOGIN] ERROR: Could not find target character coordinates',
+        );
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Could not find target character coordinates`,
+        );
         // Press escape 3 times and stop
         for (let i = 0; i < 3; i++) {
-          await keyPress(windowId, 'Escape');
+          await keyPress(windowId, getDisplay(), 'Escape');
           await wait(100);
         }
         return false;
@@ -646,12 +989,16 @@ export const createLuaApi = (context) => {
         x: characterItem.position.x,
         y: characterItem.position.y,
       });
-      mouseController.leftClick(parseInt(windowId), characterItem.position.x, characterItem.position.y);
+      mouseController.leftClick(
+        parseInt(windowId),
+        characterItem.position.x,
+        characterItem.position.y,
+      );
       await wait(100);
 
       // Press enter to select character
       console.log('[LOGIN] Pressing Enter to select character');
-      await keyPress(windowId, 'Enter');
+      await keyPress(windowId, getDisplay(), 'Enter');
 
       // 11. Wait for login to complete (check if online)
       console.log('[LOGIN] Waiting for login completion...');
@@ -665,18 +1012,27 @@ export const createLuaApi = (context) => {
         elapsedTime += checkInterval;
 
         const currentState = getState();
-        const isOnline = !!currentState.regionCoordinates?.regions?.onlineMarker;
+        const isOnline =
+          !!currentState.regionCoordinates?.regions?.onlineMarker;
         console.log(`[LOGIN] Online check after ${elapsedTime}ms:`, isOnline);
 
         if (isOnline) {
           console.log('[LOGIN] SUCCESS: Login completed, player is online!');
-          logger('info', `[Lua/${scriptName}] Login successful, player is online`);
+          logger(
+            'info',
+            `[Lua/${scriptName}] Login successful, player is online`,
+          );
           return true;
         }
       }
 
-      console.log('[LOGIN] ERROR: Login timeout, player did not come online within 5 seconds');
-      logger('warn', `[Lua/${scriptName}] Login timeout, player did not come online`);
+      console.log(
+        '[LOGIN] ERROR: Login timeout, player did not come online within 5 seconds',
+      );
+      logger(
+        'warn',
+        `[Lua/${scriptName}] Login timeout, player did not come online`,
+      );
       return false;
     },
   };
@@ -689,8 +1045,10 @@ export const createLuaApi = (context) => {
       goToLabel: context.goToLabel,
       goToSection: context.goToSection,
       goToWpt: context.goToWpt,
-      pauseActions: (paused) => context.postStoreUpdate('cavebot/setActionPaused', !!paused),
-      setCavebotEnabled: (enabled) => context.postStoreUpdate('cavebot/setenabled', !!enabled),
+      pauseActions: (paused) =>
+        context.postStoreUpdate('cavebot/setActionPaused', !!paused),
+      setCavebotEnabled: (enabled) =>
+        context.postStoreUpdate('cavebot/setenabled', !!enabled),
     };
   } else {
     // For SCRIPT, generate functions that dispatch Redux actions.
@@ -703,20 +1061,28 @@ export const createLuaApi = (context) => {
         const currentIndex = waypoints.findIndex((wp) => wp.id === wptId);
         if (currentIndex === -1) return;
         const nextIndex = (currentIndex + 1) % waypoints.length;
-        if (waypoints[nextIndex]) postStoreUpdate('cavebot/setwptId', waypoints[nextIndex].id);
+        if (waypoints[nextIndex])
+          postStoreUpdate('cavebot/setwptId', waypoints[nextIndex].id);
       },
       goToLabel: (label) => {
         const state = getState();
-        const targetWpt = state.cavebot.waypointSections[state.cavebot.currentSection]?.waypoints.find((wp) => wp.label === label);
+        const targetWpt = state.cavebot.waypointSections[
+          state.cavebot.currentSection
+        ]?.waypoints.find((wp) => wp.label === label);
         if (targetWpt) postStoreUpdate('cavebot/setwptId', targetWpt.id);
       },
       goToSection: (sectionName) => {
         const state = getState();
-        const foundEntry = Object.entries(state.cavebot.waypointSections).find(([, s]) => s.name === sectionName);
+        const foundEntry = Object.entries(state.cavebot.waypointSections).find(
+          ([, s]) => s.name === sectionName,
+        );
         if (foundEntry) {
           const [targetSectionId, targetSection] = foundEntry;
           if (targetSection.waypoints?.length > 0) {
-            postStoreUpdate('cavebot/setCurrentWaypointSection', targetSectionId);
+            postStoreUpdate(
+              'cavebot/setCurrentWaypointSection',
+              targetSectionId,
+            );
             postStoreUpdate('cavebot/setwptId', targetSection.waypoints[0].id);
           }
         }
@@ -725,10 +1091,14 @@ export const createLuaApi = (context) => {
         const arrayIndex = parseInt(index, 10) - 1;
         if (isNaN(arrayIndex) || arrayIndex < 0) return;
         const state = getState();
-        const waypoints = state.cavebot.waypointSections[state.cavebot.currentSection]?.waypoints || [];
-        if (arrayIndex < waypoints.length) postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
+        const waypoints =
+          state.cavebot.waypointSections[state.cavebot.currentSection]
+            ?.waypoints || [];
+        if (arrayIndex < waypoints.length)
+          postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
       },
-      pauseActions: (paused) => postStoreUpdate('cavebot/setActionPaused', !!paused),
+      pauseActions: (paused) =>
+        postStoreUpdate('cavebot/setActionPaused', !!paused),
     };
   }
 

@@ -41,12 +41,6 @@ std::map<char, KeySym> directionKeys = {
     {'n', XK_Up}, {'s', XK_Down}, {'e', XK_Right}, {'w', XK_Left}
 };
 
-// --- UTILITY FUNCTIONS ---
-void ForceFocus(Display* display, Window target_window) {
-    XSetInputFocus(display, target_window, RevertToParent, CurrentTime);
-    XSync(display, False);
-}
-
 // Random number generator for delays
 std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
@@ -59,18 +53,17 @@ int get_human_delay(int base_delay_ms, int fluctuation_ms) {
 // --- ASYNC WORKER for SendKey ---
 class SendKeyWorker : public Napi::AsyncWorker {
 public:
-    SendKeyWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string key, std::string modifier)
-        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), key(key), modifier(modifier) {}
+    SendKeyWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string key, std::string modifier, std::string display_name)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), key(key), modifier(modifier), display_name(display_name) {}
 
 protected:
     void Execute() override {
-        Display *display = XOpenDisplay(NULL);
+        Display *display = XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
         if (!display) {
-            SetError("Cannot open display");
+            SetError("Cannot open display: " + display_name);
             return;
         }
         Window target_window = (Window)window_id;
-        ForceFocus(display, target_window);
 
         unsigned int modifiers_state = 0;
         if (!modifier.empty()) {
@@ -117,7 +110,6 @@ protected:
         event.xkey.state = current_base_mods | modifiers_state;
 
         // Key Press
-        ForceFocus(display, target_window);
         event.type = KeyPress;
         XSendEvent(display, target_window, True, KeyPressMask, &event);
         XSync(display, False);
@@ -125,7 +117,6 @@ protected:
         usleep(get_human_delay(50, 20) * 1000); // Default delay for single key presses
 
         // Key Release
-        ForceFocus(display, target_window);
         event.type = KeyRelease;
         XSendEvent(display, target_window, True, KeyReleaseMask, &event);
         XSync(display, False);
@@ -146,23 +137,23 @@ private:
     uint64_t window_id;
     std::string key;
     std::string modifier;
+    std::string display_name; // New member for display name
 };
 
 // --- ASYNC WORKER for TypeString ---
 class TypeStringWorker : public Napi::AsyncWorker {
 public:
-    TypeStringWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string str, bool start_and_end_with_enter)
-        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), str(str), start_and_end_with_enter(start_and_end_with_enter) {}
+    TypeStringWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string str, bool start_and_end_with_enter, std::string display_name)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), str(str), start_and_end_with_enter(start_and_end_with_enter), display_name(display_name) {}
 
 protected:
     void Execute() override {
-        Display *display = XOpenDisplay(NULL);
+        Display *display = XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
         if (!display) {
-            SetError("Cannot open display");
+            SetError("Cannot open display: " + display_name);
             return;
         }
         Window target_window = (Window)window_id;
-        ForceFocus(display, target_window);
 
         XkbDescPtr desc = XkbGetMap(display, XkbAllMapComponentsMask, XkbUseCoreKbd);
         if (!desc) {
@@ -191,14 +182,12 @@ protected:
             ev.xkey.state = mods;
 
             ev.type = KeyPress;
-            ForceFocus(d, w);
             XSendEvent(d, w, True, KeyPressMask, &ev);
             XSync(d, False);
 
             usleep(get_human_delay(20, 10) * 1000);
 
             ev.type = KeyRelease;
-            ForceFocus(d, w);
             XSendEvent(d, w, True, KeyReleaseMask, &ev);
             XSync(d, False);
         };
@@ -390,24 +379,24 @@ private:
     uint64_t window_id;
     std::string str;
     bool start_and_end_with_enter;
+    std::string display_name; // New member for display name
 };
 
 
 // --- ASYNC WORKER for Rotate ---
 class RotateWorker : public Napi::AsyncWorker {
 public:
-    RotateWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, char direction)
-        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), direction(direction) {}
+    RotateWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, char direction, std::string display_name)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), direction(direction), display_name(display_name) {}
 
 protected:
     void Execute() override {
-        Display *display = XOpenDisplay(NULL);
+        Display *display = XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
         if (!display) {
-            SetError("Cannot open display");
+            SetError("Cannot open display: " + display_name);
             return;
         }
         Window target_window = (Window)window_id;
-        ForceFocus(display, target_window);
 
         std::vector<KeySym> key_sequence;
         key_sequence.push_back(XK_Down);
@@ -439,7 +428,6 @@ protected:
         event.xkey.keycode = ctrl_keycode;
 
         event.type = KeyPress;
-        ForceFocus(display, target_window);
         XSendEvent(display, target_window, True, KeyPressMask, &event);
         XSync(display, False);
         usleep(20 * 1000);
@@ -451,13 +439,11 @@ protected:
             event.xkey.state = ControlMask;
 
             event.type = KeyPress;
-            ForceFocus(display, target_window);
             XSendEvent(display, target_window, True, KeyPressMask, &event);
             XSync(display, False);
             usleep(((rand() % 41) + 30) * 1000);
 
             event.type = KeyRelease;
-            ForceFocus(display, target_window);
             XSendEvent(display, target_window, True, KeyReleaseMask, &event);
             XSync(display, False);
             usleep(((rand() % 41) + 25) * 1000);
@@ -465,7 +451,6 @@ protected:
 
         event.xkey.keycode = ctrl_keycode;
         event.type = KeyRelease;
-        ForceFocus(display, target_window);
         XSendEvent(display, target_window, True, KeyReleaseMask, &event);
         XSync(display, False);
 
@@ -484,6 +469,7 @@ private:
     Napi::Promise::Deferred deferred;
     uint64_t window_id;
     char direction;
+    std::string display_name; // New member for display name
 };
 
 // --- N-API WRAPPERS ---
@@ -491,20 +477,21 @@ Napi::Value SendKeyAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
-        deferred.Reject(Napi::TypeError::New(env, "sendKey(windowId, key, [modifier]) requires at least windowId and key.").Value());
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) { // Added display_name as required
+        deferred.Reject(Napi::TypeError::New(env, "sendKey(windowId, key, display, [modifier]) requires windowId, key, and display.").Value());
         return deferred.Promise();
     }
 
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
     std::string key = info[1].As<Napi::String>().Utf8Value();
+    std::string display_name = info[2].As<Napi::String>().Utf8Value(); // Get display_name
     std::string modifier = "";
 
-    if (info.Length() > 2 && info[2].IsString()) {
-        modifier = info[2].As<Napi::String>().Utf8Value();
+    if (info.Length() > 3 && info[3].IsString()) { // Adjusted index for modifier
+        modifier = info[3].As<Napi::String>().Utf8Value();
     }
 
-    SendKeyWorker* worker = new SendKeyWorker(env, deferred, window_id, key, modifier);
+    SendKeyWorker* worker = new SendKeyWorker(env, deferred, window_id, key, modifier, display_name);
     worker->Queue();
     return deferred.Promise();
 }
@@ -513,20 +500,21 @@ Napi::Value TypeStringAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
-        deferred.Reject(Napi::TypeError::New(env, "type(windowId, text, [startAndEndWithEnter]) requires at least windowId and text.").Value());
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) { // Added display_name as required
+        deferred.Reject(Napi::TypeError::New(env, "type(windowId, text, display, [startAndEndWithEnter]) requires windowId, text, and display.").Value());
         return deferred.Promise();
     }
 
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
     std::string str = info[1].As<Napi::String>().Utf8Value();
+    std::string display_name = info[2].As<Napi::String>().Utf8Value(); // Get display_name
     bool start_and_end_with_enter = false;
 
-    if (info.Length() > 2 && info[2].IsBoolean()) {
-        start_and_end_with_enter = info[2].As<Napi::Boolean>().Value();
+    if (info.Length() > 3 && info[3].IsBoolean()) { // Adjusted index for start_and_end_with_enter
+        start_and_end_with_enter = info[3].As<Napi::Boolean>().Value();
     }
 
-    TypeStringWorker* worker = new TypeStringWorker(env, deferred, window_id, str, start_and_end_with_enter);
+    TypeStringWorker* worker = new TypeStringWorker(env, deferred, window_id, str, start_and_end_with_enter, display_name);
     worker->Queue();
     return deferred.Promise();
 }
@@ -535,16 +523,17 @@ Napi::Value RotateAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        deferred.Reject(Napi::TypeError::New(env, "rotate(windowId, [direction]) requires at least a windowId.").Value());
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) { // Added display_name as required
+        deferred.Reject(Napi::TypeError::New(env, "rotate(windowId, display, [direction]) requires windowId and display.").Value());
         return deferred.Promise();
     }
 
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
+    std::string display_name = info[1].As<Napi::String>().Utf8Value(); // Get display_name
     char direction_char = '\0';
 
-    if (info.Length() > 1 && info[1].IsString()) {
-        std::string direction_str = info[1].As<Napi::String>().Utf8Value();
+    if (info.Length() > 2 && info[2].IsString()) { // Adjusted index for direction
+        std::string direction_str = info[2].As<Napi::String>().Utf8Value();
         if (direction_str.length() == 1) {
             char c = tolower(direction_str[0]);
             if (directionKeys.count(c)) {
@@ -553,27 +542,10 @@ Napi::Value RotateAsync(const Napi::CallbackInfo& info) {
         }
     }
 
-    RotateWorker* worker = new RotateWorker(env, deferred, window_id, direction_char);
+    RotateWorker* worker = new RotateWorker(env, deferred, window_id, direction_char, display_name);
     worker->Queue();
     return deferred.Promise();
 }
-
-void FocusWindow(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Window ID must be a number").ThrowAsJavaScriptException();
-        return;
-    }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    Display *display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return;
-    }
-    ForceFocus(display, (Window)window_id);
-    XCloseDisplay(display);
-}
-
 
 // --- MODULE INITIALIZATION ---
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
@@ -585,7 +557,6 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("sendKey", Napi::Function::New(env, SendKeyAsync));
     exports.Set("rotate", Napi::Function::New(env, RotateAsync));
     exports.Set("type", Napi::Function::New(env, TypeStringAsync));
-    exports.Set("focusWindow", Napi::Function::New(env, FocusWindow));
     return exports;
 }
 

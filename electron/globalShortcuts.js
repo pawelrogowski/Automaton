@@ -1,5 +1,4 @@
 import { globalShortcut } from 'electron';
-import { selectActiveWindow } from './menus/windowSelection.js';
 import setGlobalState from './setGlobalState.js';
 import { getMainWindow } from './createMainWindow.js';
 
@@ -22,7 +21,7 @@ const __dirname = path.dirname(__filename);
 let windId = '';
 let isBotEnabled = false;
 let previousSectionStates = {};
-let windowTitle = '';
+let windowName = '';
 
 store.subscribe(() => {
   const state = store.getState();
@@ -30,7 +29,7 @@ store.subscribe(() => {
   windId = global.windowId;
   isBotEnabled = global.isBotEnabled;
   previousSectionStates = global.previousSectionStates;
-  windowTitle = global.windowTitle;
+  windowName = global.windowName;
 
   // Log warnings if any slice is undefined, but don't prevent access
   if (!rules)
@@ -72,14 +71,7 @@ export const playSound = (filePath) => {
   }
 };
 
-const getNotificationTitle = () => `Automaton - ${windowTitle}`;
-
-const debouncedSelectActiveWindow = debounce(() => {
-  selectActiveWindow();
-  setTimeout(() => {
-    showNotification(`Window Selected - ${windId}`, getNotificationTitle());
-  }, 100);
-}, debounceTime);
+const getNotificationTitle = () => `Automaton - ${windowName}`;
 
 const debouncedToggleisBotEnabled = debounce(() => {
   setGlobalState('global/toggleisBotEnabled');
@@ -214,7 +206,6 @@ const debouncedToggleEverything = debounce(() => {
 export const registerGlobalShortcuts = () => {
   try {
     log('info', '[Global Shortcuts] registering');
-    globalShortcut.register('Alt+W', debouncedSelectActiveWindow);
     globalShortcut.register('Alt+E', debouncedToggleisBotEnabled);
     globalShortcut.register('Alt+V', debouncedToggleMainWindowVisibility);
 

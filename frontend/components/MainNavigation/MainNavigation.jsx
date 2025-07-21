@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 import StyledNav from './MainNavigation.styled.js';
 
 const MainNavigation = () => {
-  const { windowTitle } = useSelector((state) => state.global);
+  const { windowName } = useSelector((state) => state.global);
   return (
     <StyledNav>
       <ul>
@@ -23,7 +23,7 @@ const MainNavigation = () => {
         <li>
           <Link to="/console">Market</Link>
         </li> */}
-        <li className="character-name">{windowTitle}</li>
+        <li className="character-name">{windowName}</li>
       </ul>
     </StyledNav>
   );

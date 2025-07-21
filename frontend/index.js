@@ -20,7 +20,6 @@ ipcRenderer.on('state-update', (_, update) => {
   if (update.origin === 'backend') {
     console.log('[Renderer] Dispatching to store:', update.type);
     store.dispatch(update);
-    console.log('[Renderer] Store state after dispatch:', store.getState().uiValues);
   }
 });
 

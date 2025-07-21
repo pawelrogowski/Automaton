@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { loadRulesFromFile, saveRulesToFile } from './saveManager.js';
 import { toggleNotifications } from '../frontend/redux/slices/globalSlice.js';
 import store from './store.js';
+import setGlobalState from './setGlobalState.js';
 
 const HTML_PATH = '../dist/index.html';
 
@@ -50,17 +51,16 @@ export const toggleTrayVisibility = () => {
   Menu.setApplicationMenu(buildAppMenu());
 };
 
-const getWindowTitle = () => store.getState().global.windowTitle;
-
 /**
  * Builds the tray context menu dynamically.
  * Save/Load options have been removed from here.
  * @returns {Electron.Menu} The built menu
  */
-const buildTrayContextMenu = () =>
-  Menu.buildFromTemplate([
+const buildTrayContextMenu = () => {
+  const state = store.getState().global;
+  return Menu.buildFromTemplate([
     {
-      label: getWindowTitle(),
+      label: state.windowName || 'Bot',
     },
     { type: 'separator' },
     {
@@ -80,6 +80,7 @@ const buildTrayContextMenu = () =>
     { type: 'separator' },
     { label: 'Close', click: closeAppFromTray },
   ]);
+};
 
 /**
  * Builds the application menu (visible with Alt key).
@@ -161,7 +162,7 @@ const closeAppFromTray = () => {
   app.quit();
 };
 
-export const createMainWindow = () => {
+export const createMainWindow = (selectedWindowId, display, windowName) => {
   mainWindow = new BrowserWindow({
     minWidth: 1200,
     minHeight: 640,
@@ -189,6 +190,10 @@ export const createMainWindow = () => {
     mainWindow.show();
     createTray();
     Menu.setApplicationMenu(buildAppMenu());
+    setGlobalState('global/setWindowId', selectedWindowId);
+    setGlobalState('global/setDisplay', display);
+    setGlobalState('global/setWindowName', windowName);
+    console.log(selectedWindowId, display, windowName, typeof windowName);
   });
 
   mainWindow.on('show', () => {
@@ -196,6 +201,7 @@ export const createMainWindow = () => {
   });
 
   mainWindow.on('close', handleWindowClose);
+  return mainWindow; // Return mainWindow instance
 };
 
 export const toggleMainWindowVisibility = () => {

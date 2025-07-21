@@ -10,12 +10,12 @@ const __dirnamePath = path.dirname(__filenamePath);
 
 const iconPath = path.join(__dirnamePath, 'icons', 'greenSkull.png');
 
-let windowTitle = '';
+let windowName = '';
 
 store.subscribe(() => {
   const state = store.getState();
   notiEnabled = state.global.notificationsEnabled;
-  windowTitle = state.global.windowTitle;
+  windowName = state.global.windowName;
 });
 
 const createIconImage = () => {
@@ -30,7 +30,7 @@ const createIconImage = () => {
 export const showNotification = (body, customTitle) => {
   if (!notiEnabled) return;
 
-  const title = customTitle || `Automaton - ${windowTitle}`;
+  const title = customTitle || `Automaton - ${windowName}`;
 
   try {
     new Notification({

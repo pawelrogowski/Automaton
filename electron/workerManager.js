@@ -296,6 +296,12 @@ class WorkerManager {
         sharedData: needsSharedScreen ? this.sharedScreenState : null,
       };
 
+      // Add display to workerData if it's a screen-related worker
+      if (needsSharedScreen) {
+        const state = store.getState();
+        workerData.display = state.global.display;
+      }
+
       workerData.enableMemoryLogging = true;
 
       const worker = new Worker(workerPath, {
@@ -374,14 +380,16 @@ class WorkerManager {
 
   handleStoreUpdate() {
     const state = store.getState();
-    const { windowId } = state.global;
+    const { windowId, display } = state.global; // Get display from global state
     const { enabled: cavebotEnabled } = state.cavebot;
     const { enabled: luaEnabled } = state.lua;
 
-    if (windowId) {
+    if (windowId && display) {
+      // Only proceed if both windowId and display are available
       if (!this.sharedScreenState) this.createSharedBuffers();
       const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
       Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
+      // No need to store display in syncArray, it's passed directly to native modules
 
       if (this.workerConfig.captureWorker && !this.workers.has('captureWorker'))
         this.startWorker('captureWorker');

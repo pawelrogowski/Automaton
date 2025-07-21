@@ -124,6 +124,11 @@ public:
         is_capturing = false;
         target_window_id = XCB_NONE;
         target_frame_time_us = std::chrono::microseconds(1000000 / 60); // Default 60 FPS
+        display_name = ""; // Initialize display_name
+
+        if (info.Length() > 0 && info[0].IsString()) {
+            display_name = info[0].As<Napi::String>().Utf8Value();
+        }
 
         // Double buffer members
         readable_buffer_ptr = nullptr;
@@ -158,6 +163,7 @@ private:
     std::thread capture_thread;
     xcb_window_t target_window_id;
     std::chrono::microseconds target_frame_time_us;
+    std::string display_name; // New member to store the display name
 
     // --- NEW: Double Buffering for thread-safe frame access ---
     std::unique_ptr<uint8_t[]> buffer_a;
@@ -180,7 +186,8 @@ private:
     void Connect() {
         Cleanup();
         int screen_num;
-        connection = xcb_connect(NULL, &screen_num);
+        // Use the stored display_name, or NULL if not set
+        connection = xcb_connect(display_name.empty() ? NULL : display_name.c_str(), &screen_num);
         if (!connection || xcb_connection_has_error(connection)) {
             if (connection) xcb_disconnect(connection);
             connection = nullptr;

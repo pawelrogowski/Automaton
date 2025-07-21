@@ -10,7 +10,7 @@ import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import { getLinuxHardwareId } from './hardwareId.js';
 import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
-
+import windowinfo from 'windowinfo-native';
 // --- Main Process Memory Logging Setup ---
 const MAIN_LOG_INTERVAL_MS = 10000; // 10 seconds
 const MAIN_LOG_FILE_NAME = 'main-process-memory-usage.log';
@@ -44,13 +44,14 @@ const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 const log = createLogger();
 
-let loginWindow;
+let selectWindow; // New window for selecting Tibia client
+let mainWindow; // Existing main window
 let isQuitting = false;
 
-const createLoginWindow = () => {
-  loginWindow = new BrowserWindow({
-    width: 360,
-    height: 420,
+const createSelectWindow = () => {
+  selectWindow = new BrowserWindow({
+    width: 600,
+    height: 400,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     resizable: false,
@@ -58,30 +59,30 @@ const createLoginWindow = () => {
     fullscreenable: false,
     devTools: false,
     frame: false,
-    type: 'notification',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: preloadPath,
+      preload: path.join(cwd, 'selectWindow', 'preload.js'),
     },
   });
 
-  const loginHtmlPath = path.join(cwd, 'loginWindow', 'loginWindow.html');
-  loginWindow.loadFile(loginHtmlPath);
+  const selectHtmlPath = path.join(cwd, 'selectWindow', 'selectWindow.html');
+  selectWindow.loadFile(selectHtmlPath);
+
+  selectWindow.on('closed', () => {
+    selectWindow = null;
+    if (!isQuitting && !mainWindow) {
+      // If select window is closed and main window not created, exit app
+      app.quit();
+    }
+  });
 };
 
 // Application initialization
 app.whenReady().then(async () => {
   try {
-    // createLoginWindow();
-    // ipcMain.on('login-success', () => {
-    //   if (loginWindow && !loginWindow.isDestroyed()) {
-    //     loginWindow.close();
-    //   }
+    createSelectWindow(); // Launch the new window for selection
 
-    //   createMainWindow();
-    // });
-    createMainWindow();
     workerManager.initialize(app, cwd, {}); // Pass an empty config to use default (all disabled)
 
     // --- Start Main Process Memory Logging ---
@@ -135,6 +136,39 @@ ipcMain.handle('get-hardware-id', () => {
     console.error('Hardware ID error:', error);
     return 'error-failed-retrieval';
   }
+});
+
+// IPC handler for getting the list of Tibia windows
+ipcMain.handle('get-tibia-window-list', async () => {
+  try {
+    const windowList = await windowinfo.getWindowList();
+    return windowList;
+  } catch (error) {
+    console.error('[Main] Error getting Tibia window list:', error);
+    return [];
+  }
+});
+
+import setGlobalState from './setGlobalState.js'; // Import setGlobalState for proper state sync
+
+// IPC handler for when a Tibia window is selected
+ipcMain.on('select-tibia-window', (event, windowId, display, windowName) => {
+  // Added 'display' and 'windowName' parameters
+  if (selectWindow && !selectWindow.isDestroyed()) {
+    selectWindow.close();
+  }
+  // Use setGlobalState to properly sync state between main and renderer processes
+  setGlobalState('global/setWindowId', windowId);
+  setGlobalState('global/setDisplay', display);
+  setGlobalState('global/setWindowName', windowName);
+
+  mainWindow = createMainWindow(windowId, display, windowName); // Pass window ID, display, and window name
+});
+
+// IPC handler for exiting the app from the select window
+ipcMain.on('exit-app', () => {
+  isQuitting = true; // Set flag to prevent re-launching select window
+  app.quit();
 });
 
 export default app;

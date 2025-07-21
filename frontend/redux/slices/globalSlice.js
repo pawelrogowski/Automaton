@@ -2,8 +2,9 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  windowTitle: 'Press Alt+W on focused tibia window to attach bot',
+  windowName: 'Press Alt+W on focused tibia window to attach bot',
   windowId: null,
+  display: null, // New: Stores the selected X display string (e.g., ":0", ":2")
   refreshRate: 32,
   notificationsEnabled: true,
   previousSectionStates: {
@@ -18,14 +19,22 @@ const globalSlice = createSlice({
   name: 'global',
   initialState,
   reducers: {
-    setWindowTitle: (state, action) => {
-      state.windowTitle = action.payload;
+    setwindowName: (state, action) => {
+      state.windowName = action.payload;
     },
     setWindowId: (state, action) => {
       state.windowId = action.payload;
       if (action.payload === null) {
         state.actualFps = 0;
       }
+    },
+    setDisplay: (state, action) => {
+      // New: Reducer to set the display
+      state.display = action.payload;
+    },
+    setWindowName: (state, action) => {
+      // New: Reducer to set the window title including character name
+      state.windowName = action.payload;
     },
     setRefreshRate: (state, action) => {
       state.refreshRate = Math.max(action.payload, 0);
@@ -37,7 +46,8 @@ const globalSlice = createSlice({
       const newState = { ...state };
 
       Object.keys(newState).forEach((key) => {
-        if (!['windowId', 'actualFps'].includes(key)) {
+        if (!['windowId', 'actualFps', 'display'].includes(key)) {
+          // Exclude 'display' from being overwritten by setState
           newState[key] = action.payload[key];
         }
       });
@@ -54,8 +64,10 @@ const globalSlice = createSlice({
 });
 
 export const {
-  setWindowTitle,
+  setwindowName,
   setWindowId,
+  setDisplay, // Export the new action
+  setWindowName, // Export the new action
   setRefreshRate,
   toggleNotifications,
   setState,

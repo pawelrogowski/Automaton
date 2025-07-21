@@ -27,7 +27,7 @@ import { performance } from 'perf_hooks';
 import X11RegionCapture from 'x11-region-capture-native';
 
 // --- Worker Configuration ---
-const { sharedData } = workerData;
+const { sharedData, display } = workerData; // Get display from workerData
 
 // --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[CaptureWorker] Shared data not provided.');
@@ -39,7 +39,9 @@ const HEIGHT_INDEX = 2;
 const IS_RUNNING_INDEX = 3;
 const WINDOW_ID_INDEX = 4;
 
-const captureInstance = X11RegionCapture ? new X11RegionCapture.X11RegionCapture() : null;
+const captureInstance = X11RegionCapture
+  ? new X11RegionCapture.X11RegionCapture(display)
+  : null; // Pass display to constructor
 let targetFps = 20;
 let isCapturing = false;
 
@@ -54,14 +56,18 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 async function captureLoop() {
   if (!captureInstance) {
-    console.error('[CaptureWorker] X11 native module is not available. Cannot start capture.');
+    console.error(
+      '[CaptureWorker] X11 native module is not available. Cannot start capture.',
+    );
     Atomics.store(syncArray, IS_RUNNING_INDEX, 0);
     return;
   }
 
   const windowId = Atomics.load(syncArray, WINDOW_ID_INDEX);
   if (!windowId) {
-    console.error('[CaptureWorker] No Window ID provided. Cannot start capture.');
+    console.error(
+      '[CaptureWorker] No Window ID provided. Cannot start capture.',
+    );
     Atomics.store(syncArray, IS_RUNNING_INDEX, 0);
     return;
   }
@@ -69,9 +75,14 @@ async function captureLoop() {
   try {
     captureInstance.startMonitorInstance(windowId, targetFps);
     isCapturing = true;
-    console.log(`[CaptureWorker] Started monitoring window: ${windowId} at ${targetFps} FPS.`);
+    console.log(
+      `[CaptureWorker] Started monitoring window: ${windowId} at ${targetFps} FPS.`,
+    );
   } catch (err) {
-    console.error('[CaptureWorker] Failed to start native capture instance:', err);
+    console.error(
+      '[CaptureWorker] Failed to start native capture instance:',
+      err,
+    );
     Atomics.store(syncArray, IS_RUNNING_INDEX, 0);
     return;
   }
@@ -125,7 +136,9 @@ parentPort.on('message', (message) => {
 async function start() {
   console.log('[CaptureWorker] Worker starting up...');
   await captureLoop();
-  console.log('[CaptureWorker] Worker has finished its capture loop and is shutting down.');
+  console.log(
+    '[CaptureWorker] Worker has finished its capture loop and is shutting down.',
+  );
 }
 
 start().catch((err) => {

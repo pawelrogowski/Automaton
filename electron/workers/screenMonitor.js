@@ -74,25 +74,44 @@ function getPartyData(partyListRegion, buffer, metadata) {
   const maxEntries = Math.floor(partyListRegion.height / approxEntryHeight);
   if (maxEntries <= 0) return [];
 
-  const partyEntryRegions = calculatePartyEntryRegions({ x: 0, y: 0 }, maxEntries);
+  const partyEntryRegions = calculatePartyEntryRegions(
+    { x: 0, y: 0 },
+    maxEntries,
+  );
   for (let i = 0; i < partyEntryRegions.length; i++) {
     const entry = partyEntryRegions[i];
-    const absoluteBarCoords = { x: partyListRegion.x + entry.bar.x, y: partyListRegion.y + entry.bar.y };
-    const hppc = calculatePartyHpPercentage(buffer, metadata, absoluteBarCoords, resourceBars.partyEntryHpBar, 130);
+    const absoluteBarCoords = {
+      x: partyListRegion.x + entry.bar.x,
+      y: partyListRegion.y + entry.bar.y,
+    };
+    const hppc = calculatePartyHpPercentage(
+      buffer,
+      metadata,
+      absoluteBarCoords,
+      resourceBars.partyEntryHpBar,
+      130,
+    );
     if (hppc >= 0) {
-      partyData.push({ id: i, hppc, uhCoordinates: entry.uhCoordinates, isActive: true });
+      partyData.push({
+        id: i,
+        hppc,
+        uhCoordinates: entry.uhCoordinates,
+        isActive: true,
+      });
     }
   }
   return partyData;
 }
 
 function runRules(ruleInput) {
-  const currentPreset = state?.rules?.presets?.[state?.rules?.activePresetIndex];
+  const currentPreset =
+    state?.rules?.presets?.[state?.rules?.activePresetIndex];
   if (!currentPreset) return;
   try {
+    console.log(state.global);
     ruleProcessorInstance.processRules(currentPreset, ruleInput, {
       ...state.global,
-      isOnline: state?.luaApi?.isOnline ?? false,
+      isOnline: state?.regionCoordinates.regions.onlineMarker ?? false,
     });
   } catch (error) {
     console.error('Rule processing error:', error);
@@ -110,7 +129,10 @@ async function mainLoop() {
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
 
       // Only proceed if there's a new frame and we have the necessary state from the main thread.
-      if (newFrameCounter > lastProcessedFrameCounter && state?.regionCoordinates?.regions) {
+      if (
+        newFrameCounter > lastProcessedFrameCounter &&
+        state?.regionCoordinates?.regions
+      ) {
         if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
           const width = Atomics.load(syncArray, WIDTH_INDEX);
           const height = Atomics.load(syncArray, HEIGHT_INDEX);
@@ -132,9 +154,17 @@ async function mainLoop() {
 
             const searchTasks = {};
             if (regions.cooldowns)
-              searchTasks.cooldowns = { sequences: cooldownColorSequences, searchArea: regions.cooldowns, occurrence: 'first' };
+              searchTasks.cooldowns = {
+                sequences: cooldownColorSequences,
+                searchArea: regions.cooldowns,
+                occurrence: 'first',
+              };
             if (regions.statusBar)
-              searchTasks.statusBar = { sequences: statusBarSequences, searchArea: regions.statusBar, occurrence: 'first' };
+              searchTasks.statusBar = {
+                sequences: statusBarSequences,
+                searchArea: regions.statusBar,
+                occurrence: 'first',
+              };
             if (regions.battleList)
               searchTasks.battleList = {
                 sequences: { battleEntry: battleListSequences.battleEntry },
@@ -142,25 +172,57 @@ async function mainLoop() {
                 occurrence: 'all',
               };
 
-            const searchResults = findSequences.findSequencesNativeBatch(bufferSnapshot, searchTasks);
+            const searchResults = findSequences.findSequencesNativeBatch(
+              bufferSnapshot,
+              searchTasks,
+            );
 
             const { newHealthPercentage, newManaPercentage } =
               regions.healthBar && regions.manaBar
                 ? {
-                    newHealthPercentage: calculatePercentages(bufferSnapshot, metadata, regions.healthBar, resourceBars.healthBar, 94),
-                    newManaPercentage: calculatePercentages(bufferSnapshot, metadata, regions.manaBar, resourceBars.manaBar, 94),
+                    newHealthPercentage: calculatePercentages(
+                      bufferSnapshot,
+                      metadata,
+                      regions.healthBar,
+                      resourceBars.healthBar,
+                      94,
+                    ),
+                    newManaPercentage: calculatePercentages(
+                      bufferSnapshot,
+                      metadata,
+                      regions.manaBar,
+                      resourceBars.manaBar,
+                      94,
+                    ),
                   }
-                : { newHealthPercentage: lastKnownGoodHealthPercentage, newManaPercentage: lastKnownGoodManaPercentage };
-            lastKnownGoodHealthPercentage = newHealthPercentage ?? lastKnownGoodHealthPercentage;
-            lastKnownGoodManaPercentage = newManaPercentage ?? lastKnownGoodManaPercentage;
+                : {
+                    newHealthPercentage: lastKnownGoodHealthPercentage,
+                    newManaPercentage: lastKnownGoodManaPercentage,
+                  };
+            lastKnownGoodHealthPercentage =
+              newHealthPercentage ?? lastKnownGoodHealthPercentage;
+            lastKnownGoodManaPercentage =
+              newManaPercentage ?? lastKnownGoodManaPercentage;
 
             const currentCooldowns = searchResults.cooldowns || {};
-            const healingCd = cooldownManager.updateCooldown('healing', !!currentCooldowns.healing);
-            const supportCd = cooldownManager.updateCooldown('support', !!currentCooldowns.support);
-            const attackCd = cooldownManager.updateCooldown('attack', !!currentCooldowns.attack);
-            if (currentCooldowns.attackInactive) cooldownManager.forceDeactivate('attack');
-            if (currentCooldowns.healingInactive) cooldownManager.forceDeactivate('healing');
-            if (currentCooldowns.supportInactive) cooldownManager.forceDeactivate('support');
+            const healingCd = cooldownManager.updateCooldown(
+              'healing',
+              !!currentCooldowns.healing,
+            );
+            const supportCd = cooldownManager.updateCooldown(
+              'support',
+              !!currentCooldowns.support,
+            );
+            const attackCd = cooldownManager.updateCooldown(
+              'attack',
+              !!currentCooldowns.attack,
+            );
+            if (currentCooldowns.attackInactive)
+              cooldownManager.forceDeactivate('attack');
+            if (currentCooldowns.healingInactive)
+              cooldownManager.forceDeactivate('healing');
+            if (currentCooldowns.supportInactive)
+              cooldownManager.forceDeactivate('support');
 
             const characterStatus = {};
             Object.keys(statusBarSequences).forEach((key) => {
@@ -171,17 +233,24 @@ async function mainLoop() {
               if (!slotRegion?.children) return 'Unknown';
 
               const foundItems = Object.entries(slotRegion.children)
-                .filter(([key, child]) => child && child.x !== undefined && child.y !== undefined)
+                .filter(
+                  ([key, child]) =>
+                    child && child.x !== undefined && child.y !== undefined,
+                )
                 .map(([key]) => key);
 
               if (foundItems.length === 0) return 'Empty';
 
               // Handle empty slot detection
-              const emptySlot = foundItems.find((item) => item.includes('empty'));
+              const emptySlot = foundItems.find((item) =>
+                item.includes('empty'),
+              );
               if (emptySlot) return 'Empty';
 
               // Return the first non-empty item found
-              const actualItem = foundItems.find((item) => !item.includes('empty'));
+              const actualItem = foundItems.find(
+                (item) => !item.includes('empty'),
+              );
               return actualItem || 'Empty';
             };
 
@@ -199,18 +268,31 @@ async function mainLoop() {
               attackCd,
               characterStatus,
               monsterNum: (searchResults.battleList?.battleEntry || []).length,
-              partyMembers: getPartyData(regions.partyList, bufferSnapshot, metadata),
+              partyMembers: getPartyData(
+                regions.partyList,
+                bufferSnapshot,
+                metadata,
+              ),
               activeActionItems: regions.hotkeyBar?.children
                 ? Object.fromEntries(
                     Object.entries(regions.hotkeyBar.children)
-                      .filter(([, child]) => child && child.x !== undefined && child.y !== undefined)
+                      .filter(
+                        ([, child]) =>
+                          child &&
+                          child.x !== undefined &&
+                          child.y !== undefined,
+                      )
                       .map(([key, child]) => [key, child]),
                   )
                 : {},
               equippedItems: equippedItemsResult,
               rulesEnabled: state?.rules?.enabled ?? false,
             };
-            parentPort.postMessage({ storeUpdate: true, type: 'gameState/updateGameStateFromMonitorData', payload: currentStateUpdate });
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: 'gameState/updateGameStateFromMonitorData',
+              payload: currentStateUpdate,
+            });
 
             if (state?.rules?.enabled) runRules(currentStateUpdate);
 

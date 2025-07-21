@@ -55,20 +55,7 @@ export const saveRulesToFile = async (callback) => {
         : `${dialog_result.filePath}.json`;
       const state = store.getState();
 
-      // Create a filtered state that excludes window-specific data
-      const filteredState = {
-        ...state,
-        global: {
-          ...state.global,
-          windowId: undefined,
-          windowTitle: undefined,
-        },
-      };
-
-      await fs.writeFile(
-        save_file_path,
-        JSON.stringify(filteredState, null, 2),
-      );
+      await fs.writeFile(save_file_path, JSON.stringify(state, null, 2));
       showNotification(`📥 Saved | ${path.basename(save_file_path)}`);
     }
     callback();
@@ -96,10 +83,9 @@ export const loadRulesFromFile = async (callback) => {
       if (loaded_state.rules)
         setGlobalState('rules/setState', loaded_state.rules);
       if (loaded_state.global) {
-        // Exclude windowId and windowTitle from global state
-        const { windowId, windowTitle, ...globalWithoutWindow } =
-          loaded_state.global;
-        setGlobalState('global/setState', globalWithoutWindow);
+        // Exclude windowId but keep windowName from global state
+        const { windowId, ...globalWithoutWindowId } = loaded_state.global;
+        setGlobalState('global/setState', globalWithoutWindowId);
       }
       if (loaded_state.lua)
         setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
@@ -123,13 +109,12 @@ const perform_auto_save = async () => {
   try {
     const state = store.getState();
     if (Object.keys(state).length > 0) {
-      // Create a filtered state that excludes window-specific data
+      // Create a filtered state that excludes windowId but keeps windowName
       const filteredState = {
         ...state,
         global: {
           ...state.global,
           windowId: undefined,
-          windowTitle: undefined,
         },
       };
       await fs.writeFile(
@@ -157,10 +142,9 @@ export const autoLoadRules = async () => {
       if (loaded_state.rules)
         setGlobalState('rules/setState', loaded_state.rules);
       if (loaded_state.global) {
-        // Exclude windowId and windowTitle from global state
-        const { windowId, windowTitle, ...globalWithoutWindow } =
-          loaded_state.global;
-        setGlobalState('global/setState', globalWithoutWindow);
+        // Exclude windowId but keep windowName from global state
+        const { windowId, ...globalWithoutWindowId } = loaded_state.global;
+        setGlobalState('global/setState', globalWithoutWindowId);
       }
       if (loaded_state.lua)
         setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
