@@ -1,0 +1,1 @@
+cmd_Release/keypress.node := ln -f "Release/obj.target/keypress.node" "Release/keypress.node" 2>/dev/null || (rm -rf "Release/keypress.node" && cp -af "Release/obj.target/keypress.node" "Release/keypress.node")

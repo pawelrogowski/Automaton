@@ -1,0 +1,1 @@
+cmd_Release/obj.target/pathfinderNative.node := g++ -o Release/obj.target/pathfinderNative.node -shared -pthread -rdynamic -flto -m64  -Wl,-soname=pathfinderNative.node -Wl,--start-group Release/obj.target/pathfinderNative/src/pathfinder.o -Wl,--end-group 

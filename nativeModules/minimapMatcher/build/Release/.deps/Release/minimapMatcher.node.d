@@ -1,0 +1,1 @@
+cmd_Release/minimapMatcher.node := ln -f "Release/obj.target/minimapMatcher.node" "Release/minimapMatcher.node" 2>/dev/null || (rm -rf "Release/minimapMatcher.node" && cp -af "Release/obj.target/minimapMatcher.node" "Release/minimapMatcher.node")

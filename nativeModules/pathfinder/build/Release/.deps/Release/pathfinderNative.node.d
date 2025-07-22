@@ -1,0 +1,1 @@
+cmd_Release/pathfinderNative.node := ln -f "Release/obj.target/pathfinderNative.node" "Release/pathfinderNative.node" 2>/dev/null || (rm -rf "Release/pathfinderNative.node" && cp -af "Release/obj.target/pathfinderNative.node" "Release/pathfinderNative.node")

@@ -1,0 +1,1 @@
+cmd_Release/mouse-controller.node := ln -f "Release/obj.target/mouse-controller.node" "Release/mouse-controller.node" 2>/dev/null || (rm -rf "Release/mouse-controller.node" && cp -af "Release/obj.target/mouse-controller.node" "Release/mouse-controller.node")

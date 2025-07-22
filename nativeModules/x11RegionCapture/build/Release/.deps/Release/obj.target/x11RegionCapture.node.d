@@ -1,0 +1,1 @@
+cmd_Release/obj.target/x11RegionCapture.node := g++ -o Release/obj.target/x11RegionCapture.node -shared -pthread -rdynamic -flto -m64  -Wl,-soname=x11RegionCapture.node -Wl,--start-group Release/obj.target/x11RegionCapture/src/x11RegionCapture.o -Wl,--end-group -lxcb -lxcb-shm -lxcb-composite

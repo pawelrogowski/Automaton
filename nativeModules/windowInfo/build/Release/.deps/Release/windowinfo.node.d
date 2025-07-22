@@ -1,0 +1,1 @@
+cmd_Release/windowinfo.node := ln -f "Release/obj.target/windowinfo.node" "Release/windowinfo.node" 2>/dev/null || (rm -rf "Release/windowinfo.node" && cp -af "Release/obj.target/windowinfo.node" "Release/windowinfo.node")

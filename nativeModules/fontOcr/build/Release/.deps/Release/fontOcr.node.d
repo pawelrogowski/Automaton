@@ -1,0 +1,1 @@
+cmd_Release/fontOcr.node := ln -f "Release/obj.target/fontOcr.node" "Release/fontOcr.node" 2>/dev/null || (rm -rf "Release/fontOcr.node" && cp -af "Release/obj.target/fontOcr.node" "Release/fontOcr.node")

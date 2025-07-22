@@ -1,0 +1,1 @@
+cmd_Release/x11RegionCapture.node := ln -f "Release/obj.target/x11RegionCapture.node" "Release/x11RegionCapture.node" 2>/dev/null || (rm -rf "Release/x11RegionCapture.node" && cp -af "Release/obj.target/x11RegionCapture.node" "Release/x11RegionCapture.node")

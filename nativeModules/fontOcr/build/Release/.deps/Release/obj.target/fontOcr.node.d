@@ -1,0 +1,1 @@
+cmd_Release/obj.target/fontOcr.node := g++ -o Release/obj.target/fontOcr.node -shared -pthread -rdynamic -fopenmp -m64  -Wl,-soname=fontOcr.node -Wl,--start-group Release/obj.target/fontOcr/src/fontOcr.o Release/obj.target/../../node_modules/node-addon-api/nothing.a -Wl,--end-group 

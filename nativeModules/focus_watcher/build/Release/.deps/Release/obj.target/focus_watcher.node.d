@@ -1,0 +1,1 @@
+cmd_Release/obj.target/focus_watcher.node := g++ -o Release/obj.target/focus_watcher.node -shared -pthread -rdynamic -m64  -Wl,-soname=focus_watcher.node -Wl,--start-group Release/obj.target/focus_watcher/src/focus_watcher.o -Wl,--end-group -lXtst -lX11

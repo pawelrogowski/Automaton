@@ -1,0 +1,1 @@
+cmd_Release/obj.target/minimapMatcher.node := g++ -o Release/obj.target/minimapMatcher.node -shared -pthread -rdynamic -flto -m64  -Wl,-soname=minimapMatcher.node -Wl,--start-group Release/obj.target/minimapMatcher/src/minimapMatcher.o -Wl,--end-group 

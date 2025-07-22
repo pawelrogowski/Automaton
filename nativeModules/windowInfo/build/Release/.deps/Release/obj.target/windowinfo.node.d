@@ -1,0 +1,1 @@
+cmd_Release/obj.target/windowinfo.node := g++ -o Release/obj.target/windowinfo.node -shared -pthread -rdynamic -m64  -Wl,-soname=windowinfo.node -Wl,--start-group Release/obj.target/windowinfo/src/windowinfo.o Release/obj.target/../../node_modules/node-addon-api/nothing.a -Wl,--end-group -lX11

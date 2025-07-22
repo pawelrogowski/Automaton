@@ -1,0 +1,1 @@
+cmd_Release/obj.target/findSequences.node := g++ -o Release/obj.target/findSequences.node -shared -pthread -rdynamic -flto -m64  -Wl,-soname=findSequences.node -Wl,--start-group Release/obj.target/findSequences/src/findSequences.o Release/obj.target/../../node_modules/node-addon-api/nothing.a -Wl,--end-group 

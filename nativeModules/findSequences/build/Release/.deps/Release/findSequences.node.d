@@ -1,0 +1,1 @@
+cmd_Release/findSequences.node := ln -f "Release/obj.target/findSequences.node" "Release/findSequences.node" 2>/dev/null || (rm -rf "Release/findSequences.node" && cp -af "Release/obj.target/findSequences.node" "Release/findSequences.node")

@@ -1,0 +1,1 @@
+cmd_Release/focus_watcher.node := ln -f "Release/obj.target/focus_watcher.node" "Release/focus_watcher.node" 2>/dev/null || (rm -rf "Release/focus_watcher.node" && cp -af "Release/obj.target/focus_watcher.node" "Release/focus_watcher.node")

@@ -1,0 +1,1 @@
+cmd_Release/obj.target/keypress.node := g++ -o Release/obj.target/keypress.node -shared -pthread -rdynamic -m64  -Wl,-soname=keypress.node -Wl,--start-group Release/obj.target/keypress/src/keypress.o -Wl,--end-group -lXtst -lX11
