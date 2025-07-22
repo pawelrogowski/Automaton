@@ -335,7 +335,7 @@ async function processBattleListEntries(buffer, entriesRegion) {
 
   entriesRegion.list = entryList;
 }
-state.regionCoordinates.regions.battleList.children.entries.list;
+
 /**
  * Entry point for a full, expensive scan of the entire screen.
  */
