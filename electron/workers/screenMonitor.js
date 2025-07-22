@@ -26,12 +26,9 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import {
-  regionColorSequences,
   resourceBars,
   cooldownColorSequences,
-  statusBarSequences,
   battleListSequences,
-  equippedItems,
 } from '../constants/index.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
@@ -61,6 +58,9 @@ let state = null;
 let lastProcessedFrameCounter = -1;
 let lastKnownGoodHealthPercentage = null;
 let lastKnownGoodManaPercentage = null;
+let lastKnownPlayerMinimapPosition = { x: 0, y: 0, z: 0 }; // Initialize with a default
+let lastMovementTimestamp = 0; // New variable to track last movement
+const WALKING_STICKY_DURATION_MS = 750; // 750ms duration for isWalking to stay true
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
 
@@ -159,12 +159,6 @@ async function mainLoop() {
                 searchArea: regions.cooldowns,
                 occurrence: 'first',
               };
-            if (regions.statusBar)
-              searchTasks.statusBar = {
-                sequences: statusBarSequences,
-                searchArea: regions.statusBar,
-                occurrence: 'first',
-              };
             if (regions.battleList)
               searchTasks.battleList = {
                 sequences: { battleEntry: battleListSequences.battleEntry },
@@ -225,9 +219,11 @@ async function mainLoop() {
               cooldownManager.forceDeactivate('support');
 
             const characterStatus = {};
-            Object.keys(statusBarSequences).forEach((key) => {
-              characterStatus[key] = !!(searchResults.statusBar || {})[key];
-            });
+            if (regions.statusBar?.children) {
+              Object.keys(regions.statusBar.children).forEach((key) => {
+                characterStatus[key] = !!regions.statusBar.children[key].x;
+              });
+            }
 
             const getEquippedItem = (slotRegion) => {
               if (!slotRegion?.children) return 'Unknown';
@@ -260,6 +256,27 @@ async function mainLoop() {
               boots: getEquippedItem(regions.bootsSlot),
             };
 
+            const hasPositionChanged =
+              state.gameState.playerMinimapPosition.x !==
+                lastKnownPlayerMinimapPosition.x ||
+              state.gameState.playerMinimapPosition.y !==
+                lastKnownPlayerMinimapPosition.y ||
+              state.gameState.playerMinimapPosition.z !==
+                lastKnownPlayerMinimapPosition.z;
+
+            if (hasPositionChanged) {
+              lastMovementTimestamp = performance.now();
+            }
+
+            const isWalking =
+              hasPositionChanged ||
+              performance.now() - lastMovementTimestamp <
+                WALKING_STICKY_DURATION_MS;
+
+            lastKnownPlayerMinimapPosition = {
+              ...state.gameState.playerMinimapPosition,
+            }; // Update for next cycle
+
             const currentStateUpdate = {
               hppc: lastKnownGoodHealthPercentage,
               mppc: lastKnownGoodManaPercentage,
@@ -267,12 +284,14 @@ async function mainLoop() {
               supportCd,
               attackCd,
               characterStatus,
-              monsterNum: (searchResults.battleList?.battleEntry || []).length,
+              monsterNum:
+                regions.battleList?.children?.entries?.list.length || 0,
               partyMembers: getPartyData(
                 regions.partyList,
                 bufferSnapshot,
                 metadata,
               ),
+              isWalking, // Set isWalking based on minimap position change and sticky duration
               activeActionItems: regions.hotkeyBar?.children
                 ? Object.fromEntries(
                     Object.entries(regions.hotkeyBar.children)
