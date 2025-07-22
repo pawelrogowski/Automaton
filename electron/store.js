@@ -9,6 +9,7 @@ import statusMessagesSlice from '../frontend/redux/slices/statusMessagesSlice.js
 import regionCoordinatesSlice from '../frontend/redux/slices/regionCoordinatesSlice.js';
 import ocrSlice from '../frontend/redux/slices/ocrSlice.js';
 import uiValuesSlice from '../frontend/redux/slices/uiValuesSlice.js';
+import battleListSlice from '../frontend/redux/slices/battleListSlice.js';
 
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
@@ -21,6 +22,7 @@ const rootReducer = combineReducers({
   regionCoordinates: regionCoordinatesSlice.reducer,
   ocr: ocrSlice.reducer,
   uiValues: uiValuesSlice.reducer,
+  battleList: battleListSlice.reducer,
 });
 
 const store = configureStore({

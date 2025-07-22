@@ -254,6 +254,7 @@ async function processBattleListEntries(buffer, entriesRegion) {
   // Step 1: Build a SINGLE task with all pixel checks
   const pixelChecks = {
     '#FF0000': [], // Red for isTargeted
+    '#FF8080': [], // Red-orange for isTargeted (hovered)
     '#000000': [], // Black for isAttacking and isValid
   };
 
@@ -265,14 +266,24 @@ async function processBattleListEntries(buffer, entriesRegion) {
     pixelChecks['#FF0000'].push({
       x: entryBaseX,
       y: entryBaseY,
-      id: `entry_${i}_isTargeted`,
+      id: `entry_${i}_isTargeted_red`,
+    });
+    pixelChecks['#FF8080'].push({
+      x: entryBaseX,
+      y: entryBaseY,
+      id: `entry_${i}_isTargeted_hovered`,
     });
 
-    // Check for isAttacking (black inner border)
+    // Check for isAttacking (black inner border) - two possible positions
+    pixelChecks['#000000'].push({
+      x: entryBaseX,
+      y: entryBaseY,
+      id: `entry_${i}_isAttacking_0_0`,
+    });
     pixelChecks['#000000'].push({
       x: entryBaseX + 1,
       y: entryBaseY + 1,
-      id: `entry_${i}_isAttacking`,
+      id: `entry_${i}_isAttacking_1_1`,
     });
 
     // Check for isValid (health bar's black border)
@@ -308,8 +319,12 @@ async function processBattleListEntries(buffer, entriesRegion) {
 
       const entryData = {
         isValid: true,
-        isTargeted: !!checkResults[`entry_${i}_isTargeted`],
-        isAttacking: !!checkResults[`entry_${i}_isAttacking`],
+        isTargeted:
+          !!checkResults[`entry_${i}_isTargeted_red`] ||
+          !!checkResults[`entry_${i}_isTargeted_hovered`],
+        isAttacking:
+          !!checkResults[`entry_${i}_isAttacking_0_0`] ||
+          !!checkResults[`entry_${i}_isAttacking_1_1`],
         name: {
           x: entryBaseX + 22,
           y: entryBaseY + 2,

@@ -42,7 +42,9 @@ const Layout = () => {
   const isLuaEnabled = useSelector((state) => state.lua.enabled);
   const isTargetingEnabled = useSelector((state) => state.targeting.enabled);
   const wptSelection = useSelector((state) => state.cavebot.wptSelection);
-  const playerPosition = useSelector((state) => state.gameState.playerMinimapPosition);
+  const playerPosition = useSelector(
+    (state) => state.gameState.playerMinimapPosition,
+  );
   const location = useLocation();
   const hash = location.hash;
   const navigate = useNavigate();
@@ -96,7 +98,11 @@ const Layout = () => {
         ruleIdPrefix = 'equipRule';
         break;
       default:
-        console.warn('Cannot add rule on current page/hash:', hash, 'Falling back to userRule.');
+        console.warn(
+          'Cannot add rule on current page/hash:',
+          hash,
+          'Falling back to userRule.',
+        );
         ruleIdPrefix = 'userRule';
         break;
     }
@@ -250,7 +256,12 @@ const Layout = () => {
           {location.pathname.includes('/healing') && (
             <>
               <div className="button-container">
-                <button className="add-button" type="button" onMouseDown={handleAddRule} tooltip="Add a new rule to selected section">
+                <button
+                  className="add-button"
+                  type="button"
+                  onMouseDown={handleAddRule}
+                  tooltip="Add a new rule to selected section"
+                >
                   Add New Rule
                 </button>
                 {/* <div className="save-load-buttons">
@@ -416,50 +427,130 @@ const Layout = () => {
                 imageWidth="32px"
                 tooltip="View the current UI values slice (skills widget data)"
               ></SideBarNavButton>
+              <SideBarNavButton
+                to="/gameState#battleListState"
+                img={tibia} // Reusing tibia icon for Battle List State
+                text={'Battle List'}
+                imageWidth="32px"
+                tooltip="View the current battle list slice"
+              ></SideBarNavButton>
             </>
           )}
 
           {location.pathname === '/cavebot' && (
             <>
               <div className="add-new-waypoint-section">
-                <SidebarButton text={'Node'} onClick={() => handleAddWaypoint('Node')}></SidebarButton>
-                <SidebarButton text={'Stand'} onClick={() => handleAddWaypoint('Stand')}></SidebarButton>
-                <SidebarButton text={'Shovel'} onClick={() => handleAddWaypoint('Shovel')}></SidebarButton>
-                <SidebarButton text={'Rope'} onClick={() => handleAddWaypoint('Rope')}></SidebarButton>
-                <SidebarButton text={'Machete'} onClick={() => handleAddWaypoint('Machete')}></SidebarButton>
-                <SidebarButton text={'Ladder'} onClick={() => handleAddWaypoint('Ladder')}></SidebarButton>
-                <SidebarButton text={'Use'} onClick={() => handleAddWaypoint('Use')}></SidebarButton>
-                <SidebarButton text={'Script'} onClick={() => handleAddWaypoint('Script')}></SidebarButton>
-                <SidebarButton text={'Lure'} onClick={() => handleAddWaypoint('Lure')}></SidebarButton>
+                <SidebarButton
+                  text={'Node'}
+                  onClick={() => handleAddWaypoint('Node')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Stand'}
+                  onClick={() => handleAddWaypoint('Stand')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Shovel'}
+                  onClick={() => handleAddWaypoint('Shovel')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Rope'}
+                  onClick={() => handleAddWaypoint('Rope')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Machete'}
+                  onClick={() => handleAddWaypoint('Machete')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Ladder'}
+                  onClick={() => handleAddWaypoint('Ladder')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Use'}
+                  onClick={() => handleAddWaypoint('Use')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Script'}
+                  onClick={() => handleAddWaypoint('Script')}
+                ></SidebarButton>
+                <SidebarButton
+                  text={'Lure'}
+                  onClick={() => handleAddWaypoint('Lure')}
+                ></SidebarButton>
               </div>
 
               <div className="direction-radios">
                 <label>
-                  <input type="radio" name="direction" value="NW" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="NW"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="N" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="N"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="NE" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="NE"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="W" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="W"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="C" defaultChecked onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="C"
+                    defaultChecked
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="E" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="E"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="SW" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="SW"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="S" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="S"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
                 <label>
-                  <input type="radio" name="direction" value="SE" onChange={(e) => setDirection(e.target.value)} />
+                  <input
+                    type="radio"
+                    name="direction"
+                    value="SE"
+                    onChange={(e) => setDirection(e.target.value)}
+                  />
                 </label>
               </div>
 
@@ -491,23 +582,37 @@ const Layout = () => {
                 element={
                   <ol style={{ color: '#fafafa', fontSize: '13px' }}>
                     <li>
-                      Alt+W - Select active window and reset workers. Shows window ID in notification and starts updating hp and mana values
+                      Alt+W - Select active window and reset workers. Shows
+                      window ID in notification and starts updating hp and mana
+                      values
                     </li>
-                    <li>Alt+E - Toggle bot enabled/disabled state. Plays sound and shows notification</li>
+                    <li>
+                      Alt+E - Toggle bot enabled/disabled state. Plays sound and
+                      shows notification
+                    </li>
                     <li>Alt+V - Toggle main window visibility (show/hide)</li>
                     <li>Alt+1 - Switch to preset 1</li>
                     <li>Alt+2 - Switch to preset 2</li>
                     <li>Alt+3 - Switch to preset 3</li>
                     <li>Alt+4 - Switch to preset 4</li>
                     <li>Alt+5 - Switch to preset 5</li>
-                    <li>Alt+Escape - Toggle all main sections (Healing, Cavebot, Scripts, Targeting) on/off. Remembers previous states.</li>
+                    <li>
+                      Alt+Escape - Toggle all main sections (Healing, Cavebot,
+                      Scripts, Targeting) on/off. Remembers previous states.
+                    </li>
                     <li>Alt+C - Toggle Cavebot section enabled/disabled.</li>
-                    <li>Alt+H - Toggle Healing/Rules section enabled/disabled.</li>
-                    <li>Alt+S - Toggle Lua Scripts section enabled/disabled.</li>
+                    <li>
+                      Alt+H - Toggle Healing/Rules section enabled/disabled.
+                    </li>
+                    <li>
+                      Alt+S - Toggle Lua Scripts section enabled/disabled.
+                    </li>
                     <li>Alt+T - Toggle Targeting section enabled/disabled.</li>
                     <li>
-                      Alt+B - Toggle all main sections (Healing, Cavebot, Scripts, Targeting) on/off. If sections are in mixed states, first
-                      enables all, then disables all on next press.
+                      Alt+B - Toggle all main sections (Healing, Cavebot,
+                      Scripts, Targeting) on/off. If sections are in mixed
+                      states, first enables all, then disables all on next
+                      press.
                     </li>
                   </ol>
                 }

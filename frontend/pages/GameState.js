@@ -38,6 +38,8 @@ const GameState = () => {
       case '#uiValuesState':
         console.log('[GameState] Returning uiValues:', state.uiValues);
         return state.uiValues; // Return uiValues state slice
+      case '#battleListState':
+        return state.battleList; // Return battleList state slice
     }
   });
 
@@ -65,6 +67,8 @@ const GameState = () => {
         return 'Targeting State'; // Return targeting state slice
       case '#uiValuesState':
         return 'UI Values (Skills Widget)';
+      case '#battleListState':
+        return 'Battle List State';
     }
   };
 

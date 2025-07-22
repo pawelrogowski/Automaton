@@ -10,7 +10,6 @@ const initialState = {
   attackCd: false,
   supportCd: false,
   attackCd: false,
-  monsterNum: 0,
   partyNum: 0,
   isWalking: false,
   isTyping: false, // Flag to indicate when a typing action is in progress
@@ -70,7 +69,6 @@ const gameStateSlice = createSlice({
         supportCd,
         attackCd,
         characterStatus,
-        monsterNum,
         isWalking,
         partyMembers,
         activeActionItems, // This is the key we'll process
@@ -94,7 +92,6 @@ const gameStateSlice = createSlice({
         }
       }
 
-      if (monsterNum !== undefined) state.monsterNum = monsterNum;
       if (isWalking !== undefined) state.isWalking = isWalking;
 
       if (partyMembers !== undefined) {
@@ -159,9 +156,6 @@ const gameStateSlice = createSlice({
         }
       }
     },
-    setMonsterNum: (state, action) => {
-      state.monsterNum = action.payload.monsterNum;
-    },
     setPartyNum: (state, action) => {
       state.partyNum = action.payload.partyNum;
     },
@@ -186,7 +180,6 @@ export const {
   setManaPercent,
   sethealingCd,
   setCharacterStatus,
-  setMonsterNum,
   setPartyNum,
   setState,
   setPlayerMinimapPosition, // Export the new action

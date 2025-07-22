@@ -30,6 +30,7 @@ import {
   cooldownColorSequences,
   battleListSequences,
 } from '../constants/index.js';
+import { setBattleListEntries } from '../../frontend/redux/slices/battleListSlice.js';
 import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
 import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
@@ -284,8 +285,6 @@ async function mainLoop() {
               supportCd,
               attackCd,
               characterStatus,
-              monsterNum:
-                regions.battleList?.children?.entries?.list.length || 0,
               partyMembers: getPartyData(
                 regions.partyList,
                 bufferSnapshot,
@@ -307,10 +306,41 @@ async function mainLoop() {
               equippedItems: equippedItemsResult,
               rulesEnabled: state?.rules?.enabled ?? false,
             };
+
+            // Process Battle List Entries
+            const battleListEntries =
+              regions.battleList?.children?.entries?.list || [];
+            const uiBattleListNames = state.uiValues?.battleListEntries || [];
+
+            const processedBattleListEntries = battleListEntries.map(
+              (entry, index) => {
+                const health = calculatePercentages(
+                  bufferSnapshot,
+                  metadata,
+                  entry.healthBarFill, // Use healthBarFill for scanning colors
+                  resourceBars.partyEntryHpBar, // Using partyEntryHpBar colors for battle list health
+                  entry.healthBarFill.width, // Use healthBarFull.width as the total width for percentage
+                );
+                return {
+                  name: uiBattleListNames[index] || '', // Get name from uiValues
+                  health: health >= 0 ? health : 0, // Ensure health is not negative
+                  isTargeted: entry.isTargeted,
+                  isAttacking: entry.isAttacking,
+                  region: entry.healthBarFull, // Use healthBarFull as the region for the entry
+                };
+              },
+            );
+
             parentPort.postMessage({
               storeUpdate: true,
               type: 'gameState/updateGameStateFromMonitorData',
               payload: currentStateUpdate,
+            });
+
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: setBattleListEntries.type,
+              payload: processedBattleListEntries,
             });
 
             if (state?.rules?.enabled) runRules(currentStateUpdate);
