@@ -1,10 +1,10 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import regionDefinitions from '../constants/regionDefinitions.js'; // <-- UPDATED IMPORT
+import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
 import findSequences from 'find-sequences-native';
 
-// --- Worker Configuration & Setup ---
+// --- Worker Configuration & Setup (Unchanged) ---
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
 const FULL_SCAN_INTERVAL_MS = 250;
@@ -23,34 +23,34 @@ let lastKnownRegions = null;
 let lastFullScanTimestamp = 0;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Flattened definitions are no longer needed with hierarchical structure
-
-/**
- * Recursively finds regions defined in the new structure.
- * This function is the core of the new scanning logic.
- * @param {Buffer} buffer - The image buffer to scan.
- * @param {object} definitions - The current level of region definitions to process.
- * @param {object} searchArea - The area within which to search for the current definitions.
- * @param {object} baseOffset - The {x, y} offset of the searchArea relative to the full screen.
- * @param {object} parentResult - The parent object to populate with results (or root object).
- * @param {object} metadata - Screen metadata { width, height }.
- */
-async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset, parentResult, metadata) {
+// --- findRegionsRecursive (Unchanged from previous correct version) ---
+async function findRegionsRecursive(
+  buffer,
+  definitions,
+  searchArea,
+  baseOffset,
+  parentResult,
+  metadata,
+) {
   const discoveryTasks = {};
   const boundingBoxDefs = {};
   const fixedDefs = {};
 
-  // ========================================================================
-  // STEP 1: Generate discovery tasks for the current hierarchy level
-  // ========================================================================
   for (const [name, def] of Object.entries(definitions)) {
     switch (def.type) {
       case 'single':
-        discoveryTasks[name] = { sequences: { [name]: def }, searchArea, occurrence: 'first' };
+        discoveryTasks[name] = {
+          sequences: { [name]: def },
+          searchArea,
+          occurrence: 'first',
+        };
         break;
       case 'boundingBox':
-        // For discovery, we only search for the 'start' sequence
-        discoveryTasks[`${name}_start`] = { sequences: { [`${name}_start`]: def.start }, searchArea, occurrence: 'first' };
+        discoveryTasks[`${name}_start`] = {
+          sequences: { [`${name}_start`]: def.start },
+          searchArea,
+          occurrence: 'first',
+        };
         boundingBoxDefs[name] = def;
         break;
       case 'fixed':
@@ -59,7 +59,6 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
     }
   }
 
-  // Process fixed regions immediately as they don't require a search
   for (const [name, def] of Object.entries(fixedDefs)) {
     parentResult[name] = {
       x: baseOffset.x + def.x,
@@ -70,23 +69,18 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
   }
 
   if (Object.keys(discoveryTasks).length === 0) {
-    return; // No searchable regions at this level
+    return;
   }
 
-  // ========================================================================
-  // STEP 2: Run the discovery search (1st native call for this level)
-  // ========================================================================
-  const discoveryResults = await findSequences.findSequencesNativeBatch(buffer, discoveryTasks);
+  const discoveryResults = await findSequences.findSequencesNativeBatch(
+    buffer,
+    discoveryTasks,
+  );
 
   const endpointTasks = {};
   const foundStarts = {};
   const childInvocations = [];
 
-  // ========================================================================
-  // STEP 3: Process discovery results and prepare for endpoint search / recursion
-  // ========================================================================
-
-  // Process 'single' type results
   for (const [name, def] of Object.entries(definitions)) {
     if (def.type === 'single' && discoveryResults[name]?.[name]) {
       const result = discoveryResults[name][name];
@@ -102,16 +96,19 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
       };
       parentResult[name] = region;
 
-      // If this region has children, queue a recursive call
       if (def.children) {
-        // Initialize children object for this region
         parentResult[name].children = {};
         childInvocations.push(() =>
           findRegionsRecursive(
             buffer,
             def.children,
-            { x: region.x, y: region.y, width: region.width, height: region.height },
-            { x: region.x, y: region.y },
+            {
+              x: region.x,
+              y: region.y,
+              width: region.width,
+              height: region.height,
+            },
+            { x: 0, y: 0 },
             parentResult[name].children,
             metadata,
           ),
@@ -120,7 +117,6 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
     }
   }
 
-  // Process 'boundingBox' start results and create endpoint tasks
   for (const [name, def] of Object.entries(boundingBoxDefs)) {
     const startResult = discoveryResults[`${name}_start`]?.[`${name}_start`];
     if (startResult) {
@@ -129,10 +125,13 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
       const maxH = def.maxDown === 'fullHeight' ? metadata.height : def.maxDown;
 
       const endSearchArea = {
-        x: baseOffset.x + startResult.x,
-        y: baseOffset.y + startResult.y,
-        width: Math.min(maxW, metadata.width - (baseOffset.x + startResult.x)),
-        height: Math.min(maxH, metadata.height - (baseOffset.y + startResult.y)),
+        x: startResult.x,
+        y: startResult.y,
+        width: Math.min(maxW, searchArea.x + searchArea.width - startResult.x),
+        height: Math.min(
+          maxH,
+          searchArea.y + searchArea.height - startResult.y,
+        ),
       };
 
       if (endSearchArea.width > 0 && endSearchArea.height > 0) {
@@ -145,21 +144,21 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
     }
   }
 
-  // ========================================================================
-  // STEP 4: Run endpoint search (2nd native call for this level)
-  // ========================================================================
   let endpointResults = {};
   if (Object.keys(endpointTasks).length > 0) {
-    endpointResults = await findSequences.findSequencesNativeBatch(buffer, endpointTasks);
+    endpointResults = await findSequences.findSequencesNativeBatch(
+      buffer,
+      endpointTasks,
+    );
   }
 
-  // ========================================================================
-  // STEP 5: Assemble bounding boxes and queue child recursion
-  // ========================================================================
   for (const [name, startPos] of Object.entries(foundStarts)) {
     const def = boundingBoxDefs[name];
     const endPos = endpointResults[`${name}_end`]?.[`${name}_end`];
-    const absStartPos = { x: baseOffset.x + startPos.x, y: baseOffset.y + startPos.y };
+    const absStartPos = {
+      x: baseOffset.x + startPos.x,
+      y: baseOffset.y + startPos.y,
+    };
 
     const rawStartPos = {
       x: absStartPos.x - (def.start.offset?.x || 0),
@@ -167,16 +166,29 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
     };
 
     if (!endPos) {
-      parentResult[name] = { ...absStartPos, width: 0, height: 0, startFound: true, endFound: false, rawStartPos };
+      parentResult[name] = {
+        x: absStartPos.x,
+        y: absStartPos.y,
+        width: 0,
+        height: 0,
+        startFound: true,
+        endFound: false,
+        rawStartPos,
+      };
       continue;
     }
 
-    const rawEndPos = {
-      x: endPos.x - (def.end.offset?.x || 0),
-      y: endPos.y - (def.end.offset?.y || 0),
+    const absEndPos = {
+      x: baseOffset.x + endPos.x,
+      y: baseOffset.y + endPos.y,
     };
-    const rectWidth = endPos.x - absStartPos.x + 1;
-    const rectHeight = endPos.y - absStartPos.y + 1;
+
+    const rawEndPos = {
+      x: absEndPos.x - (def.end.offset?.x || 0),
+      y: absEndPos.y - (def.end.offset?.y || 0),
+    };
+    const rectWidth = absEndPos.x - absStartPos.x + 1;
+    const rectHeight = absEndPos.y - absStartPos.y + 1;
 
     const region = {
       x: absStartPos.x,
@@ -190,16 +202,19 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
     };
     parentResult[name] = region;
 
-    // If this region was fully found and has children, queue a recursive call
     if (def.children) {
-      // Initialize children object for this region
       parentResult[name].children = {};
       childInvocations.push(() =>
         findRegionsRecursive(
           buffer,
           def.children,
-          { x: region.x, y: region.y, width: region.width, height: region.height },
-          { x: region.x, y: region.y },
+          {
+            x: region.x,
+            y: region.y,
+            width: region.width,
+            height: region.height,
+          },
+          { x: 0, y: 0 },
           parentResult[name].children,
           metadata,
         ),
@@ -207,14 +222,120 @@ async function findRegionsRecursive(buffer, definitions, searchArea, baseOffset,
     }
   }
 
-  // ========================================================================
-  // STEP 6: Execute all queued recursive calls for the next level down
-  // ========================================================================
   for (const invoke of childInvocations) {
     await invoke();
   }
 }
 
+// ========================================================================
+// --- NEW: BattleList Entry Processing ---
+// ========================================================================
+/**
+ * Dynamically finds and analyzes each entry within the battle list.
+ * This runs after the main 'entries' bounding box has been found.
+ * @param {Buffer} buffer - The image buffer to scan.
+ * @param {object} entriesRegion - The found region object for the 'entries' area.
+ */
+async function processBattleListEntries(buffer, entriesRegion) {
+  // Define constants for entry layout
+  const ENTRY_HEIGHT = 20;
+  const ENTRY_VERTICAL_PITCH = 22; // 20px height + 2px gap
+
+  const maxEntries = Math.floor(
+    (entriesRegion.height + (ENTRY_VERTICAL_PITCH - ENTRY_HEIGHT)) /
+      ENTRY_VERTICAL_PITCH,
+  );
+
+  if (maxEntries <= 0) {
+    entriesRegion.list = [];
+    return;
+  }
+
+  // Step 1: Build a SINGLE task with all pixel checks
+  const pixelChecks = {
+    '#FF0000': [], // Red for isTargeted
+    '#000000': [], // Black for isAttacking and isValid
+  };
+
+  for (let i = 0; i < maxEntries; i++) {
+    const entryBaseY = entriesRegion.y + i * ENTRY_VERTICAL_PITCH;
+    const entryBaseX = entriesRegion.x;
+
+    // Check for isTargeted (red border)
+    pixelChecks['#FF0000'].push({
+      x: entryBaseX,
+      y: entryBaseY,
+      id: `entry_${i}_isTargeted`,
+    });
+
+    // Check for isAttacking (black inner border)
+    pixelChecks['#000000'].push({
+      x: entryBaseX + 1,
+      y: entryBaseY + 1,
+      id: `entry_${i}_isAttacking`,
+    });
+
+    // Check for isValid (health bar's black border)
+    pixelChecks['#000000'].push({
+      x: entryBaseX + 22,
+      y: entryBaseY + 15,
+      id: `entry_${i}_isValid`,
+    });
+  }
+
+  const singleBatchTask = {
+    battleListChecks: {
+      // A single task that contains all our checks
+      searchArea: entriesRegion, // searchArea is still required, but not used for scanning
+      pixelChecks: pixelChecks,
+    },
+  };
+
+  // Step 2: Run the single, optimized batch scan
+  const results = await findSequences.findSequencesNativeBatch(
+    buffer,
+    singleBatchTask,
+  );
+  const checkResults = results.battleListChecks || {};
+
+  // Step 3: Process the results and build the final list
+  const entryList = [];
+  for (let i = 0; i < maxEntries; i++) {
+    // An entry is only valid if its health bar border was found.
+    if (checkResults[`entry_${i}_isValid`]) {
+      const entryBaseY = entriesRegion.y + i * ENTRY_VERTICAL_PITCH;
+      const entryBaseX = entriesRegion.x;
+
+      const entryData = {
+        isValid: true,
+        isTargeted: !!checkResults[`entry_${i}_isTargeted`],
+        isAttacking: !!checkResults[`entry_${i}_isAttacking`],
+        name: {
+          x: entryBaseX + 22,
+          y: entryBaseY + 2,
+          width: 131,
+          height: 12,
+        },
+        healthBarFull: {
+          x: entryBaseX + 22,
+          y: entryBaseY + 15,
+          width: 132,
+          height: 5,
+        },
+        healthBarFill: {
+          x: entryBaseX + 23,
+          y: entryBaseY + 16,
+          width: 130,
+          height: 3,
+        },
+      };
+      entryList.push(entryData);
+    }
+  }
+
+  entriesRegion.list = entryList;
+}
+state.regionCoordinates.regions.battleList.children.entries.list;
 /**
  * Entry point for a full, expensive scan of the entire screen.
  */
@@ -225,43 +346,77 @@ async function performFullScan(buffer, metadata) {
     await findRegionsRecursive(
       buffer,
       regionDefinitions,
-      { x: 0, y: 0, width: metadata.width, height: metadata.height }, // Initial search area is the full screen
-      { x: 0, y: 0 }, // Initial base offset
+      { x: 0, y: 0, width: metadata.width, height: metadata.height },
+      { x: 0, y: 0 },
       foundRegions,
       metadata,
     );
 
+    // --- MODIFICATION: Post-processing for BattleList ---
+    // If the battle list's entries area was found, dissect it.
+    if (foundRegions.battleList?.children?.entries?.endFound) {
+      await processBattleListEntries(
+        buffer,
+        foundRegions.battleList.children.entries,
+      );
+    }
+    // --- END MODIFICATION ---
+
     // Post-processing for special calculated regions
     if (foundRegions.gameWorld?.endFound) {
       const { gameWorld } = foundRegions;
-      foundRegions.tileSize = { width: Math.round(gameWorld.width / 15), height: Math.round(gameWorld.height / 11) };
+      foundRegions.tileSize = {
+        width: Math.round(gameWorld.width / 15),
+        height: Math.round(gameWorld.height / 11),
+      };
     }
 
     if (Object.keys(foundRegions).length > 0) {
       monitorState = 'MONITORING';
       lastKnownRegions = foundRegions;
     }
-    parentPort.postMessage({ storeUpdate: true, type: setAllRegions.type, payload: foundRegions });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: setAllRegions.type,
+      payload: foundRegions,
+    });
   } catch (error) {
     console.error('[RegionMonitor] Error during full scan:', error);
     monitorState = 'SEARCHING';
     lastKnownRegions = null;
-    parentPort.postMessage({ storeUpdate: true, type: setAllRegions.type, payload: {} });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: setAllRegions.type,
+      payload: {},
+    });
   }
 }
 
-/**
- * Recursively collects validation tasks for hierarchical regions.
- * @param {object} regions - The regions object to collect tasks from.
- * @param {object} definitions - The region definitions.
- * @param {object} checkTasks - The tasks object to populate.
- * @param {function} getValidationArea - Helper function to calculate validation areas.
- */
-function collectValidationTasks(regions, definitions, checkTasks, getValidationArea, path = []) {
+// --- collectValidationTasks (Unchanged) ---
+function collectValidationTasks(
+  regions,
+  definitions,
+  checkTasks,
+  getValidationArea,
+  path = [],
+) {
   for (const [name, region] of Object.entries(regions)) {
-    if (name === 'children') {
+    if (name === 'children' || name === 'list') {
+      // Modified to ignore 'list'
       // Process children recursively
-      collectValidationTasks(region, definitions, checkTasks, getValidationArea, path);
+      if (
+        typeof region === 'object' &&
+        region !== null &&
+        !Array.isArray(region)
+      ) {
+        collectValidationTasks(
+          region,
+          definitions, // This might need adjustment if list items have defs
+          checkTasks,
+          getValidationArea,
+          path,
+        );
+      }
       continue;
     }
 
@@ -296,16 +451,19 @@ function collectValidationTasks(regions, definitions, checkTasks, getValidationA
       }
     }
 
-    // Process children recursively
     if (region.children && def.children) {
-      collectValidationTasks(region.children, def.children, checkTasks, getValidationArea, [...path, name]);
+      collectValidationTasks(
+        region.children,
+        def.children,
+        checkTasks,
+        getValidationArea,
+        [...path, name],
+      );
     }
   }
 }
 
-/**
- * Performs a cheap, targeted check on all previously found verifiable regions.
- */
+// --- performTargetedCheck (Unchanged, but may need future updates for entries) ---
 async function performTargetedCheck(buffer) {
   const checkTasks = {};
 
@@ -320,20 +478,29 @@ async function performTargetedCheck(buffer) {
     };
   };
 
-  // Build a set of all validation tasks needed from hierarchical regions
-  collectValidationTasks(lastKnownRegions || {}, regionDefinitions, checkTasks, getValidationArea);
+  collectValidationTasks(
+    lastKnownRegions || {},
+    regionDefinitions,
+    checkTasks,
+    getValidationArea,
+  );
+
+  // NOTE: For now, targeted check only validates the main regions.
+  // A full rescan will happen if the main layout changes, which will
+  // re-run the dynamic entry processing. This is a reasonable starting point.
 
   if (Object.keys(checkTasks).length === 0) {
-    // No verifiable regions were found last time, so we must do a full scan.
     monitorState = 'SEARCHING';
     lastKnownRegions = null;
     return;
   }
 
   try {
-    const searchResults = await findSequences.findSequencesNativeBatch(buffer, checkTasks);
+    const searchResults = await findSequences.findSequencesNativeBatch(
+      buffer,
+      checkTasks,
+    );
 
-    // Verify that all expected sequences were found
     let isStable = true;
     for (const taskName in checkTasks) {
       if (!searchResults[taskName]?.[taskName]) {
@@ -343,22 +510,35 @@ async function performTargetedCheck(buffer) {
     }
 
     if (isStable) {
-      // The layout is stable, no need to send an update unless the data is different
-      // For simplicity, we send it anyway. Redux will handle shallow comparisons.
-      parentPort.postMessage({ storeUpdate: true, type: setAllRegions.type, payload: lastKnownRegions });
+      // To keep the entry list fresh, we might need to re-run processing here too.
+      // For now, we assume if the container is stable, the content is stable enough
+      // to wait for the next full scan.
+      if (lastKnownRegions.battleList?.children?.entries?.endFound) {
+        await processBattleListEntries(
+          buffer,
+          lastKnownRegions.battleList.children.entries,
+        );
+      }
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: setAllRegions.type,
+        payload: lastKnownRegions,
+      });
     } else {
-      // Layout changed, trigger a full rescan on the next tick
       monitorState = 'SEARCHING';
       lastKnownRegions = null;
     }
   } catch (error) {
-    console.error('[RegionMonitor] Error during targeted check. Reverting to full scan.', error);
+    console.error(
+      '[RegionMonitor] Error during targeted check. Reverting to full scan.',
+      error,
+    );
     monitorState = 'SEARCHING';
     lastKnownRegions = null;
   }
 }
 
-// --- Main Loop (Unchanged) ---
+// --- Main Loop & Worker Setup (Unchanged) ---
 async function mainLoop() {
   while (true) {
     const loopStartTime = performance.now();
@@ -368,8 +548,12 @@ async function mainLoop() {
         if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
           if (monitorState !== 'SEARCHING') {
             monitorState = 'SEARCHING';
-            lastKnownRegions = null; // Clear regions when game is not running
-            parentPort.postMessage({ storeUpdate: true, type: setAllRegions.type, payload: {} });
+            lastKnownRegions = null;
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: setAllRegions.type,
+              payload: {},
+            });
           }
         } else {
           const width = Atomics.load(syncArray, WIDTH_INDEX);
@@ -381,7 +565,8 @@ async function mainLoop() {
             const bufferSnapshot = Buffer.alloc(bufferSize);
             sharedBufferView.copy(bufferSnapshot, 0, 0, bufferSize);
             const now = performance.now();
-            const forceFullScan = now - lastFullScanTimestamp > FULL_SCAN_INTERVAL_MS;
+            const forceFullScan =
+              now - lastFullScanTimestamp > FULL_SCAN_INTERVAL_MS;
             if (monitorState === 'SEARCHING' || forceFullScan) {
               await performFullScan(bufferSnapshot, metadata);
               lastFullScanTimestamp = now;

@@ -364,6 +364,10 @@ const regionDefinitions = {
     ),
   },
   battleList: {
+    ocrColors: [
+      [192, 192, 192],
+      [247, 247, 247],
+    ],
     type: 'boundingBox',
     start: {
       direction: 'horizontal',
@@ -410,7 +414,7 @@ const regionDefinitions = {
             [10, 10, 10],
           ],
         },
-        maxRight: 165,
+        maxRight: 180,
         maxDown: 9999,
       },
       close: {

@@ -101,7 +101,6 @@ class X11RegionCapture : public Napi::ObjectWrap<X11RegionCapture> {
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports) {
         Napi::Function func = DefineClass(env, "X11RegionCapture", {
-            // --- NEW SIMPLIFIED API ---
             InstanceMethod("startMonitorInstance", &X11RegionCapture::StartMonitorInstance),
             InstanceMethod("stopMonitorInstance", &X11RegionCapture::StopMonitorInstance),
             InstanceMethod("getLatestFrame", &X11RegionCapture::GetLatestFrame),
@@ -123,14 +122,14 @@ public:
         should_capture = false;
         is_capturing = false;
         target_window_id = XCB_NONE;
-        target_frame_time_us = std::chrono::microseconds(1000000 / 60); // Default 60 FPS
-        display_name = ""; // Initialize display_name
+        target_frame_time_us = std::chrono::microseconds(1000000 / 60);
+        display_name = "";
+        shm_first_event = 0; // **MODIFICATION 1**: Initialize new member
 
         if (info.Length() > 0 && info[0].IsString()) {
             display_name = info[0].As<Napi::String>().Utf8Value();
         }
 
-        // Double buffer members
         readable_buffer_ptr = nullptr;
         writable_buffer_ptr = nullptr;
         frame_buffer_size = 0;
@@ -152,7 +151,7 @@ private:
     static const int DEFAULT_FPS = 60;
     static const int MIN_FPS = 1;
     static const int MAX_FPS = 1000;
-    static const size_t IMAGE_HEADER_SIZE = 8; // 4 bytes width, 4 bytes height
+    static const size_t IMAGE_HEADER_SIZE = 8;
 
     // Member Variables
     xcb_connection_t *connection;
@@ -163,30 +162,24 @@ private:
     std::thread capture_thread;
     xcb_window_t target_window_id;
     std::chrono::microseconds target_frame_time_us;
-    std::string display_name; // New member to store the display name
+    std::string display_name;
+    uint8_t shm_first_event; // **MODIFICATION 1**: New member to hold event ID
 
-    // --- NEW: Double Buffering for thread-safe frame access ---
+    // Double Buffering members
     std::unique_ptr<uint8_t[]> buffer_a;
     std::unique_ptr<uint8_t[]> buffer_b;
-    std::atomic<uint8_t*> readable_buffer_ptr; // JS thread reads from here
-    uint8_t* writable_buffer_ptr;              // Capture thread writes here
-    std::mutex buffer_mutex;                   // Protects buffer swapping and metadata
+    std::atomic<uint8_t*> readable_buffer_ptr;
+    uint8_t* writable_buffer_ptr;
+    std::mutex buffer_mutex;
     uint64_t frame_buffer_size;
     uint64_t latest_capture_timestamp_us;
     uint32_t latest_width;
     uint32_t latest_height;
 
-    // --- Core X11 Logic ---
-    bool CheckSHM() {
-        if (!connection) return false;
-        const xcb_query_extension_reply_t* shm_ext = xcb_get_extension_data(connection, &xcb_shm_id);
-        return shm_ext && shm_ext->present;
-    }
-
+    // **MODIFICATION 2**: Connect() now gets the SHM event ID. CheckSHM() is no longer needed.
     void Connect() {
         Cleanup();
         int screen_num;
-        // Use the stored display_name, or NULL if not set
         connection = xcb_connect(display_name.empty() ? NULL : display_name.c_str(), &screen_num);
         if (!connection || xcb_connection_has_error(connection)) {
             if (connection) xcb_disconnect(connection);
@@ -194,11 +187,16 @@ private:
             is_connected = false;
             return;
         }
+
         xcb_prefetch_extension_data(connection, &xcb_shm_id);
-        if (!CheckSHM()) {
+        const xcb_query_extension_reply_t* shm_ext = xcb_get_extension_data(connection, &xcb_shm_id);
+        if (!shm_ext || !shm_ext->present) {
+            fprintf(stderr, "X SHM extension not available\n");
             Cleanup();
             return;
         }
+
+        shm_first_event = shm_ext->first_event;
         is_connected = true;
     }
 
@@ -208,7 +206,6 @@ private:
             cleanup_shm(connection, shm_segment);
             shm_segment = nullptr;
         }
-        // Reset double buffers
         {
             std::lock_guard<std::mutex> lock(buffer_mutex);
             buffer_a.reset();
@@ -225,13 +222,11 @@ private:
         target_window_id = XCB_NONE;
     }
 
-    // Ensures SHM segment and internal buffers are large enough for the given dimensions
     bool EnsureBufferSizes(uint32_t width, uint32_t height) {
         if (!connection) return false;
-        uint64_t required_shm_size = static_cast<uint64_t>(width) * height * 4; // BGRA format
+        uint64_t required_shm_size = static_cast<uint64_t>(width) * height * 4;
         uint64_t required_frame_buffer_size = required_shm_size + IMAGE_HEADER_SIZE;
 
-        // Re-initialize SHM if needed
         if (!shm_segment || shm_segment->size < required_shm_size) {
             if (shm_segment) {
                 cleanup_shm(connection, shm_segment);
@@ -243,7 +238,6 @@ private:
             }
         }
 
-        // Re-initialize internal double buffers if needed
         if (frame_buffer_size < required_frame_buffer_size) {
             std::lock_guard<std::mutex> lock(buffer_mutex);
             try {
@@ -254,14 +248,13 @@ private:
                 return false;
             }
             frame_buffer_size = required_frame_buffer_size;
-            // Set initial pointers
             readable_buffer_ptr = buffer_a.get();
             writable_buffer_ptr = buffer_b.get();
         }
         return true;
     }
 
-    // The main capture thread function - simplified for full-frame capture only
+    // **MODIFICATION 3**: CaptureLoop() now uses the correct event-based synchronization
     void CaptureLoop() {
         is_capturing = true;
 
@@ -270,7 +263,7 @@ private:
 
             if (!connection || xcb_connection_has_error(connection)) {
                 fprintf(stderr, "Capture thread: Connection error. Attempting to reconnect...\n");
-                Connect(); // This calls Cleanup() first
+                Connect();
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 continue;
             }
@@ -301,47 +294,62 @@ private:
                 continue;
             }
 
-            // --- Perform the Capture ---
-            xcb_shm_get_image_cookie_t img_cookie = xcb_shm_get_image(
+            // --- THIS ENTIRE BLOCK IS THE FIX ---
+            const uint8_t shm_completion_type = shm_first_event + XCB_SHM_COMPLETION;
+            bool a_frame_is_ready = false;
+
+            // 1. Send request, but don't wait for the (useless) reply
+            xcb_shm_get_image(
                 connection, target_window_id, 0, 0, width, height, ~0,
                 XCB_IMAGE_FORMAT_Z_PIXMAP, shm_segment->shmseg, 0);
+            xcb_flush(connection);
 
-            xcb_shm_get_image_reply_t *img_reply = xcb_shm_get_image_reply(connection, img_cookie, NULL);
+            // 2. Wait for the actual COMPLETION event
+            xcb_generic_event_t *event = nullptr;
+            while ((event = xcb_wait_for_event(connection))) {
+                if ((event->response_type & ~0x80) == shm_completion_type) {
+                    xcb_shm_completion_event_t *completion_event = (xcb_shm_completion_event_t*)event;
+                    if (completion_event->shmseg == shm_segment->shmseg) {
+                        a_frame_is_ready = true;
+                        free(event);
+                        break;
+                    }
+                } else if (event->response_type == XCB_DESTROY_NOTIFY) {
+                    xcb_destroy_notify_event_t *destroy_event = (xcb_destroy_notify_event_t*)event;
+                    if (destroy_event->window == target_window_id) {
+                        should_capture = false;
+                        free(event);
+                        break;
+                    }
+                }
+                free(event);
+            }
+            if (!event || !should_capture) break;
 
-            if (img_reply) {
-                // --- Copy data to writable buffer and swap ---
+            // 3. If frame is ready, perform the copy. This logic is IDENTICAL to your original.
+            if (a_frame_is_ready) {
                 uint8_t* bgra_data_from_shm = shm_segment->data;
                 uint64_t bgra_data_size = static_cast<uint64_t>(width) * height * 4;
 
-                // 1. Write header to our internal writable buffer
-                uint8_t* header_ptr = writable_buffer_ptr;
-                memcpy(header_ptr, &width, sizeof(uint32_t));
-                memcpy(header_ptr + 4, &height, sizeof(uint32_t));
-
-                // 2. Copy pixel data after the header
+                memcpy(writable_buffer_ptr, &width, sizeof(uint32_t));
+                memcpy(writable_buffer_ptr + 4, &height, sizeof(uint32_t));
                 memcpy(writable_buffer_ptr + IMAGE_HEADER_SIZE, bgra_data_from_shm, bgra_data_size);
 
                 uint64_t timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()
                 ).count();
 
-                // 3. Atomically swap buffers and update metadata
                 {
                     std::lock_guard<std::mutex> lock(buffer_mutex);
-                    // The atomic pointer swap itself doesn't need a lock, but we are also
-                    // swapping the writable pointer and updating metadata, so we lock the block.
                     uint8_t* previously_readable = readable_buffer_ptr.exchange(writable_buffer_ptr);
                     writable_buffer_ptr = previously_readable;
-
                     latest_capture_timestamp_us = timestamp;
                     latest_width = width;
                     latest_height = height;
                 }
-
-                free(img_reply);
             }
 
-            // --- FPS Control ---
+            // --- FPS Control (Identical to your original) ---
             auto loop_end_time = std::chrono::steady_clock::now();
             auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(loop_end_time - loop_start_time);
             if (elapsed_time < target_frame_time_us) {
@@ -363,7 +371,7 @@ private:
         is_capturing = false;
     }
 
-    // --- N-API Methods Implementation ---
+    // --- N-API Methods Implementation (Identical to your original) ---
 
     Napi::Value IsConnected(const Napi::CallbackInfo& info) {
         return Napi::Boolean::New(info.Env(), is_connected.load());
@@ -391,7 +399,7 @@ private:
         target_window_id = windowId;
         target_frame_time_us = std::chrono::microseconds(1000000 / fps);
 
-        StopCaptureThread(); // Ensure no lingering thread
+        StopCaptureThread();
         should_capture = true;
 
         try {
@@ -410,7 +418,6 @@ private:
         return info.Env().Undefined();
     }
 
-    // NEW: Non-blocking function to get the latest available frame
     Napi::Value GetLatestFrame(const Napi::CallbackInfo& info) {
         Napi::Env env = info.Env();
         Napi::Object result = Napi::Object::New(env);
@@ -434,7 +441,6 @@ private:
 
         {
             std::lock_guard<std::mutex> lock(buffer_mutex);
-            // Re-check pointer inside lock in case it was reset
             if (readable_buffer_ptr.load() != source_ptr) {
                  result.Set("success", Napi::Boolean::New(env, false));
                  return result;
@@ -451,7 +457,6 @@ private:
             return result;
         }
 
-        // Perform the fast copy
         memcpy(targetBuffer.Data(), source_ptr, source_size);
 
         result.Set("success", Napi::Boolean::New(env, true));

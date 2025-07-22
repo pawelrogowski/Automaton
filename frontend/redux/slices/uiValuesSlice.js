@@ -57,14 +57,13 @@ const initialState = {
     offlineVips: [],
     lastUpdate: null,
   },
-  // Future regions can be added here
+  // --- ADDED ---
+  // Holds the names of monsters currently in the battle list.
+  battleListEntries: [],
 };
 
-/**
- * Parses the raw OCR data from skills widget into structured values
- * @param {Array} ocrData - Array of OCR text objects with x, y, text properties
- * @returns {Object} Structured skills widget data
- */
+// --- All parsing functions (parseSkillsWidgetData, etc.) are unchanged ---
+// (omitting them for brevity)
 function parseSkillsWidgetData(ocrData) {
   if (!Array.isArray(ocrData) || ocrData.length === 0) {
     return initialState.skillsWidget;
@@ -75,7 +74,13 @@ function parseSkillsWidgetData(ocrData) {
   const combat = { ...initialState.skillsWidget.combat };
 
   // Filter out artifacts like "-- -" and empty strings
-  const validData = ocrData.filter((item) => item.text && item.text.trim() && !item.text.match(/^[-\s]*$/) && item.text !== 'alue');
+  const validData = ocrData.filter(
+    (item) =>
+      item.text &&
+      item.text.trim() &&
+      !item.text.match(/^[-\s]*$/) &&
+      item.text !== 'alue',
+  );
 
   // Create a map of text labels to their corresponding values
   const textMap = new Map();
@@ -210,12 +215,6 @@ function parseSkillsWidgetData(ocrData) {
     combat,
   };
 }
-
-/**
- * Parses the raw OCR data from chat box tabs into structured tab data
- * @param {Array} ocrData - Array of OCR text objects with x, y, text, click, and color properties
- * @returns {Object} Structured chat tabs data with activeTab and tabs
- */
 function parseChatTabsData(ocrData) {
   if (!Array.isArray(ocrData) || ocrData.length === 0) {
     return initialState.chatboxTabs;
@@ -242,7 +241,12 @@ function parseChatTabsData(ocrData) {
     };
 
     // Check if this is the active tab (color [223, 223, 223])
-    if (item.color && item.color.r === 223 && item.color.g === 223 && item.color.b === 223) {
+    if (
+      item.color &&
+      item.color.r === 223 &&
+      item.color.g === 223 &&
+      item.color.b === 223
+    ) {
       activeTab = tabName;
     }
   });
@@ -253,12 +257,6 @@ function parseChatTabsData(ocrData) {
     lastUpdate: Date.now(),
   };
 }
-
-/**
- * Parses the raw OCR data from selectCharacterModal into structured character data.
- * @param {Array} ocrData - Array of OCR text objects with x, y, text, click, and color properties.
- * @returns {Object} Structured selectCharacterModal data.
- */
 function parseSelectCharacterModalData(ocrData) {
   if (!Array.isArray(ocrData) || ocrData.length === 0) {
     return initialState.selectCharacterModal;
@@ -276,7 +274,9 @@ function parseSelectCharacterModalData(ocrData) {
     if (text.includes('Account Status:')) {
       // Assuming "Free Account" or similar will follow "Account Status:"
       // This is a simple heuristic, might need refinement based on actual OCR output
-      const nextItem = ocrData.find((next) => next.y > item.y && Math.abs(next.x - item.x) < 50); // Find next item roughly below "Account Status:"
+      const nextItem = ocrData.find(
+        (next) => next.y > item.y && Math.abs(next.x - item.x) < 50,
+      ); // Find next item roughly below "Account Status:"
       if (nextItem) {
         accountStatus = nextItem.text.trim();
       }
@@ -306,7 +306,12 @@ function parseSelectCharacterModalData(ocrData) {
     };
 
     // Check if this is the selected character (color [244, 244, 244])
-    if (item.color && item.color.r === 244 && item.color.g === 244 && item.color.b === 244) {
+    if (
+      item.color &&
+      item.color.r === 244 &&
+      item.color.g === 244 &&
+      item.color.b === 244
+    ) {
       selectedCharacter = text;
     }
   });
@@ -333,6 +338,18 @@ const uiValuesSlice = createSlice({
       state.skillsWidget = parseSkillsWidgetData(action.payload);
     },
 
+    // --- ADDED ---
+    /**
+     * Updates the battle list with an array of monster names.
+     * @param {object} state - The current state.
+     * @param {object} action - The action object.
+     * @param {string[]} action.payload - An array of monster names.
+     */
+    updateBattleListEntries: (state, action) => {
+      state.battleListEntries = action.payload;
+    },
+    // --- END ADDED ---
+
     /**
      * Updates a specific region with parsed data
      * @param {object} state - The current state
@@ -358,7 +375,6 @@ const uiValuesSlice = createSlice({
         state.vipWidget = data;
         state.vipWidget.lastUpdate = Date.now();
       }
-      // Add handlers for other regions as needed
     },
 
     /**
@@ -381,6 +397,11 @@ const uiValuesSlice = createSlice({
       } else if (region === 'selectCharacterModal') {
         state.selectCharacterModal = initialState.selectCharacterModal;
       }
+      // --- ADDED ---
+      else if (region === 'battleListEntries') {
+        state.battleListEntries = initialState.battleListEntries;
+      }
+      // --- END ADDED ---
     },
 
     /**
@@ -394,23 +415,45 @@ const uiValuesSlice = createSlice({
   },
 });
 
-export const { updateSkillsWidget, updateRegionData, resetUiValues, resetRegion, setState } = uiValuesSlice.actions;
+// --- MODIFIED ---
+export const {
+  updateSkillsWidget,
+  updateBattleListEntries, // Export the new action
+  updateRegionData,
+  resetUiValues,
+  resetRegion,
+  setState,
+} = uiValuesSlice.actions;
+// --- END MODIFIED ---
 
 // Selectors
 export const selectSkillsWidget = (state) => state.uiValues.skillsWidget;
 export const selectSkillsData = (state) => state.uiValues.skillsWidget.skills;
 export const selectCombatData = (state) => state.uiValues.skillsWidget.combat;
-export const selectCharacterLevel = (state) => state.uiValues.skillsWidget.level;
-export const selectCharacterExperience = (state) => state.uiValues.skillsWidget.experience;
-export const selectChatboxMainMessages = (state) => state.uiValues.chatboxMain.messages;
-export const selectChatboxMainLastUpdate = (state) => state.uiValues.chatboxMain.lastUpdate;
-export const selectChatboxSecondaryMessages = (state) => state.uiValues.chatboxSecondary.messages;
-export const selectChatboxSecondaryLastUpdate = (state) => state.uiValues.chatboxSecondary.lastUpdate;
+export const selectCharacterLevel = (state) =>
+  state.uiValues.skillsWidget.level;
+export const selectCharacterExperience = (state) =>
+  state.uiValues.skillsWidget.experience;
+export const selectChatboxMainMessages = (state) =>
+  state.uiValues.chatboxMain.messages;
+export const selectChatboxMainLastUpdate = (state) =>
+  state.uiValues.chatboxMain.lastUpdate;
+export const selectChatboxSecondaryMessages = (state) =>
+  state.uiValues.chatboxSecondary.messages;
+export const selectChatboxSecondaryLastUpdate = (state) =>
+  state.uiValues.chatboxSecondary.lastUpdate;
 export const selectChatboxTabs = (state) => state.uiValues.chatboxTabs;
-export const selectChatboxActiveTab = (state) => state.uiValues.chatboxTabs.activeTab;
+export const selectChatboxActiveTab = (state) =>
+  state.uiValues.chatboxTabs.activeTab;
 export const selectChatboxTabsList = (state) => state.uiValues.chatboxTabs.tabs;
 export const selectVipWidget = (state) => state.uiValues.vipWidget;
 export const selectOnlineVips = (state) => state.uiValues.vipWidget.onlineVips;
-export const selectOfflineVips = (state) => state.uiValues.vipWidget.offlineVips;
+export const selectOfflineVips = (state) =>
+  state.uiValues.vipWidget.offlineVips;
+
+// --- ADDED ---
+export const selectBattleListEntries = (state) =>
+  state.uiValues.battleListEntries;
+// --- END ADDED ---
 
 export default uiValuesSlice;

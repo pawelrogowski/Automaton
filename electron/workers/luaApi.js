@@ -41,7 +41,9 @@ const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'monsterNum', {
-    get: () => getState().gameState?.monsterNum,
+    get: () =>
+      getState().regionCoordinates.regions.battleList?.children?.entries?.list
+        ?.length,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'partyNum', {
