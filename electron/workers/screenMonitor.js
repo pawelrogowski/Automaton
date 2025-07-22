@@ -285,6 +285,7 @@ async function mainLoop() {
               supportCd,
               attackCd,
               characterStatus,
+              monsterNum: state.battleList?.entries?.length || 0, // Use the length of the new battleList entries
               partyMembers: getPartyData(
                 regions.partyList,
                 bufferSnapshot,

@@ -59,7 +59,7 @@ bun.lockb
 node_modules
 .electron-obfuscated
 package-lock.json
-
+main-process-memory-usage.log
 # Node.js native module build artifacts
 nativeModules/*/build/
 nativeModules/*/Release/
