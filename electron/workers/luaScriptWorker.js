@@ -26,9 +26,16 @@ const initializeLuaVM = async () => {
   try {
     const factory = new LuaFactory();
     lua = await factory.createEngine();
-    log('info', `[Lua Script Worker ${scriptConfig.id}] Lua VM initialized successfully.`);
+    log(
+      'info',
+      `[Lua Script Worker ${scriptConfig.id}] Lua VM initialized successfully.`,
+    );
   } catch (error) {
-    log('error', `[Lua Script Worker ${scriptConfig.id}] Error initializing Lua VM:`, error);
+    log(
+      'error',
+      `[Lua Script Worker ${scriptConfig.id}] Error initializing Lua VM:`,
+      error,
+    );
     throw error;
   }
 };
@@ -47,6 +54,7 @@ const _syncApiToLua = () => {
     logger: log,
     id: scriptConfig.id,
     postStoreUpdate: postStoreUpdate,
+    refreshLuaGlobalState: refreshLuaGlobalState, // Pass the refresh function
   });
 
   asyncFunctionNames = newAsyncNames;
@@ -55,24 +63,51 @@ const _syncApiToLua = () => {
   }
 
   lua.global.set('__BOT_STATE__', stateObject);
-  log('debug', `[Lua Script Worker ${scriptConfig.id}] Lua API and state variables synced.`);
+  log(
+    'debug',
+    `[Lua Script Worker ${scriptConfig.id}] Lua API and state variables synced.`,
+  );
+};
+
+// New function to refresh the Lua global state
+const refreshLuaGlobalState = () => {
+  _syncApiToLua();
+  log(
+    'debug',
+    `[Lua Script Worker ${scriptConfig.id}] Lua global state refreshed.`,
+  );
 };
 
 const executeOneShot = async () => {
-  log('info', `[Lua Script Worker ${scriptConfig.id}] Executing one-shot script.`);
+  log(
+    'info',
+    `[Lua Script Worker ${scriptConfig.id}] Executing one-shot script.`,
+  );
   if (!lua || !scriptConfig.code?.trim()) {
     const errorMsg = 'No script code provided or Lua VM not ready.';
-    postStoreUpdate('lua/addLogEntry', { id: scriptConfig.id, message: `[ERROR] ${errorMsg}` });
+    postStoreUpdate('lua/addLogEntry', {
+      id: scriptConfig.id,
+      message: `[ERROR] ${errorMsg}`,
+    });
     return;
   }
   try {
     _syncApiToLua();
-    await lua.doString(preprocessLuaScript(scriptConfig.code, asyncFunctionNames));
+    await lua.doString(
+      preprocessLuaScript(scriptConfig.code, asyncFunctionNames),
+    );
   } catch (error) {
     const errorMessage = error.message || String(error);
-    log('error', `[Lua Script Worker ${scriptConfig.id}] Error executing one-shot script:`, errorMessage);
+    log(
+      'error',
+      `[Lua Script Worker ${scriptConfig.id}] Error executing one-shot script:`,
+      errorMessage,
+    );
     // --- MODIFICATION: Use postStoreUpdate to log the error to the UI ---
-    postStoreUpdate('lua/addLogEntry', { id: scriptConfig.id, message: `[ERROR] ${errorMessage}` });
+    postStoreUpdate('lua/addLogEntry', {
+      id: scriptConfig.id,
+      message: `[ERROR] ${errorMessage}`,
+    });
   }
 };
 
@@ -82,17 +117,32 @@ const executeScriptLoop = async () => {
     return;
   }
   if (!scriptConfig.code?.trim()) {
-    log('debug', `[Lua Script Worker ${scriptConfig.id}] Script code is empty. Skipping.`);
+    log(
+      'debug',
+      `[Lua Script Worker ${scriptConfig.id}] Script code is empty. Skipping.`,
+    );
   } else {
-    log('info', `[Lua Script Worker ${scriptConfig.id}] Executing script loop.`);
+    log(
+      'info',
+      `[Lua Script Worker ${scriptConfig.id}] Executing script loop.`,
+    );
     try {
       _syncApiToLua();
-      await lua.doString(preprocessLuaScript(scriptConfig.code, asyncFunctionNames));
+      await lua.doString(
+        preprocessLuaScript(scriptConfig.code, asyncFunctionNames),
+      );
     } catch (error) {
       const errorMessage = error.message || String(error);
-      log('error', `[Lua Script Worker ${scriptConfig.id}] Error in script loop:`, errorMessage);
+      log(
+        'error',
+        `[Lua Script Worker ${scriptConfig.id}] Error in script loop:`,
+        errorMessage,
+      );
       // --- MODIFICATION: Use postStoreUpdate to log the error to the UI ---
-      postStoreUpdate('lua/addLogEntry', { id: scriptConfig.id, message: `[ERROR] ${errorMessage}` });
+      postStoreUpdate('lua/addLogEntry', {
+        id: scriptConfig.id,
+        message: `[ERROR] ${errorMessage}`,
+      });
     }
   }
   const min = scriptConfig.loopMin || 100;
@@ -118,9 +168,13 @@ const stopScriptLoop = () => {
 parentPort.on('message', async (message) => {
   if (message.type === 'init') {
     scriptConfig = message.script;
-    log('info', `[Lua Script Worker ${scriptConfig.id}] Initializing with config:`, scriptConfig);
+    log(
+      'info',
+      `[Lua Script Worker ${scriptConfig.id}] Initializing with config:`,
+      scriptConfig,
+    );
     await initializeLuaVM();
-    _syncApiToLua();
+    _syncApiToLua(); // Initial sync
 
     if (scriptConfig.type === 'oneshot') {
       await executeOneShot();
@@ -133,7 +187,10 @@ parentPort.on('message', async (message) => {
     if (scriptConfig.enabled) startScriptLoop();
     else stopScriptLoop();
   } else {
+    // This is a state update message from workerManager.js
     currentState = message;
+    // Immediately refresh the Lua global state with the new data
+    refreshLuaGlobalState();
   }
 });
 

@@ -21,7 +21,7 @@ void DoSyntheticClick(const Napi::CallbackInfo& info, unsigned int button, const
     Napi::Env env = info.Env();
 
     // --- Argument Validation ---
-    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) { // Added display_name as required
+    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) {
         Napi::TypeError::New(env, "Requires at least 4 arguments: (windowId, x, y, display)").ThrowAsJavaScriptException();
         return;
     }
@@ -37,7 +37,6 @@ void DoSyntheticClick(const Napi::CallbackInfo& info, unsigned int button, const
     const Window target_window = info[0].As<Napi::Number>().Int64Value();
     const int x = info[1].As<Napi::Number>().Int32Value();
     const int y = info[2].As<Napi::Number>().Int32Value();
-    // display_name is already passed
 
     // --- Parse Optional Modifier Keys ---
     unsigned int modifier_mask = 0;
@@ -51,19 +50,28 @@ void DoSyntheticClick(const Napi::CallbackInfo& info, unsigned int button, const
         }
     }
 
+    // --- Get window position relative to root ---
+    Window root = XDefaultRootWindow(display.get());
+    int win_x, win_y;
+    Window child;
+    if (!XTranslateCoordinates(display.get(), target_window, root, 0, 0, &win_x, &win_y, &child)) {
+        Napi::Error::New(env, "Failed to get window coordinates").ThrowAsJavaScriptException();
+        return;
+    }
+
     // --- Create the Synthetic Event ---
     XEvent event;
     memset(&event, 0, sizeof(event));
 
     event.xbutton.display     = display.get();
     event.xbutton.window      = target_window;
-    event.xbutton.root        = XDefaultRootWindow(display.get());
+    event.xbutton.root        = root;
     event.xbutton.subwindow   = None;
     event.xbutton.time        = CurrentTime;
     event.xbutton.x           = x;
     event.xbutton.y           = y;
-    event.xbutton.x_root      = 1;
-    event.xbutton.y_root      = 1;
+    event.xbutton.x_root      = win_x + x;
+    event.xbutton.y_root      = win_y + y;
     event.xbutton.same_screen = True;
     event.xbutton.button      = button;
     event.xbutton.state       = modifier_mask;
@@ -88,7 +96,7 @@ void DoSyntheticMouseEvent(const Napi::CallbackInfo& info, unsigned int button, 
     Napi::Env env = info.Env();
 
     // --- Argument Validation ---
-    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) { // Added display_name as required
+    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) {
         Napi::TypeError::New(env, "Requires at least 4 arguments: (windowId, x, y, display)").ThrowAsJavaScriptException();
         return;
     }
@@ -104,7 +112,15 @@ void DoSyntheticMouseEvent(const Napi::CallbackInfo& info, unsigned int button, 
     const Window target_window = info[0].As<Napi::Number>().Int64Value();
     const int x = info[1].As<Napi::Number>().Int32Value();
     const int y = info[2].As<Napi::Number>().Int32Value();
-    // display_name is already passed
+
+    // --- Get window position relative to root ---
+    Window root = XDefaultRootWindow(display.get());
+    int win_x, win_y;
+    Window child;
+    if (!XTranslateCoordinates(display.get(), target_window, root, 0, 0, &win_x, &win_y, &child)) {
+        Napi::Error::New(env, "Failed to get window coordinates").ThrowAsJavaScriptException();
+        return;
+    }
 
     // --- Create the Synthetic Event ---
     XEvent event;
@@ -112,13 +128,13 @@ void DoSyntheticMouseEvent(const Napi::CallbackInfo& info, unsigned int button, 
 
     event.xbutton.display     = display.get();
     event.xbutton.window      = target_window;
-    event.xbutton.root        = XDefaultRootWindow(display.get());
+    event.xbutton.root        = root;
     event.xbutton.subwindow   = None;
     event.xbutton.time        = CurrentTime;
     event.xbutton.x           = x;
     event.xbutton.y           = y;
-    event.xbutton.x_root      = 1;
-    event.xbutton.y_root      = 1;
+    event.xbutton.x_root      = win_x + x;
+    event.xbutton.y_root      = win_y + y;
     event.xbutton.same_screen = True;
     event.xbutton.button      = button;
     event.xbutton.state       = 0;
@@ -136,7 +152,7 @@ void DoSyntheticMouseMove(const Napi::CallbackInfo& info, const std::string& dis
     Napi::Env env = info.Env();
 
     // --- Argument Validation ---
-    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) { // Added display_name as required
+    if (info.Length() < 4 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsString()) {
         Napi::TypeError::New(env, "Requires at least 4 arguments: (windowId, x, y, display)").ThrowAsJavaScriptException();
         return;
     }
@@ -152,7 +168,15 @@ void DoSyntheticMouseMove(const Napi::CallbackInfo& info, const std::string& dis
     const Window target_window = info[0].As<Napi::Number>().Int64Value();
     const int x = info[1].As<Napi::Number>().Int32Value();
     const int y = info[2].As<Napi::Number>().Int32Value();
-    // display_name is already passed
+
+    // --- Get window position relative to root ---
+    Window root = XDefaultRootWindow(display.get());
+    int win_x, win_y;
+    Window child;
+    if (!XTranslateCoordinates(display.get(), target_window, root, 0, 0, &win_x, &win_y, &child)) {
+        Napi::Error::New(env, "Failed to get window coordinates").ThrowAsJavaScriptException();
+        return;
+    }
 
     // --- Create the Synthetic Motion Event ---
     XEvent event;
@@ -160,13 +184,13 @@ void DoSyntheticMouseMove(const Napi::CallbackInfo& info, const std::string& dis
 
     event.xmotion.display     = display.get();
     event.xmotion.window      = target_window;
-    event.xmotion.root        = XDefaultRootWindow(display.get());
+    event.xmotion.root        = root;
     event.xmotion.subwindow   = None;
     event.xmotion.time        = CurrentTime;
     event.xmotion.x           = x;
     event.xmotion.y           = y;
-    event.xmotion.x_root      = 1;
-    event.xmotion.y_root      = 1;
+    event.xmotion.x_root      = win_x + x;
+    event.xmotion.y_root      = win_y + y;
     event.xmotion.same_screen = True;
     event.xmotion.state       = 0;
     event.xmotion.is_hint     = NotifyNormal;
@@ -183,7 +207,7 @@ Napi::Value LeftClick(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(info.Env(), "LeftClick requires display name as 4th argument").ThrowAsJavaScriptException();
         return info.Env().Null();
     }
-    DoSyntheticClick(info, 1, info[3].As<Napi::String>().Utf8Value()); // Button 1 is Left Click
+    DoSyntheticClick(info, 1, info[3].As<Napi::String>().Utf8Value());
     return info.Env().Null();
 }
 
@@ -192,7 +216,7 @@ Napi::Value RightClick(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(info.Env(), "RightClick requires display name as 4th argument").ThrowAsJavaScriptException();
         return info.Env().Null();
     }
-    DoSyntheticClick(info, 3, info[3].As<Napi::String>().Utf8Value()); // Button 3 is Right Click
+    DoSyntheticClick(info, 3, info[3].As<Napi::String>().Utf8Value());
     return info.Env().Null();
 }
 
@@ -201,7 +225,7 @@ Napi::Value MouseDown(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(info.Env(), "MouseDown requires display name as 4th argument").ThrowAsJavaScriptException();
         return info.Env().Null();
     }
-    DoSyntheticMouseEvent(info, 1, true, info[3].As<Napi::String>().Utf8Value()); // Button 1 down
+    DoSyntheticMouseEvent(info, 1, true, info[3].As<Napi::String>().Utf8Value());
     return info.Env().Null();
 }
 
@@ -210,7 +234,7 @@ Napi::Value MouseUp(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(info.Env(), "MouseUp requires display name as 4th argument").ThrowAsJavaScriptException();
         return info.Env().Null();
     }
-    DoSyntheticMouseEvent(info, 1, false, info[3].As<Napi::String>().Utf8Value()); // Button 1 up
+    DoSyntheticMouseEvent(info, 1, false, info[3].As<Napi::String>().Utf8Value());
     return info.Env().Null();
 }
 
@@ -219,7 +243,7 @@ Napi::Value RightMouseDown(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(info.Env(), "RightMouseDown requires display name as 4th argument").ThrowAsJavaScriptException();
         return info.Env().Null();
     }
-    DoSyntheticMouseEvent(info, 3, true, info[3].As<Napi::String>().Utf8Value()); // Button 3 down
+    DoSyntheticMouseEvent(info, 3, true, info[3].As<Napi::String>().Utf8Value());
     return info.Env().Null();
 }
 
@@ -228,7 +252,7 @@ Napi::Value RightMouseUp(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(info.Env(), "RightMouseUp requires display name as 4th argument").ThrowAsJavaScriptException();
         return info.Env().Null();
     }
-    DoSyntheticMouseEvent(info, 3, false, info[3].As<Napi::String>().Utf8Value()); // Button 3 up
+    DoSyntheticMouseEvent(info, 3, false, info[3].As<Napi::String>().Utf8Value());
     return info.Env().Null();
 }
 
@@ -253,4 +277,4 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     return exports;
 }
 
-NODE_API_MODULE(mouse_controller, Init) // Make sure this matches your target_name
+NODE_API_MODULE(mouse_controller, Init)

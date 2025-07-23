@@ -46,6 +46,14 @@ const createStateShortcutObject = (getState, type) => {
         ?.length,
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'battleList', {
+    get: () => ({
+      entries:
+        getState().regionCoordinates.regions.battleList?.children?.entries
+          ?.list || [],
+    }),
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'partyNum', {
     get: () => getState().gameState?.partyNum,
     enumerable: true,
@@ -175,16 +183,25 @@ const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object}}
  */
 export const createLuaApi = (context) => {
-  const { type, getState, postSystemMessage, logger, id } = context;
+  const {
+    type,
+    getState,
+    postSystemMessage,
+    logger,
+    id,
+    refreshLuaGlobalState,
+  } = context; // Add refreshLuaGlobalState to context
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
-    'wait',
+    'wait', // This will now trigger a state refresh
     'keyPress',
     'keyPressMultiple',
     'type',
     'rotate',
     'leftClick',
     'rightClick',
+    'leftClickAbsolute', // New async function
+    'rightClickAbsolute', // New async function
     'mapClick',
     'drag',
     'dragAbsolute',
@@ -245,7 +262,7 @@ export const createLuaApi = (context) => {
       }
     },
     alert: () => postSystemMessage({ type: 'play_alert' }),
-    wait: wait,
+    wait: (min_ms, max_ms) => wait(min_ms, max_ms, refreshLuaGlobalState), // Pass the refresh callback
     keyPress: (key, modifier = null) =>
       keyPress(String(getWindowId()), getDisplay(), key, { modifier }),
     keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
@@ -306,6 +323,21 @@ export const createLuaApi = (context) => {
         clickCoords.y,
         getDisplay(),
       );
+      await wait(100); // 100ms delay after click
+      return true;
+    },
+
+    // --- New Absolute Click Functions (Async with 100ms delay) ---
+    leftClickAbsolute: async (x, y) => {
+      const windowId = String(getWindowId());
+      mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
+      await wait(100); // 100ms delay after click
+      return true;
+    },
+
+    rightClickAbsolute: async (x, y) => {
+      const windowId = String(getWindowId());
+      mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
       await wait(100); // 100ms delay after click
       return true;
     },
@@ -689,6 +721,17 @@ export const createLuaApi = (context) => {
         `[Lua/${scriptName}] Starting login process for character: ${character}`,
       );
 
+      // 1.1 Check if connection lost modal is visible
+      if (state.regionCoordinates?.regions?.connectionLostModal) {
+        mouseController.leftClick(
+          parseInt(windowId),
+          state.regionCoordinates?.regions?.connectionLostModal?.children?.ok.x,
+          state.regionCoordinates?.regions?.connectionLostModal?.children?.ok.y,
+          getDisplay(),
+        );
+        await wait(100);
+      }
+
       // 2. Check if loginModal is visible
       const loginModal = state.regionCoordinates?.regions?.loginModal;
       console.log('[LOGIN] Login modal found:', !!loginModal);
@@ -760,7 +803,7 @@ export const createLuaApi = (context) => {
         return false;
       }
 
-      console.log('[LOGIN] Clicking password input field');
+      console.log('[LOGIN] Clicking password input field', getDisplay());
       mouseController.leftClick(
         parseInt(windowId),
         passwordInput.x,
@@ -995,6 +1038,7 @@ export const createLuaApi = (context) => {
         parseInt(windowId),
         characterItem.position.x,
         characterItem.position.y,
+        getDisplay(),
       );
       await wait(100);
 

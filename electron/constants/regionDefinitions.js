@@ -985,6 +985,30 @@ const regionDefinitions = {
       },
     },
   },
+  connectionLostModal: {
+    type: 'single',
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [49, 49, 49],
+      [144, 144, 144],
+      [55, 55, 55],
+      [59, 59, 59],
+      [144, 144, 144],
+      [144, 144, 144],
+    ],
+    width: 1,
+    height: 1,
+    children: {
+      ok: {
+        type: 'fixed',
+        x: 173,
+        y: 116,
+        width: 1,
+        height: 1,
+      },
+    },
+  },
   selectCharacterModal: {
     type: 'single',
     direction: 'horizontal',
