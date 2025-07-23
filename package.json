@@ -1,5 +1,5 @@
 {
-  "name": "data-lite-data-core",
+  "name": "prime_expert_instant_base",
   "version": "1.3.5b",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.data-lite-data-core",
-    "productName": "Data Lite Data Core",
+    "appId": "com.electron.prime_expert_instant_base",
+    "productName": "Prime Expert Instant Base",
     "directories": {
       "output": "dist",
       "buildResources": "build"

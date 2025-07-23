@@ -689,23 +689,12 @@ export const createLuaApi = (context) => {
     // --- Login Function ---
     login: async (email, password, character) => {
       const windowId = String(getWindowId());
-      const state = getState();
+      const display = getDisplay();
+      let state = getState();
 
       console.log('[LOGIN] === LOGIN FUNCTION STARTED ===');
-      console.log('[LOGIN] Window ID:', windowId);
-      console.log('[LOGIN] Target character:', character);
-      console.log('[LOGIN] Email provided:', email ? 'Yes' : 'No');
-      console.log('[LOGIN] Initial state keys:', Object.keys(state || {}));
-      console.log(
-        '[LOGIN] Region coordinates available:',
-        !!state.regionCoordinates,
-      );
-      console.log(
-        '[LOGIN] Online marker status:',
-        !!state.regionCoordinates?.regions?.onlineMarker,
-      );
 
-      // 1. Check if we are online
+      // 1. Check if we are already online
       if (state.regionCoordinates?.regions?.onlineMarker) {
         console.log('[LOGIN] Player already online - skipping login');
         logger(
@@ -715,129 +704,145 @@ export const createLuaApi = (context) => {
         return false;
       }
 
-      console.log('[LOGIN] Player not online - proceeding with login');
-      logger(
-        'info',
-        `[Lua/${scriptName}] Starting login process for character: ${character}`,
-      );
+      // 2. Initial Modal Cleanup: Check for and close any pop-up modals
+      console.log('[LOGIN] Starting initial modal cleanup...');
+      const modalsToClose = [
+        { name: 'pleaseWaitModal' },
+        { name: 'ipChangedModal' },
+        { name: 'wrongPasswordModal' },
+        { name: 'connectionLostModal' },
+        { name: 'connectionFailedModal' },
+        { name: 'warningModal' },
+      ];
 
-      // 1.1 Check if connection lost modal is visible
-      if (state.regionCoordinates?.regions?.connectionLostModal) {
+      let closedAModal;
+      do {
+        closedAModal = false;
+        state = getState(); // Refresh state before each check
+        const regions = state.regionCoordinates?.regions;
+
+        if (regions) {
+          for (const modalInfo of modalsToClose) {
+            const modal = regions[modalInfo.name];
+            // Check for 'ok', 'close', or 'abort' buttons
+            const button =
+              modal?.children?.abort ||
+              modal?.children?.close ||
+              modal?.children?.ok;
+
+            if (button?.x && button?.y) {
+              console.log(`[LOGIN] Found and closing '${modalInfo.name}'`);
+              logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
+              if (modalInfo.name === 'ipChangedModal') {
+                await keyPress(windowId, display, 'Escape');
+                await wait(100);
+                await keyPress(windowId, display, 'Escape');
+                await wait(400);
+              } else {
+                mouseController.leftClick(
+                  parseInt(windowId),
+                  button.x,
+                  button.y,
+                  display,
+                );
+                await wait(500);
+              } // Wait for the modal to disappear
+              closedAModal = true;
+              break; // Restart the loop to get fresh state
+            }
+          }
+        }
+      } while (closedAModal);
+      console.log('[LOGIN] Modal cleanup finished.');
+
+      // 3. Check if we are already at the character selection screen
+      state = getState(); // Get the latest state after cleanup
+      let selectCharacterModal =
+        state.regionCoordinates?.regions?.selectCharacterModal;
+
+      if (selectCharacterModal) {
+        console.log(
+          '[LOGIN] Already at character selection screen, skipping login form.',
+        );
+        logger(
+          'info',
+          `[Lua/${scriptName}] Already at character selection, skipping login form.`,
+        );
+      } else {
+        // 4. If not, proceed with the standard login form
+        console.log(
+          '[LOGIN] Login form required. Proceeding with credentials.',
+        );
+        logger(
+          'info',
+          `[Lua/${scriptName}] Starting login process for character: ${character}`,
+        );
+
+        const loginModal = state.regionCoordinates?.regions?.loginModal;
+        if (!loginModal) {
+          console.log('[LOGIN] ERROR: loginModal not found in state');
+          logger('warn', `[Lua/${scriptName}] loginModal not found`);
+          return false;
+        }
+
+        // Press escape to ensure login modal is focused
+        await keyPress(windowId, display, 'Escape');
+        await wait(100);
+
+        // Type email
+        const emailInput = loginModal.children?.emailInput;
+        if (!emailInput) {
+          console.log('[LOGIN] ERROR: emailInput not found');
+          logger('warn', `[Lua/${scriptName}] emailInput not found`);
+          return false;
+        }
         mouseController.leftClick(
           parseInt(windowId),
-          state.regionCoordinates?.regions?.connectionLostModal?.children?.ok.x,
-          state.regionCoordinates?.regions?.connectionLostModal?.children?.ok.y,
-          getDisplay(),
+          emailInput.x,
+          emailInput.y,
+          display,
         );
+        await wait(50);
+        await typeText(windowId, display, [email], false);
         await wait(100);
-      }
 
-      // 2. Check if loginModal is visible
-      const loginModal = state.regionCoordinates?.regions?.loginModal;
-      console.log('[LOGIN] Login modal found:', !!loginModal);
-      if (loginModal) {
-        console.log('[LOGIN] Login modal position:', {
-          x: loginModal.x,
-          y: loginModal.y,
-          width: loginModal.width,
-          height: loginModal.height,
-        });
-        console.log(
-          '[LOGIN] Login modal children:',
-          Object.keys(loginModal.children || {}),
+        // Type password
+        const passwordInput = loginModal.children?.passwordInput;
+        if (!passwordInput) {
+          console.log('[LOGIN] ERROR: passwordInput not found');
+          logger('warn', `[Lua/${scriptName}] passwordInput not found`);
+          return false;
+        }
+        mouseController.leftClick(
+          parseInt(windowId),
+          passwordInput.x,
+          passwordInput.y,
+          display,
         );
+        await wait(50);
+        await typeText(windowId, display, [password], false);
+        await wait(100);
+
+        // Press enter to submit login
+        console.log('[LOGIN] Pressing Enter to submit login form');
+        await keyPress(windowId, display, 'Enter');
+        await wait(200);
       }
 
-      if (!loginModal) {
-        console.log('[LOGIN] ERROR: loginModal not found in state');
-        logger('warn', `[Lua/${scriptName}] loginModal not found`);
-        return false;
-      }
-
-      // 3. Press escape to ensure login modal is focused
-      console.log('[LOGIN] Pressing Escape to focus login modal');
-      await keyPress(windowId, getDisplay(), 'Escape');
-      await wait(100);
-
-      // 4. Click on email input and type email
-      const emailInput = loginModal.children?.emailInput;
-      console.log('[LOGIN] Email input found:', !!emailInput);
-      if (emailInput) {
-        console.log('[LOGIN] Email input position:', {
-          x: emailInput.x,
-          y: emailInput.y,
-        });
-      }
-
-      if (!emailInput) {
-        console.log('[LOGIN] ERROR: emailInput not found');
-        logger('warn', `[Lua/${scriptName}] emailInput not found`);
-        return false;
-      }
-
-      console.log('[LOGIN] Clicking email input field');
-      mouseController.leftClick(
-        parseInt(windowId),
-        emailInput.x,
-        emailInput.y,
-        getDisplay(),
-      );
-      await wait(50);
-      console.log('[LOGIN] Typing email:', email);
-      await typeText(windowId, getDisplay(), [email], false);
-      await wait(100);
-
-      // 5. Click on password input and type password
-      const passwordInput = loginModal.children?.passwordInput;
-      console.log('[LOGIN] Password input found:', !!passwordInput);
-      if (passwordInput) {
-        console.log('[LOGIN] Password input position:', {
-          x: passwordInput.x,
-          y: passwordInput.y,
-        });
-      }
-
-      if (!passwordInput) {
-        console.log('[LOGIN] ERROR: passwordInput not found');
-        logger('warn', `[Lua/${scriptName}] passwordInput not found`);
-        return false;
-      }
-
-      console.log('[LOGIN] Clicking password input field', getDisplay());
-      mouseController.leftClick(
-        parseInt(windowId),
-        passwordInput.x,
-        passwordInput.y,
-        getDisplay(),
-      );
-      await wait(50);
-      console.log('[LOGIN] Typing password (hidden)');
-      await typeText(windowId, getDisplay(), [password], false);
-      await wait(100);
-
-      // 6. Press enter to submit login
-      console.log('[LOGIN] Pressing Enter to submit login form');
-      await keyPress(windowId, getDisplay(), 'Enter');
-      console.log('[LOGIN] Waiting 2 seconds for login processing...');
-      await wait(200);
-
-      // 7. Wait for and check if selectCharacterModal is visible
-      // Refresh state after login submission
+      // 5. Wait for and handle Character Selection
       console.log('[LOGIN] Checking for character selection modal...');
       let currentState = getState();
-      let selectCharacterModal =
+      selectCharacterModal =
         currentState.regionCoordinates?.regions?.selectCharacterModal;
-      console.log(
-        '[LOGIN] Initial character modal check:',
-        !!selectCharacterModal,
-      );
 
-      // Wait up to 10 seconds for the character selection modal to appear
       const maxWaitForModal = 10000;
       const modalCheckInterval = 500;
       let modalWaitTime = 0;
 
-      console.log('[LOGIN] Starting wait loop for character modal...');
+      // --- NEW ROBUST LOGIC ---
+      // This flag ensures we don't fail prematurely before the connectingModal has a chance to appear.
+      let connectingModalWasSeen = false;
+
       while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
         console.log(
           `[LOGIN] Waiting for modal... (${modalWaitTime}ms elapsed)`,
@@ -845,12 +850,39 @@ export const createLuaApi = (context) => {
         await wait(modalCheckInterval);
         modalWaitTime += modalCheckInterval;
         currentState = getState();
-        selectCharacterModal =
-          currentState.regionCoordinates?.regions?.selectCharacterModal;
-        console.log(
-          `[LOGIN] Modal check after ${modalWaitTime}ms:`,
-          !!selectCharacterModal,
-        );
+
+        const regions = currentState.regionCoordinates?.regions;
+        selectCharacterModal = regions?.selectCharacterModal;
+        const connectingModal = regions?.connectingModal;
+
+        // First, check if the connecting modal is visible. If so, we "arm" our failure check.
+        if (connectingModal) {
+          connectingModalWasSeen = true;
+        }
+
+        // Now, check for the failure condition:
+        // We have seen the connecting modal before, but now it's gone, and we are NOT at the character select screen.
+        if (
+          connectingModalWasSeen &&
+          !connectingModal &&
+          !selectCharacterModal
+        ) {
+          console.log(
+            '[LOGIN] ERROR: Connecting modal disappeared without character selection. Aborting.',
+          );
+          logger(
+            'warn',
+            `[Lua/${scriptName}] Connection stalled or failed. Aborting login.`,
+          );
+
+          // Press escape 3 times to back out of the failed state
+          for (let i = 0; i < 3; i++) {
+            await keyPress(windowId, display, 'Escape');
+            await wait(100);
+          }
+          return false; // Exit the function
+        }
+        // --- END OF NEW ROBUST LOGIC ---
       }
 
       if (!selectCharacterModal) {
@@ -861,208 +893,97 @@ export const createLuaApi = (context) => {
           'warn',
           `[Lua/${scriptName}] selectCharacterModal not found after login attempt (waited ${modalWaitTime}ms)`,
         );
-        // Press escape 3 times and stop
-        for (let i = 0; i < 3; i++) {
-          await keyPress(windowId, getDisplay(), 'Escape');
-          await wait(100);
-        }
         return false;
       }
 
       console.log('[LOGIN] SUCCESS: Character selection modal found!');
-      console.log('[LOGIN] Modal details:', {
-        x: selectCharacterModal.x,
-        y: selectCharacterModal.y,
-        width: selectCharacterModal.width,
-        height: selectCharacterModal.height,
-      });
 
-      // 8. Get character selection data
-      console.log('[LOGIN] Retrieving character selection data...');
+      // 6. Get character selection data and find the target character
       const characterData = currentState.uiValues?.selectCharacterModal;
-      console.log('[LOGIN] Character data found:', !!characterData);
-      console.log('[LOGIN] Character data structure:', characterData);
-
       if (!characterData || !characterData.characters) {
         console.log('[LOGIN] ERROR: No valid character data for selection');
         logger('warn', `[Lua/${scriptName}] No character data for selection`);
-        // Press escape 3 times and stop
-        for (let i = 0; i < 3; i++) {
-          await keyPress(windowId, getDisplay(), 'Escape');
-          await wait(100);
-        }
         return false;
       }
 
-      // 9. Check if target character is available
       let characters = characterData.characters;
       let characterNames = Object.keys(characters);
       const targetCharacterLower = character.toLowerCase();
-      console.log('[LOGIN] Available characters:', characterNames);
-      console.log(
-        '[LOGIN] Target character (lowercase):',
-        targetCharacterLower,
-      );
-
       let targetCharacterFound = characterNames.find((name) =>
         name.toLowerCase().includes(targetCharacterLower),
       );
-      console.log(
-        '[LOGIN] Target character found initially:',
-        !!targetCharacterFound,
-      );
 
+      // If character not found, try pressing the first letter
       if (!targetCharacterFound) {
         console.log(
           '[LOGIN] Target character not visible, trying first letter approach',
         );
-        logger(
-          'info',
-          `[Lua/${scriptName}] Target character not visible, trying first letter: ${character[0]}`,
-        );
+        await keyPress(windowId, display, character[0].toUpperCase());
+        await wait(500); // Wait for list to update
 
-        // Press first letter of character name
-        console.log(
-          '[LOGIN] Pressing first letter:',
-          character[0].toUpperCase(),
-        );
-        await keyPress(windowId, character[0].toUpperCase());
-        await wait(500);
-
-        // Refresh state after pressing first letter
-        let updatedState = getState();
-        let updatedCharacterData = updatedState.uiValues?.selectCharacterModal;
-
-        // Wait for state to update after pressing first letter
-        const maxWaitForUpdate = 3000;
-        const updateCheckInterval = 200;
-        let updateWaitTime = 0;
-
-        console.log('[LOGIN] Starting wait loop for character data update...');
-        while (
-          (!updatedCharacterData || !updatedCharacterData.characters) &&
-          updateWaitTime < maxWaitForUpdate
-        ) {
-          console.log(
-            `[LOGIN] Waiting for character data update... (${updateWaitTime}ms elapsed)`,
-          );
-          await wait(updateCheckInterval);
-          updateWaitTime += updateCheckInterval;
-          updatedState = getState();
-          updatedCharacterData = updatedState.uiValues?.selectCharacterModal;
-          console.log(
-            `[LOGIN] Character data check after ${updateWaitTime}ms:`,
-            !!updatedCharacterData?.characters,
-          );
-        }
-
+        // Refresh state and re-check
+        currentState = getState();
+        const updatedCharacterData =
+          currentState.uiValues?.selectCharacterModal;
         if (updatedCharacterData && updatedCharacterData.characters) {
           characters = updatedCharacterData.characters;
           characterNames = Object.keys(characters);
-          console.log('[LOGIN] Updated available characters:', characterNames);
-
           targetCharacterFound = characterNames.find((name) =>
             name.toLowerCase().includes(targetCharacterLower),
           );
-          console.log(
-            '[LOGIN] Target character found after first letter:',
-            !!targetCharacterFound,
-          );
-
-          if (!targetCharacterFound) {
-            console.log(
-              '[LOGIN] ERROR: Target character still not visible after first letter',
-            );
-            logger(
-              'warn',
-              `[Lua/${scriptName}] Target character still not visible after first letter`,
-            );
-            // Press escape 3 times and stop
-            for (let i = 0; i < 3; i++) {
-              await keyPress(windowId, getDisplay(), 'Escape');
-              await wait(100);
-            }
-            return false;
-          }
-
-          console.log(
-            '[LOGIN] SUCCESS: Target character found after first letter press',
-          );
-        } else {
-          console.log(
-            `[LOGIN] ERROR: No character data available after first letter (waited ${updateWaitTime}ms)`,
-          );
-          logger(
-            'warn',
-            `[Lua/${scriptName}] No character data after first letter (waited ${updateWaitTime}ms)`,
-          );
-          // Press escape 3 times and stop
-          for (let i = 0; i < 3; i++) {
-            await keyPress(windowId, getDisplay(), 'Escape');
-            await wait(100);
-          }
-          return false;
         }
-      } else {
-        console.log(
-          '[LOGIN] SUCCESS: Target character found in initial character data',
-        );
       }
 
-      // 10. Click on the target character
-      const characterItem = characters[targetCharacterFound];
-      console.log('[LOGIN] Target character details:', characterItem);
+      if (!targetCharacterFound) {
+        console.log('[LOGIN] ERROR: Target character not found');
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Target character '${character}' not found in list`,
+        );
+        return false;
+      }
 
+      // 7. Click on the target character and log in
+      const characterItem = characters[targetCharacterFound];
       if (!characterItem || !characterItem.position) {
         console.log(
           '[LOGIN] ERROR: Could not find target character coordinates',
         );
         logger(
           'warn',
-          `[Lua/${scriptName}] Could not find target character coordinates`,
+          `[Lua/${scriptName}] Could not find coordinates for character '${targetCharacterFound}'`,
         );
-        // Press escape 3 times and stop
-        for (let i = 0; i < 3; i++) {
-          await keyPress(windowId, getDisplay(), 'Escape');
-          await wait(100);
-        }
         return false;
       }
 
       // Click on the character
-      console.log('[LOGIN] Clicking on target character at coordinates:', {
-        x: characterItem.position.x,
-        y: characterItem.position.y,
-      });
+      console.log(
+        '[LOGIN] Clicking on target character:',
+        targetCharacterFound,
+      );
       mouseController.leftClick(
         parseInt(windowId),
         characterItem.position.x,
         characterItem.position.y,
-        getDisplay(),
+        display,
       );
       await wait(100);
 
       // Press enter to select character
       console.log('[LOGIN] Pressing Enter to select character');
-      await keyPress(windowId, getDisplay(), 'Enter');
+      await keyPress(windowId, display, 'Enter');
 
-      // 11. Wait for login to complete (check if online)
+      // 8. Wait for login to complete (check if online)
       console.log('[LOGIN] Waiting for login completion...');
-      const maxWaitTime = 5000;
-      const checkInterval = 100;
+      const maxWaitTime = 10000;
+      const checkInterval = 200;
       let elapsedTime = 0;
 
-      console.log('[LOGIN] Starting wait loop for online status...');
       while (elapsedTime < maxWaitTime) {
         await wait(checkInterval);
         elapsedTime += checkInterval;
-
-        const currentState = getState();
-        const isOnline =
-          !!currentState.regionCoordinates?.regions?.onlineMarker;
-        console.log(`[LOGIN] Online check after ${elapsedTime}ms:`, isOnline);
-
-        if (isOnline) {
+        const finalState = getState();
+        if (!!finalState.regionCoordinates?.regions?.onlineMarker) {
           console.log('[LOGIN] SUCCESS: Login completed, player is online!');
           logger(
             'info',
@@ -1073,7 +994,7 @@ export const createLuaApi = (context) => {
       }
 
       console.log(
-        '[LOGIN] ERROR: Login timeout, player did not come online within 5 seconds',
+        `[LOGIN] ERROR: Login timeout, player did not come online within ${maxWaitTime / 1000} seconds`,
       );
       logger(
         'warn',

@@ -42,7 +42,7 @@ const WINDOW_ID_INDEX = 4;
 const captureInstance = X11RegionCapture
   ? new X11RegionCapture.X11RegionCapture(display)
   : null; // Pass display to constructor
-let targetFps = 20;
+let targetFps = 10;
 let isCapturing = false;
 
 /**

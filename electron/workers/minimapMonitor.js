@@ -28,12 +28,15 @@ import { performance } from 'perf_hooks';
 import { floorLevelIndicators } from '../constants/index.js';
 import { PALETTE_DATA } from '../constants/palette.js';
 import { createLogger } from '../utils/logger.js';
-import { MinimapMatcher, setMinimapResourcesPath } from '../utils/minimapMatcher.js';
+import {
+  MinimapMatcher,
+  setMinimapResourcesPath,
+} from '../utils/minimapMatcher.js';
 import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
 const { sharedData, paths } = workerData;
-const SCAN_INTERVAL_MS = 1; // Minimap position doesn't need to update as frequently.
+const SCAN_INTERVAL_MS = 25;
 const logger = createLogger({ info: true, error: true, debug: false });
 
 // --- Shared Buffer Setup ---
@@ -90,20 +93,35 @@ function extractBGRA(sourceBuffer, sourceWidth, rect) {
   logger('debug', 'extractBGRA: extracting', {
     targetSize,
     sourceBufferLength: sourceBuffer.length,
-    expectedSourceEnd: HEADER_SIZE + (rect.y + rect.height - 1) * sourceWidth * bytesPerPixel + (rect.x + rect.width) * bytesPerPixel,
+    expectedSourceEnd:
+      HEADER_SIZE +
+      (rect.y + rect.height - 1) * sourceWidth * bytesPerPixel +
+      (rect.x + rect.width) * bytesPerPixel,
   });
 
   for (let y = 0; y < rect.height; y++) {
     const sourceY = rect.y + y;
-    const sourceRowStart = HEADER_SIZE + (sourceY * sourceWidth + rect.x) * bytesPerPixel;
+    const sourceRowStart =
+      HEADER_SIZE + (sourceY * sourceWidth + rect.x) * bytesPerPixel;
     const targetRowStart = y * rect.width * bytesPerPixel;
 
-    if (sourceRowStart < 0 || sourceRowStart + rect.width * bytesPerPixel > sourceBuffer.length) {
-      logger('debug', 'extractBGRA: out of bounds access', { sourceRowStart, requiredBytes: rect.width * bytesPerPixel });
+    if (
+      sourceRowStart < 0 ||
+      sourceRowStart + rect.width * bytesPerPixel > sourceBuffer.length
+    ) {
+      logger('debug', 'extractBGRA: out of bounds access', {
+        sourceRowStart,
+        requiredBytes: rect.width * bytesPerPixel,
+      });
       return null;
     }
 
-    sourceBuffer.copy(targetBuffer, targetRowStart, sourceRowStart, sourceRowStart + rect.width * bytesPerPixel);
+    sourceBuffer.copy(
+      targetBuffer,
+      targetRowStart,
+      sourceRowStart,
+      sourceRowStart + rect.width * bytesPerPixel,
+    );
   }
 
   logger('debug', 'extractBGRA: successfully extracted', targetSize, 'bytes');
@@ -125,23 +143,43 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
   logger('debug', 'Processing new minimap data');
 
   // Create a temporary buffer with a header for the native module call.
-  const floorIndicatorSearchBuffer = Buffer.alloc(HEADER_SIZE + floorIndicatorBuffer.length);
+  const floorIndicatorSearchBuffer = Buffer.alloc(
+    HEADER_SIZE + floorIndicatorBuffer.length,
+  );
   floorIndicatorSearchBuffer.writeUInt32LE(2, 0); // width of floor indicator region
   floorIndicatorSearchBuffer.writeUInt32LE(63, 4); // height of floor indicator region
   floorIndicatorBuffer.copy(floorIndicatorSearchBuffer, HEADER_SIZE);
 
-  logger('debug', 'Created floor indicator search buffer, length:', floorIndicatorSearchBuffer.length);
+  logger(
+    'debug',
+    'Created floor indicator search buffer, length:',
+    floorIndicatorSearchBuffer.length,
+  );
 
   try {
-    const searchResults = await findSequences.findSequencesNativeBatch(floorIndicatorSearchBuffer, {
-      floor: { sequences: floorLevelIndicators, searchArea: { x: 0, y: 0, width: 2, height: 63 }, occurrence: 'first' },
-    });
+    const searchResults = await findSequences.findSequencesNativeBatch(
+      floorIndicatorSearchBuffer,
+      {
+        floor: {
+          sequences: floorLevelIndicators,
+          searchArea: { x: 0, y: 0, width: 2, height: 63 },
+          occurrence: 'first',
+        },
+      },
+    );
 
-    logger('debug', 'Floor indicator search results:', JSON.stringify(searchResults));
+    logger(
+      'debug',
+      'Floor indicator search results:',
+      JSON.stringify(searchResults),
+    );
 
     const foundFloor = searchResults.floor || {};
     const floorKey = Object.keys(foundFloor).reduce(
-      (lowest, key) => (foundFloor[key] !== null && foundFloor[key].y < lowest.y ? { key, y: foundFloor[key].y } : lowest),
+      (lowest, key) =>
+        foundFloor[key] !== null && foundFloor[key].y < lowest.y
+          ? { key, y: foundFloor[key].y }
+          : lowest,
       { key: null, y: Infinity },
     ).key;
     const detectedZ = floorKey !== null ? parseInt(floorKey, 10) : null;
@@ -149,28 +187,51 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
     logger('debug', 'Detected floor level:', detectedZ, 'from key:', floorKey);
 
     if (detectedZ === null) {
-      logger('debug', 'Cannot determine floor level, aborting minimap processing');
+      logger(
+        'debug',
+        'Cannot determine floor level, aborting minimap processing',
+      );
       return; // Can't determine floor, cannot proceed.
     }
 
-    logger('debug', 'Creating minimap index data, buffer size:', minimapBuffer.length);
+    logger(
+      'debug',
+      'Creating minimap index data, buffer size:',
+      minimapBuffer.length,
+    );
     const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
     for (let i = 0; i < minimapIndexData.length; i++) {
       const p = i * 4;
-      const key = (minimapBuffer[p + 2] << 16) | (minimapBuffer[p + 1] << 8) | minimapBuffer[p];
+      const key =
+        (minimapBuffer[p + 2] << 16) |
+        (minimapBuffer[p + 1] << 8) |
+        minimapBuffer[p];
       minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
     }
 
     logger('debug', 'Minimap index data created, searching for position...');
 
     minimapMatcher.cancelCurrentSearch();
-    const result = await minimapMatcher.findPosition(minimapIndexData, MINIMAP_WIDTH, MINIMAP_HEIGHT, detectedZ);
+    const result = await minimapMatcher.findPosition(
+      minimapIndexData,
+      MINIMAP_WIDTH,
+      MINIMAP_HEIGHT,
+      detectedZ,
+    );
     logger('debug', 'Minimap search result:', JSON.stringify(result));
 
     if (result?.position) {
-      const cleanPayload = { x: result.position.x, y: result.position.y, z: result.position.z };
+      const cleanPayload = {
+        x: result.position.x,
+        y: result.position.y,
+        z: result.position.z,
+      };
       logger('debug', 'Sending position update:', cleanPayload);
-      parentPort.postMessage({ storeUpdate: true, type: 'gameState/setPlayerMinimapPosition', payload: cleanPayload });
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'gameState/setPlayerMinimapPosition',
+        payload: cleanPayload,
+      });
     } else {
       logger('debug', 'No position found in minimap search result');
     }
@@ -189,9 +250,13 @@ async function mainLoop() {
     try {
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
 
-      if (newFrameCounter > lastProcessedFrameCounter && workerState?.regionCoordinates?.regions) {
+      if (
+        newFrameCounter > lastProcessedFrameCounter &&
+        workerState?.regionCoordinates?.regions
+      ) {
         if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
-          const { minimapFull, minimapFloorIndicatorColumn } = workerState.regionCoordinates.regions;
+          const { minimapFull, minimapFloorIndicatorColumn } =
+            workerState.regionCoordinates.regions;
           const screenWidth = Atomics.load(syncArray, WIDTH_INDEX);
 
           if (minimapFull && minimapFloorIndicatorColumn && screenWidth > 0) {
@@ -203,10 +268,26 @@ async function mainLoop() {
             lastProcessedFrameCounter = newFrameCounter;
 
             // --- Correct Data Extraction ---
-            logger('debug', 'Extracting minimap data with region:', minimapFull);
-            const minimapData = extractBGRA(sharedBufferView, screenWidth, minimapFull);
-            logger('debug', 'Extracting floor indicator data with region:', minimapFloorIndicatorColumn);
-            const floorIndicatorData = extractBGRA(sharedBufferView, screenWidth, minimapFloorIndicatorColumn);
+            logger(
+              'debug',
+              'Extracting minimap data with region:',
+              minimapFull,
+            );
+            const minimapData = extractBGRA(
+              sharedBufferView,
+              screenWidth,
+              minimapFull,
+            );
+            logger(
+              'debug',
+              'Extracting floor indicator data with region:',
+              minimapFloorIndicatorColumn,
+            );
+            const floorIndicatorData = extractBGRA(
+              sharedBufferView,
+              screenWidth,
+              minimapFloorIndicatorColumn,
+            );
 
             logger('debug', 'Data extraction results:', {
               minimapData: !!minimapData,
@@ -216,10 +297,16 @@ async function mainLoop() {
             });
 
             if (minimapData && floorIndicatorData) {
-              logger('debug', 'Both data buffers extracted successfully, processing minimap...');
+              logger(
+                'debug',
+                'Both data buffers extracted successfully, processing minimap...',
+              );
               await processMinimapData(minimapData, floorIndicatorData);
             } else {
-              logger('debug', 'Data extraction failed, skipping minimap processing');
+              logger(
+                'debug',
+                'Data extraction failed, skipping minimap processing',
+              );
             }
           }
         }

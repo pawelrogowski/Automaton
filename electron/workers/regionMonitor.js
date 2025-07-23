@@ -4,10 +4,10 @@ import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
 import findSequences from 'find-sequences-native';
 
-// --- Worker Configuration & Setup (Unchanged) ---
+// --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 50;
-const FULL_SCAN_INTERVAL_MS = 250;
+const SCAN_INTERVAL_MS = 100;
+const FULL_SCAN_INTERVAL_MS = 300;
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
@@ -15,8 +15,11 @@ const FRAME_COUNTER_INDEX = 0,
   WIDTH_INDEX = 1,
   HEIGHT_INDEX = 2,
   IS_RUNNING_INDEX = 3;
-const HEADER_SIZE = 8;
+
+// This view now directly references the shared memory. It will be passed
+// to the native module without any intermediate copies.
 const sharedBufferView = Buffer.from(imageSAB);
+
 let monitorState = 'SEARCHING';
 let lastProcessedFrameCounter = -1;
 let lastKnownRegions = null;
@@ -24,15 +27,14 @@ let lastFullScanTimestamp = 0;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ========================================================================
-// --- CORRECTED findRegionsRecursive ---
-// This version correctly calculates absolute coordinates for all children
-// while also correctly calculating the dimensions of bounding boxes.
+// --- findRegionsRecursive ---
+// (This function is correct and does not need changes)
 // ========================================================================
 async function findRegionsRecursive(
   buffer,
   definitions,
-  searchArea, // The absolute area within which to search
-  baseOffset, // The absolute {x, y} of the parent region, ONLY for 'fixed' children
+  searchArea,
+  baseOffset,
   parentResult,
   metadata,
 ) {
@@ -40,7 +42,6 @@ async function findRegionsRecursive(
   const boundingBoxDefs = {};
   const fixedDefs = {};
 
-  // Step 1: Generate discovery tasks. The searchArea is always absolute.
   for (const [name, def] of Object.entries(definitions)) {
     switch (def.type) {
       case 'single':
@@ -64,7 +65,6 @@ async function findRegionsRecursive(
     }
   }
 
-  // Process fixed regions. This is the ONLY place baseOffset should be used for positioning.
   for (const [name, def] of Object.entries(fixedDefs)) {
     parentResult[name] = {
       x: baseOffset.x + def.x,
@@ -78,7 +78,6 @@ async function findRegionsRecursive(
     return;
   }
 
-  // Step 2: Run the discovery search
   const discoveryResults = await findSequences.findSequencesNativeBatch(
     buffer,
     discoveryTasks,
@@ -88,11 +87,9 @@ async function findRegionsRecursive(
   const foundStarts = {};
   const childInvocations = [];
 
-  // Step 3: Process 'single' results.
   for (const [name, def] of Object.entries(definitions)) {
     if (def.type === 'single' && discoveryResults[name]?.[name]) {
       const result = discoveryResults[name][name];
-      // ** THE REAL FIX **: Treat the result coordinates as ALREADY ABSOLUTE. Do NOT add baseOffset.
       const region = {
         x: result.x,
         y: result.y,
@@ -107,7 +104,6 @@ async function findRegionsRecursive(
 
       if (def.children) {
         parentResult[name].children = {};
-        // For recursion, the new searchArea and baseOffset are the parent's absolute region.
         childInvocations.push(() =>
           findRegionsRecursive(
             buffer,
@@ -127,16 +123,13 @@ async function findRegionsRecursive(
     }
   }
 
-  // Step 4: Process 'boundingBox' start results and create endpoint tasks.
   for (const [name, def] of Object.entries(boundingBoxDefs)) {
     const startResult = discoveryResults[`${name}_start`]?.[`${name}_start`];
     if (startResult) {
-      // The native module returns an absolute position, so we store it directly.
       foundStarts[name] = startResult;
       const maxW = def.maxRight === 'fullWidth' ? metadata.width : def.maxRight;
       const maxH = def.maxDown === 'fullHeight' ? metadata.height : def.maxDown;
 
-      // The search for the endpoint starts from the absolute position of the start point.
       const endSearchArea = {
         x: startResult.x,
         y: startResult.y,
@@ -157,7 +150,6 @@ async function findRegionsRecursive(
     }
   }
 
-  // Step 5: Run endpoint search
   let endpointResults = {};
   if (Object.keys(endpointTasks).length > 0) {
     endpointResults = await findSequences.findSequencesNativeBatch(
@@ -166,14 +158,10 @@ async function findRegionsRecursive(
     );
   }
 
-  // Step 6: Assemble bounding boxes.
   for (const [name, startPos] of Object.entries(foundStarts)) {
     const def = boundingBoxDefs[name];
     const endPos = endpointResults[`${name}_end`]?.[`${name}_end`];
-
-    // ** THE REAL FIX **: The startPos from the native module is ALREADY ABSOLUTE.
     const absStartPos = { x: startPos.x, y: startPos.y };
-
     const rawStartPos = {
       x: absStartPos.x - (def.start.offset?.x || 0),
       y: absStartPos.y - (def.start.offset?.y || 0),
@@ -191,7 +179,6 @@ async function findRegionsRecursive(
       continue;
     }
 
-    // Since both startPos and endPos are absolute, we can subtract them directly for the dimensions.
     const rectWidth = endPos.x - startPos.x + 1;
     const rectHeight = endPos.y - startPos.y + 1;
 
@@ -211,7 +198,6 @@ async function findRegionsRecursive(
 
     if (def.children) {
       parentResult[name].children = {};
-      // For recursion, the new searchArea and baseOffset are the parent's absolute region.
       childInvocations.push(() =>
         findRegionsRecursive(
           buffer,
@@ -230,14 +216,14 @@ async function findRegionsRecursive(
     }
   }
 
-  // Step 7: Execute all queued recursive calls
   for (const invoke of childInvocations) {
     await invoke();
   }
 }
 
 // ========================================================================
-// --- NEW: BattleList Entry Processing (Unchanged) ---
+// --- BattleList Entry Processing ---
+// (This function is correct and does not need changes)
 // ========================================================================
 async function processBattleListEntries(buffer, entriesRegion) {
   const ENTRY_HEIGHT = 20;
@@ -349,12 +335,11 @@ async function processBattleListEntries(buffer, entriesRegion) {
 async function performFullScan(buffer, metadata) {
   const foundRegions = {};
   try {
-    // Start the recursive search from the top level with a base offset of (0,0)
     await findRegionsRecursive(
       buffer,
       regionDefinitions,
       { x: 0, y: 0, width: metadata.width, height: metadata.height },
-      { x: 0, y: 0 }, // Initial base offset is the screen origin
+      { x: 0, y: 0 },
       foundRegions,
       metadata,
     );
@@ -395,7 +380,8 @@ async function performFullScan(buffer, metadata) {
   }
 }
 
-// --- collectValidationTasks (Unchanged) ---
+// --- collectValidationTasks ---
+// (This function is correct and does not need changes)
 function collectValidationTasks(
   regions,
   definitions,
@@ -464,7 +450,8 @@ function collectValidationTasks(
   }
 }
 
-// --- performTargetedCheck (Unchanged) ---
+// --- performTargetedCheck ---
+// (This function is correct and does not need changes)
 async function performTargetedCheck(buffer) {
   const checkTasks = {};
 
@@ -532,7 +519,7 @@ async function performTargetedCheck(buffer) {
   }
 }
 
-// --- Main Loop & Worker Setup (Unchanged) ---
+// --- Main Loop & Worker Setup ---
 async function mainLoop() {
   while (true) {
     const loopStartTime = performance.now();
@@ -555,17 +542,21 @@ async function mainLoop() {
           if (width > 0 && height > 0) {
             lastProcessedFrameCounter = newFrameCounter;
             const metadata = { width, height, frameCounter: newFrameCounter };
-            const bufferSize = HEADER_SIZE + width * height * 4;
-            const bufferSnapshot = Buffer.alloc(bufferSize);
-            sharedBufferView.copy(bufferSnapshot, 0, 0, bufferSize);
+
+            // =================================================================
+            // --- THE FIX ---
+            // The unnecessary buffer allocation and copy have been removed.
+            // We now pass `sharedBufferView` directly to the processing functions.
+            // =================================================================
             const now = performance.now();
             const forceFullScan =
               now - lastFullScanTimestamp > FULL_SCAN_INTERVAL_MS;
+
             if (monitorState === 'SEARCHING' || forceFullScan) {
-              await performFullScan(bufferSnapshot, metadata);
+              await performFullScan(sharedBufferView, metadata);
               lastFullScanTimestamp = now;
             } else {
-              await performTargetedCheck(bufferSnapshot);
+              await performTargetedCheck(sharedBufferView);
             }
           }
         }
@@ -583,14 +574,17 @@ async function mainLoop() {
     }
   }
 }
+
 parentPort.on('message', (message) => {
   if (message.command === 'forceRegionSearch') {
     monitorState = 'SEARCHING';
     lastKnownRegions = null;
   }
 });
+
 async function startWorker() {
   console.log('[RegionMonitor] Worker starting up in SEARCHING state...');
   mainLoop();
 }
+
 startWorker();

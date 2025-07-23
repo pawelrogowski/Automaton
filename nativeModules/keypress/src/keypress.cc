@@ -137,7 +137,7 @@ private:
     uint64_t window_id;
     std::string key;
     std::string modifier;
-    std::string display_name; // New member for display name
+    std::string display_name;
 };
 
 // --- ASYNC WORKER for TypeString ---
@@ -472,22 +472,188 @@ private:
     std::string display_name; // New member for display name
 };
 
+// --- ASYNC WORKER for KeyDown ---
+class KeyDownWorker : public Napi::AsyncWorker {
+public:
+    KeyDownWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string key, std::string modifier, std::string display_name)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), key(key), modifier(modifier), display_name(display_name) {}
+
+protected:
+    void Execute() override {
+        Display *display = XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
+        if (!display) {
+            SetError("Cannot open display: " + display_name);
+            return;
+        }
+        Window target_window = (Window)window_id;
+
+        unsigned int modifiers_state = 0;
+        if (!modifier.empty()) {
+            std::transform(modifier.begin(), modifier.end(), modifier.begin(), ::tolower);
+            if (modifierKeys.count(modifier)) {
+                modifiers_state = modifierKeys[modifier];
+            } else {
+                XCloseDisplay(display);
+                SetError("Invalid modifier: " + modifier);
+                return;
+            }
+        }
+
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
+        if (keysym == NoSymbol) {
+            XCloseDisplay(display);
+            SetError("Invalid key: " + key);
+            return;
+        }
+
+        KeyCode keycode = XKeysymToKeycode(display, keysym);
+        if (keycode == 0) {
+            XCloseDisplay(display);
+            SetError("Could not get keycode for key: " + key);
+            return;
+        }
+
+        XkbStateRec state;
+        XkbGetState(display, XkbUseCoreKbd, &state);
+        unsigned int current_base_mods = state.base_mods;
+
+        XEvent event;
+        memset(&event, 0, sizeof(event));
+        event.xkey.display = display;
+        event.xkey.window = target_window;
+        event.xkey.root = XDefaultRootWindow(display);
+        event.xkey.subwindow = None;
+        event.xkey.time = CurrentTime;
+        event.xkey.x = 1; event.xkey.y = 1;
+        event.xkey.x_root = 1; event.xkey.y_root = 1;
+        event.xkey.same_screen = True;
+        event.xkey.keycode = keycode;
+        event.xkey.state = current_base_mods | modifiers_state;
+
+        // Key Press
+        event.type = KeyPress;
+        XSendEvent(display, target_window, True, KeyPressMask, &event);
+        XSync(display, False);
+
+        XCloseDisplay(display);
+    }
+
+    void OnOK() override {
+        deferred.Resolve(Env().Undefined());
+    }
+
+    void OnError(const Napi::Error& e) override {
+        deferred.Reject(Napi::Error::New(Env(), e.Message()).Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred;
+    uint64_t window_id;
+    std::string key;
+    std::string modifier;
+    std::string display_name;
+};
+
+// --- ASYNC WORKER for KeyUp ---
+class KeyUpWorker : public Napi::AsyncWorker {
+public:
+    KeyUpWorker(Napi::Env env, Napi::Promise::Deferred deferred, uint64_t window_id, std::string key, std::string modifier, std::string display_name)
+        : Napi::AsyncWorker(env), deferred(deferred), window_id(window_id), key(key), modifier(modifier), display_name(display_name) {}
+
+protected:
+    void Execute() override {
+        Display *display = XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
+        if (!display) {
+            SetError("Cannot open display: " + display_name);
+            return;
+        }
+        Window target_window = (Window)window_id;
+
+        unsigned int modifiers_state = 0;
+        if (!modifier.empty()) {
+            std::transform(modifier.begin(), modifier.end(), modifier.begin(), ::tolower);
+            if (modifierKeys.count(modifier)) {
+                modifiers_state = modifierKeys[modifier];
+            } else {
+                XCloseDisplay(display);
+                SetError("Invalid modifier: " + modifier);
+                return;
+            }
+        }
+
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        KeySym keysym = (specialKeys.count(key)) ? specialKeys[key] : XStringToKeysym(key.c_str());
+        if (keysym == NoSymbol) {
+            XCloseDisplay(display);
+            SetError("Invalid key: " + key);
+            return;
+        }
+
+        KeyCode keycode = XKeysymToKeycode(display, keysym);
+        if (keycode == 0) {
+            XCloseDisplay(display);
+            SetError("Could not get keycode for key: " + key);
+            return;
+        }
+
+        XkbStateRec state;
+        XkbGetState(display, XkbUseCoreKbd, &state);
+        unsigned int current_base_mods = state.base_mods;
+
+        XEvent event;
+        memset(&event, 0, sizeof(event));
+        event.xkey.display = display;
+        event.xkey.window = target_window;
+        event.xkey.root = XDefaultRootWindow(display);
+        event.xkey.subwindow = None;
+        event.xkey.time = CurrentTime;
+        event.xkey.x = 1; event.xkey.y = 1;
+        event.xkey.x_root = 1; event.xkey.y_root = 1;
+        event.xkey.same_screen = True;
+        event.xkey.keycode = keycode;
+        event.xkey.state = current_base_mods | modifiers_state;
+
+        // Key Release
+        event.type = KeyRelease;
+        XSendEvent(display, target_window, True, KeyReleaseMask, &event);
+        XSync(display, False);
+
+        XCloseDisplay(display);
+    }
+
+    void OnOK() override {
+        deferred.Resolve(Env().Undefined());
+    }
+
+    void OnError(const Napi::Error& e) override {
+        deferred.Reject(Napi::Error::New(Env(), e.Message()).Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred;
+    uint64_t window_id;
+    std::string key;
+    std::string modifier;
+    std::string display_name;
+};
+
 // --- N-API WRAPPERS ---
 Napi::Value SendKeyAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) { // Added display_name as required
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) {
         deferred.Reject(Napi::TypeError::New(env, "sendKey(windowId, key, display, [modifier]) requires windowId, key, and display.").Value());
         return deferred.Promise();
     }
 
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
     std::string key = info[1].As<Napi::String>().Utf8Value();
-    std::string display_name = info[2].As<Napi::String>().Utf8Value(); // Get display_name
+    std::string display_name = info[2].As<Napi::String>().Utf8Value();
     std::string modifier = "";
 
-    if (info.Length() > 3 && info[3].IsString()) { // Adjusted index for modifier
+    if (info.Length() > 3 && info[3].IsString()) {
         modifier = info[3].As<Napi::String>().Utf8Value();
     }
 
@@ -500,17 +666,17 @@ Napi::Value TypeStringAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) { // Added display_name as required
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) {
         deferred.Reject(Napi::TypeError::New(env, "type(windowId, text, display, [startAndEndWithEnter]) requires windowId, text, and display.").Value());
         return deferred.Promise();
     }
 
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
     std::string str = info[1].As<Napi::String>().Utf8Value();
-    std::string display_name = info[2].As<Napi::String>().Utf8Value(); // Get display_name
+    std::string display_name = info[2].As<Napi::String>().Utf8Value();
     bool start_and_end_with_enter = false;
 
-    if (info.Length() > 3 && info[3].IsBoolean()) { // Adjusted index for start_and_end_with_enter
+    if (info.Length() > 3 && info[3].IsBoolean()) {
         start_and_end_with_enter = info[3].As<Napi::Boolean>().Value();
     }
 
@@ -523,16 +689,16 @@ Napi::Value RotateAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
 
-    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) { // Added display_name as required
+    if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsString()) {
         deferred.Reject(Napi::TypeError::New(env, "rotate(windowId, display, [direction]) requires windowId and display.").Value());
         return deferred.Promise();
     }
 
     uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    std::string display_name = info[1].As<Napi::String>().Utf8Value(); // Get display_name
+    std::string display_name = info[1].As<Napi::String>().Utf8Value();
     char direction_char = '\0';
 
-    if (info.Length() > 2 && info[2].IsString()) { // Adjusted index for direction
+    if (info.Length() > 2 && info[2].IsString()) {
         std::string direction_str = info[2].As<Napi::String>().Utf8Value();
         if (direction_str.length() == 1) {
             char c = tolower(direction_str[0]);
@@ -547,6 +713,52 @@ Napi::Value RotateAsync(const Napi::CallbackInfo& info) {
     return deferred.Promise();
 }
 
+Napi::Value KeyDownAsync(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    auto deferred = Napi::Promise::Deferred::New(env);
+
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) {
+        deferred.Reject(Napi::TypeError::New(env, "keyDown(windowId, key, display, [modifier]) requires windowId, key, and display.").Value());
+        return deferred.Promise();
+    }
+
+    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
+    std::string key = info[1].As<Napi::String>().Utf8Value();
+    std::string display_name = info[2].As<Napi::String>().Utf8Value();
+    std::string modifier = "";
+
+    if (info.Length() > 3 && info[3].IsString()) {
+        modifier = info[3].As<Napi::String>().Utf8Value();
+    }
+
+    KeyDownWorker* worker = new KeyDownWorker(env, deferred, window_id, key, modifier, display_name);
+    worker->Queue();
+    return deferred.Promise();
+}
+
+Napi::Value KeyUpAsync(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    auto deferred = Napi::Promise::Deferred::New(env);
+
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsString() || !info[2].IsString()) {
+        deferred.Reject(Napi::TypeError::New(env, "keyUp(windowId, key, display, [modifier]) requires windowId, key, and display.").Value());
+        return deferred.Promise();
+    }
+
+    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
+    std::string key = info[1].As<Napi::String>().Utf8Value();
+    std::string display_name = info[2].As<Napi::String>().Utf8Value();
+    std::string modifier = "";
+
+    if (info.Length() > 3 && info[3].IsString()) {
+        modifier = info[3].As<Napi::String>().Utf8Value();
+    }
+
+    KeyUpWorker* worker = new KeyUpWorker(env, deferred, window_id, key, modifier, display_name);
+    worker->Queue();
+    return deferred.Promise();
+}
+
 // --- MODULE INITIALIZATION ---
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     if (!XInitThreads()) {
@@ -557,6 +769,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("sendKey", Napi::Function::New(env, SendKeyAsync));
     exports.Set("rotate", Napi::Function::New(env, RotateAsync));
     exports.Set("type", Napi::Function::New(env, TypeStringAsync));
+    // Add new functions
+    exports.Set("keyDown", Napi::Function::New(env, KeyDownAsync));
+    exports.Set("keyUp", Napi::Function::New(env, KeyUpAsync));
     return exports;
 }
 
