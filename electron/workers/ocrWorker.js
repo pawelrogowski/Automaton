@@ -10,7 +10,7 @@ import { regionParsers } from './ocrWorker/parsers.js';
 import regionDefinitions from '../constants/regionDefinitions.js';
 const { recognizeText } = pkg;
 
-// --- Worker Configuration & Setup (Unchanged) ---
+// --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 200;
 if (!sharedData) throw new Error('[OcrWorker] Shared data not provided.');
@@ -26,7 +26,7 @@ let state = null;
 let lastProcessedFrameCounter = -1;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// --- Core OCR Logic ---
+// --- Core OCR Logic (Unchanged) ---
 async function processOcrRegions(buffer, metadata) {
   const { regions } = state.regionCoordinates;
   const ocrUpdates = {};
@@ -122,7 +122,6 @@ async function processOcrRegions(buffer, metadata) {
   // --- End of Battle List Processing ---
   // ========================================================================
 
-  // ... (rest of the file is unchanged and uses the stable single-region call pattern) ...
   const regionConfigs = {
     gameLog: {
       colors: regionDefinitions.gameLog?.ocrColors || [[240, 240, 240]],
@@ -251,10 +250,12 @@ async function mainLoop() {
           if (Object.keys(regions).length > 0 && width > 0 && height > 0) {
             lastProcessedFrameCounter = newFrameCounter;
             const metadata = { width, height, frameCounter: newFrameCounter };
-            const bufferSize = HEADER_SIZE + width * height * 4;
-            const bufferSnapshot = Buffer.alloc(bufferSize);
-            sharedBufferView.copy(bufferSnapshot, 0, 0, bufferSize);
-            await processOcrRegions(bufferSnapshot, metadata);
+
+            // --- [OPTIMIZED] ---
+            // The inefficient buffer snapshot has been removed.
+            // We now pass the sharedBufferView directly to the OCR function,
+            // eliminating a costly memory allocation and copy on every frame.
+            await processOcrRegions(sharedBufferView, metadata);
           }
         }
       }
@@ -270,8 +271,15 @@ async function mainLoop() {
   }
 }
 
+// --- [MODIFIED] --- Updated message handler for new state management model.
 parentPort.on('message', (message) => {
-  state = message;
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    state = { ...state, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    state = message;
+  }
 });
 
 function startWorker() {

@@ -103,7 +103,6 @@ const executeOneShot = async () => {
       `[Lua Script Worker ${scriptConfig.id}] Error executing one-shot script:`,
       errorMessage,
     );
-    // --- MODIFICATION: Use postStoreUpdate to log the error to the UI ---
     postStoreUpdate('lua/addLogEntry', {
       id: scriptConfig.id,
       message: `[ERROR] ${errorMessage}`,
@@ -138,7 +137,6 @@ const executeScriptLoop = async () => {
         `[Lua Script Worker ${scriptConfig.id}] Error in script loop:`,
         errorMessage,
       );
-      // --- MODIFICATION: Use postStoreUpdate to log the error to the UI ---
       postStoreUpdate('lua/addLogEntry', {
         id: scriptConfig.id,
         message: `[ERROR] ${errorMessage}`,
@@ -165,7 +163,9 @@ const stopScriptLoop = () => {
   }
 };
 
+// --- [MODIFIED] --- Updated message handler for new state management model.
 parentPort.on('message', async (message) => {
+  // Handle control messages first
   if (message.type === 'init') {
     scriptConfig = message.script;
     log(
@@ -182,16 +182,31 @@ parentPort.on('message', async (message) => {
       if (scriptConfig.enabled) startScriptLoop();
       keepAlive();
     }
-  } else if (message.type === 'update') {
+    return; // End processing for this message
+  }
+
+  if (message.type === 'update') {
     scriptConfig = message.script;
     if (scriptConfig.enabled) startScriptLoop();
     else stopScriptLoop();
-  } else {
-    // This is a state update message from workerManager.js
-    currentState = message;
-    // Immediately refresh the Lua global state with the new data
-    refreshLuaGlobalState();
+    return; // End processing for this message
   }
+
+  // Handle state update messages
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    currentState = { ...currentState, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    currentState = message;
+  } else {
+    // Ignore other unknown message types
+    return;
+  }
+
+  // After any state change, refresh the Lua global state to ensure
+  // the script has access to the most up-to-date data.
+  refreshLuaGlobalState();
 });
 
 parentPort.on('close', () => {
@@ -202,5 +217,5 @@ parentPort.on('close', () => {
 });
 
 (async () => {
-  // Worker initialization complete
+  // Worker initialization is handled by the 'init' message.
 })();

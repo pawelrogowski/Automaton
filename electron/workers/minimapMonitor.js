@@ -65,7 +65,8 @@ PALETTE_DATA.forEach((color, index) => {
 // --- Worker State ---
 let lastProcessedFrameCounter = -1;
 let lastMinimapFrameData = null;
-let workerState = null; // Will hold the entire Redux state object.
+// --- [MODIFIED] --- Renamed for clarity and consistency.
+let state = null;
 
 // --- Self-Contained Utilities ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -252,11 +253,11 @@ async function mainLoop() {
 
       if (
         newFrameCounter > lastProcessedFrameCounter &&
-        workerState?.regionCoordinates?.regions
+        state?.regionCoordinates?.regions
       ) {
         if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
           const { minimapFull, minimapFloorIndicatorColumn } =
-            workerState.regionCoordinates.regions;
+            state.regionCoordinates.regions;
           const screenWidth = Atomics.load(syncArray, WIDTH_INDEX);
 
           if (minimapFull && minimapFloorIndicatorColumn && screenWidth > 0) {
@@ -326,8 +327,15 @@ async function mainLoop() {
   }
 }
 
-parentPort.on('message', (newState) => {
-  workerState = newState;
+// --- [MODIFIED] --- Updated message handler for new state management model.
+parentPort.on('message', (message) => {
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    state = { ...state, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    state = message;
+  }
 });
 
 async function start() {

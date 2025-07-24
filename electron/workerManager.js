@@ -43,6 +43,9 @@ class WorkerManager {
       minimapResources: null,
     };
 
+    // --- [MODIFIED] --- Holds a reference to the last state for efficient diffing.
+    this.previousState = null;
+
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
@@ -320,11 +323,11 @@ class WorkerManager {
           worker.postMessage({ type: 'init', script: scriptConfig });
         }
         if (name !== 'captureWorker') {
-          // For one-shot scripts, we don't want to send the whole state initially,
-          // only when it's needed. The luaScriptWorker will get it on subsequent messages.
-          // However, the cavebot worker *does* need the initial state.
-          const isOneShotLua = /^[0-9a-fA-F]{8}-/.test(name);
+          const isOneShotLua =
+            /^[0-9a-fA-F]{8}-/.test(name) && scriptConfig?.type === 'oneshot';
           if (!isOneShotLua) {
+            // Send the full initial state so the worker can initialize.
+            // Subsequent updates will be efficient diffs.
             worker.postMessage(store.getState());
           }
         }
@@ -379,17 +382,16 @@ class WorkerManager {
   }
 
   handleStoreUpdate() {
-    const state = store.getState();
-    const { windowId, display } = state.global; // Get display from global state
-    const { enabled: cavebotEnabled } = state.cavebot;
-    const { enabled: luaEnabled } = state.lua;
+    const currentState = store.getState();
+    const { windowId, display } = currentState.global;
+    const { enabled: cavebotEnabled } = currentState.cavebot;
+    const { enabled: luaEnabled } = currentState.lua;
 
+    // --- Worker Lifecycle Management (Unchanged) ---
     if (windowId && display) {
-      // Only proceed if both windowId and display are available
       if (!this.sharedScreenState) this.createSharedBuffers();
       const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
       Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
-      // No need to store display in syncArray, it's passed directly to native modules
 
       if (this.workerConfig.captureWorker && !this.workers.has('captureWorker'))
         this.startWorker('captureWorker');
@@ -403,7 +405,7 @@ class WorkerManager {
       )
         this.startWorker('minimapMonitor');
       if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
-        this.startWorker('ocrWorker'); // Start the new OCR worker
+        this.startWorker('ocrWorker');
       if (
         cavebotEnabled &&
         this.workerConfig.cavebotWorker &&
@@ -425,31 +427,27 @@ class WorkerManager {
       }
     }
 
-    const allPersistentScripts = state.lua.persistentScripts;
+    const allPersistentScripts = currentState.lua.persistentScripts;
     const runningScriptWorkerIds = new Set(
       Array.from(this.workers.keys()).filter((name) =>
         /^[0-9a-fA-F]{8}-/.test(name),
       ),
     );
 
-    // Stop workers for scripts that have been removed
     for (const workerId of runningScriptWorkerIds) {
       if (!allPersistentScripts.some((s) => s.id === workerId)) {
         this.stopWorker(workerId);
       }
     }
 
-    // Start new workers or update existing ones
     if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
       for (const script of allPersistentScripts) {
         const workerName = script.id;
         const workerEntry = this.workers.get(workerName);
 
         if (!workerEntry) {
-          // This is a new script, start a worker for it.
           this.startWorker(workerName, script, this.paths);
         } else {
-          // Worker exists, check for changes that require a restart vs. a simple message.
           const oldConfig = workerEntry.config;
           if (
             oldConfig &&
@@ -457,41 +455,51 @@ class WorkerManager {
               oldConfig.loopMin !== script.loopMin ||
               oldConfig.loopMax !== script.loopMax)
           ) {
-            // If the core logic changes, a restart is necessary.
             this.restartWorker(workerName, script);
           } else if (oldConfig.enabled !== script.enabled) {
-            // If only the enabled status changes, just send a message.
             workerEntry.worker.postMessage({ type: 'update', script });
-            // Update the config in the manager to reflect the new state.
             workerEntry.config = script;
           }
         }
       }
     } else {
-      // If Lua scripts are disabled via luaSlice.enabled = false, stop all running scripts
       for (const workerId of runningScriptWorkerIds) {
         this.stopWorker(workerId);
       }
     }
 
-    // Send the full state to all workers except captureWorker
-    for (const [name, workerEntry] of this.workers) {
-      if (workerEntry.worker && name !== 'captureWorker') {
-        // Send the full state to all workers except captureWorker and one-shot Lua scripts.
-        // One-shot Lua script workers receive their script config on init and don't need the full state.
-        // Persistent Lua script workers (identified by UUID) *do* need continuous state updates.
-        const isPersistentLua =
-          /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-            name,
-          );
-        if (
-          name !== 'captureWorker' &&
-          (!isPersistentLua || workerEntry.config?.type !== 'oneshot')
-        ) {
-          workerEntry.worker.postMessage(state);
+    // --- [OPTIMIZED] --- High-Performance Immutable Diff Broadcast ---
+    const changedSlices = {};
+    let hasChanges = false;
+
+    // Iterate over the top-level keys of the state (e.g., 'global', 'gameState', 'cavebot').
+    for (const key in currentState) {
+      // Perform a cheap reference check. If the reference is different, the slice has changed.
+      if (currentState[key] !== this.previousState[key]) {
+        changedSlices[key] = currentState[key];
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      const updateMessage = { type: 'state_diff', payload: changedSlices };
+
+      // Broadcast the changed slices to all relevant workers.
+      for (const [name, workerEntry] of this.workers) {
+        if (workerEntry.worker && name !== 'captureWorker') {
+          const isOneShotLua =
+            /^[0-9a-fA-F]{8}-/.test(name) &&
+            workerEntry.config?.type === 'oneshot';
+          if (!isOneShotLua) {
+            workerEntry.worker.postMessage(updateMessage);
+          }
         }
       }
     }
+
+    // Update the reference for the next comparison cycle.
+    this.previousState = currentState;
+    // --- [END OPTIMIZATION] ---
   }
 
   initialize(app, cwd, config = {}) {
@@ -501,6 +509,8 @@ class WorkerManager {
       'info',
       '[Worker Manager] Initializing and subscribing to store updates.',
     );
+    // --- [MODIFIED] --- Initialize previousState before subscribing to prevent race conditions.
+    this.previousState = store.getState();
     store.subscribe(this.handleStoreUpdate);
   }
 }

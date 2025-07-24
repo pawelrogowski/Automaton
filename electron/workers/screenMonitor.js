@@ -362,9 +362,15 @@ async function mainLoop() {
   }
 }
 
+// --- [MODIFIED] --- Updated message handler for new state management model.
 parentPort.on('message', (message) => {
-  // The worker receives the full state from the main thread on every update.
-  state = message;
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    state = { ...state, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    state = message;
+  }
 });
 
 function startWorker() {
