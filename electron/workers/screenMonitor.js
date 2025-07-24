@@ -146,10 +146,8 @@ async function mainLoop() {
             const metadata = { width, height, frameCounter: newFrameCounter };
             const bufferSize = HEADER_SIZE + width * height * 4;
 
-            // Create a single, private snapshot of the buffer for this entire cycle.
-            // This is the key fix for memory stability and data consistency.
-            const bufferSnapshot = Buffer.alloc(bufferSize);
-            sharedBufferView.copy(bufferSnapshot, 0, 0, bufferSize);
+            // Use the sharedBufferView directly. The native modules are designed to work with SABs.
+            const bufferToUse = sharedBufferView;
 
             // --- Start of Analysis Cycle ---
 
@@ -168,7 +166,7 @@ async function mainLoop() {
               };
 
             const searchResults = findSequences.findSequencesNativeBatch(
-              bufferSnapshot,
+              bufferToUse,
               searchTasks,
             );
 
@@ -176,14 +174,14 @@ async function mainLoop() {
               regions.healthBar && regions.manaBar
                 ? {
                     newHealthPercentage: calculatePercentages(
-                      bufferSnapshot,
+                      bufferToUse,
                       metadata,
                       regions.healthBar,
                       resourceBars.healthBar,
                       94,
                     ),
                     newManaPercentage: calculatePercentages(
-                      bufferSnapshot,
+                      bufferToUse,
                       metadata,
                       regions.manaBar,
                       resourceBars.manaBar,
@@ -285,10 +283,9 @@ async function mainLoop() {
               supportCd,
               attackCd,
               characterStatus,
-              monsterNum: state.battleList?.entries?.length || 0, // Use the length of the new battleList entries
               partyMembers: getPartyData(
                 regions.partyList,
-                bufferSnapshot,
+                bufferToUse,
                 metadata,
               ),
               isWalking, // Set isWalking based on minimap position change and sticky duration
@@ -316,7 +313,7 @@ async function mainLoop() {
             const processedBattleListEntries = battleListEntries.map(
               (entry, index) => {
                 const health = calculatePercentages(
-                  bufferSnapshot,
+                  bufferToUse,
                   metadata,
                   entry.healthBarFill, // Use healthBarFill for scanning colors
                   resourceBars.partyEntryHpBar, // Using partyEntryHpBar colors for battle list health

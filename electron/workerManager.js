@@ -20,33 +20,6 @@ const DEFAULT_WORKER_CONFIG = {
   enableLuaScriptWorkers: true,
 };
 
-// =======================================================================
-// --- NEW: Worker Dependency Configuration ---
-// This object defines which slices of the Redux state each worker needs.
-// This is the single source of truth for our smart state synchronization.
-// `null` means the worker receives the entire state object.
-// An empty array `[]` means the worker receives no state updates.
-// =======================================================================
-const WORKER_DEPENDENCIES = {
-  // Receives the entire state object for maximum flexibility.
-  luaScriptWorker: null,
-
-  // Receive specific, targeted state slices.
-  pathfinderWorker: ['cavebot', 'gameState', 'statusMessages'],
-  minimapMonitor: ['regionCoordinates'],
-  screenMonitor: ['regionCoordinates', 'gameState'],
-  ocrWorker: ['regionCoordinates', 'gameState'],
-  cavebotWorker: [
-    'cavebot',
-    'gameState',
-    'statusMessages',
-    'regionCoordinates',
-  ],
-
-  // Receives no state updates as it's driven by the shared buffer.
-  regionMonitor: [],
-};
-
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
@@ -69,9 +42,6 @@ class WorkerManager {
       workers: null,
       minimapResources: null,
     };
-
-    // NEW: Map to store the last state sent to each worker to avoid redundant sends.
-    this.lastSentStateJSON = new Map();
 
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
@@ -102,6 +72,7 @@ class WorkerManager {
         'preprocessed_minimaps',
       );
     }
+    // Removed deprecated useItemOn path
 
     if (!app.isPackaged) {
       log('info', '[Worker Manager] Paths initialized:', this.paths);
@@ -167,10 +138,9 @@ class WorkerManager {
 
   handleWorkerExit(name, code) {
     log('info', `[Worker Manager] Worker exited: ${name}, code ${code}`);
+    // Clean up the worker from the map. This is crucial.
     this.workers.delete(name);
     this.workerPaths.delete(name);
-    // NEW: Clean up the last sent state for the exited worker.
-    this.lastSentStateJSON.delete(name);
 
     const isUUID =
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
@@ -220,16 +190,18 @@ class WorkerManager {
           '[Worker Manager] Could not relay rescan request: regionMonitor is not running.',
         );
       }
-    } else if (message.command === 'executeLuaScript') {
+    }
+    // --- [NEW] --- Handle the one-shot script execution request from cavebotWorker
+    else if (message.command === 'executeLuaScript') {
       const state = store.getState();
       const { enabled: luaEnabled } = state.lua;
-      const { script, id } = message.payload;
 
       if (!luaEnabled) {
         log(
           'info',
           `[Worker Manager] Skipping one-shot Lua script execution: ${id} - Lua scripts are disabled`,
         );
+        // Send failure response back to cavebotWorker
         const cavebotWorkerEntry = this.workers.get('cavebotWorker');
         if (cavebotWorkerEntry?.worker) {
           cavebotWorkerEntry.worker.postMessage({
@@ -242,12 +214,17 @@ class WorkerManager {
         return;
       }
 
+      const { script, id } = message.payload;
       log(
         'info',
         `[Worker Manager] Received request to execute one-shot Lua script: ${id}`,
       );
+      // Use the unique ID as the worker's name to track it.
+      // Pass a config object indicating this is a 'oneshot' script.
       this.startWorker(id, { id, code: script, type: 'oneshot' }, this.paths);
-    } else if (message.type === 'scriptExecutionResult') {
+    }
+    // --- [NEW] --- Handle the result from the one-shot script worker
+    else if (message.type === 'scriptExecutionResult') {
       const { id, success, error } = message;
       log(
         'info',
@@ -260,6 +237,7 @@ class WorkerManager {
         );
       }
 
+      // Find the cavebotWorker and relay the "finished" message it's waiting for.
       const cavebotWorkerEntry = this.workers.get('cavebotWorker');
       if (cavebotWorkerEntry?.worker) {
         cavebotWorkerEntry.worker.postMessage({ type: 'script-finished', id });
@@ -269,8 +247,12 @@ class WorkerManager {
           `[Worker Manager] Could not relay script-finished for ${id}: cavebotWorker is not running.`,
         );
       }
+
+      // IMPORTANT: Terminate and clean up the temporary worker.
       this.stopWorker(id);
-    } else if (
+    }
+    // --- [END NEW] ---
+    else if (
       ['scriptError', 'luaPrint', 'luaStatusUpdate'].includes(message.type)
     ) {
       const { scriptId, message: logMessage } = message;
@@ -314,6 +296,7 @@ class WorkerManager {
         sharedData: needsSharedScreen ? this.sharedScreenState : null,
       };
 
+      // Add display to workerData if it's a screen-related worker
       if (needsSharedScreen) {
         const state = store.getState();
         workerData.display = state.global.display;
@@ -336,29 +319,14 @@ class WorkerManager {
         if (scriptConfig) {
           worker.postMessage({ type: 'init', script: scriptConfig });
         }
-        // Send initial state upon creation. Subsequent updates are handled by handleStoreUpdate.
-        // We can use the same smart logic here.
-        const isLuaScript = /^[0-9a-fA-F]{8}-/.test(name);
-        if (
-          name !== 'captureWorker' &&
-          (!isLuaScript || scriptConfig?.type !== 'oneshot')
-        ) {
-          const state = store.getState();
-          const dependencyKey = isLuaScript ? 'luaScriptWorker' : name;
-          const dependencies = WORKER_DEPENDENCIES[dependencyKey];
-          let stateToSend = state; // Default to full state
-
-          if (dependencies && dependencies.length > 0) {
-            stateToSend = {};
-            for (const sliceName of dependencies) {
-              stateToSend[sliceName] = state[sliceName];
-            }
-          } else if (dependencies && dependencies.length === 0) {
-            stateToSend = {}; // Send empty object if no dependencies
+        if (name !== 'captureWorker') {
+          // For one-shot scripts, we don't want to send the whole state initially,
+          // only when it's needed. The luaScriptWorker will get it on subsequent messages.
+          // However, the cavebot worker *does* need the initial state.
+          const isOneShotLua = /^[0-9a-fA-F]{8}-/.test(name);
+          if (!isOneShotLua) {
+            worker.postMessage(store.getState());
           }
-
-          worker.postMessage(stateToSend);
-          this.lastSentStateJSON.set(name, JSON.stringify(stateToSend));
         }
       }, WORKER_INIT_DELAY);
 
@@ -410,20 +378,18 @@ class WorkerManager {
     log('info', '[Worker Manager] All workers have been terminated.');
   }
 
-  // =======================================================================
-  // --- REPLACED: This is the new, efficient handleStoreUpdate function ---
-  // =======================================================================
   handleStoreUpdate() {
     const state = store.getState();
-    const { windowId, display } = state.global;
+    const { windowId, display } = state.global; // Get display from global state
     const { enabled: cavebotEnabled } = state.cavebot;
     const { enabled: luaEnabled } = state.lua;
 
-    // --- This part for starting/stopping workers is unchanged ---
     if (windowId && display) {
+      // Only proceed if both windowId and display are available
       if (!this.sharedScreenState) this.createSharedBuffers();
       const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
       Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
+      // No need to store display in syncArray, it's passed directly to native modules
 
       if (this.workerConfig.captureWorker && !this.workers.has('captureWorker'))
         this.startWorker('captureWorker');
@@ -437,7 +403,7 @@ class WorkerManager {
       )
         this.startWorker('minimapMonitor');
       if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
-        this.startWorker('ocrWorker');
+        this.startWorker('ocrWorker'); // Start the new OCR worker
       if (
         cavebotEnabled &&
         this.workerConfig.cavebotWorker &&
@@ -466,19 +432,24 @@ class WorkerManager {
       ),
     );
 
+    // Stop workers for scripts that have been removed
     for (const workerId of runningScriptWorkerIds) {
       if (!allPersistentScripts.some((s) => s.id === workerId)) {
         this.stopWorker(workerId);
       }
     }
 
+    // Start new workers or update existing ones
     if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
       for (const script of allPersistentScripts) {
         const workerName = script.id;
         const workerEntry = this.workers.get(workerName);
+
         if (!workerEntry) {
+          // This is a new script, start a worker for it.
           this.startWorker(workerName, script, this.paths);
         } else {
+          // Worker exists, check for changes that require a restart vs. a simple message.
           const oldConfig = workerEntry.config;
           if (
             oldConfig &&
@@ -486,67 +457,39 @@ class WorkerManager {
               oldConfig.loopMin !== script.loopMin ||
               oldConfig.loopMax !== script.loopMax)
           ) {
+            // If the core logic changes, a restart is necessary.
             this.restartWorker(workerName, script);
           } else if (oldConfig.enabled !== script.enabled) {
+            // If only the enabled status changes, just send a message.
             workerEntry.worker.postMessage({ type: 'update', script });
+            // Update the config in the manager to reflect the new state.
             workerEntry.config = script;
           }
         }
       }
     } else {
+      // If Lua scripts are disabled via luaSlice.enabled = false, stop all running scripts
       for (const workerId of runningScriptWorkerIds) {
         this.stopWorker(workerId);
       }
     }
-    // --- End of unchanged section ---
 
-    // =======================================================================
-    // --- NEW: Smart State Synchronization Logic ---
-    // =======================================================================
+    // Send the full state to all workers except captureWorker
     for (const [name, workerEntry] of this.workers) {
-      if (!workerEntry.worker || name === 'captureWorker') {
-        continue; // Skip captureWorker and non-existent workers
-      }
-
-      // Determine the base name for our dependency lookup
-      const isLuaScript = /^[0-9a-fA-F]{8}-/.test(name);
-      const dependencyKey = isLuaScript ? 'luaScriptWorker' : name;
-
-      const dependencies = WORKER_DEPENDENCIES[dependencyKey];
-
-      // If a worker has no defined dependencies, we don't send it any state updates.
-      if (dependencies && dependencies.length === 0) {
-        continue;
-      }
-
-      // 1. Build the relevant part of the state for this specific worker
-      let stateToSend;
-      let currentStateJSON;
-
-      if (dependencies === null) {
-        // `null` means send the entire state object (for Lua workers)
-        stateToSend = state;
-        currentStateJSON = JSON.stringify(stateToSend);
-      } else {
-        // Build an object with only the slices the worker needs
-        stateToSend = {};
-        for (const sliceName of dependencies) {
-          stateToSend[sliceName] = state[sliceName];
+      if (workerEntry.worker && name !== 'captureWorker') {
+        // Send the full state to all workers except captureWorker and one-shot Lua scripts.
+        // One-shot Lua script workers receive their script config on init and don't need the full state.
+        // Persistent Lua script workers (identified by UUID) *do* need continuous state updates.
+        const isPersistentLua =
+          /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+            name,
+          );
+        if (
+          name !== 'captureWorker' &&
+          (!isPersistentLua || workerEntry.config?.type !== 'oneshot')
+        ) {
+          workerEntry.worker.postMessage(state);
         }
-        currentStateJSON = JSON.stringify(stateToSend);
-      }
-
-      // 2. Check if the relevant data has actually changed
-      const lastStateJSON = this.lastSentStateJSON.get(name);
-
-      if (currentStateJSON !== lastStateJSON) {
-        // 3. If it changed, send the update and store the new version
-        log(
-          'debug',
-          `[Worker Manager] State changed for '${name}', sending update.`,
-        );
-        workerEntry.worker.postMessage(stateToSend);
-        this.lastSentStateJSON.set(name, currentStateJSON);
       }
     }
   }

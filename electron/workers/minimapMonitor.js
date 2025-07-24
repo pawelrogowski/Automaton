@@ -36,7 +36,7 @@ import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
 const { sharedData, paths } = workerData;
-const SCAN_INTERVAL_MS = 25;
+const SCAN_INTERVAL_MS = 1; // Minimap position doesn't need to update as frequently.
 const logger = createLogger({ info: true, error: true, debug: false });
 
 // --- Shared Buffer Setup ---

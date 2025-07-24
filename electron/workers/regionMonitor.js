@@ -6,8 +6,10 @@ import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 100;
-const FULL_SCAN_INTERVAL_MS = 300;
+// NOTE: SCAN_INTERVAL_MS is now the same as FULL_SCAN_INTERVAL_MS
+const SCAN_INTERVAL_MS = 150;
+const FULL_SCAN_INTERVAL_MS = 150;
+
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
@@ -15,20 +17,13 @@ const FRAME_COUNTER_INDEX = 0,
   WIDTH_INDEX = 1,
   HEIGHT_INDEX = 2,
   IS_RUNNING_INDEX = 3;
-
-// This view now directly references the shared memory. It will be passed
-// to the native module without any intermediate copies.
+const HEADER_SIZE = 8;
 const sharedBufferView = Buffer.from(imageSAB);
-
-let monitorState = 'SEARCHING';
 let lastProcessedFrameCounter = -1;
-let lastKnownRegions = null;
-let lastFullScanTimestamp = 0;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ========================================================================
-// --- findRegionsRecursive ---
-// (This function is correct and does not need changes)
+// --- findRegionsRecursive (Unchanged) ---
 // ========================================================================
 async function findRegionsRecursive(
   buffer,
@@ -42,8 +37,12 @@ async function findRegionsRecursive(
   const boundingBoxDefs = {};
   const fixedDefs = {};
 
-  for (const [name, def] of Object.entries(definitions)) {
-    switch (def.type) {
+  const defEntries = Object.entries(definitions);
+
+  // Step 1: Generate discovery tasks
+  for (const [name, def] of defEntries) {
+    const type = def.type;
+    switch (type) {
       case 'single':
         discoveryTasks[name] = {
           sequences: { [name]: def },
@@ -52,8 +51,9 @@ async function findRegionsRecursive(
         };
         break;
       case 'boundingBox':
-        discoveryTasks[`${name}_start`] = {
-          sequences: { [`${name}_start`]: def.start },
+        const startTaskKey = `${name}_start`;
+        discoveryTasks[startTaskKey] = {
+          sequences: { [startTaskKey]: def.start },
           searchArea,
           occurrence: 'first',
         };
@@ -65,6 +65,7 @@ async function findRegionsRecursive(
     }
   }
 
+  // Process fixed regions
   for (const [name, def] of Object.entries(fixedDefs)) {
     parentResult[name] = {
       x: baseOffset.x + def.x,
@@ -74,10 +75,9 @@ async function findRegionsRecursive(
     };
   }
 
-  if (Object.keys(discoveryTasks).length === 0) {
-    return;
-  }
+  if (!Object.keys(discoveryTasks).length) return;
 
+  // Step 2: Run discovery search
   const discoveryResults = await findSequences.findSequencesNativeBatch(
     buffer,
     discoveryTasks,
@@ -87,7 +87,8 @@ async function findRegionsRecursive(
   const foundStarts = {};
   const childInvocations = [];
 
-  for (const [name, def] of Object.entries(definitions)) {
+  // Step 3: Process 'single' results
+  for (const [name, def] of defEntries) {
     if (def.type === 'single' && discoveryResults[name]?.[name]) {
       const result = discoveryResults[name][name];
       const region = {
@@ -123,33 +124,32 @@ async function findRegionsRecursive(
     }
   }
 
+  // Step 4: Process bounding boxes
   for (const [name, def] of Object.entries(boundingBoxDefs)) {
     const startResult = discoveryResults[`${name}_start`]?.[`${name}_start`];
-    if (startResult) {
-      foundStarts[name] = startResult;
-      const maxW = def.maxRight === 'fullWidth' ? metadata.width : def.maxRight;
-      const maxH = def.maxDown === 'fullHeight' ? metadata.height : def.maxDown;
+    if (!startResult) continue;
 
-      const endSearchArea = {
-        x: startResult.x,
-        y: startResult.y,
-        width: Math.min(maxW, searchArea.x + searchArea.width - startResult.x),
-        height: Math.min(
-          maxH,
-          searchArea.y + searchArea.height - startResult.y,
-        ),
+    foundStarts[name] = startResult;
+    const maxW = def.maxRight === 'fullWidth' ? metadata.width : def.maxRight;
+    const maxH = def.maxDown === 'fullHeight' ? metadata.height : def.maxDown;
+
+    const endSearchArea = {
+      x: startResult.x,
+      y: startResult.y,
+      width: Math.min(maxW, searchArea.x + searchArea.width - startResult.x),
+      height: Math.min(maxH, searchArea.y + searchArea.height - startResult.y),
+    };
+
+    if (endSearchArea.width > 0 && endSearchArea.height > 0) {
+      endpointTasks[`${name}_end`] = {
+        sequences: { [`${name}_end`]: def.end },
+        searchArea: endSearchArea,
+        occurrence: 'first',
       };
-
-      if (endSearchArea.width > 0 && endSearchArea.height > 0) {
-        endpointTasks[`${name}_end`] = {
-          sequences: { [`${name}_end`]: def.end },
-          searchArea: endSearchArea,
-          occurrence: 'first',
-        };
-      }
     }
   }
 
+  // Step 5: Run endpoint search
   let endpointResults = {};
   if (Object.keys(endpointTasks).length > 0) {
     endpointResults = await findSequences.findSequencesNativeBatch(
@@ -158,9 +158,11 @@ async function findRegionsRecursive(
     );
   }
 
+  // Step 6: Assemble bounding boxes
   for (const [name, startPos] of Object.entries(foundStarts)) {
     const def = boundingBoxDefs[name];
     const endPos = endpointResults[`${name}_end`]?.[`${name}_end`];
+
     const absStartPos = { x: startPos.x, y: startPos.y };
     const rawStartPos = {
       x: absStartPos.x - (def.start.offset?.x || 0),
@@ -216,39 +218,33 @@ async function findRegionsRecursive(
     }
   }
 
-  for (const invoke of childInvocations) {
-    await invoke();
+  // Step 7: Parallelize child processing
+  if (childInvocations.length > 0) {
+    await Promise.all(childInvocations.map((invoke) => invoke()));
   }
 }
 
 // ========================================================================
-// --- BattleList Entry Processing ---
-// (This function is correct and does not need changes)
+// --- BattleList Processing Helpers (Unchanged) ---
 // ========================================================================
-async function processBattleListEntries(buffer, entriesRegion) {
-  const ENTRY_HEIGHT = 20;
-  const ENTRY_VERTICAL_PITCH = 22;
+const BATTLE_LIST_ENTRY_HEIGHT = 20;
+const BATTLE_LIST_ENTRY_VERTICAL_PITCH = 22;
 
+function generateBattleListTasks(entriesRegion) {
   const maxEntries = Math.floor(
-    (entriesRegion.height + (ENTRY_VERTICAL_PITCH - ENTRY_HEIGHT)) /
-      ENTRY_VERTICAL_PITCH,
+    (entriesRegion.height +
+      (BATTLE_LIST_ENTRY_VERTICAL_PITCH - BATTLE_LIST_ENTRY_HEIGHT)) /
+      BATTLE_LIST_ENTRY_VERTICAL_PITCH,
   );
-
-  if (maxEntries <= 0) {
-    entriesRegion.list = [];
-    return;
-  }
-
+  if (maxEntries <= 0) return null;
   const pixelChecks = {
     '#FF0000': [],
     '#FF8080': [],
     '#000000': [],
   };
-
   for (let i = 0; i < maxEntries; i++) {
-    const entryBaseY = entriesRegion.y + i * ENTRY_VERTICAL_PITCH;
+    const entryBaseY = entriesRegion.y + i * BATTLE_LIST_ENTRY_VERTICAL_PITCH;
     const entryBaseX = entriesRegion.x;
-
     pixelChecks['#FF0000'].push({
       x: entryBaseX,
       y: entryBaseY,
@@ -275,27 +271,25 @@ async function processBattleListEntries(buffer, entriesRegion) {
       id: `entry_${i}_isValid`,
     });
   }
+  return { searchArea: entriesRegion, pixelChecks };
+}
 
-  const singleBatchTask = {
-    battleListChecks: {
-      searchArea: entriesRegion,
-      pixelChecks: pixelChecks,
-    },
-  };
-
-  const results = await findSequences.findSequencesNativeBatch(
-    buffer,
-    singleBatchTask,
+function processBattleListResults(checkResults, entriesRegion) {
+  const maxEntries = Math.floor(
+    (entriesRegion.height +
+      (BATTLE_LIST_ENTRY_VERTICAL_PITCH - BATTLE_LIST_ENTRY_HEIGHT)) /
+      BATTLE_LIST_ENTRY_VERTICAL_PITCH,
   );
-  const checkResults = results.battleListChecks || {};
-
   const entryList = [];
+  if (!checkResults || maxEntries <= 0) {
+    entriesRegion.list = [];
+    return;
+  }
   for (let i = 0; i < maxEntries; i++) {
     if (checkResults[`entry_${i}_isValid`]) {
-      const entryBaseY = entriesRegion.y + i * ENTRY_VERTICAL_PITCH;
+      const entryBaseY = entriesRegion.y + i * BATTLE_LIST_ENTRY_VERTICAL_PITCH;
       const entryBaseX = entriesRegion.x;
-
-      const entryData = {
+      entryList.push({
         isValid: true,
         isTargeted:
           !!checkResults[`entry_${i}_isTargeted_red`] ||
@@ -303,12 +297,7 @@ async function processBattleListEntries(buffer, entriesRegion) {
         isAttacking:
           !!checkResults[`entry_${i}_isAttacking_0_0`] ||
           !!checkResults[`entry_${i}_isAttacking_1_1`],
-        name: {
-          x: entryBaseX + 22,
-          y: entryBaseY + 2,
-          width: 131,
-          height: 12,
-        },
+        name: { x: entryBaseX + 22, y: entryBaseY + 2, width: 131, height: 12 },
         healthBarFull: {
           x: entryBaseX + 22,
           y: entryBaseY + 15,
@@ -321,20 +310,19 @@ async function processBattleListEntries(buffer, entriesRegion) {
           width: 130,
           height: 3,
         },
-      };
-      entryList.push(entryData);
+      });
     }
   }
-
   entriesRegion.list = entryList;
 }
 
-/**
- * Entry point for a full, expensive scan of the entire screen.
- */
+// ========================================================================
+// --- performFullScan (Now the only search function) ---
+// ========================================================================
 async function performFullScan(buffer, metadata) {
   const foundRegions = {};
   try {
+    // Always start a fresh recursive search from the top level.
     await findRegionsRecursive(
       buffer,
       regionDefinitions,
@@ -344,13 +332,25 @@ async function performFullScan(buffer, metadata) {
       metadata,
     );
 
+    // Process dynamic content like the battle list if its container was found.
     if (foundRegions.battleList?.children?.entries?.endFound) {
-      await processBattleListEntries(
-        buffer,
+      const battleListTask = generateBattleListTasks(
         foundRegions.battleList.children.entries,
       );
+      if (battleListTask) {
+        const batchTask = { battleListChecks: battleListTask };
+        const results = await findSequences.findSequencesNativeBatch(
+          buffer,
+          batchTask,
+        );
+        processBattleListResults(
+          results.battleListChecks,
+          foundRegions.battleList.children.entries,
+        );
+      }
     }
 
+    // Calculate tile size if the game world was found.
     if (foundRegions.gameWorld?.endFound) {
       const { gameWorld } = foundRegions;
       foundRegions.tileSize = {
@@ -359,10 +359,7 @@ async function performFullScan(buffer, metadata) {
       };
     }
 
-    if (Object.keys(foundRegions).length > 0) {
-      monitorState = 'MONITORING';
-      lastKnownRegions = foundRegions;
-    }
+    // Post the results to the main thread.
     parentPort.postMessage({
       storeUpdate: true,
       type: setAllRegions.type,
@@ -370,8 +367,7 @@ async function performFullScan(buffer, metadata) {
     });
   } catch (error) {
     console.error('[RegionMonitor] Error during full scan:', error);
-    monitorState = 'SEARCHING';
-    lastKnownRegions = null;
+    // On error, post an empty object to clear the UI.
     parentPort.postMessage({
       storeUpdate: true,
       type: setAllRegions.type,
@@ -380,191 +376,36 @@ async function performFullScan(buffer, metadata) {
   }
 }
 
-// --- collectValidationTasks ---
-// (This function is correct and does not need changes)
-function collectValidationTasks(
-  regions,
-  definitions,
-  checkTasks,
-  getValidationArea,
-  path = [],
-) {
-  for (const [name, region] of Object.entries(regions)) {
-    if (name === 'children' || name === 'list') {
-      if (
-        typeof region === 'object' &&
-        region !== null &&
-        !Array.isArray(region)
-      ) {
-        collectValidationTasks(
-          region,
-          definitions,
-          checkTasks,
-          getValidationArea,
-          path,
-        );
-      }
-      continue;
-    }
-
-    const def = definitions[name];
-    if (!def) continue;
-
-    const currentPath = [...path, name].join('.');
-
-    if (def.type === 'single' && region.rawPos) {
-      const seqDef = { ...def, offset: { x: 0, y: 0 } };
-      checkTasks[currentPath] = {
-        sequences: { [currentPath]: seqDef },
-        searchArea: getValidationArea(region.rawPos, def.sequence),
-        occurrence: 'first',
-      };
-    } else if (def.type === 'boundingBox') {
-      if (region.rawStartPos) {
-        const startSeqDef = { ...def.start, offset: { x: 0, y: 0 } };
-        checkTasks[`${currentPath}_start`] = {
-          sequences: { [`${currentPath}_start`]: startSeqDef },
-          searchArea: getValidationArea(region.rawStartPos, def.start.sequence),
-          occurrence: 'first',
-        };
-      }
-      if (region.rawEndPos) {
-        const endSeqDef = { ...def.end, offset: { x: 0, y: 0 } };
-        checkTasks[`${currentPath}_end`] = {
-          sequences: { [`${currentPath}_end`]: endSeqDef },
-          searchArea: getValidationArea(region.rawEndPos, def.end.sequence),
-          occurrence: 'first',
-        };
-      }
-    }
-
-    if (region.children && def.children) {
-      collectValidationTasks(
-        region.children,
-        def.children,
-        checkTasks,
-        getValidationArea,
-        [...path, name],
-      );
-    }
-  }
-}
-
-// --- performTargetedCheck ---
-// (This function is correct and does not need changes)
-async function performTargetedCheck(buffer) {
-  const checkTasks = {};
-
-  const getValidationArea = (rawPos, seq) => {
-    const seqLen = seq.length;
-    const isVertical = seq.direction === 'vertical';
-    return {
-      x: rawPos.x,
-      y: rawPos.y,
-      width: isVertical ? 1 : seqLen,
-      height: isVertical ? seqLen : 1,
-    };
-  };
-
-  collectValidationTasks(
-    lastKnownRegions || {},
-    regionDefinitions,
-    checkTasks,
-    getValidationArea,
-  );
-
-  if (Object.keys(checkTasks).length === 0) {
-    monitorState = 'SEARCHING';
-    lastKnownRegions = null;
-    return;
-  }
-
-  try {
-    const searchResults = await findSequences.findSequencesNativeBatch(
-      buffer,
-      checkTasks,
-    );
-
-    let isStable = true;
-    for (const taskName in checkTasks) {
-      if (!searchResults[taskName]?.[taskName]) {
-        isStable = false;
-        break;
-      }
-    }
-
-    if (isStable) {
-      if (lastKnownRegions.battleList?.children?.entries?.endFound) {
-        await processBattleListEntries(
-          buffer,
-          lastKnownRegions.battleList.children.entries,
-        );
-      }
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: setAllRegions.type,
-        payload: lastKnownRegions,
-      });
-    } else {
-      monitorState = 'SEARCHING';
-      lastKnownRegions = null;
-    }
-  } catch (error) {
-    console.error(
-      '[RegionMonitor] Error during targeted check. Reverting to full scan.',
-      error,
-    );
-    monitorState = 'SEARCHING';
-    lastKnownRegions = null;
-  }
-}
-
-// --- Main Loop & Worker Setup ---
+// ========================================================================
+// --- Main Loop (Simplified for Full Scan Only) ---
+// ========================================================================
 async function mainLoop() {
   while (true) {
     const loopStartTime = performance.now();
     try {
       const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
       if (newFrameCounter > lastProcessedFrameCounter) {
-        if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
-          if (monitorState !== 'SEARCHING') {
-            monitorState = 'SEARCHING';
-            lastKnownRegions = null;
-            parentPort.postMessage({
-              storeUpdate: true,
-              type: setAllRegions.type,
-              payload: {},
-            });
-          }
-        } else {
+        if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 1) {
           const width = Atomics.load(syncArray, WIDTH_INDEX);
           const height = Atomics.load(syncArray, HEIGHT_INDEX);
           if (width > 0 && height > 0) {
             lastProcessedFrameCounter = newFrameCounter;
             const metadata = { width, height, frameCounter: newFrameCounter };
 
-            // =================================================================
-            // --- THE FIX ---
-            // The unnecessary buffer allocation and copy have been removed.
-            // We now pass `sharedBufferView` directly to the processing functions.
-            // =================================================================
-            const now = performance.now();
-            const forceFullScan =
-              now - lastFullScanTimestamp > FULL_SCAN_INTERVAL_MS;
-
-            if (monitorState === 'SEARCHING' || forceFullScan) {
-              await performFullScan(sharedBufferView, metadata);
-              lastFullScanTimestamp = now;
-            } else {
-              await performTargetedCheck(sharedBufferView);
-            }
+            // Always perform a full scan.
+            await performFullScan(sharedBufferView, metadata);
           }
+        } else {
+          // If not running, clear the regions.
+          parentPort.postMessage({
+            storeUpdate: true,
+            type: setAllRegions.type,
+            payload: {},
+          });
         }
       }
     } catch (err) {
       console.error('[RegionMonitor] Fatal error in main loop:', err);
-      monitorState = 'SEARCHING';
-      lastKnownRegions = null;
     }
     const loopEndTime = performance.now();
     const elapsedTime = loopEndTime - loopStartTime;
@@ -576,14 +417,12 @@ async function mainLoop() {
 }
 
 parentPort.on('message', (message) => {
-  if (message.command === 'forceRegionSearch') {
-    monitorState = 'SEARCHING';
-    lastKnownRegions = null;
-  }
+  // The 'forceRegionSearch' command is no longer needed as every scan is a full one.
+  // We can leave the handler here in case it's used elsewhere, but it does nothing.
 });
 
 async function startWorker() {
-  console.log('[RegionMonitor] Worker starting up in SEARCHING state...');
+  console.log('[RegionMonitor] Worker starting up in "Full Scan Only" mode...');
   mainLoop();
 }
 

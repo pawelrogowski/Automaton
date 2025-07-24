@@ -65,8 +65,14 @@ try {
   pathfinderInstance = new Pathfinder.Pathfinder();
   logger('info', 'Native Pathfinder addon loaded successfully.');
 } catch (e) {
-  logger('error', `FATAL: Failed to load native Pathfinder module: ${e.message}`);
-  if (parentPort) parentPort.postMessage({ fatalError: `Pathfinder addon failed: ${e.message}` });
+  logger(
+    'error',
+    `FATAL: Failed to load native Pathfinder module: ${e.message}`,
+  );
+  if (parentPort)
+    parentPort.postMessage({
+      fatalError: `Pathfinder addon failed: ${e.message}`,
+    });
   process.exit(1);
 }
 
@@ -82,7 +88,11 @@ let temporaryBlocks = [];
 let isApplyingTemporaryBlock = false;
 let lastNotPossibleHandledTimestamp = 0;
 
-const PREPROCESSED_BASE_DIR = path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
+const PREPROCESSED_BASE_DIR = path.join(
+  process.cwd(),
+  'resources',
+  'preprocessed_minimaps',
+);
 const WAYPOINT_AVOIDANCE_MAP = {
   Node: 'cavebot',
   Stand: 'cavebot',
@@ -114,22 +124,41 @@ function addTemporaryBlock(block) {
 
 function handleStuckCondition() {
   if (!state || !state.cavebot || !state.statusMessages) return;
-  const { enabled, isActionPaused, wptDistance, standTime, pathWaypoints } = state.cavebot;
+  const { enabled, isActionPaused, wptDistance, standTime, pathWaypoints } =
+    state.cavebot;
   const { notPossible: notPossibleTimestamp } = state.statusMessages;
   const isPerformingIntentionalPause = !enabled || isActionPaused;
-  const isPhysicallyStuck = wptDistance > 0 && standTime > pathfinderConfig.stuckTimeThresholdMs && !isPerformingIntentionalPause;
-  const isNotPossibleRecent = notPossibleTimestamp && Date.now() - notPossibleTimestamp < pathfinderConfig.notPossibleMessageLingerMs;
-  const isNotPossibleCooldownOver = Date.now() - lastNotPossibleHandledTimestamp > pathfinderConfig.notPossibleCooldownMs;
-  const isNotPossibleTrigger = enabled && isNotPossibleRecent && isNotPossibleCooldownOver;
+  const isPhysicallyStuck =
+    wptDistance > 0 &&
+    standTime > pathfinderConfig.stuckTimeThresholdMs &&
+    !isPerformingIntentionalPause;
+  const isNotPossibleRecent =
+    notPossibleTimestamp &&
+    Date.now() - notPossibleTimestamp <
+      pathfinderConfig.notPossibleMessageLingerMs;
+  const isNotPossibleCooldownOver =
+    Date.now() - lastNotPossibleHandledTimestamp >
+    pathfinderConfig.notPossibleCooldownMs;
+  const isNotPossibleTrigger =
+    enabled && isNotPossibleRecent && isNotPossibleCooldownOver;
 
-  if ((isPhysicallyStuck || isNotPossibleTrigger) && !isApplyingTemporaryBlock) {
+  if (
+    (isPhysicallyStuck || isNotPossibleTrigger) &&
+    !isApplyingTemporaryBlock
+  ) {
     isApplyingTemporaryBlock = true;
     const blockedTile = pathWaypoints?.[0];
     if (blockedTile) {
       if (isPhysicallyStuck) {
-        logger('warn', `Bot is stuck at [${blockedTile.x},${blockedTile.y}]. Applying temporary obstacle.`);
+        logger(
+          'warn',
+          `Bot is stuck at [${blockedTile.x},${blockedTile.y}]. Applying temporary obstacle.`,
+        );
       } else {
-        logger('warn', `'Not Possible' detected. Applying temporary obstacle at [${blockedTile.x},${blockedTile.y}].`);
+        logger(
+          'warn',
+          `'Not Possible' detected. Applying temporary obstacle at [${blockedTile.x},${blockedTile.y}].`,
+        );
         lastNotPossibleHandledTimestamp = Date.now();
       }
       addTemporaryBlock(blockedTile);
@@ -153,19 +182,29 @@ function loadAllMapData() {
       const zLevel = parseInt(zDir.substring(1), 10);
       const zLevelPath = path.join(PREPROCESSED_BASE_DIR, zDir);
       try {
-        const metadata = JSON.parse(fs.readFileSync(path.join(zLevelPath, 'walkable.json'), 'utf8'));
+        const metadata = JSON.parse(
+          fs.readFileSync(path.join(zLevelPath, 'walkable.json'), 'utf8'),
+        );
         const grid = fs.readFileSync(path.join(zLevelPath, 'walkable.bin'));
         mapDataForAddon[zLevel] = { ...metadata, grid };
       } catch (e) {
-        if (e.code !== 'ENOENT') logger('warn', `Could not load pathfinding data for Z=${zLevel}: ${e.message}`);
+        if (e.code !== 'ENOENT')
+          logger(
+            'warn',
+            `Could not load pathfinding data for Z=${zLevel}: ${e.message}`,
+          );
       }
     }
     pathfinderInstance.loadMapData(mapDataForAddon);
-    if (pathfinderInstance.isLoaded) logger('info', 'Pathfinding data successfully loaded.');
+    if (pathfinderInstance.isLoaded)
+      logger('info', 'Pathfinding data successfully loaded.');
     else logger('error', 'Failed to load data into native module.');
   } catch (e) {
     logger('error', `Critical error during map data loading: ${e.message}`);
-    if (parentPort) parentPort.postMessage({ fatalError: 'Failed to load pathfinding map data.' });
+    if (parentPort)
+      parentPort.postMessage({
+        fatalError: 'Failed to load pathfinding map data.',
+      });
     process.exit(1);
   }
 }
@@ -177,13 +216,22 @@ function updateStandTimer() {
   if (currentMinimapPosKey !== lastMinimapPosKey) {
     standStillStartTime = null;
     lastMinimapPosKey = currentMinimapPosKey;
-    if (state.cavebot?.standTime !== 0) parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setStandTime', payload: 0 });
+    if (state.cavebot?.standTime !== 0)
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setStandTime',
+        payload: 0,
+      });
   } else {
     if (standStillStartTime === null) standStillStartTime = Date.now();
     const now = Date.now();
     if (now - lastStandTimeUpdate > 10) {
       const duration = now - standStillStartTime;
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setStandTime', payload: duration });
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setStandTime',
+        payload: duration,
+      });
       lastStandTimeUpdate = now;
     }
   }
@@ -191,7 +239,12 @@ function updateStandTimer() {
 
 function runPathfindingLogic() {
   try {
-    if (!state || !state.gameState?.playerMinimapPosition || !state.cavebot?.wptId) return;
+    if (
+      !state ||
+      !state.gameState?.playerMinimapPosition ||
+      !state.cavebot?.wptId
+    )
+      return;
     const { waypointSections, currentSection, wptId } = state.cavebot;
     const currentWaypoints = waypointSections[currentSection]?.waypoints || [];
     const targetWaypoint = currentWaypoints.find((wp) => wp.id === wptId);
@@ -199,11 +252,16 @@ function runPathfindingLogic() {
 
     const requiredAvoidanceType = WAYPOINT_AVOIDANCE_MAP[targetWaypoint.type];
     if (requiredAvoidanceType) {
-      const permanentAreas = (state.cavebot?.specialAreas || []).filter((area) => area.enabled && area.type === requiredAvoidanceType);
+      const permanentAreas = (state.cavebot?.specialAreas || []).filter(
+        (area) => area.enabled && area.type === requiredAvoidanceType,
+      );
       const allRelevantAreas = [...permanentAreas, ...temporaryBlocks];
       const currentJson = JSON.stringify(allRelevantAreas);
       if (currentJson !== lastJsonForType.get(requiredAvoidanceType)) {
-        logger('info', `Special areas for type "${requiredAvoidanceType}" have changed. Updating native cache...`);
+        logger(
+          'info',
+          `Special areas for type "${requiredAvoidanceType}" have changed. Updating native cache...`,
+        );
         const areasForNative = allRelevantAreas.map((area) => ({
           x: area.x,
           y: area.y,
@@ -224,7 +282,11 @@ function runPathfindingLogic() {
         parentPort.postMessage({
           storeUpdate: true,
           type: 'cavebot/setPathfindingFeedback',
-          payload: { pathWaypoints: [], wptDistance: null, pathfindingStatus: 'DIFFERENT_FLOOR' },
+          payload: {
+            pathWaypoints: [],
+            wptDistance: null,
+            pathfindingStatus: 'DIFFERENT_FLOOR',
+          },
         });
         lastTargetWptId = targetWaypoint.id;
       }
@@ -232,7 +294,11 @@ function runPathfindingLogic() {
     }
 
     const currentPosKey = `${x},${y},${z}`;
-    if (lastPlayerPosKey === currentPosKey && lastTargetWptId === targetWaypoint.id) return;
+    if (
+      lastPlayerPosKey === currentPosKey &&
+      lastTargetWptId === targetWaypoint.id
+    )
+      return;
     lastPlayerPosKey = currentPosKey;
     lastTargetWptId = targetWaypoint.id;
 
@@ -243,16 +309,32 @@ function runPathfindingLogic() {
     );
     const path = result.path || [];
     const status = result.reason;
-    const distance = status === 'NO_PATH_FOUND' ? null : path.length > 0 ? path.length : status === 'WAYPOINT_REACHED' ? 0 : null;
+    const distance =
+      status === 'NO_PATH_FOUND'
+        ? null
+        : path.length > 0
+          ? path.length
+          : status === 'WAYPOINT_REACHED'
+            ? 0
+            : null;
 
     temporaryBlocks.forEach((block) => {
       if (!block.timerSet) {
         const estimatedTime = path.length * pathfinderConfig.tempBlockMsPerStep;
-        const timeout = Math.max(pathfinderConfig.tempBlockMinLifetimeMs, Math.min(estimatedTime, pathfinderConfig.tempBlockMaxLifetimeMs));
-        logger('info', `New path length is ${path.length}. Setting temporary block lifetime to ${timeout}ms.`);
+        const timeout = Math.max(
+          pathfinderConfig.tempBlockMinLifetimeMs,
+          Math.min(estimatedTime, pathfinderConfig.tempBlockMaxLifetimeMs),
+        );
+        logger(
+          'info',
+          `New path length is ${path.length}. Setting temporary block lifetime to ${timeout}ms.`,
+        );
         setTimeout(() => {
           temporaryBlocks = temporaryBlocks.filter((b) => b.id !== block.id);
-          logger('info', `Dynamic timer expired for block at ${block.x},${block.y}.`);
+          logger(
+            'info',
+            `Dynamic timer expired for block at ${block.x},${block.y}.`,
+          );
           lastPlayerPosKey = null;
         }, timeout);
         block.timerSet = true;
@@ -274,7 +356,11 @@ function runPathfindingLogic() {
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setPathfindingFeedback',
-      payload: { pathWaypoints: [], wptDistance: null, pathfindingStatus: 'ERROR' },
+      payload: {
+        pathWaypoints: [],
+        wptDistance: null,
+        pathfindingStatus: 'ERROR',
+      },
     });
   }
 }
@@ -286,17 +372,26 @@ async function initializeWorker() {
     try {
       const header = `\n--- New Session Started at ${new Date().toISOString()} ---\n`;
       await appendFile(LOG_FILE_PATH, header);
-      logger('info', `[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`);
+      logger(
+        'info',
+        `[MemoryLogger] Memory usage logging is active. Outputting to ${LOG_FILE_PATH}`,
+      );
       lastLogTime = performance.now();
       await logMemoryUsage();
     } catch (error) {
-      logger('error', `[MemoryLogger] Could not initialize memory log file: ${error}`);
+      logger(
+        'error',
+        `[MemoryLogger] Could not initialize memory log file: ${error}`,
+      );
     }
   }
 
   loadAllMapData();
   if (!pathfinderInstance.isLoaded) {
-    logger('error', 'Pathfinder did not load map data, worker will not function correctly.');
+    logger(
+      'error',
+      'Pathfinder did not load map data, worker will not function correctly.',
+    );
   }
 }
 
@@ -312,7 +407,10 @@ parentPort.on('message', async (message) => {
   const oldState = state;
   state = message;
 
-  if (state.gameState?.playerMinimapPosition || oldState?.gameState?.playerMinimapPosition) {
+  if (
+    state.gameState?.playerMinimapPosition ||
+    oldState?.gameState?.playerMinimapPosition
+  ) {
     updateStandTimer();
   }
 
@@ -341,7 +439,10 @@ parentPort.on('close', () => {
     await initializeWorker();
   } catch (err) {
     logger('error', `Pathfinder worker fatal error: ${err.message}`, err);
-    if (parentPort) parentPort.postMessage({ fatalError: err.message || 'Unknown fatal error in worker' });
+    if (parentPort)
+      parentPort.postMessage({
+        fatalError: err.message || 'Unknown fatal error in worker',
+      });
     process.exit(1);
   }
 })();
