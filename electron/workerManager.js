@@ -42,8 +42,6 @@ class WorkerManager {
       workers: null,
       minimapResources: null,
     };
-
-    // --- [MODIFIED] --- Holds a reference to the last state for efficient diffing.
     this.previousState = null;
 
     this.handleWorkerError = this.handleWorkerError.bind(this);
@@ -75,8 +73,6 @@ class WorkerManager {
         'preprocessed_minimaps',
       );
     }
-    // Removed deprecated useItemOn path
-
     if (!app.isPackaged) {
       log('info', '[Worker Manager] Paths initialized:', this.paths);
     }
@@ -94,7 +90,6 @@ class WorkerManager {
       log('warn', `[Worker Manager] Force clearing restart lock: ${name}`);
       this.resetRestartState(name);
     }, RESTART_LOCK_TIMEOUT);
-
     this.restartTimeouts.set(name, timeout);
   }
 
@@ -123,13 +118,13 @@ class WorkerManager {
   handleWorkerError(name, error) {
     log('error', `[Worker Manager] Worker error: ${name}`, error);
     if (!name.startsWith('script-') && !this.restartLocks.get(name)) {
-      this.restartWorker(name).catch((err) => {
+      this.restartWorker(name).catch((err) =>
         log(
           'error',
           `[Worker Manager] Restart failed after error: ${name}`,
           err,
-        );
-      });
+        ),
+      );
     } else if (name.startsWith('script-')) {
       log(
         'info',
@@ -141,7 +136,6 @@ class WorkerManager {
 
   handleWorkerExit(name, code) {
     log('info', `[Worker Manager] Worker exited: ${name}, code ${code}`);
-    // Clean up the worker from the map. This is crucial.
     this.workers.delete(name);
     this.workerPaths.delete(name);
 
@@ -193,18 +187,15 @@ class WorkerManager {
           '[Worker Manager] Could not relay rescan request: regionMonitor is not running.',
         );
       }
-    }
-    // --- [NEW] --- Handle the one-shot script execution request from cavebotWorker
-    else if (message.command === 'executeLuaScript') {
+    } else if (message.command === 'executeLuaScript') {
       const state = store.getState();
       const { enabled: luaEnabled } = state.lua;
-
+      const { script, id } = message.payload;
       if (!luaEnabled) {
         log(
           'info',
           `[Worker Manager] Skipping one-shot Lua script execution: ${id} - Lua scripts are disabled`,
         );
-        // Send failure response back to cavebotWorker
         const cavebotWorkerEntry = this.workers.get('cavebotWorker');
         if (cavebotWorkerEntry?.worker) {
           cavebotWorkerEntry.worker.postMessage({
@@ -216,18 +207,12 @@ class WorkerManager {
         }
         return;
       }
-
-      const { script, id } = message.payload;
       log(
         'info',
         `[Worker Manager] Received request to execute one-shot Lua script: ${id}`,
       );
-      // Use the unique ID as the worker's name to track it.
-      // Pass a config object indicating this is a 'oneshot' script.
       this.startWorker(id, { id, code: script, type: 'oneshot' }, this.paths);
-    }
-    // --- [NEW] --- Handle the result from the one-shot script worker
-    else if (message.type === 'scriptExecutionResult') {
+    } else if (message.type === 'scriptExecutionResult') {
       const { id, success, error } = message;
       log(
         'info',
@@ -239,8 +224,6 @@ class WorkerManager {
           `[Worker Manager] Script ${id} failed with error: ${error}`,
         );
       }
-
-      // Find the cavebotWorker and relay the "finished" message it's waiting for.
       const cavebotWorkerEntry = this.workers.get('cavebotWorker');
       if (cavebotWorkerEntry?.worker) {
         cavebotWorkerEntry.worker.postMessage({ type: 'script-finished', id });
@@ -250,12 +233,8 @@ class WorkerManager {
           `[Worker Manager] Could not relay script-finished for ${id}: cavebotWorker is not running.`,
         );
       }
-
-      // IMPORTANT: Terminate and clean up the temporary worker.
       this.stopWorker(id);
-    }
-    // --- [END NEW] ---
-    else if (
+    } else if (
       ['scriptError', 'luaPrint', 'luaStatusUpdate'].includes(message.type)
     ) {
       const { scriptId, message: logMessage } = message;
@@ -283,7 +262,6 @@ class WorkerManager {
       log('warn', `[Worker Manager] Worker already exists: ${name}`);
       return this.workers.get(name).worker;
     }
-
     try {
       const workerPath = this.getWorkerPath(name);
       const needsSharedScreen = [
@@ -293,31 +271,21 @@ class WorkerManager {
         'regionMonitor',
         'ocrWorker',
       ].includes(name);
-
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedScreenState : null,
       };
-
-      // Add display to workerData if it's a screen-related worker
       if (needsSharedScreen) {
         const state = store.getState();
         workerData.display = state.global.display;
       }
-
       workerData.enableMemoryLogging = true;
-
-      const worker = new Worker(workerPath, {
-        name,
-        workerData,
-      });
-
+      const worker = new Worker(workerPath, { name, workerData });
       this.workers.set(name, { worker, config: scriptConfig });
       worker.on('message', (msg) => this.handleWorkerMessage(msg));
       worker.on('error', (error) => this.handleWorkerError(name, error));
       worker.on('exit', (code) => this.handleWorkerExit(name, code));
       log('info', `[Worker Manager] Worker ${name} started successfully.`);
-
       setTimeout(() => {
         if (scriptConfig) {
           worker.postMessage({ type: 'init', script: scriptConfig });
@@ -326,13 +294,10 @@ class WorkerManager {
           const isOneShotLua =
             /^[0-9a-fA-F]{8}-/.test(name) && scriptConfig?.type === 'oneshot';
           if (!isOneShotLua) {
-            // Send the full initial state so the worker can initialize.
-            // Subsequent updates will be efficient diffs.
             worker.postMessage(store.getState());
           }
         }
       }, WORKER_INIT_DELAY);
-
       return worker;
     } catch (error) {
       log('error', `[Worker Manager] Failed to start worker: ${name}`, error);
@@ -362,13 +327,32 @@ class WorkerManager {
     }
   }
 
+  // --- [ROBUST FIX] --- Use a graceful shutdown message for Lua workers.
   stopWorker(name) {
     const workerEntry = this.workers.get(name);
-    if (workerEntry?.worker) {
-      log('info', `[Worker Manager] Terminating worker: ${name}`);
-      return workerEntry.worker.terminate();
+    if (!workerEntry?.worker) {
+      return Promise.resolve();
     }
-    return Promise.resolve();
+
+    const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name);
+
+    return new Promise((resolve) => {
+      workerEntry.worker.once('exit', () => {
+        log('debug', `Worker ${name} has confirmed exit.`);
+        resolve();
+      });
+
+      if (isLuaWorker) {
+        log(
+          'info',
+          `[Worker Manager] Requesting graceful shutdown for Lua worker: ${name}`,
+        );
+        workerEntry.worker.postMessage({ type: 'shutdown' });
+      } else {
+        log('info', `[Worker Manager] Terminating non-Lua worker: ${name}`);
+        workerEntry.worker.terminate();
+      }
+    });
   }
 
   async stopAllWorkers() {
@@ -381,18 +365,16 @@ class WorkerManager {
     log('info', '[Worker Manager] All workers have been terminated.');
   }
 
-  handleStoreUpdate() {
+  async handleStoreUpdate() {
     const currentState = store.getState();
     const { windowId, display } = currentState.global;
     const { enabled: cavebotEnabled } = currentState.cavebot;
     const { enabled: luaEnabled } = currentState.lua;
 
-    // --- Worker Lifecycle Management (Unchanged) ---
     if (windowId && display) {
       if (!this.sharedScreenState) this.createSharedBuffers();
       const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
       Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
-
       if (this.workerConfig.captureWorker && !this.workers.has('captureWorker'))
         this.startWorker('captureWorker');
       if (this.workerConfig.regionMonitor && !this.workers.has('regionMonitor'))
@@ -413,78 +395,87 @@ class WorkerManager {
       )
         this.startWorker('cavebotWorker', null, this.paths);
     } else {
-      [
+      // --- [ROBUST FIX] --- Stop all non-essential workers when Lua is disabled
+      const essentialWorkers = new Set([
         'captureWorker',
         'regionMonitor',
         'screenMonitor',
         'minimapMonitor',
+        'pathfinderWorker',
         'ocrWorker',
         'cavebotWorker',
-      ].forEach((w) => this.stopWorker(w));
+      ]);
+
+      const allWorkers = Array.from(this.workers.keys());
+      const workersToStop = allWorkers.filter(
+        (name) => !essentialWorkers.has(name),
+      );
+
+      await Promise.all(workersToStop.map((w) => this.stopWorker(w)));
+
       if (this.sharedScreenState) {
         log('info', '[Worker Manager] Clearing SharedArrayBuffers.');
         this.sharedScreenState = null;
       }
     }
 
-    const allPersistentScripts = currentState.lua.persistentScripts;
-    const runningScriptWorkerIds = new Set(
-      Array.from(this.workers.keys()).filter((name) =>
-        /^[0-9a-fA-F]{8}-/.test(name),
-      ),
-    );
+    await (async () => {
+      const allPersistentScripts = currentState.lua.persistentScripts;
+      const runningScriptWorkerIds = new Set(
+        Array.from(this.workers.keys()).filter((name) =>
+          /^[0-9a-fA-F]{8}-/.test(name),
+        ),
+      );
 
-    for (const workerId of runningScriptWorkerIds) {
-      if (!allPersistentScripts.some((s) => s.id === workerId)) {
-        this.stopWorker(workerId);
-      }
-    }
-
-    if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
-      for (const script of allPersistentScripts) {
-        const workerName = script.id;
-        const workerEntry = this.workers.get(workerName);
-
-        if (!workerEntry) {
-          this.startWorker(workerName, script, this.paths);
-        } else {
-          const oldConfig = workerEntry.config;
-          if (
-            oldConfig &&
-            (oldConfig.code !== script.code ||
-              oldConfig.loopMin !== script.loopMin ||
-              oldConfig.loopMax !== script.loopMax)
-          ) {
-            this.restartWorker(workerName, script);
-          } else if (oldConfig.enabled !== script.enabled) {
-            workerEntry.worker.postMessage({ type: 'update', script });
-            workerEntry.config = script;
+      if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
+        const activeScripts = allPersistentScripts.filter((s) => s.enabled);
+        const activeScriptIds = new Set(activeScripts.map((s) => s.id));
+        const workersToStop = [];
+        for (const workerId of runningScriptWorkerIds) {
+          if (!activeScriptIds.has(workerId)) {
+            workersToStop.push(this.stopWorker(workerId));
           }
         }
+        if (workersToStop.length > 0) {
+          await Promise.all(workersToStop);
+        }
+        for (const script of activeScripts) {
+          const workerName = script.id;
+          const workerEntry = this.workers.get(workerName);
+          if (!workerEntry) {
+            this.startWorker(workerName, script, this.paths);
+          } else {
+            const oldConfig = workerEntry.config;
+            if (
+              oldConfig &&
+              (oldConfig.code !== script.code ||
+                oldConfig.loopMin !== script.loopMin ||
+                oldConfig.loopMax !== script.loopMax)
+            ) {
+              await this.restartWorker(workerName, script);
+            } else {
+              workerEntry.config = script;
+            }
+          }
+        }
+      } else {
+        const workersToStop = Array.from(runningScriptWorkerIds);
+        if (workersToStop.length > 0) {
+          await Promise.all(workersToStop.map((id) => this.stopWorker(id)));
+        }
       }
-    } else {
-      for (const workerId of runningScriptWorkerIds) {
-        this.stopWorker(workerId);
-      }
-    }
+    })();
 
-    // --- [OPTIMIZED] --- High-Performance Immutable Diff Broadcast ---
     const changedSlices = {};
     let hasChanges = false;
-
-    // Iterate over the top-level keys of the state (e.g., 'global', 'gameState', 'cavebot').
     for (const key in currentState) {
-      // Perform a cheap reference check. If the reference is different, the slice has changed.
       if (currentState[key] !== this.previousState[key]) {
         changedSlices[key] = currentState[key];
         hasChanges = true;
       }
     }
-
     if (hasChanges) {
       const updateMessage = { type: 'state_diff', payload: changedSlices };
-
-      // Broadcast the changed slices to all relevant workers.
       for (const [name, workerEntry] of this.workers) {
         if (workerEntry.worker && name !== 'captureWorker') {
           const isOneShotLua =
@@ -496,10 +487,7 @@ class WorkerManager {
         }
       }
     }
-
-    // Update the reference for the next comparison cycle.
     this.previousState = currentState;
-    // --- [END OPTIMIZATION] ---
   }
 
   initialize(app, cwd, config = {}) {
@@ -509,9 +497,8 @@ class WorkerManager {
       'info',
       '[Worker Manager] Initializing and subscribing to store updates.',
     );
-    // --- [MODIFIED] --- Initialize previousState before subscribing to prevent race conditions.
     this.previousState = store.getState();
-    store.subscribe(this.handleStoreUpdate);
+    store.subscribe(() => this.handleStoreUpdate());
   }
 }
 

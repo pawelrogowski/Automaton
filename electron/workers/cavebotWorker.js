@@ -202,26 +202,25 @@ const goToWpt = async (index) => {
   }
 };
 
+// --- [CORRECTED] --- This function now polls the main state instead of listening for messages.
 const awaitStateChange = (condition, timeoutMs) => {
   return new Promise((resolve) => {
-    let timeoutId = null;
-    const onMessage = (newState) => {
-      if (newState.type === 'script-finished') return;
-      if (condition(newState)) {
-        cleanup();
-        resolve(true);
+    const checkInterval = 10; // Check every 10ms
+    let intervalId = null;
+
+    const timeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+      resolve(false); // Resolve false on timeout
+    }, timeoutMs);
+
+    intervalId = setInterval(() => {
+      // Poll the main appState which is updated by the primary message handler
+      if (condition(appState)) {
+        clearTimeout(timeoutId);
+        clearInterval(intervalId);
+        resolve(true); // Resolve true once condition is met
       }
-    };
-    const onTimeout = () => {
-      cleanup();
-      resolve(false);
-    };
-    const cleanup = () => {
-      clearTimeout(timeoutId);
-      parentPort.removeListener('message', onMessage);
-    };
-    parentPort.on('message', onMessage);
-    timeoutId = setTimeout(onTimeout, timeoutMs);
+    }, checkInterval);
   });
 };
 
@@ -476,7 +475,7 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
     appState.global.display || ':0',
   );
   const zChanged = await awaitStateChange(
-    (newState) => newState.gameState?.playerMinimapPosition?.z !== initialPos.z,
+    (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
     config.actionStateChangeTimeoutMs,
   );
   if (zChanged) {
@@ -562,7 +561,7 @@ const handleLadderAction = async (targetCoords) => {
     appState.global.display || ':0',
   );
   const zChanged = await awaitStateChange(
-    (newState) => newState.gameState?.playerMinimapPosition?.z !== initialPos.z,
+    (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
     config.actionStateChangeTimeoutMs,
   );
   if (zChanged) {
@@ -632,8 +631,8 @@ const handleStandAction = async (targetWaypoint) => {
     appState.global.display || ':0',
   );
   await sleep(config.approachWalkDelayMs);
-  const positionChanged = await awaitStateChange((newState) => {
-    const newPos = newState.gameState?.playerMinimapPosition;
+  const positionChanged = await awaitStateChange((state) => {
+    const newPos = state.gameState?.playerMinimapPosition;
     if (!newPos) return false;
     if (newPos.z !== initialPos.z) return true;
     if (getDistance(initialPos, newPos) >= config.teleportDistanceThreshold)
@@ -720,9 +719,9 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     );
     await sleep(walkDelay);
     const moveConfirmed = await awaitStateChange(
-      (newState) =>
-        newState.gameState?.playerMinimapPosition?.x !== positionBeforeMove.x ||
-        newState.gameState?.playerMinimapPosition?.y !== positionBeforeMove.y,
+      (state) =>
+        state.gameState?.playerMinimapPosition?.x !== positionBeforeMove.x ||
+        state.gameState?.playerMinimapPosition?.y !== positionBeforeMove.y,
       config.moveConfirmTimeoutMs,
     );
     if (moveConfirmed) {
@@ -989,9 +988,22 @@ const mainLoop = async () => {
   }
 };
 
+// --- [MODIFIED] --- Updated message handler for new state management model.
 parentPort.on('message', (message) => {
-  if (message.type === 'script-finished') return;
-  appState = message;
+  // Handle specific control messages first
+  if (message.type === 'script-finished') {
+    // This is a message from a one-shot Lua script worker, ignore it for state updates.
+    return;
+  }
+
+  // Handle state updates
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    appState = { ...appState, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    appState = message;
+  }
 });
 
 parentPort.on('close', () => {
@@ -1001,7 +1013,7 @@ parentPort.on('close', () => {
   }
   process.exit(0);
 });
-//
+
 (async () => {
   try {
     await initialize();
