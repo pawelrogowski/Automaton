@@ -1,4 +1,13 @@
-import { BrowserWindow, app, Tray, Menu, dialog, nativeImage } from 'electron';
+// Automaton/electron/createMainWindow.js
+import {
+  app,
+  ipcMain,
+  BrowserWindow,
+  Tray,
+  Menu,
+  dialog,
+  nativeImage,
+} from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,9 +22,14 @@ let mainWindow;
 let tray;
 let isNotificationEnabled = false;
 let isTrayVisible = true;
+let widgetWindow = null; // Variable to hold the widget window instance
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
+
+// Define paths relative to the script's directory
+const WIDGET_HTML_PATH = path.join(dirname, 'widget', 'widget.html');
+const WIDGET_PRELOAD_PATH = path.join(dirname, 'widget', 'preload.js');
 
 const ICON_PATHS = {
   white: path.join(dirname, './icons/white_dot.png'),
@@ -51,11 +65,6 @@ export const toggleTrayVisibility = () => {
   Menu.setApplicationMenu(buildAppMenu());
 };
 
-/**
- * Builds the tray context menu dynamically.
- * Save/Load options have been removed from here.
- * @returns {Electron.Menu} The built menu
- */
 const buildTrayContextMenu = () => {
   const state = store.getState().global;
   return Menu.buildFromTemplate([
@@ -64,8 +73,12 @@ const buildTrayContextMenu = () => {
     },
     { type: 'separator' },
     {
-      label: 'Show/Hide',
+      label: 'Show/Hide Main Window',
       click: toggleMainWindowVisibility,
+    },
+    {
+      label: 'Show/Hide Controls Widget',
+      click: toggleWidgetWindowVisibility,
     },
     {
       label: 'Notifications',
@@ -82,27 +95,26 @@ const buildTrayContextMenu = () => {
   ]);
 };
 
-/**
- * Builds the application menu (visible with Alt key).
- * This now contains the primary Save/Load options.
- * @returns {Electron.Menu} The built menu
- */
 const buildAppMenu = () => {
   const template = [
     {
       label: 'File',
       submenu: [
-        { label: 'Show/Hide', click: toggleMainWindowVisibility },
+        { label: 'Show/Hide Main Window', click: toggleMainWindowVisibility },
+        {
+          label: 'Show/Hide Controls Widget',
+          click: toggleWidgetWindowVisibility,
+        },
         { type: 'separator' },
         {
           label: 'Load Settings...',
           click: () => loadRulesFromFile(() => {}), // Pass no-op callback
-          accelerator: 'CmdOrCtrl+O', // Standard shortcut for Open/Load
+          accelerator: 'CmdOrCtrl+O',
         },
         {
           label: 'Save Settings As...',
           click: () => saveRulesToFile(() => {}), // Pass no-op callback
-          accelerator: 'CmdOrCtrl+S', // Standard shortcut for Save
+          accelerator: 'CmdOrCtrl+S',
         },
         { type: 'separator' },
         { label: 'Close', click: closeAppFromTray },
@@ -151,11 +163,9 @@ const createTray = () => {
   tray.on('click', toggleMainWindowVisibility);
 };
 
-const handleWindowClose = (event) => {
-  // We no longer need the 'shouldClose' flag or a dialog here.
-  // The main 'before-quit' handler will manage the confirmation and exit.
-  event.preventDefault(); // Always prevent the default close action
-  app.quit(); // Initiate the graceful shutdown sequence
+const handleMainWindowClose = (event) => {
+  event.preventDefault();
+  app.quit();
 };
 
 const closeAppFromTray = () => {
@@ -180,8 +190,6 @@ export const createMainWindow = (selectedWindowId, display, windowName) => {
     },
   });
 
-  // mainWindow.webContents.openDevTools();
-
   mainWindow
     .loadURL(`file://${path.join(dirname, HTML_PATH)}`)
     .catch((err) => console.error('Failed to load URL:', err));
@@ -200,15 +208,83 @@ export const createMainWindow = (selectedWindowId, display, windowName) => {
     mainWindow.setMinimizable(false);
   });
 
-  mainWindow.on('close', handleWindowClose);
-  return mainWindow; // Return mainWindow instance
+  mainWindow.on('close', handleMainWindowClose);
+  return mainWindow;
 };
 
 export const toggleMainWindowVisibility = () => {
+  if (!mainWindow) return; // Ensure mainWindow exists
+
   if (mainWindow.isVisible()) {
     mainWindow.hide();
   } else {
     mainWindow.show();
+    mainWindow.focus();
+    // Removed: no longer auto-hiding widget window
+  }
+};
+
+// Function to create and show the widget window
+export const createWidgetWindow = () => {
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    // If window already exists, just focus it
+    if (widgetWindow.isMinimized()) widgetWindow.restore();
+    widgetWindow.focus();
+    return;
+  }
+
+  widgetWindow = new BrowserWindow({
+    width: 210, // Adjust width as needed
+    height: 250, // Further reduced height for cleaner look
+    // Set window as frameless and always on top
+    frame: false,
+    show: false, // Initially hidden, will be shown by tray click
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    transparent: true, // Make window fully transparent
+    icon: ICON_PATHS.app, // Use the app icon
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: WIDGET_PRELOAD_PATH, // Path to widget preload script
+      devTools: false, // Disable dev tools
+    },
+  });
+
+  // Dev tools disabled
+
+  widgetWindow.loadURL(`file://${WIDGET_HTML_PATH}`).catch((err) => {
+    console.error('Failed to load widget URL:', err);
+    widgetWindow = null; // Clear if loading fails
+  });
+
+  widgetWindow.on('closed', () => {
+    widgetWindow = null; // Clean up the reference
+  });
+
+  // Remove auto-hide behavior - window will stay visible until explicitly closed
+  // widgetWindow.on('blur', () => {
+  //   widgetWindow.hide();
+  // });
+};
+
+// Function to toggle the visibility of the widget window
+export const toggleWidgetWindowVisibility = () => {
+  if (!widgetWindow) {
+    createWidgetWindow();
+    // Wait for the window to be ready before showing
+    widgetWindow.on('ready-to-show', () => {
+      widgetWindow.show();
+      widgetWindow.focus();
+    });
+  } else {
+    if (widgetWindow.isVisible()) {
+      widgetWindow.hide();
+    } else {
+      widgetWindow.show();
+      widgetWindow.focus();
+    }
   }
 };
 
@@ -221,7 +297,6 @@ store.subscribe(() => {
     updateTrayIcon();
   }
 
-  // Update the application menu whenever state changes to keep checkboxes in sync
   Menu.setApplicationMenu(buildAppMenu());
 });
 

@@ -1,16 +1,29 @@
 // /home/orimorfus/Documents/Automaton/electron/main.js
-import { app, ipcMain, BrowserWindow, dialog } from 'electron';
+import {
+  app,
+  ipcMain,
+  BrowserWindow,
+  dialog,
+  Tray,
+  Menu,
+  nativeImage,
+} from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import { appendFile } from 'fs/promises'; // <-- ADDED FOR LOGGING
-import { createMainWindow } from './createMainWindow.js';
+import {
+  createMainWindow,
+  toggleWidgetWindowVisibility,
+} from './createMainWindow.js';
 import './ipcListeners.js';
 import { unregisterGlobalShortcuts } from './globalShortcuts.js';
 import { getLinuxHardwareId } from './hardwareId.js';
 import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
 import windowinfo from 'windowinfo-native';
+import setGlobalState from './setGlobalState.js'; // Import setGlobalState for proper state sync
+
 // --- Main Process Memory Logging Setup ---
 const MAIN_LOG_INTERVAL_MS = 10000; // 10 seconds
 const MAIN_LOG_FILE_NAME = 'main-process-memory-usage.log';
@@ -94,10 +107,7 @@ app.whenReady().then(async () => {
           `[Main MemoryLogger] Memory usage logging is active. Outputting to ${MAIN_LOG_FILE_PATH}`,
         );
 
-        // Log immediately on start
         await logMainProcessMemoryUsage();
-
-        // Start the periodic logging. This is safe in the main process.
         setInterval(logMainProcessMemoryUsage, MAIN_LOG_INTERVAL_MS);
       } catch (error) {
         console.error(
@@ -118,11 +128,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', async (event) => {
-  event.preventDefault(); // Prevent the app from quitting immediately
+  event.preventDefault();
   console.log('[Main] App is quitting. Terminating all workers...');
-  await workerManager.stopAllWorkers(); // Wait for all workers to stop
+  await workerManager.stopAllWorkers();
   console.log('[Main] All workers terminated. Exiting now.');
-  app.exit(); // Now, exit the app
+  app.exit();
 });
 app.on('window-all-closed', () => {
   log('info', '[Main] All windows closed, initiating app quit.');
@@ -138,7 +148,6 @@ ipcMain.handle('get-hardware-id', () => {
   }
 });
 
-// IPC handler for getting the list of Tibia windows
 ipcMain.handle('get-tibia-window-list', async () => {
   try {
     const windowList = await windowinfo.getWindowList();
@@ -149,26 +158,50 @@ ipcMain.handle('get-tibia-window-list', async () => {
   }
 });
 
-import setGlobalState from './setGlobalState.js'; // Import setGlobalState for proper state sync
-
 // IPC handler for when a Tibia window is selected
 ipcMain.on('select-tibia-window', (event, windowId, display, windowName) => {
-  // Added 'display' and 'windowName' parameters
   if (selectWindow && !selectWindow.isDestroyed()) {
     selectWindow.close();
   }
-  // Use setGlobalState to properly sync state between main and renderer processes
   setGlobalState('global/setWindowId', windowId);
   setGlobalState('global/setDisplay', display);
   setGlobalState('global/setWindowName', windowName);
 
-  mainWindow = createMainWindow(windowId, display, windowName); // Pass window ID, display, and window name
+  mainWindow = createMainWindow(windowId, display, windowName);
 });
 
 // IPC handler for exiting the app from the select window
 ipcMain.on('exit-app', () => {
-  isQuitting = true; // Set flag to prevent re-launching select window
+  isQuitting = true;
   app.quit();
 });
+
+// --- Widget IPC Handlers ---
+
+// IPC handler for receiving status updates from the widget
+ipcMain.on('update-bot-status', (event, { feature, isEnabled }) => {
+  console.log(`[Main] Received update from widget: ${feature} - ${isEnabled}`);
+  // Dispatch actions to update the global state based on the widget's toggles
+  switch (feature) {
+    case 'healing':
+      setGlobalState('rules/setenabled', isEnabled);
+      break;
+    case 'cavebot':
+      setGlobalState('cavebot/setenabled', isEnabled);
+      break;
+    case 'targeting':
+      setGlobalState('targeting/setenabled', isEnabled);
+      break;
+    case 'scripts':
+      setGlobalState('lua/setenabled', isEnabled);
+      break;
+    default:
+      console.warn(`[Main] Unknown feature received from widget: ${feature}`);
+  }
+});
+
+// --- End of Widget IPC Handlers ---
+
+// --- End of Widget IPC Handlers ---
 
 export default app;

@@ -64,43 +64,7 @@ const StyledMinimap = styled.div`
     display: block; /* Removes any weird extra space below the canvas */
   }
 `;
-export const StyledPlayerMarker = styled.div.attrs((props) => ({
-  style: {
-    width: `${props.size}px`,
-    height: `${props.size}px`,
-  },
-}))`
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 10;
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    background-color: #ffffff;
-    box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
-  }
-
-  &::before {
-    top: 0;
-    left: 50%;
-    width: 2px;
-    height: 100%;
-    transform: translateX(-50%);
-  }
-
-  &::after {
-    top: 50%;
-    left: 0;
-    width: 100%;
-    height: 2px;
-    transform: translateY(-50%);
-  }
-`;
 export const StyledMapControls = styled.div`
   position: absolute;
   top: 10px;

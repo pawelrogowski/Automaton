@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Automaton Controls</title>
+    <link rel="stylesheet" type="text/css" href="styles.css" />
+  </head>
+  <body>
+    <div id="controls">
+      <div class="control-group">
+        <label for="healing-switch">Healing</label>
+        <input type="checkbox" id="healing-switch" class="switch" />
+      </div>
+      <div class="control-group">
+        <label for="cavebot-switch">Cavebot</label>
+        <input type="checkbox" id="cavebot-switch" class="switch" />
+      </div>
+      <div class="control-group">
+        <label for="targeting-switch">Targeting</label>
+        <input type="checkbox" id="targeting-switch" class="switch" />
+      </div>
+      <div class="control-group">
+        <label for="scripts-switch">Scripts</label>
+        <input type="checkbox" id="scripts-switch" class="switch" />
+      </div>
+      <div class="control-group">
+        <button id="toggle-main-btn" class="toggle-btn">
+          <span id="toggle-main-icon">🗔</span>
+        </button>
+      </div>
+    </div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
