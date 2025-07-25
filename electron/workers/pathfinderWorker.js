@@ -395,6 +395,7 @@ async function initializeWorker() {
   }
 }
 
+// --- [MODIFIED] --- Updated message handler for new state management model.
 parentPort.on('message', async (message) => {
   // --- Integrated Memory Logging Check ---
   const now = performance.now();
@@ -405,25 +406,38 @@ parentPort.on('message', async (message) => {
   // --- End of Integrated Memory Logging Check ---
 
   const oldState = state;
-  state = message;
 
+  // --- State Update Logic ---
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    state = { ...state, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    state = message;
+  } else {
+    // If the message has a type but isn't a diff, it's likely a control message
+    // that doesn't affect the main state object. We can ignore it here.
+    return;
+  }
+
+  // --- Run Logic Based on New State ---
   if (
-    state.gameState?.playerMinimapPosition ||
+    state?.gameState?.playerMinimapPosition ||
     oldState?.gameState?.playerMinimapPosition
   ) {
     updateStandTimer();
   }
 
-  if (state.cavebot?.enabled) {
+  if (state?.cavebot?.enabled) {
     runPathfindingLogic();
   }
 
   if (
-    state.cavebot?.enabled !== oldState?.cavebot?.enabled ||
-    state.cavebot?.isActionPaused !== oldState?.cavebot?.isActionPaused ||
-    state.cavebot?.wptDistance !== oldState?.cavebot?.wptDistance ||
-    state.cavebot?.standTime !== oldState?.cavebot?.standTime ||
-    state.statusMessages?.notPossible !== oldState?.statusMessages?.notPossible
+    state?.cavebot?.enabled !== oldState?.cavebot?.enabled ||
+    state?.cavebot?.isActionPaused !== oldState?.cavebot?.isActionPaused ||
+    state?.cavebot?.wptDistance !== oldState?.cavebot?.wptDistance ||
+    state?.cavebot?.standTime !== oldState?.cavebot?.standTime ||
+    state?.statusMessages?.notPossible !== oldState?.statusMessages?.notPossible
   ) {
     handleStuckCondition();
   }

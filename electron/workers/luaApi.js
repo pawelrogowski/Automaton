@@ -183,6 +183,7 @@ const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object}}
  */
 export const createLuaApi = (context) => {
+  const { onAsyncStart, onAsyncEnd } = context;
   const {
     type,
     getState,
@@ -1069,8 +1070,39 @@ export const createLuaApi = (context) => {
     };
   }
 
-  const finalApi = { ...baseApi, ...navigationApi };
+  const api = { ...baseApi, ...navigationApi };
   const stateObject = createStateShortcutObject(getState, type);
 
-  return { api: finalApi, asyncFunctionNames, stateObject };
+  // --- [ROBUST FIX] ---
+  // Wrap the API with a proxy to track active async calls for safe shutdown.
+  const asyncApiFunctionSet = new Set(asyncFunctionNames);
+  const apiProxy = new Proxy(api, {
+    get(target, prop, receiver) {
+      const originalMember = target[prop];
+
+      // Intercept calls to functions that are registered as asynchronous.
+      if (
+        typeof originalMember === 'function' &&
+        asyncApiFunctionSet.has(prop)
+      ) {
+        return async (...args) => {
+          if (onAsyncStart) {
+            onAsyncStart(); // Signal that an async operation has started.
+          }
+          try {
+            return await originalMember.apply(target, args);
+          } finally {
+            if (onAsyncEnd) {
+              onAsyncEnd(); // Signal that the async operation has finished.
+            }
+          }
+        };
+      }
+
+      // For non-async functions or other properties, pass them through.
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+
+  return { api: apiProxy, asyncFunctionNames, stateObject };
 };

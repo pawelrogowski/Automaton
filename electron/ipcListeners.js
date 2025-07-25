@@ -52,3 +52,35 @@ ipcMain.on('renderer-ready', () => {
   autoLoadRules();
   registerGlobalShortcuts();
 });
+
+// IPC handler to provide current control states to the widget
+ipcMain.handle('get-control-states', () => {
+  const state = store.getState();
+  return {
+    isRulesEnabled: state.rules.enabled,
+    isCavebotEnabled: state.cavebot.enabled,
+    isTargetingEnabled: state.targeting.enabled,
+    isLuaEnabled: state.lua.enabled,
+  };
+});
+
+// IPC handler for widget to toggle main window visibility
+ipcMain.handle('toggle-main-window', () => {
+  const mainWindow = getMainWindow();
+  if (mainWindow) {
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    return mainWindow.isVisible();
+  }
+  return false;
+});
+
+// IPC handler to check if main window is visible
+ipcMain.handle('is-main-window-visible', () => {
+  const mainWindow = getMainWindow();
+  return mainWindow ? mainWindow.isVisible() : false;
+});

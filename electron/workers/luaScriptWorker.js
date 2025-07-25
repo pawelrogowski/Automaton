@@ -12,6 +12,15 @@ let loopInterval = null;
 let asyncFunctionNames = [];
 let keepAliveInterval = null;
 
+// --- [ROBUST FIX] --- State machine to prevent shutdown during initialization.
+let workerState = 'pending'; // 'pending', 'initializing', 'running'
+let shutdownRequested = false;
+
+// --- [ROBUST FIX] --- Counter for active async operations to ensure safe shutdown.
+let activeAsyncOperations = 0;
+const onAsyncStart = () => activeAsyncOperations++;
+const onAsyncEnd = () => activeAsyncOperations--;
+
 const postStoreUpdate = (type, payload) => {
   parentPort.postMessage({ storeUpdate: true, type, payload });
 };
@@ -19,6 +28,45 @@ const postStoreUpdate = (type, payload) => {
 const keepAlive = () => {
   if (keepAliveInterval) return;
   keepAliveInterval = setInterval(() => {}, 60 * 60 * 1000);
+};
+
+const cleanupAndExit = async () => {
+  log(
+    'info',
+    `[Lua Script Worker ${scriptConfig.id}] Cleaning up and exiting.`,
+  );
+  stopScriptLoop();
+  if (keepAliveInterval) clearInterval(keepAliveInterval);
+
+  // --- [ROBUST FIX] --- Wait for pending async operations to complete.
+  const maxWaitTime = 5000; // 5 seconds timeout.
+  const startTime = Date.now();
+  while (activeAsyncOperations > 0 && Date.now() - startTime < maxWaitTime) {
+    log(
+      'info',
+      `[Lua Script Worker ${scriptConfig.id}] Waiting for ${activeAsyncOperations} async operations to complete...`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100)); // Wait 100ms before checking again.
+  }
+
+  if (activeAsyncOperations > 0) {
+    log(
+      'warn',
+      `[Lua Script Worker ${scriptConfig.id}] Exiting with ${activeAsyncOperations} async operations still pending after timeout.`,
+    );
+  }
+
+  if (lua) {
+    try {
+      lua.global.close();
+    } catch (e) {
+      log(
+        'error',
+        `[Lua Script Worker ${scriptConfig.id}] Error during lua.global.close(): ${e.message}`,
+      );
+    }
+  }
+  process.exit(0);
 };
 
 const initializeLuaVM = async () => {
@@ -54,7 +102,9 @@ const _syncApiToLua = () => {
     logger: log,
     id: scriptConfig.id,
     postStoreUpdate: postStoreUpdate,
-    refreshLuaGlobalState: refreshLuaGlobalState, // Pass the refresh function
+    refreshLuaGlobalState: refreshLuaGlobalState,
+    onAsyncStart,
+    onAsyncEnd,
   });
 
   asyncFunctionNames = newAsyncNames;
@@ -69,7 +119,6 @@ const _syncApiToLua = () => {
   );
 };
 
-// New function to refresh the Lua global state
 const refreshLuaGlobalState = () => {
   _syncApiToLua();
   log(
@@ -103,7 +152,6 @@ const executeOneShot = async () => {
       `[Lua Script Worker ${scriptConfig.id}] Error executing one-shot script:`,
       errorMessage,
     );
-    // --- MODIFICATION: Use postStoreUpdate to log the error to the UI ---
     postStoreUpdate('lua/addLogEntry', {
       id: scriptConfig.id,
       message: `[ERROR] ${errorMessage}`,
@@ -112,7 +160,7 @@ const executeOneShot = async () => {
 };
 
 const executeScriptLoop = async () => {
-  if (!lua || !scriptConfig.enabled) {
+  if (!lua) {
     stopScriptLoop();
     return;
   }
@@ -138,7 +186,6 @@ const executeScriptLoop = async () => {
         `[Lua Script Worker ${scriptConfig.id}] Error in script loop:`,
         errorMessage,
       );
-      // --- MODIFICATION: Use postStoreUpdate to log the error to the UI ---
       postStoreUpdate('lua/addLogEntry', {
         id: scriptConfig.id,
         message: `[ERROR] ${errorMessage}`,
@@ -166,41 +213,68 @@ const stopScriptLoop = () => {
 };
 
 parentPort.on('message', async (message) => {
+  if (message.type === 'shutdown') {
+    log(
+      'info',
+      `[Lua Script Worker ${scriptConfig.id}] Received shutdown signal.`,
+    );
+    shutdownRequested = true;
+    if (workerState === 'running') {
+      await cleanupAndExit();
+    }
+    return;
+  }
+
   if (message.type === 'init') {
+    workerState = 'initializing';
     scriptConfig = message.script;
     log(
       'info',
       `[Lua Script Worker ${scriptConfig.id}] Initializing with config:`,
       scriptConfig,
     );
+
     await initializeLuaVM();
-    _syncApiToLua(); // Initial sync
+
+    // --- [ROBUST FIX] --- Check if a shutdown was requested during initialization.
+    if (shutdownRequested) {
+      await cleanupAndExit();
+      return;
+    }
+
+    workerState = 'running';
+    _syncApiToLua();
 
     if (scriptConfig.type === 'oneshot') {
       await executeOneShot();
     } else {
-      if (scriptConfig.enabled) startScriptLoop();
+      startScriptLoop();
       keepAlive();
     }
-  } else if (message.type === 'update') {
+    return;
+  }
+
+  if (message.type === 'update') {
     scriptConfig = message.script;
-    if (scriptConfig.enabled) startScriptLoop();
-    else stopScriptLoop();
-  } else {
-    // This is a state update message from workerManager.js
+    return;
+  }
+
+  if (message.type === 'state_diff') {
+    currentState = { ...currentState, ...message.payload };
+  } else if (message.type === undefined) {
     currentState = message;
-    // Immediately refresh the Lua global state with the new data
+  } else {
+    return;
+  }
+
+  if (workerState === 'running') {
     refreshLuaGlobalState();
   }
 });
 
-parentPort.on('close', () => {
-  log('info', `[Lua Script Worker ${scriptConfig.id}] Worker closing.`);
-  stopScriptLoop();
-  if (keepAliveInterval) clearInterval(keepAliveInterval);
-  if (lua) lua.close();
+parentPort.on('close', async () => {
+  log('info', `[Lua Script Worker ${scriptConfig.id}] Parent port closed.`);
+  await cleanupAndExit();
 });
 
-(async () => {
-  // Worker initialization complete
-})();
+(async () => {})();

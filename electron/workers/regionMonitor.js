@@ -22,6 +22,9 @@ const sharedBufferView = Buffer.from(imageSAB);
 let lastProcessedFrameCounter = -1;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// --- [NEW] --- A state variable to hold the Redux state.
+let state = null;
+
 // ========================================================================
 // --- findRegionsRecursive (Unchanged) ---
 // ========================================================================
@@ -317,7 +320,7 @@ function processBattleListResults(checkResults, entriesRegion) {
 }
 
 // ========================================================================
-// --- performFullScan (Now the only search function) ---
+// --- performFullScan (Unchanged) ---
 // ========================================================================
 async function performFullScan(buffer, metadata) {
   const foundRegions = {};
@@ -377,7 +380,7 @@ async function performFullScan(buffer, metadata) {
 }
 
 // ========================================================================
-// --- Main Loop (Simplified for Full Scan Only) ---
+// --- Main Loop (Unchanged) ---
 // ========================================================================
 async function mainLoop() {
   while (true) {
@@ -416,9 +419,16 @@ async function mainLoop() {
   }
 }
 
+// --- [MODIFIED] --- Updated message handler for new state management model.
 parentPort.on('message', (message) => {
-  // The 'forceRegionSearch' command is no longer needed as every scan is a full one.
-  // We can leave the handler here in case it's used elsewhere, but it does nothing.
+  if (message.type === 'state_diff') {
+    // Merge the incoming changed slices into the local state.
+    state = { ...state, ...message.payload };
+  } else if (message.type === undefined) {
+    // This is the initial, full state object sent when the worker starts.
+    state = message;
+  }
+  // Note: The 'forceRegionSearch' command is obsolete but the handler can remain.
 });
 
 async function startWorker() {
