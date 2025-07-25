@@ -1,6 +1,6 @@
 # The App is still in early stages of development
 
-## Tibia Automaton
+## Automaton
 
 An advanced X11-based automation tool for Tibia, built with Electron and native C++ modules for high-performance image processing and real-time automation.
 
