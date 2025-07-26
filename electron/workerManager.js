@@ -1,3 +1,5 @@
+// @workerManager.js
+
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,6 +10,7 @@ import { showNotification } from './notificationHandler.js';
 import { createLogger } from './utils/logger.js';
 import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
+
 const log = createLogger();
 
 const DEFAULT_WORKER_CONFIG = {
@@ -24,6 +27,40 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const WORKER_INIT_DELAY = 50;
+const STORE_UPDATE_DEBOUNCE = 32; // 32ms debounce (~30fps)
+
+// Workers that need specific state slices (for targeted updates)
+const WORKER_STATE_DEPENDENCIES = {
+  cavebotWorker: [
+    'cavebot',
+    'global',
+    'lua',
+    'gameState',
+    'regionCoordinates',
+    'statusMessages',
+    'settings',
+  ],
+  regionMonitor: ['global'], // Only needs global state for window/display changes
+  screenMonitor: [
+    'global',
+    'regionCoordinates',
+    'gameState',
+    'rules',
+    'uiValues',
+  ],
+  minimapMonitor: ['global', 'regionCoordinates'],
+  ocrWorker: ['global', 'regionCoordinates'],
+  captureWorker: ['global'],
+};
+
+// Workers that support graceful shutdown
+const GRACEFUL_SHUTDOWN_WORKERS = new Set([
+  'regionMonitor',
+  'screenMonitor',
+  'minimapMonitor',
+  'ocrWorker',
+  'cavebotWorker',
+]);
 
 class WorkerManager {
   constructor() {
@@ -44,10 +81,24 @@ class WorkerManager {
     };
     this.previousState = null;
 
+    // Debouncing and batching
+    this.storeUpdateTimeout = null;
+    this.pendingStateUpdate = false;
+    this.lastUpdateTime = 0;
+
+    // Performance tracking
+    this.updateCount = 0;
+    this.lastPerfReport = Date.now();
+
+    // Pre-allocate reusable objects to reduce GC pressure
+    this.reusableUpdateMessage = { type: 'state_diff', payload: {} };
+    this.reusableChangedSlices = {};
+
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
     this.handleStoreUpdate = this.handleStoreUpdate.bind(this);
+    this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
   }
 
   setupPaths(app, cwd) {
@@ -106,8 +157,18 @@ class WorkerManager {
 
   createSharedBuffers() {
     const maxImageSize = 3840 * 2160 * 4;
-    const imageSAB = new SharedArrayBuffer(maxImageSize + 8);
-    const syncSAB = new SharedArrayBuffer(5 * Int32Array.BYTES_PER_ELEMENT);
+    const imageSAB = new SharedArrayBuffer(maxImageSize);
+
+    // +++ MODIFIED: Increase the size of syncSAB for dirty regions +++
+    // Original: 5 Int32s (frame, w, h, running, winId)
+    // New: 5 (original) + 1 (dirty rect count) + 64 * 4 (max 64 rects * 4 values per rect)
+    const MAX_DIRTY_REGIONS = 64;
+    const SYNC_BUFFER_SIZE = 5 + 1 + MAX_DIRTY_REGIONS * 4;
+    const syncSAB = new SharedArrayBuffer(
+      SYNC_BUFFER_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
+    // +++ END MODIFICATION +++
+
     this.sharedScreenState = { imageSAB, syncSAB };
     log(
       'info',
@@ -327,7 +388,6 @@ class WorkerManager {
     }
   }
 
-  // --- [ROBUST FIX] --- Use a graceful shutdown message for Lua workers.
   stopWorker(name) {
     const workerEntry = this.workers.get(name);
     if (!workerEntry?.worker) {
@@ -335,21 +395,34 @@ class WorkerManager {
     }
 
     const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name);
+    const supportsGracefulShutdown = GRACEFUL_SHUTDOWN_WORKERS.has(name);
 
     return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        log(
+          'warn',
+          `[Worker Manager] Force terminating worker after timeout: ${name}`,
+        );
+        if (!workerEntry.worker.killed) {
+          workerEntry.worker.terminate();
+        }
+        resolve();
+      }, 5000); // 5 second timeout for graceful shutdown
+
       workerEntry.worker.once('exit', () => {
+        clearTimeout(timeout);
         log('debug', `Worker ${name} has confirmed exit.`);
         resolve();
       });
 
-      if (isLuaWorker) {
+      if (isLuaWorker || supportsGracefulShutdown) {
         log(
           'info',
-          `[Worker Manager] Requesting graceful shutdown for Lua worker: ${name}`,
+          `[Worker Manager] Requesting graceful shutdown for worker: ${name}`,
         );
         workerEntry.worker.postMessage({ type: 'shutdown' });
       } else {
-        log('info', `[Worker Manager] Terminating non-Lua worker: ${name}`);
+        log('info', `[Worker Manager] Terminating worker: ${name}`);
         workerEntry.worker.terminate();
       }
     });
@@ -365,140 +438,270 @@ class WorkerManager {
     log('info', '[Worker Manager] All workers have been terminated.');
   }
 
-  async handleStoreUpdate() {
-    const currentState = store.getState();
-    const { windowId, display } = currentState.global;
-    const { enabled: cavebotEnabled } = currentState.cavebot;
-    const { enabled: luaEnabled } = currentState.lua;
-
-    if (windowId && display) {
-      if (!this.sharedScreenState) this.createSharedBuffers();
-      const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
-      Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
-      if (this.workerConfig.captureWorker && !this.workers.has('captureWorker'))
-        this.startWorker('captureWorker');
-      if (this.workerConfig.regionMonitor && !this.workers.has('regionMonitor'))
-        this.startWorker('regionMonitor');
-      if (this.workerConfig.screenMonitor && !this.workers.has('screenMonitor'))
-        this.startWorker('screenMonitor');
-      if (
-        this.workerConfig.minimapMonitor &&
-        !this.workers.has('minimapMonitor')
-      )
-        this.startWorker('minimapMonitor');
-      if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
-        this.startWorker('ocrWorker');
-      if (
-        cavebotEnabled &&
-        this.workerConfig.cavebotWorker &&
-        !this.workers.has('cavebotWorker')
-      )
-        this.startWorker('cavebotWorker', null, this.paths);
-    } else {
-      // --- [ROBUST FIX] --- Stop all non-essential workers when Lua is disabled
-      const essentialWorkers = new Set([
-        'captureWorker',
-        'regionMonitor',
-        'screenMonitor',
-        'minimapMonitor',
-        'pathfinderWorker',
-        'ocrWorker',
-        'cavebotWorker',
-      ]);
-
-      const allWorkers = Array.from(this.workers.keys());
-      const workersToStop = allWorkers.filter(
-        (name) => !essentialWorkers.has(name),
-      );
-
-      await Promise.all(workersToStop.map((w) => this.stopWorker(w)));
-
-      if (this.sharedScreenState) {
-        log('info', '[Worker Manager] Clearing SharedArrayBuffers.');
-        this.sharedScreenState = null;
-      }
+  // Optimized state diffing that only checks top-level keys
+  getStateChanges(currentState, previousState) {
+    // Clear the reusable object
+    for (const key in this.reusableChangedSlices) {
+      delete this.reusableChangedSlices[key];
     }
 
-    await (async () => {
-      const allPersistentScripts = currentState.lua.persistentScripts;
-      const runningScriptWorkerIds = new Set(
-        Array.from(this.workers.keys()).filter((name) =>
-          /^[0-9a-fA-F]{8}-/.test(name),
-        ),
-      );
-
-      if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
-        const activeScripts = allPersistentScripts.filter((s) => s.enabled);
-        const activeScriptIds = new Set(activeScripts.map((s) => s.id));
-        const workersToStop = [];
-        for (const workerId of runningScriptWorkerIds) {
-          if (!activeScriptIds.has(workerId)) {
-            workersToStop.push(this.stopWorker(workerId));
-          }
-        }
-        if (workersToStop.length > 0) {
-          await Promise.all(workersToStop);
-        }
-        for (const script of activeScripts) {
-          const workerName = script.id;
-          const workerEntry = this.workers.get(workerName);
-          if (!workerEntry) {
-            this.startWorker(workerName, script, this.paths);
-          } else {
-            const oldConfig = workerEntry.config;
-            if (
-              oldConfig &&
-              (oldConfig.code !== script.code ||
-                oldConfig.loopMin !== script.loopMin ||
-                oldConfig.loopMax !== script.loopMax)
-            ) {
-              await this.restartWorker(workerName, script);
-            } else {
-              workerEntry.config = script;
-            }
-          }
-        }
-      } else {
-        const workersToStop = Array.from(runningScriptWorkerIds);
-        if (workersToStop.length > 0) {
-          await Promise.all(workersToStop.map((id) => this.stopWorker(id)));
-        }
-      }
-    })();
-
-    const changedSlices = {};
     let hasChanges = false;
+
+    // Only compare top-level state slices by reference
     for (const key in currentState) {
-      if (currentState[key] !== this.previousState[key]) {
-        changedSlices[key] = currentState[key];
+      if (currentState[key] !== previousState[key]) {
+        this.reusableChangedSlices[key] = currentState[key];
         hasChanges = true;
       }
     }
-    if (hasChanges) {
-      const updateMessage = { type: 'state_diff', payload: changedSlices };
-      for (const [name, workerEntry] of this.workers) {
-        if (workerEntry.worker && name !== 'captureWorker') {
-          const isOneShotLua =
-            /^[0-9a-fA-F]{8}-/.test(name) &&
-            workerEntry.config?.type === 'oneshot';
-          if (!isOneShotLua) {
-            workerEntry.worker.postMessage(updateMessage);
+
+    return hasChanges ? this.reusableChangedSlices : null;
+  }
+
+  // Send targeted updates to workers based on their dependencies
+  broadcastStateUpdate(changedSlices) {
+    const changedKeys = Object.keys(changedSlices);
+
+    for (const [name, workerEntry] of this.workers) {
+      if (!workerEntry.worker || name === 'captureWorker') continue;
+
+      const isOneShotLua =
+        /^[0-9a-fA-F]{8}-/.test(name) && workerEntry.config?.type === 'oneshot';
+      if (isOneShotLua) continue;
+
+      // Check if this worker needs any of the changed state slices
+      const workerDeps = WORKER_STATE_DEPENDENCIES[name];
+      if (workerDeps) {
+        const needsUpdate = changedKeys.some((key) => workerDeps.includes(key));
+        if (!needsUpdate) continue;
+
+        // Send only the relevant slices to this worker
+        const relevantChanges = {};
+        for (const key of changedKeys) {
+          if (workerDeps.includes(key)) {
+            relevantChanges[key] = changedSlices[key];
+          }
+        }
+
+        if (Object.keys(relevantChanges).length > 0) {
+          this.reusableUpdateMessage.payload = relevantChanges;
+          workerEntry.worker.postMessage(this.reusableUpdateMessage);
+        }
+      } else {
+        // For workers without defined dependencies, send all changes
+        this.reusableUpdateMessage.payload = changedSlices;
+        workerEntry.worker.postMessage(this.reusableUpdateMessage);
+      }
+    }
+  }
+
+  // Performance monitoring
+  logPerformanceStats() {
+    const now = Date.now();
+    const timeSinceLastReport = now - this.lastPerfReport;
+
+    if (timeSinceLastReport >= 10000) {
+      // Log every 10 seconds
+      const updatesPerSecond = (
+        (this.updateCount / timeSinceLastReport) *
+        1000
+      ).toFixed(1);
+      log(
+        'debug',
+        `[Worker Manager] Performance: ${updatesPerSecond} store updates/sec, ${this.workers.size} active workers`,
+      );
+
+      this.updateCount = 0;
+      this.lastPerfReport = now;
+    }
+  }
+
+  // Debounced store update handler
+  debouncedStoreUpdate() {
+    if (this.storeUpdateTimeout) {
+      clearTimeout(this.storeUpdateTimeout);
+    }
+
+    this.storeUpdateTimeout = setTimeout(() => {
+      this.handleStoreUpdate();
+      this.storeUpdateTimeout = null;
+    }, STORE_UPDATE_DEBOUNCE);
+  }
+
+  async handleStoreUpdate() {
+    const perfStart = performance.now();
+    this.updateCount++;
+
+    try {
+      const currentState = store.getState();
+      const { windowId, display } = currentState.global;
+      const { enabled: cavebotEnabled } = currentState.cavebot;
+      const { enabled: luaEnabled } = currentState.lua;
+
+      // Handle shared buffer updates (less frequent operation)
+      if (windowId && display) {
+        if (!this.sharedScreenState) this.createSharedBuffers();
+
+        // Only update windowId in shared buffer if it actually changed
+        if (
+          !this.previousState ||
+          currentState.global.windowId !== this.previousState.global.windowId
+        ) {
+          const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
+          Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
+        }
+
+        // Start workers that should be running
+        if (
+          this.workerConfig.captureWorker &&
+          !this.workers.has('captureWorker')
+        )
+          this.startWorker('captureWorker');
+        if (
+          this.workerConfig.regionMonitor &&
+          !this.workers.has('regionMonitor')
+        )
+          this.startWorker('regionMonitor');
+        if (
+          this.workerConfig.screenMonitor &&
+          !this.workers.has('screenMonitor')
+        )
+          this.startWorker('screenMonitor');
+        if (
+          this.workerConfig.minimapMonitor &&
+          !this.workers.has('minimapMonitor')
+        )
+          this.startWorker('minimapMonitor');
+        if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
+          this.startWorker('ocrWorker');
+        if (
+          cavebotEnabled &&
+          this.workerConfig.cavebotWorker &&
+          !this.workers.has('cavebotWorker')
+        )
+          this.startWorker('cavebotWorker', null, this.paths);
+      } else {
+        // Stop non-essential workers when no window/display
+        const essentialWorkers = new Set([
+          'captureWorker',
+          'regionMonitor',
+          'screenMonitor',
+          'minimapMonitor',
+          'pathfinderWorker',
+          'ocrWorker',
+          'cavebotWorker',
+        ]);
+
+        const workersToStop = Array.from(this.workers.keys()).filter(
+          (name) => !essentialWorkers.has(name),
+        );
+
+        if (workersToStop.length > 0) {
+          await Promise.all(workersToStop.map((w) => this.stopWorker(w)));
+        }
+
+        if (this.sharedScreenState) {
+          log('info', '[Worker Manager] Clearing SharedArrayBuffers.');
+          this.sharedScreenState = null;
+        }
+      }
+
+      // Handle Lua script workers
+      await this.manageLuaWorkers(currentState, luaEnabled);
+
+      // Handle state broadcasting to workers
+      if (this.previousState) {
+        const changedSlices = this.getStateChanges(
+          currentState,
+          this.previousState,
+        );
+        if (changedSlices) {
+          this.broadcastStateUpdate(changedSlices);
+        }
+      }
+
+      this.previousState = currentState;
+
+      // Performance monitoring
+      this.logPerformanceStats();
+    } catch (error) {
+      log('error', '[Worker Manager] Error in handleStoreUpdate:', error);
+    }
+
+    const perfEnd = performance.now();
+    const updateTime = perfEnd - perfStart;
+
+    // Log slow updates
+    if (updateTime > 16) {
+      // Slower than 60fps
+      log(
+        'warn',
+        `[Worker Manager] Slow store update: ${updateTime.toFixed(2)}ms`,
+      );
+    }
+  }
+
+  async manageLuaWorkers(currentState, luaEnabled) {
+    const allPersistentScripts = currentState.lua.persistentScripts;
+    const runningScriptWorkerIds = new Set(
+      Array.from(this.workers.keys()).filter((name) =>
+        /^[0-9a-fA-F]{8}-/.test(name),
+      ),
+    );
+
+    if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
+      const activeScripts = allPersistentScripts.filter((s) => s.enabled);
+      const activeScriptIds = new Set(activeScripts.map((s) => s.id));
+
+      // Stop workers for disabled scripts
+      const workersToStop = [];
+      for (const workerId of runningScriptWorkerIds) {
+        if (!activeScriptIds.has(workerId)) {
+          workersToStop.push(this.stopWorker(workerId));
+        }
+      }
+      if (workersToStop.length > 0) {
+        await Promise.all(workersToStop);
+      }
+
+      // Start/update workers for active scripts
+      for (const script of activeScripts) {
+        const workerName = script.id;
+        const workerEntry = this.workers.get(workerName);
+        if (!workerEntry) {
+          this.startWorker(workerName, script, this.paths);
+        } else {
+          const oldConfig = workerEntry.config;
+          if (
+            oldConfig &&
+            (oldConfig.code !== script.code ||
+              oldConfig.loopMin !== script.loopMin ||
+              oldConfig.loopMax !== script.loopMax)
+          ) {
+            await this.restartWorker(workerName, script);
+          } else {
+            workerEntry.config = script;
           }
         }
       }
+    } else {
+      // Stop all script workers if Lua is disabled
+      const workersToStop = Array.from(runningScriptWorkerIds);
+      if (workersToStop.length > 0) {
+        await Promise.all(workersToStop.map((id) => this.stopWorker(id)));
+      }
     }
-    this.previousState = currentState;
   }
 
   initialize(app, cwd, config = {}) {
     this.setupPaths(app, cwd);
     this.workerConfig = { ...DEFAULT_WORKER_CONFIG, ...config };
-    log(
-      'info',
-      '[Worker Manager] Initializing and subscribing to store updates.',
-    );
+    log('info', '[Worker Manager] Initializing with debounced store updates.');
+
     this.previousState = store.getState();
-    store.subscribe(() => this.handleStoreUpdate());
+
+    // Use debounced store updates instead of immediate updates
+    store.subscribe(this.debouncedStoreUpdate);
   }
 }
 

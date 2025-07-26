@@ -22,16 +22,14 @@ const LuaScripts = () => {
   } else {
     // Default view or redirect if no hash
     title = 'Select Script Type';
-    content = <p style={{ color: '#fafafa', textAlign: 'center' }}>Please select Persistent or Hotkey from the sidebar.</p>;
+    content = (
+      <p style={{ color: '#fafafa', textAlign: 'center' }}>
+        Please select Persistent or Hotkey from the sidebar.
+      </p>
+    );
   }
 
-  return (
-    <StyledMain>
-      <HighWrapper title={title} className="lua-scripts-box">
-        {content}
-      </HighWrapper>
-    </StyledMain>
-  );
+  return <StyledMain>{content}</StyledMain>;
 };
 
 export default LuaScripts;

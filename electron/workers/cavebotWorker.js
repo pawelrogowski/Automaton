@@ -1,4 +1,5 @@
-import { parentPort } from 'worker_threads';
+import { parentPort, workerData } from 'worker_threads';
+import { performance } from 'perf_hooks';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,9 +11,12 @@ import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTra
 import { createLogger } from '../utils/logger.js';
 import { CavebotLuaExecutor } from './cavebotLuaExecutor.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
+// --- Worker Configuration ---
+const MAIN_LOOP_INTERVAL = 5; // 200fps main loop for responsiveness
+const PERFORMANCE_LOG_INTERVAL = 10000; // Log performance every 10 seconds
+const STATE_CHANGE_POLL_INTERVAL = 10; // Poll state changes every 10ms
 
-// --- CONFIGURATION ---
+// --- Configuration ---
 const config = {
   stuckTimeThresholdMs: 600,
   stuckCooldownMs: 600,
@@ -41,14 +45,18 @@ const config = {
   postTeleportGraceMs: 1250,
 };
 
-// --- STATE AND HELPERS ---
+// --- Worker State ---
+let currentState = null;
+let isShuttingDown = false;
+let isInitialized = false;
+
+// --- Performance Tracking ---
+let operationCount = 0;
+let totalOperationTime = 0;
+let lastPerfReport = Date.now();
+
+// --- Cavebot Specific State ---
 let pathfinderInstance;
-const PREPROCESSED_BASE_DIR = path.join(
-  process.cwd(),
-  'resources',
-  'preprocessed_minimaps',
-);
-let appState = null;
 let pathfinderLoaded = false;
 let lastSpecialAreasJson = '';
 let temporaryBlocks = [];
@@ -56,6 +64,13 @@ let lastStuckEventHandledTimestamp = 0;
 let recentKeyboardFailures = [];
 let luaExecutor = null;
 let currentMapClickTarget = null;
+let currentActionStatus = 'IDLE';
+let contextualStandStillStartTime = null;
+let lastWalkCheckPosition = null;
+let stuckDetectionGraceUntil = 0;
+let lastLoggedPlayerPosition = null;
+
+// --- Constants ---
 const CavebotActionStatus = {
   IDLE: 'IDLE',
   WALKING: 'WALKING',
@@ -67,16 +82,16 @@ const CavebotActionStatus = {
   EXECUTING_SCRIPT: 'EXECUTING_SCRIPT',
   SETTING_LURE: 'SETTING_LURE',
 };
-let currentActionStatus = CavebotActionStatus.IDLE;
-let contextualStandStillStartTime = null;
-let lastWalkCheckPosition = null;
-let stuckDetectionGraceUntil = 0;
-let lastLoggedPlayerPosition = null;
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// --- Utility Functions ---
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const getDistance = (p1, p2) =>
   Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+
 const getChebyshevDistance = (p1, p2) =>
   Math.max(Math.abs(p1.x - p2.x), Math.abs(p1.y - p2.y));
+
 const getDirectionKey = (current, target) => {
   const dx = target.x - current.x;
   const dy = target.y - current.y;
@@ -95,19 +110,71 @@ const getDirectionKey = (current, target) => {
   return null;
 };
 
+const logger = createLogger({ info: false, error: true, debug: false });
+
+// --- Performance Monitoring ---
+function logPerformanceStats() {
+  const now = Date.now();
+  const timeSinceLastReport = now - lastPerfReport;
+
+  if (timeSinceLastReport >= PERFORMANCE_LOG_INTERVAL) {
+    const avgOpTime =
+      operationCount > 0 ? (totalOperationTime / operationCount).toFixed(2) : 0;
+    const opsPerSecond = (
+      (operationCount / timeSinceLastReport) *
+      1000
+    ).toFixed(1);
+
+    logger(
+      'info',
+      `[CavebotWorker] Performance: ${opsPerSecond} ops/sec, avg: ${avgOpTime}ms`,
+    );
+
+    // Reset counters
+    operationCount = 0;
+    totalOperationTime = 0;
+    lastPerfReport = now;
+  }
+}
+
+// --- Store Communication ---
 const postStoreUpdate = (type, payload) => {
   parentPort.postMessage({ storeUpdate: true, type, payload });
 };
 
+// --- State Change Detection ---
+const awaitStateChange = (condition, timeoutMs) => {
+  return new Promise((resolve) => {
+    let intervalId = null;
+
+    const timeoutId = setTimeout(() => {
+      if (intervalId) clearInterval(intervalId);
+      resolve(false);
+    }, timeoutMs);
+
+    intervalId = setInterval(() => {
+      if (condition(currentState)) {
+        clearTimeout(timeoutId);
+        clearInterval(intervalId);
+        resolve(true);
+      }
+    }, STATE_CHANGE_POLL_INTERVAL);
+  });
+};
+
+// --- Navigation Functions ---
 const advanceToNextWaypoint = async () => {
-  if (!appState || !appState.cavebot) return;
-  const { waypointSections, currentSection, wptId } = appState.cavebot;
+  if (!currentState?.cavebot) return;
+  const { waypointSections, currentSection, wptId } = currentState.cavebot;
   const waypoints = waypointSections[currentSection]?.waypoints || [];
   if (waypoints.length === 0) return;
+
   const currentIndex = waypoints.findIndex((wp) => wp.id === wptId);
   if (currentIndex === -1) return;
+
   const nextIndex = (currentIndex + 1) % waypoints.length;
   const nextWpt = waypoints[nextIndex];
+
   if (nextWpt) {
     logger(
       'info',
@@ -115,7 +182,7 @@ const advanceToNextWaypoint = async () => {
     );
     postStoreUpdate('cavebot/setwptId', nextWpt.id);
   }
-  await sleep(50);
+  await delay(50);
 };
 
 const goToLabel = async (label) => {
@@ -123,9 +190,10 @@ const goToLabel = async (label) => {
     'info',
     `Attempting to jump to label within current section: "${label}"`,
   );
-  const { waypointSections, currentSection } = appState.cavebot;
+  const { waypointSections, currentSection } = currentState.cavebot;
   const currentWaypoints = waypointSections[currentSection].waypoints;
   const targetWpt = currentWaypoints.find((wpt) => wpt.label === label);
+
   if (targetWpt) {
     logger(
       'info',
@@ -143,10 +211,11 @@ const goToLabel = async (label) => {
 
 const goToSection = async (sectionName) => {
   logger('info', `Attempting to jump to section: "${sectionName}"`);
-  const { waypointSections } = appState.cavebot;
+  const { waypointSections } = currentState.cavebot;
   const foundEntry = Object.entries(waypointSections).find(
     ([, section]) => section.name === sectionName,
   );
+
   if (foundEntry) {
     const [targetSectionId, targetSection] = foundEntry;
     if (targetSection.waypoints && targetSection.waypoints.length > 0) {
@@ -184,7 +253,7 @@ const goToWpt = async (index) => {
   }
 
   const arrayIndex = userIndex - 1;
-  const { waypointSections, currentSection } = appState.cavebot;
+  const { waypointSections, currentSection } = currentState.cavebot;
   const waypoints = waypointSections[currentSection]?.waypoints || [];
 
   if (arrayIndex < waypoints.length) {
@@ -202,30 +271,10 @@ const goToWpt = async (index) => {
   }
 };
 
-// --- [CORRECTED] --- This function now polls the main state instead of listening for messages.
-const awaitStateChange = (condition, timeoutMs) => {
-  return new Promise((resolve) => {
-    const checkInterval = 10; // Check every 10ms
-    let intervalId = null;
-
-    const timeoutId = setTimeout(() => {
-      clearInterval(intervalId);
-      resolve(false); // Resolve false on timeout
-    }, timeoutMs);
-
-    intervalId = setInterval(() => {
-      // Poll the main appState which is updated by the primary message handler
-      if (condition(appState)) {
-        clearTimeout(timeoutId);
-        clearInterval(intervalId);
-        resolve(true); // Resolve true once condition is met
-      }
-    }, checkInterval);
-  });
-};
-
-const initialize = async () => {
+// --- Worker Initialization ---
+async function initializeWorker() {
   logger('info', 'Cavebot worker starting up...');
+
   try {
     pathfinderInstance = new Pathfinder.Pathfinder();
     logger('info', 'Native Pathfinder addon loaded successfully.');
@@ -239,16 +288,24 @@ const initialize = async () => {
     });
     process.exit(1);
   }
+
   logger('info', 'Loading pathfinding data for all Z-levels...');
   const mapDataForAddon = {};
+
   try {
+    const PREPROCESSED_BASE_DIR =
+      workerData?.paths?.minimapResources ||
+      path.join(process.cwd(), 'resources', 'preprocessed_minimaps');
+
     const zLevelDirs = fs
       .readdirSync(PREPROCESSED_BASE_DIR, { withFileTypes: true })
       .filter((d) => d.isDirectory() && d.name.startsWith('z'))
       .map((d) => d.name);
+
     for (const zDir of zLevelDirs) {
       const zLevel = parseInt(zDir.substring(1), 10);
       const zLevelPath = path.join(PREPROCESSED_BASE_DIR, zDir);
+
       try {
         const metadata = JSON.parse(
           fs.readFileSync(path.join(zLevelPath, 'walkable.json'), 'utf8'),
@@ -256,14 +313,17 @@ const initialize = async () => {
         const grid = fs.readFileSync(path.join(zLevelPath, 'walkable.bin'));
         mapDataForAddon[zLevel] = { ...metadata, grid };
       } catch (e) {
-        if (e.code !== 'ENOENT')
+        if (e.code !== 'ENOENT') {
           logger(
             'warn',
             `Could not load pathfinding data for Z=${zLevel}: ${e.message}`,
           );
+        }
       }
     }
+
     pathfinderInstance.loadMapData(mapDataForAddon);
+
     if (pathfinderInstance.isLoaded) {
       pathfinderLoaded = true;
       logger('info', 'Pathfinding data successfully loaded.');
@@ -280,17 +340,19 @@ const initialize = async () => {
     });
     process.exit(1);
   }
+
   logger('info', 'Initializing Cavebot Lua Executor...');
   try {
     luaExecutor = new CavebotLuaExecutor({
       logger,
       postStoreUpdate,
-      getState: () => appState,
+      getState: () => currentState,
       advanceToNextWaypoint,
       goToLabel,
       goToSection,
       goToWpt,
     });
+
     const initialized = await luaExecutor.initialize();
     if (!initialized) {
       throw new Error('LuaExecutor failed to initialize.');
@@ -300,25 +362,33 @@ const initialize = async () => {
     logger('error', `Could not initialize Cavebot Lua Executor: ${e.message}`);
     luaExecutor = null;
   }
-};
 
+  isInitialized = true;
+  logger('info', 'Cavebot worker initialization complete.');
+}
+
+// --- Contextual Stand Time Tracking ---
 const updateContextualStandTime = (status, playerPos) => {
   if (status !== CavebotActionStatus.WALKING) {
     contextualStandStillStartTime = null;
     return 0;
   }
+
   const currentPosKey = `${playerPos.x},${playerPos.y},${playerPos.z}`;
   if (lastWalkCheckPosition !== currentPosKey) {
     contextualStandStillStartTime = null;
     lastWalkCheckPosition = currentPosKey;
     return 0;
   }
+
   if (contextualStandStillStartTime === null) {
     contextualStandStillStartTime = Date.now();
   }
+
   return Date.now() - contextualStandStillStartTime;
 };
 
+// --- Temporary Block Management ---
 const applyTemporaryBlock = (blockedTile, reason) => {
   if (blockedTile) {
     logger(
@@ -342,39 +412,46 @@ const applyTemporaryBlock = (blockedTile, reason) => {
   }
 };
 
+// --- Stuck Detection ---
 const handleStuckCondition = (contextualStandTime, wptDistance) => {
-  if (Date.now() < stuckDetectionGraceUntil || !appState?.statusMessages) {
+  if (Date.now() < stuckDetectionGraceUntil || !currentState?.statusMessages) {
     return;
   }
+
   const { sorryNotPossible: sorryNotPossibleTimestamp } =
-    appState.statusMessages;
+    currentState.statusMessages;
   const isSorryNotPossibleNew =
     sorryNotPossibleTimestamp &&
     sorryNotPossibleTimestamp > lastStuckEventHandledTimestamp;
+
   if (isSorryNotPossibleNew) {
-    const blockedTile = appState.cavebot.pathWaypoints?.[0];
+    const blockedTile = currentState.cavebot.pathWaypoints?.[0];
     applyTemporaryBlock(blockedTile, "'Sorry, not possible' message detected");
     recentKeyboardFailures.push(Date.now());
     return;
   }
+
   const isStuckCooldownOver =
     Date.now() - lastStuckEventHandledTimestamp > config.stuckCooldownMs;
+
   if (
     wptDistance > 0 &&
     contextualStandTime > config.stuckTimeThresholdMs &&
     isStuckCooldownOver
   ) {
-    const blockedTile = appState.cavebot.pathWaypoints?.[0];
+    const blockedTile = currentState.cavebot.pathWaypoints?.[0];
     applyTemporaryBlock(blockedTile, 'Bot is physically stuck');
   }
 };
 
+// --- Pathfinding ---
 const runPathfinding = (playerPos, targetWaypoint) => {
-  const permanentAreas = (appState.cavebot?.specialAreas || []).filter(
+  const permanentAreas = (currentState.cavebot?.specialAreas || []).filter(
     (area) => area.enabled,
   );
   const allRelevantAreas = [...permanentAreas, ...temporaryBlocks];
   const newSpecialAreasJson = JSON.stringify(allRelevantAreas);
+
   if (newSpecialAreasJson !== lastSpecialAreasJson) {
     logger('info', `Special areas have changed. Updating native cache...`);
     const areasForNative = allRelevantAreas.map((area) => ({
@@ -389,12 +466,16 @@ const runPathfinding = (playerPos, targetWaypoint) => {
     lastSpecialAreasJson = newSpecialAreasJson;
     logger('info', 'Native cache updated.');
   }
+
   const result = pathfinderInstance.findPathSync(
     playerPos,
     { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
     { waypointType: targetWaypoint.type },
   );
+
   const path = result.path || [];
+
+  // Set timers for temporary blocks
   temporaryBlocks.forEach((block) => {
     if (!block.timerSet) {
       const estimatedTime = path.length * config.tempBlockMsPerStep;
@@ -402,10 +483,12 @@ const runPathfinding = (playerPos, targetWaypoint) => {
         config.tempBlockMinLifetimeMs,
         Math.min(estimatedTime, config.tempBlockMaxLifetimeMs),
       );
+
       logger(
         'info',
         `New path length is ${path.length}. Setting temporary block lifetime to ${timeout}ms.`,
       );
+
       setTimeout(() => {
         temporaryBlocks = temporaryBlocks.filter((b) => b.id !== block.id);
         logger(
@@ -413,9 +496,11 @@ const runPathfinding = (playerPos, targetWaypoint) => {
           `Dynamic timer expired for block at ${block.x},${block.y}.`,
         );
       }, timeout);
+
       block.timerSet = true;
     }
   });
+
   const distance =
     result.reason === 'NO_PATH_FOUND'
       ? null
@@ -424,22 +509,26 @@ const runPathfinding = (playerPos, targetWaypoint) => {
         : result.reason === 'WAYPOINT_REACHED'
           ? 0
           : null;
+
   postStoreUpdate('cavebot/setPathfindingFeedback', {
     pathWaypoints: path,
     wptDistance: distance,
     routeSearchMs: result.performance.totalTimeMs,
     pathfindingStatus: result.reason,
   });
+
   return { path, distance, status: result.reason };
 };
 
+// --- Action Handlers ---
 const handleZLevelToolAction = async (toolType, targetCoords) => {
-  const hotkey = appState.settings.hotkeys[toolType.toLowerCase()];
+  const hotkey = currentState.settings.hotkeys[toolType.toLowerCase()];
   if (!hotkey) {
     logger('error', `No hotkey configured for tool: ${toolType}`);
     return false;
   }
-  const { gameWorld, tileSize } = appState.regionCoordinates.regions;
+
+  const { gameWorld, tileSize } = currentState.regionCoordinates.regions;
   if (!gameWorld || !tileSize) {
     logger(
       'error',
@@ -447,18 +536,21 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
     );
     return false;
   }
-  const initialPos = { ...appState.gameState.playerMinimapPosition };
+
+  const initialPos = { ...currentState.gameState.playerMinimapPosition };
   logger(
     'info',
     `Attempting to use ${toolType} on tile [${targetCoords.x}, ${targetCoords.y}]...`,
   );
+
   keypress.sendKey(
-    parseInt(appState.global.windowId, 10),
+    parseInt(currentState.global.windowId, 10),
     hotkey,
-    appState.global.display || ':0',
+    currentState.global.display || ':0',
   );
-  await sleep(config.toolHotkeyWaitMs);
-  await sleep(config.preClickDelayMs);
+  await delay(config.toolHotkeyWaitMs);
+  await delay(config.preClickDelayMs);
+
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
     targetCoords.y,
@@ -468,18 +560,21 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
     'center',
   );
   if (!clickCoords) return false;
+
   mouseController.leftClick(
-    parseInt(appState.global.windowId, 10),
+    parseInt(currentState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
-    appState.global.display || ':0',
+    currentState.global.display || ':0',
   );
+
   const zChanged = await awaitStateChange(
     (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
     config.actionStateChangeTimeoutMs,
   );
+
   if (zChanged) {
-    const finalPos = appState.gameState.playerMinimapPosition;
+    const finalPos = currentState.gameState.playerMinimapPosition;
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       logger(
         'info',
@@ -500,8 +595,8 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
 };
 
 const handleUseAction = async (targetCoords) => {
-  await sleep(config.preClickDelayMs);
-  const { gameWorld, tileSize } = appState.regionCoordinates.regions;
+  await delay(config.preClickDelayMs);
+  const { gameWorld, tileSize } = currentState.regionCoordinates.regions;
   if (!gameWorld || !tileSize) {
     logger(
       'error',
@@ -509,7 +604,8 @@ const handleUseAction = async (targetCoords) => {
     );
     return false;
   }
-  const initialPos = { ...appState.gameState.playerMinimapPosition };
+
+  const initialPos = { ...currentState.gameState.playerMinimapPosition };
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
     targetCoords.y,
@@ -519,20 +615,21 @@ const handleUseAction = async (targetCoords) => {
     'center',
   );
   if (!clickCoords) return false;
+
   logger('info', `Using tile [${targetCoords.x}, ${targetCoords.y}]`);
   mouseController.rightClick(
-    parseInt(appState.global.windowId, 10),
+    parseInt(currentState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
-    appState.global.display || ':0',
+    currentState.global.display || ':0',
   );
-  await sleep(config.postUseDelayMs);
+  await delay(config.postUseDelayMs);
   return true;
 };
 
 const handleLadderAction = async (targetCoords) => {
-  await sleep(config.preClickDelayMs);
-  const { gameWorld, tileSize } = appState.regionCoordinates.regions;
+  await delay(config.preClickDelayMs);
+  const { gameWorld, tileSize } = currentState.regionCoordinates.regions;
   if (!gameWorld || !tileSize) {
     logger(
       'error',
@@ -540,7 +637,8 @@ const handleLadderAction = async (targetCoords) => {
     );
     return false;
   }
-  const initialPos = { ...appState.gameState.playerMinimapPosition };
+
+  const initialPos = { ...currentState.gameState.playerMinimapPosition };
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
     targetCoords.y,
@@ -550,22 +648,25 @@ const handleLadderAction = async (targetCoords) => {
     'bottomRight',
   );
   if (!clickCoords) return false;
+
   logger(
     'info',
     `Attempting to use ladder at [${targetCoords.x}, ${targetCoords.y}]...`,
   );
   mouseController.rightClick(
-    parseInt(appState.global.windowId, 10),
+    parseInt(currentState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
-    appState.global.display || ':0',
+    currentState.global.display || ':0',
   );
+
   const zChanged = await awaitStateChange(
     (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
     config.actionStateChangeTimeoutMs,
   );
+
   if (zChanged) {
-    const finalPos = appState.gameState.playerMinimapPosition;
+    const finalPos = currentState.gameState.playerMinimapPosition;
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       logger(
         'info',
@@ -589,11 +690,13 @@ const handleScriptAction = async (targetWpt) => {
   const { label } = targetWpt;
   logger('info', `Executing Script waypoint [${label}].`);
   currentActionStatus = CavebotActionStatus.EXECUTING_SCRIPT;
+
   if (!luaExecutor || !luaExecutor.isInitialized) {
     logger('error', 'Cannot execute script: Lua executor is not available.');
     await advanceToNextWaypoint();
     return;
   }
+
   const result = await luaExecutor.executeScript(targetWpt.script);
   if (result.success && !result.navigationOccurred) {
     logger(
@@ -612,7 +715,7 @@ const handleScriptAction = async (targetWpt) => {
 };
 
 const handleStandAction = async (targetWaypoint) => {
-  const initialPos = { ...appState.gameState.playerMinimapPosition };
+  const initialPos = { ...currentState.gameState.playerMinimapPosition };
   const moveKey = getDirectionKey(initialPos, targetWaypoint);
   if (!moveKey) {
     logger(
@@ -621,16 +724,18 @@ const handleStandAction = async (targetWaypoint) => {
     );
     return false;
   }
+
   logger(
     'info',
     `Attempting to step on Stand waypoint at [${targetWaypoint.x}, ${targetWaypoint.y}], monitoring for position change...`,
   );
   keypress.sendKey(
-    parseInt(appState.global.windowId, 10),
+    parseInt(currentState.global.windowId, 10),
     moveKey,
-    appState.global.display || ':0',
+    currentState.global.display || ':0',
   );
-  await sleep(config.approachWalkDelayMs);
+  await delay(config.approachWalkDelayMs);
+
   const positionChanged = await awaitStateChange((state) => {
     const newPos = state.gameState?.playerMinimapPosition;
     if (!newPos) return false;
@@ -639,8 +744,9 @@ const handleStandAction = async (targetWaypoint) => {
       return true;
     return false;
   }, config.actionStateChangeTimeoutMs);
+
   if (positionChanged) {
-    const finalPos = appState.gameState.playerMinimapPosition;
+    const finalPos = currentState.gameState.playerMinimapPosition;
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       logger(
         'info',
@@ -662,17 +768,21 @@ const handleStandAction = async (targetWaypoint) => {
 
 const handleWalkAction = async (path, chebyshevDistance) => {
   currentActionStatus = CavebotActionStatus.WALKING;
-  const { playerMinimapPosition } = appState.gameState;
-  const minimapRegionDef = appState.regionCoordinates?.regions?.minimapFull;
-  const { thereIsNoWay: thereIsNoWayTimestamp } = appState.statusMessages;
+  const { playerMinimapPosition } = currentState.gameState;
+  const minimapRegionDef = currentState.regionCoordinates?.regions?.minimapFull;
+  const { thereIsNoWay: thereIsNoWayTimestamp } = currentState.statusMessages;
+
   const isThereIsNoWayRecent =
     thereIsNoWayTimestamp &&
     Date.now() - thereIsNoWayTimestamp < config.thereIsNoWayLingerMs;
+
   const isStuckByTime =
-    appState.cavebot.standTime > config.mapClickStandTimeThresholdMs;
+    currentState.cavebot.standTime > config.mapClickStandTimeThresholdMs;
+
   recentKeyboardFailures = recentKeyboardFailures.filter(
     (ts) => Date.now() - ts < config.keyboardFailureWindowMs,
   );
+
   if (currentMapClickTarget && (isStuckByTime || isThereIsNoWayRecent)) {
     logger(
       'warn',
@@ -680,6 +790,7 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     );
     currentMapClickTarget = null;
   }
+
   let shouldUseKeyboard;
   let reason = '';
   if (isThereIsNoWayRecent) {
@@ -694,6 +805,7 @@ const handleWalkAction = async (path, chebyshevDistance) => {
       chebyshevDistance < config.switchToKeyboardDistance;
     reason = shouldUseKeyboard ? 'target is too close' : 'target is far';
   }
+
   if (shouldUseKeyboard) {
     if (currentMapClickTarget) {
       logger('info', 'Switching from map click to keyboard movement.');
@@ -705,25 +817,29 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     const moveKey = getDirectionKey(positionBeforeMove, nextStep);
     if (!moveKey) {
       logger('warn', 'Could not determine move key for next step. Waiting.');
-      await sleep(20);
+      await delay(20);
       return;
     }
+
     const walkDelay =
       chebyshevDistance <= config.approachDistanceThreshold
         ? config.approachWalkDelayMs
         : config.standardWalkDelayMs;
+
     keypress.sendKey(
-      parseInt(appState.global.windowId, 10),
+      parseInt(currentState.global.windowId, 10),
       moveKey,
-      appState.global.display || ':0',
+      currentState.global.display || ':0',
     );
-    await sleep(walkDelay);
+    await delay(walkDelay);
+
     const moveConfirmed = await awaitStateChange(
       (state) =>
         state.gameState?.playerMinimapPosition?.x !== positionBeforeMove.x ||
         state.gameState?.playerMinimapPosition?.y !== positionBeforeMove.y,
       config.moveConfirmTimeoutMs,
     );
+
     if (moveConfirmed) {
       if (recentKeyboardFailures.length > 0) {
         logger('info', 'Keyboard move successful. Resetting failure counter.');
@@ -739,15 +855,16 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     }
     return;
   }
+
   if (currentMapClickTarget) {
     logger('debug', 'Map click walk is in progress. Monitoring movement.');
-    await sleep(100);
+    await delay(100);
     return;
   }
+
   logger('info', `Initiating new map click movement. Reason: ${reason}.`);
 
-  // --- MODIFICATION START ---
-  // Find the furthest tile on the path that is reachable via a single map click.
+  // Find the furthest tile on the path that is reachable via a single map click
   let furthestReachableTile = null;
   let furthestReachableTileIndex = -1;
   for (let i = 0; i < path.length; i++) {
@@ -758,12 +875,10 @@ const handleWalkAction = async (path, chebyshevDistance) => {
       furthestReachableTile = path[i];
       furthestReachableTileIndex = i;
     } else {
-      // The path is sorted by distance, so we can stop once a tile is out of range.
-      break;
+      break; // Path is sorted by distance, so we can stop once a tile is out of range
     }
   }
 
-  // This check handles cases where the path is empty or no tile is in range for some reason.
   if (!furthestReachableTile) {
     logger('error', 'Could not determine a map click target on the path.');
     return;
@@ -771,7 +886,7 @@ const handleWalkAction = async (path, chebyshevDistance) => {
 
   let clickTargetWaypoint = furthestReachableTile;
 
-  // If the furthest reachable tile is the *actual last tile* of the path, click the one before it.
+  // If the furthest reachable tile is the actual last tile of the path, click the one before it
   const isLastTileOfPath = furthestReachableTileIndex === path.length - 1;
   if (isLastTileOfPath && path.length > 1) {
     clickTargetWaypoint = path[path.length - 2];
@@ -780,7 +895,6 @@ const handleWalkAction = async (path, chebyshevDistance) => {
       `Final target is within range; clicking tile before last to ensure arrival: [${clickTargetWaypoint.x}, ${clickTargetWaypoint.y}]`,
     );
   }
-  // --- MODIFICATION END ---
 
   const clickCoords = getAbsoluteClickCoordinates(
     clickTargetWaypoint.x,
@@ -788,6 +902,7 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     playerMinimapPosition,
     minimapRegionDef,
   );
+
   if (!clickCoords) {
     logger(
       'error',
@@ -795,41 +910,50 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     );
     return;
   }
+
   logger(
     'debug',
     `Clicking map at ${clickCoords.x},${clickCoords.y} (target tile ${clickTargetWaypoint.x},${clickTargetWaypoint.y}).`,
   );
   currentMapClickTarget = clickTargetWaypoint;
   mouseController.leftClick(
-    parseInt(appState.global.windowId, 10),
+    parseInt(currentState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
-    appState.global.display || ':0',
+    currentState.global.display || ':0',
   );
-  await sleep(config.mapClickPostClickDelayMs);
+  await delay(config.mapClickPostClickDelayMs);
 };
 
-const mainLoop = async () => {
-  while (true) {
-    await sleep(5);
+// --- Main Operation ---
+async function performOperation() {
+  if (!isInitialized || !currentState) {
+    return;
+  }
+
+  const opStart = performance.now();
+
+  try {
+    // Check basic requirements
     if (
-      !appState ||
-      !appState.global?.windowId ||
-      !appState.cavebot?.enabled ||
+      !currentState.global?.windowId ||
+      !currentState.cavebot?.enabled ||
       !pathfinderLoaded
     ) {
       currentActionStatus = CavebotActionStatus.IDLE;
-      continue;
+      return;
     }
 
-    // Check if user is online before performing any actions
-
-    if (!appState.regionCoordinates?.regions?.onlineMarker) {
+    // Check if user is online
+    if (!currentState.regionCoordinates?.regions?.onlineMarker) {
       currentActionStatus = CavebotActionStatus.IDLE;
-      await sleep(100);
-      continue;
+      await delay(100);
+      return;
     }
-    const { playerMinimapPosition } = appState.gameState;
+
+    const { playerMinimapPosition } = currentState.gameState;
+
+    // Log position changes
     if (
       playerMinimapPosition &&
       (!lastLoggedPlayerPosition ||
@@ -846,20 +970,21 @@ const mainLoop = async () => {
       const dz = lastLoggedPlayerPosition
         ? playerMinimapPosition.z - lastLoggedPlayerPosition.z
         : 0;
+
       logger(
         'info',
         `Player position changed: X=${playerMinimapPosition.x}, Y=${playerMinimapPosition.y}, Z=${playerMinimapPosition.z} (dx=${dx}, dy=${dy}, dz=${dz})`,
       );
       lastLoggedPlayerPosition = { ...playerMinimapPosition };
     }
-    const { waypointSections, currentSection, wptId } = appState.cavebot;
+
+    const { waypointSections, currentSection, wptId } = currentState.cavebot;
     let targetWaypoint = waypointSections[currentSection]?.waypoints.find(
       (wp) => wp.id === wptId,
     );
 
     // Handle case when no current waypoint is selected
     if (!targetWaypoint) {
-      // Find first section with waypoints
       const firstSectionWithWaypoints = Object.keys(waypointSections).find(
         (sectionId) => waypointSections[sectionId]?.waypoints?.length > 0,
       );
@@ -883,19 +1008,22 @@ const mainLoop = async () => {
     }
 
     if (!targetWaypoint || !playerMinimapPosition) {
-      await sleep(20);
-      continue;
+      await delay(20);
+      return;
     }
+
     const contextualStandTime = updateContextualStandTime(
       currentActionStatus,
       playerMinimapPosition,
     );
     postStoreUpdate('cavebot/setStandTime', contextualStandTime);
+
     if (targetWaypoint.type === 'Script') {
       await handleScriptAction(targetWaypoint);
-      await sleep(5);
-      continue;
+      await delay(5);
+      return;
     }
+
     if (playerMinimapPosition.z !== targetWaypoint.z) {
       logger(
         'error',
@@ -907,29 +1035,35 @@ const mainLoop = async () => {
         pathfindingStatus: 'DIFFERENT_FLOOR',
       });
       await advanceToNextWaypoint();
-      continue;
+      return;
     }
+
     const {
       path,
       distance: pathDistance,
       status,
     } = runPathfinding(playerMinimapPosition, targetWaypoint);
+
     const chebyshevDistance = getChebyshevDistance(
       playerMinimapPosition,
       targetWaypoint,
     );
+
     if (status === 'NO_PATH_FOUND') {
       logger(
         'error',
         `Pathfinder reported NO PATH to waypoint ${targetWaypoint.id}. Skipping.`,
       );
       await advanceToNextWaypoint();
-      continue;
+      return;
     }
+
     handleStuckCondition(contextualStandTime, pathDistance);
     postStoreUpdate('cavebot/setActionPaused', true);
+
     let actionSucceeded = false;
     currentActionStatus = CavebotActionStatus.IDLE;
+
     if (
       targetWaypoint.type === 'Node' &&
       chebyshevDistance <= targetWaypoint.range - 1
@@ -975,6 +1109,7 @@ const mainLoop = async () => {
       );
       actionSucceeded = true;
     }
+
     if (actionSucceeded) {
       if (currentMapClickTarget) {
         logger('debug', 'Waypoint reached. Clearing stale map click target.');
@@ -983,46 +1118,179 @@ const mainLoop = async () => {
       await advanceToNextWaypoint();
     } else {
       logger('debug', `Awaiting next loop cycle for ${targetWaypoint.id}...`);
-      await sleep(5);
+      await delay(5);
+    }
+  } catch (error) {
+    logger('error', '[CavebotWorker] Error in operation:', error);
+  } finally {
+    const opEnd = performance.now();
+    const opTime = opEnd - opStart;
+
+    // Update performance stats
+    operationCount++;
+    totalOperationTime += opTime;
+
+    // Log slow operations
+    if (opTime > 50) {
+      logger('info', `[CavebotWorker] Slow operation: ${opTime.toFixed(2)}ms`);
     }
   }
-};
+}
 
-// --- [MODIFIED] --- Updated message handler for new state management model.
-parentPort.on('message', (message) => {
-  // Handle specific control messages first
-  if (message.type === 'script-finished') {
-    // This is a message from a one-shot Lua script worker, ignore it for state updates.
-    return;
+// --- Main Loop ---
+async function mainLoop() {
+  logger('info', '[CavebotWorker] Starting main loop...');
+
+  while (!isShuttingDown) {
+    const loopStart = performance.now();
+
+    try {
+      await performOperation();
+      logPerformanceStats();
+    } catch (error) {
+      logger('error', '[CavebotWorker] Error in main loop:', error);
+      // Wait longer on error to avoid tight error loops
+      await delay(Math.max(MAIN_LOOP_INTERVAL * 2, 100));
+      continue;
+    }
+
+    const loopEnd = performance.now();
+    const elapsedTime = loopEnd - loopStart;
+    const delayTime = Math.max(0, MAIN_LOOP_INTERVAL - elapsedTime);
+
+    if (delayTime > 0) {
+      await delay(delayTime);
+    }
   }
 
-  // Handle state updates
-  if (message.type === 'state_diff') {
-    // Merge the incoming changed slices into the local state.
-    appState = { ...appState, ...message.payload };
-  } else if (message.type === undefined) {
-    // This is the initial, full state object sent when the worker starts.
-    appState = message;
+  logger('info', '[CavebotWorker] Main loop stopped.');
+}
+
+// --- Message Handler ---
+parentPort.on('message', (message) => {
+  try {
+    if (message.type === 'state_diff') {
+      // Handle state updates from WorkerManager
+      if (!currentState) {
+        currentState = {};
+      }
+
+      // Apply state diff - merge the payload into current state
+      Object.assign(currentState, message.payload);
+
+      // Handle specific state changes if needed
+      if (message.payload.global) {
+        const globalState = message.payload.global;
+
+        // React to window changes
+        if (globalState.windowId !== undefined) {
+          logger(
+            'debug',
+            '[CavebotWorker] Window changed:',
+            globalState.windowId,
+          );
+        }
+      }
+    } else if (message.type === 'shutdown') {
+      logger('info', '[CavebotWorker] Received shutdown command.');
+      isShuttingDown = true;
+
+      // Cleanup resources
+      if (luaExecutor) {
+        luaExecutor.destroy();
+      }
+    } else if (message.type === 'script-finished') {
+      // Handle script finished messages from one-shot Lua workers
+      logger(
+        'debug',
+        '[CavebotWorker] Received script-finished message:',
+        message.id,
+      );
+    } else if (typeof message === 'object' && !message.type) {
+      // Handle full state updates (initial state from WorkerManager)
+      currentState = message;
+      logger('info', '[CavebotWorker] Received initial state update.');
+
+      if (!isInitialized) {
+        initializeWorker().catch((error) => {
+          logger(
+            'error',
+            '[CavebotWorker] Failed to initialize worker:',
+            error,
+          );
+          process.exit(1);
+        });
+      }
+    } else {
+      // Handle custom commands
+      logger(
+        'debug',
+        '[CavebotWorker] Received message:',
+        message.type || 'unknown',
+      );
+    }
+  } catch (error) {
+    logger('error', '[CavebotWorker] Error handling message:', error);
   }
 });
 
+// --- Graceful Shutdown ---
 parentPort.on('close', () => {
-  logger('info', 'Parent port closed. Stopping cavebot worker.');
+  logger(
+    'info',
+    '[CavebotWorker] Parent port closed. Stopping cavebot worker.',
+  );
+  isShuttingDown = true;
+
   if (luaExecutor) {
     luaExecutor.destroy();
   }
+
   process.exit(0);
 });
 
-(async () => {
-  try {
-    await initialize();
-    await mainLoop();
-  } catch (err) {
-    logger('error', `Cavebot worker fatal error: ${err.message}`, err);
-    parentPort.postMessage({
-      fatalError: err.message || 'Unknown fatal error in worker',
-    });
+// --- Worker Startup ---
+async function startWorker() {
+  logger('info', '[CavebotWorker] Worker starting up...');
+
+  // Handle graceful shutdown signals
+  process.on('SIGTERM', () => {
+    logger('info', '[CavebotWorker] Received SIGTERM, shutting down...');
+    isShuttingDown = true;
+  });
+
+  process.on('SIGINT', () => {
+    logger('info', '[CavebotWorker] Received SIGINT, shutting down...');
+    isShuttingDown = true;
+  });
+
+  // Start the main loop
+  mainLoop().catch((error) => {
+    logger('error', '[CavebotWorker] Fatal error in main loop:', error);
     process.exit(1);
+  });
+}
+
+// --- Worker Data Validation ---
+function validateWorkerData() {
+  if (!workerData) {
+    throw new Error('[CavebotWorker] Worker data not provided');
   }
-})();
+
+  // Validate paths
+  if (!workerData.paths) {
+    logger(
+      'warn',
+      '[CavebotWorker] Paths not provided in worker data, using defaults',
+    );
+  }
+}
+
+// Initialize and start the worker
+try {
+  validateWorkerData();
+  startWorker();
+} catch (error) {
+  logger('error', '[CavebotWorker] Failed to start worker:', error);
+  process.exit(1);
+}

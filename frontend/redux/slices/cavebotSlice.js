@@ -64,7 +64,8 @@ const cavebotSlice = createSlice({
       return { ...initialState, ...(action.payload || {}) };
     },
     setPathfindingFeedback: (state, action) => {
-      const { pathWaypoints, wptDistance, routeSearchMs, pathfindingStatus } = action.payload;
+      const { pathWaypoints, wptDistance, routeSearchMs, pathfindingStatus } =
+        action.payload;
       state.pathWaypoints = pathWaypoints;
       state.wptDistance = wptDistance;
       state.routeSearchMs = routeSearchMs;
@@ -92,8 +93,11 @@ const cavebotSlice = createSlice({
         ...parsedPayload,
         id: action.payload.id,
       };
-      const currentWaypoints = state.waypointSections[state.currentSection].waypoints;
-      const selectedIndex = currentWaypoints.findIndex((waypoint) => waypoint.id === state.wptSelection);
+      const currentWaypoints =
+        state.waypointSections[state.currentSection].waypoints;
+      const selectedIndex = currentWaypoints.findIndex(
+        (waypoint) => waypoint.id === state.wptSelection,
+      );
       let newWaypointIndex;
       if (selectedIndex > -1) {
         newWaypointIndex = selectedIndex + 1;
@@ -130,8 +134,11 @@ const cavebotSlice = createSlice({
     // --- NEW REDUCER END ---
     removeWaypoint: (state, action) => {
       const idToRemove = action.payload;
-      const currentWaypoints = state.waypointSections[state.currentSection].waypoints;
-      const indexToRemove = currentWaypoints.findIndex((waypoint) => waypoint.id === idToRemove);
+      const currentWaypoints =
+        state.waypointSections[state.currentSection].waypoints;
+      const indexToRemove = currentWaypoints.findIndex(
+        (waypoint) => waypoint.id === idToRemove,
+      );
       if (indexToRemove === -1) return;
       const isRemovingSelected = state.wptSelection === idToRemove;
       let newSelectedIndex = -1;
@@ -149,13 +156,16 @@ const cavebotSlice = createSlice({
     },
     reorderWaypoints: (state, action) => {
       const { startIndex, endIndex } = action.payload;
-      const currentWaypoints = state.waypointSections[state.currentSection].waypoints;
+      const currentWaypoints =
+        state.waypointSections[state.currentSection].waypoints;
       const [removed] = currentWaypoints.splice(startIndex, 1);
       currentWaypoints.splice(endIndex, 0, removed);
     },
     updateWaypoint: (state, action) => {
       const { id, updates } = action.payload;
-      const existingWaypoint = state.waypointSections[state.currentSection].waypoints.find((waypoint) => waypoint.id === id);
+      const existingWaypoint = state.waypointSections[
+        state.currentSection
+      ].waypoints.find((waypoint) => waypoint.id === id);
       if (existingWaypoint) {
         const parsedUpdates = parseLegacyCoordinates(updates);
         Object.assign(existingWaypoint, parsedUpdates);
@@ -174,9 +184,13 @@ const cavebotSlice = createSlice({
       if (state.waypointSections[idToRemove]) {
         delete state.waypointSections[idToRemove];
         if (state.currentSection === idToRemove) {
-          state.currentSection = Object.keys(state.waypointSections)[0] || 'default';
+          state.currentSection =
+            Object.keys(state.waypointSections)[0] || 'default';
           if (!state.waypointSections[state.currentSection]) {
-            state.waypointSections['default'] = { name: 'Default', waypoints: [] };
+            state.waypointSections['default'] = {
+              name: 'Default',
+              waypoints: [],
+            };
             state.currentSection = 'default';
           }
         }
@@ -215,13 +229,20 @@ const cavebotSlice = createSlice({
       state.specialAreas.push(newArea);
     },
     removeSpecialArea: (state, action) => {
-      state.specialAreas = state.specialAreas.filter((area) => area.id !== action.payload);
+      state.specialAreas = state.specialAreas.filter(
+        (area) => area.id !== action.payload,
+      );
     },
     updateSpecialArea: (state, action) => {
       const { id, updates } = action.payload;
       const existingArea = state.specialAreas.find((area) => area.id === id);
       if (existingArea) {
-        if (updates.name && state.specialAreas.some((area) => area.id !== id && area.name === updates.name)) {
+        if (
+          updates.name &&
+          state.specialAreas.some(
+            (area) => area.id !== id && area.name === updates.name,
+          )
+        ) {
           delete updates.name;
         }
         Object.assign(existingArea, updates);

@@ -1,0 +1,254 @@
+// @workerTemplate.js - Template for updating existing workers
+
+import { parentPort, workerData } from 'worker_threads';
+import { performance } from 'perf_hooks';
+
+// --- Worker Configuration ---
+const MAIN_LOOP_INTERVAL = 100; // Adjust based on worker needs
+const PERFORMANCE_LOG_INTERVAL = 10000; // Log performance every 10 seconds
+
+// --- Worker State ---
+let currentState = null; // Store the latest state from WorkerManager
+let isShuttingDown = false;
+let isInitialized = false;
+
+// --- Performance Tracking ---
+let operationCount = 0;
+let totalOperationTime = 0;
+let lastPerfReport = Date.now();
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// --- Performance Monitoring ---
+function logPerformanceStats() {
+  const now = Date.now();
+  const timeSinceLastReport = now - lastPerfReport;
+
+  if (timeSinceLastReport >= PERFORMANCE_LOG_INTERVAL) {
+    const avgOpTime = operationCount > 0 ? (totalOperationTime / operationCount).toFixed(2) : 0;
+    const opsPerSecond = (operationCount / timeSinceLastReport * 1000).toFixed(1);
+
+    console.log(`[WorkerTemplate] Performance: ${opsPerSecond} ops/sec, avg: ${avgOpTime}ms`);
+
+    // Reset counters
+    operationCount = 0;
+    totalOperationTime = 0;
+    lastPerfReport = now;
+  }
+}
+
+// --- Worker-specific initialization ---
+function initializeWorker() {
+  // Initialize any worker-specific resources here
+  // This is called once when the worker starts
+  console.log('[WorkerTemplate] Initializing worker...');
+  isInitialized = true;
+}
+
+// --- Main worker operation ---
+async function performOperation() {
+  if (!isInitialized || !currentState) {
+    return; // Wait for initialization and state
+  }
+
+  const opStart = performance.now();
+
+  try {
+    // === REPLACE THIS SECTION WITH YOUR WORKER'S ACTUAL LOGIC ===
+
+    // Example: Access state data
+    const globalState = currentState.global;
+    if (!globalState?.windowId) {
+      return; // No window to work with
+    }
+
+    // Example: Perform some work
+    // await doSomeWork();
+
+    // Example: Send results back to main process
+    // parentPort.postMessage({
+    //   storeUpdate: true,
+    //   type: 'someAction/type',
+    //   payload: results
+    // });
+
+    // === END WORKER LOGIC SECTION ===
+
+  } catch (error) {
+    console.error('[WorkerTemplate] Error in operation:', error);
+  } finally {
+    const opEnd = performance.now();
+    const opTime = opEnd - opStart;
+
+    // Update performance stats
+    operationCount++;
+    totalOperationTime += opTime;
+
+    // Log slow operations
+    if (opTime > 50) {
+      console.log(`[WorkerTemplate] Slow operation: ${opTime.toFixed(2)}ms`);
+    }
+  }
+}
+
+// --- Main Loop ---
+async function mainLoop() {
+  console.log('[WorkerTemplate] Starting main loop...');
+
+  while (!isShuttingDown) {
+    const loopStart = performance.now();
+
+    try {
+      await performOperation();
+      logPerformanceStats();
+    } catch (error) {
+      console.error('[WorkerTemplate] Error in main loop:', error);
+      // Wait longer on error to avoid tight error loops
+      await delay(Math.max(MAIN_LOOP_INTERVAL * 2, 100));
+      continue;
+    }
+
+    const loopEnd = performance.now();
+    const elapsedTime = loopEnd - loopStart;
+    const delayTime = Math.max(0, MAIN_LOOP_INTERVAL - elapsedTime);
+
+    if (delayTime > 0) {
+      await delay(delayTime);
+    }
+  }
+
+  console.log('[WorkerTemplate] Main loop stopped.');
+}
+
+// --- Message Handler ---
+parentPort.on('message', (message) => {
+  try {
+    if (message.type === 'state_diff') {
+      // Handle state updates from WorkerManager
+      if (!currentState) {
+        currentState = {};
+      }
+
+      // Apply state diff
+      Object.assign(currentState, message.payload);
+
+      // Handle specific state changes if needed
+      if (message.payload.global) {
+        const globalState = message.payload.global;
+
+        // Example: React to window changes
+        if (globalState.windowId !== undefined) {
+          console.log('[WorkerTemplate] Window changed:', globalState.windowId);
+          // Trigger some action if needed
+        }
+      }
+
+    } else if (message.type === 'shutdown') {
+      console.log('[WorkerTemplate] Received shutdown command.');
+      isShuttingDown = true;
+
+    } else if (message.type === 'init' && message.script) {
+      // Handle script initialization (for Lua workers)
+      console.log('[WorkerTemplate] Received script configuration.');
+      // Initialize with script config
+
+    } else if (typeof message === 'object' && !message.type) {
+      // Handle full state updates (initial state from WorkerManager)
+      currentState = message;
+      console.log('[WorkerTemplate] Received initial state update.');
+
+      if (!isInitialized) {
+        initializeWorker();
+      }
+
+    } else {
+      // Handle custom commands
+      console.log('[WorkerTemplate] Received message:', message);
+    }
+
+  } catch (error) {
+    console.error('[WorkerTemplate] Error handling message:', error);
+  }
+});
+
+// --- Worker Startup ---
+async function startWorker() {
+  console.log('[WorkerTemplate] Worker starting up...');
+
+  // Handle graceful shutdown signals
+  process.on('SIGTERM', () => {
+    console.log('[WorkerTemplate] Received SIGTERM, shutting down...');
+    isShuttingDown = true;
+  });
+
+  process.on('SIGINT', () => {
+    console.log('[WorkerTemplate] Received SIGINT, shutting down...');
+    isShuttingDown = true;
+  });
+
+  // Start the main loop
+  mainLoop().catch(error => {
+    console.error('[WorkerTemplate] Fatal error in main loop:', error);
+    process.exit(1);
+  });
+}
+
+// === WORKER-SPECIFIC HELPER FUNCTIONS ===
+// Add any worker-specific helper functions here
+
+// Example helper function
+function validateWorkerData() {
+  if (!workerData) {
+    throw new Error('[WorkerTemplate] Worker data not provided');
+  }
+
+  // Validate required worker data
+  // const { requiredField } = workerData;
+  // if (!requiredField) {
+  //   throw new Error('[WorkerTemplate] Required field not provided in worker data');
+  // }
+}
+
+// Initialize and start the worker
+try {
+  validateWorkerData();
+  startWorker();
+} catch (error) {
+  console.error('[WorkerTemplate] Failed to start worker:', error);
+  process.exit(1);
+}
+
+// === MIGRATION NOTES ===
+/*
+To migrate your existing workers to work with the new WorkerManager:
+
+1. **Remove old state handling**: Delete any existing Redux store subscriptions or
+   full state management code.
+
+2. **Update message handling**: Replace your message handler with the template above.
+   The new system sends:
+   - `{ type: 'state_diff', payload: {...} }` for state updates
+   - `{ type: 'shutdown' }` for graceful shutdown
+   - Full state object (no type) for initial state
+
+3. **Add performance monitoring**: Include the performance tracking code to help
+   identify bottlenecks.
+
+4. **Implement graceful shutdown**: Add the shutdown flag and handle it in your
+   main loop.
+
+5. **Update WorkerManager dependencies**: Add your worker to WORKER_STATE_DEPENDENCIES
+   in the WorkerManager with only the state slices it actually needs.
+
+6. **Add to graceful shutdown**: If your worker supports graceful shutdown, add it
+   to GRACEFUL_SHUTDOWN_WORKERS set in WorkerManager.
+
+7. **Test thoroughly**: Ensure your worker handles state diffs correctly and
+   shuts down gracefully.
+
+Example state dependency configurations:
+- Screen capture workers: ['global'] (only need window/display info)
+- Game logic workers: ['global', 'game', 'settings']
+- UI workers: ['global', 'ui']
+- Script workers: ['global', 'lua', 'scripts']
+*/

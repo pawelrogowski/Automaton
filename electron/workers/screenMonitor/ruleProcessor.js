@@ -12,7 +12,6 @@ const log = createLogger({ info: true, error: true, warn: true });
 import useItemOnCoordinates from '../../mouseControll/useItemOnCoordinates.js';
 import { getRandomNumber } from '../../utils/getRandomNumber.js';
 import { OPTIONS } from './constants.js';
-import { config } from './modules/config.js';
 
 class RuleProcessor {
   constructor() {
@@ -24,18 +23,18 @@ class RuleProcessor {
     this.lastKeypressTime = 0;
     this.effectiveCooldownEndTime = 0;
 
-    // ManaSync specific state (from V1)
+    // ManaSync specific state
     this.manaSyncWatchList = new Map();
     this.executedManaSyncThisCooldown = new Set();
     this.forcedManaSyncExecutedThisCooldown = new Set();
 
     this.pendingActionConfirmations = new Map(); // For item disappearance check
 
-    // Attack CD Exclusivity state (from V1)
+    // Attack CD Exclusivity state
     this.actionTakenThisAttackCooldown = false;
     this.healFriendRuneExecutionsThisAttackCooldown = 0;
 
-    // Constants (from V1)
+    // Constants
     this.KEYPRESS_COOLDOWN_MS = 50;
     this.PARTY_HEAL_MIN_INTERVAL_MS = 50;
     this.MANASYNC_FORCED_EXECUTION_DELAY_MS = 740;
@@ -58,33 +57,21 @@ class RuleProcessor {
   }
 
   async processRules(activePreset, gameState, globalConfig) {
-    const logSteps = config.logging.logRuleProcessingSteps;
-    const logExec = config.logging.logRuleExecutionDetails;
     const now = Date.now();
 
     if (getIsTyping()) {
-      if (logSteps)
-        console.log('[RuleProc] Skipping cycle: Typing is in progress.');
       return;
     }
 
-    // Check if user is online
     if (!globalConfig.isOnline) {
-      if (logSteps)
-        console.log('[RuleProc] Skipping cycle: User is not online.');
       return;
     }
 
-    // Check if rules are globally enabled
     if (!gameState.rulesEnabled) {
-      if (logSteps)
-        console.log('[RuleProc] Skipping cycle: Rules are globally disabled.');
       return;
     }
 
-    if (logSteps) console.log(`[RuleProc] --- Cycle Start (Time: ${now}) ---`);
-
-    // --- ManaSync Processing (largely V1 logic) ---
+    // --- ManaSync Processing ---
     const attackCdChanged = this._handleAttackCooldownTransitions(
       now,
       gameState,
@@ -115,7 +102,6 @@ class RuleProcessor {
       !manaSyncRuleExecutedImmediately &&
       !manaSyncRuleExecutedFromWatch
     ) {
-      // Ensure no other mana sync ran
       manaSyncRuleForcedExecution = this._processForcedManaSyncExecution(
         now,
         gameState,
@@ -134,10 +120,6 @@ class RuleProcessor {
 
     // --- Standard Rule Processing (User, Equip, ActionBar, PartyHeal non-rune) ---
     if (!ruleActionTriggeredThisCycle) {
-      if (logSteps)
-        console.log(
-          '[RuleProc] Evaluating non-ManaSync rules for execution...',
-        );
       const nonManaSyncPreset = activePreset.filter(
         (r) => !r.id.startsWith(this.RULE_PREFIX.MANA_SYNC),
       );
@@ -149,11 +131,6 @@ class RuleProcessor {
 
       if (eligibleRules.length > 0) {
         const ruleToExecute = eligibleRules[0];
-        if (logExec)
-          console.log(
-            `[RuleProc] Attempting highest priority eligible rule: ${ruleToExecute.id} (Prio: ${ruleToExecute.priority || 0}, Delay: ${ruleToExecute.delay || 0})`,
-          );
-
         const nonManaSyncActionSuccess = this._attemptExecutionAndHandleOutcome(
           now,
           ruleToExecute,
@@ -162,73 +139,33 @@ class RuleProcessor {
         );
 
         if (nonManaSyncActionSuccess) {
-          if (logExec)
-            console.log(
-              `[RuleProc] Successfully initiated action for ${ruleToExecute.id}. It should now be on its delay if applicable.`,
-            );
           ruleActionTriggeredThisCycle = true;
-        } else {
-          if (logExec)
-            console.log(
-              `[RuleProc] Failed to initiate action for ${ruleToExecute.id} (e.g., global cooldown, action error, or conditions no longer met just before execution). It will NOT start its specific delay from this attempt.`,
-            );
         }
-      } else {
-        if (logExec && nonManaSyncPreset.length > 0)
-          console.log(
-            '[RuleProc] No non-ManaSync rules met all conditions or were eligible.',
-          );
       }
-    } else {
-      if (logSteps)
-        console.log(
-          '[RuleProc] Skipping non-ManaSync evaluation as a ManaSync rule executed or other exclusive action was taken.',
-        );
     }
-
-    if (logSteps)
-      console.log(
-        `[RuleProc] --- Cycle End (Action Triggered: ${ruleActionTriggeredThisCycle}, Exclusive CD Action: ${this.actionTakenThisAttackCooldown}) ---`,
-      );
   }
 
   // --- Filtering Logic ---
   _filterEligibleRules(now, rules, gameState) {
-    const logSteps = config.logging.logRuleProcessingSteps;
-    const logExec = config.logging.logRuleExecutionDetails;
-    // ... (initial logging)
-
     let eligibleRules = rules.filter((rule) => rule.enabled);
-    // ... (logging)
 
     eligibleRules = this._filterRulesByActiveCooldowns(
       eligibleRules,
       gameState,
     );
-    // ... (logging)
 
-    // CRITICAL DELAY FILTER (using V2's working logic)
     eligibleRules = this._filterRulesNotOnDelay(now, eligibleRules);
-    // ... (logging)
 
     eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
-    // ... (logging)
 
     eligibleRules = eligibleRules.filter((rule) => {
       /* PartyHeal Interval Filter */
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
         const timeSinceLastHeal = now - this.lastPartyHealActionTime;
-        const intervalMet =
-          timeSinceLastHeal >= this.PARTY_HEAL_MIN_INTERVAL_MS;
-        if (!intervalMet && logExec)
-          console.log(
-            `[RuleProc] Filter Fail (PartyHeal Interval): ${rule.id} short, ${timeSinceLastHeal}ms < ${this.PARTY_HEAL_MIN_INTERVAL_MS}ms`,
-          );
-        return intervalMet;
+        return timeSinceLastHeal >= this.PARTY_HEAL_MIN_INTERVAL_MS;
       }
       return true;
     });
-    // ... (logging)
 
     eligibleRules = eligibleRules.filter((rule) => {
       /* HealFriend Rune Exclusivity */
@@ -238,33 +175,29 @@ class RuleProcessor {
       ) {
         if (gameState.attackCd) {
           if (this.actionTakenThisAttackCooldown) {
-            /* log & return false */ return false;
+            return false;
           }
           if (this.healFriendRuneExecutionsThisAttackCooldown >= 2) {
-            /* log & return false */ return false;
+            return false;
           }
         }
       }
       return true;
     });
-    // ... (logging)
 
     eligibleRules = this._filterRulesByBasicConditions(
       eligibleRules,
       gameState,
     );
-    // ... (logging)
 
     eligibleRules = this._filterRulesByItemAvailability(
       eligibleRules,
       gameState,
-    ); // Applies to equipRule, actionBarItem, partyHeal
-    // ... (logging)
+    );
 
     eligibleRules = eligibleRules.filter((rule) => {
       /* Equip Rule Specifics */
       if (rule.id.startsWith(this.RULE_PREFIX.EQUIP)) {
-        // ... (V1 equip logic, ensure actionItem and targetSlot are valid)
         if (
           typeof rule.actionItem !== 'string' ||
           rule.actionItem.trim() === '' ||
@@ -272,10 +205,10 @@ class RuleProcessor {
         )
           return false;
         if (typeof rule.equipOnlyIfSlotIsEmpty !== 'boolean') return false;
+
         const currentItemInSlot = gameState.equippedItems?.[rule.targetSlot];
-        const itemKeyIntendedToEquip = rule.actionItem; // This is the item to *click* on the bar to equip
         const itemToBeEquippedName =
-          rule.itemToBeEquippedName || itemKeyIntendedToEquip; // Actual item name that appears in slot
+          rule.itemToBeEquippedName || rule.actionItem;
 
         if (rule.equipOnlyIfSlotIsEmpty) {
           let expectedEmptyItemKey;
@@ -285,30 +218,22 @@ class RuleProcessor {
           } else if (rule.targetSlot === 'ring') {
             expectedEmptyItemKey = 'Empty';
           } else if (rule.targetSlot === 'boots') {
-            // Add check for boots slot
             expectedEmptyItemKey = 'Empty';
           } else {
-            // If targetSlot is none of the handled types, this condition cannot be met correctly.
             return false;
           }
           if (currentItemInSlot !== expectedEmptyItemKey) {
             return false;
           }
         }
-        // Avoid re-equipping if the item *is already* in the slot
-        // Check against itemToBeEquippedName (actual name in slot) not actionItem (icon on bar)
+        // Avoid re-equipping if the item is already in the slot
         if (currentItemInSlot === itemToBeEquippedName) {
-          if (logExec)
-            console.log(
-              `[RuleProc] Equip Rule '${rule.id}': SKIPPING (Avoid Re-equip). Item '${itemToBeEquippedName}' is already equipped in slot '${rule.targetSlot}'.`,
-            );
           return false;
         }
         return true;
       }
       return true;
     });
-    // ... (logging)
 
     eligibleRules = eligibleRules.filter((rule) => {
       /* PartyHeal Final Condition */
@@ -317,46 +242,31 @@ class RuleProcessor {
       }
       return true;
     });
-    // ... (logging)
 
     eligibleRules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
-    // ... (final logging)
     return eligibleRules;
   }
 
   _filterRulesNotOnDelay(now, rules) {
-    const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter((rule) => {
       const ruleId = rule.id;
-      const ruleDelay = rule.delay ?? 0; // Default to 0 if not specified
+      const ruleDelay = rule.delay ?? 0;
       const category = rule.category;
 
-      // INDIVIDUAL DELAY (for userRule, equipRule, etc.)
+      // INDIVIDUAL DELAY
       const timeSinceLastSuccessfulTrigger =
         now - (this.lastSuccessfulRuleActionTime[ruleId] || 0);
-      const individualDelayMet = timeSinceLastSuccessfulTrigger >= ruleDelay;
-
-      if (!individualDelayMet) {
-        if (logExec)
-          console.log(
-            `[RuleProc] Filter Fail (Individual Delay): ${ruleId}. Time since last: ${timeSinceLastSuccessfulTrigger.toFixed(0)}ms < Delay: ${ruleDelay}ms.`,
-          );
+      if (timeSinceLastSuccessfulTrigger < ruleDelay) {
         return false;
       }
 
-      // CATEGORY DELAY (typically for userRule)
+      // CATEGORY DELAY
       if (rule.id.startsWith(this.RULE_PREFIX.USER) && category) {
         const categoryDelay = OPTIONS.categoryDelays?.[category] ?? 0;
         if (categoryDelay > 0) {
           const timeSinceCategoryLastTrigger =
             now - (this.lastCategoryExecutionTime[category] || 0);
-          const categoryDelayMet =
-            timeSinceCategoryLastTrigger >= categoryDelay;
-          if (!categoryDelayMet) {
-            if (logExec)
-              console.log(
-                `[RuleProc] Filter Fail (Category Delay ${category}): ${ruleId}. Time since cat last: ${timeSinceCategoryLastTrigger.toFixed(0)}ms < Cat Delay: ${categoryDelay}ms.`,
-              );
+          if (timeSinceCategoryLastTrigger < categoryDelay) {
             return false;
           }
         }
@@ -365,9 +275,7 @@ class RuleProcessor {
     });
   }
 
-  // ... (_filterRulesByActiveCooldowns, _filterRulesByWalkingState, _filterRulesByBasicConditions, _filterRulesByItemAvailability - largely same as before)
   _filterRulesByActiveCooldowns(rules, gameState) {
-    /* As before */
     return rules.filter((rule) => {
       if (rule.id.startsWith(this.RULE_PREFIX.USER)) {
         const cooldownStateKey = rule.category
@@ -378,45 +286,37 @@ class RuleProcessor {
       return true;
     });
   }
+
   _filterRulesByWalkingState(rules, gameState) {
-    /* As before */
-    const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter((rule) => {
       if (
         rule.id.startsWith(this.RULE_PREFIX.USER) ||
         rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR)
       ) {
-        const passes =
-          !rule.isWalking || (rule.isWalking && gameState.isWalking);
-        if (!passes && logExec)
-          console.log(`[RuleProc] Filter Fail (Walking State): ${rule.id}`);
-        return passes;
+        return !rule.isWalking || (rule.isWalking && gameState.isWalking);
       }
       return true;
     });
   }
+
   _filterRulesByBasicConditions(rules, gameState) {
-    /* As before */
-    const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter((rule) => {
-      let hpMet = true,
-        manaMet = true,
-        monsterMet = true;
       if (
         rule.id.startsWith(this.RULE_PREFIX.USER) ||
         rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR) ||
         rule.id.startsWith(this.RULE_PREFIX.EQUIP)
       ) {
-        hpMet = parseMathCondition(
+        const hpMet = parseMathCondition(
           rule.hpTriggerCondition,
           parseInt(rule.hpTriggerPercentage, 10),
           gameState.hppc,
         );
-        manaMet = parseMathCondition(
+        const manaMet = parseMathCondition(
           rule.manaTriggerCondition,
           parseInt(rule.manaTriggerPercentage, 10),
           gameState.mppc,
         );
+        let monsterMet = true;
         if (rule.monsterNumCondition != null && rule.monsterNum != null) {
           monsterMet = parseMathCondition(
             rule.monsterNumCondition,
@@ -424,24 +324,18 @@ class RuleProcessor {
             gameState.monsterNum,
           );
         }
+        const statusMet = areCharStatusConditionsMet(rule, gameState);
+        return hpMet && manaMet && statusMet && monsterMet;
       }
-      const statusMet = areCharStatusConditionsMet(rule, gameState);
-      const allMet = hpMet && manaMet && statusMet && monsterMet;
-      if (!allMet && logExec)
-        console.log(
-          `[RuleProc] Filter Fail (Basic Cond): ${rule.id} (H:${hpMet} M:${manaMet} S:${statusMet} Mon:${monsterMet})`,
-        );
-      return allMet;
+      return true;
     });
   }
 
-  // --- MODIFIED: Added blankRune requirement for 'Create Rune' spells ---
   _filterRulesByItemAvailability(rules, gameState) {
-    const logExec = config.logging.logRuleExecutionDetails;
     return rules.filter((rule) => {
       if (
         rule.id.startsWith(this.RULE_PREFIX.ACTION_BAR) ||
-        rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) || // For non-rune party heal
+        rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL) ||
         rule.id.startsWith(this.RULE_PREFIX.EQUIP)
       ) {
         const requiredItemToClick = rule.actionItem;
@@ -449,38 +343,20 @@ class RuleProcessor {
           typeof requiredItemToClick !== 'string' ||
           requiredItemToClick.trim() === ''
         ) {
-          if (logExec)
-            console.log(
-              `[RuleProc] Filter Fail (Item Avail): ${rule.id} - No actionItem configured.`,
-            );
           return false;
         }
 
-        // NEW LOGIC: Check for 'Create Rune' spell/action
         const isCreateRuneAction =
           requiredItemToClick.includes('create') &&
           requiredItemToClick.includes('Rune');
 
         if (isCreateRuneAction) {
-          const blankRuneIsVisible =
-            !!gameState.activeActionItems?.['blankRune'];
-          if (!blankRuneIsVisible) {
-            if (logExec)
-              console.log(
-                `[RuleProc] Filter Fail (Item Avail): ${rule.id} - 'Create Rune' action requires 'blankRune' to be visible, but it's not.`,
-              );
+          if (!gameState.activeActionItems?.['blankRune']) {
             return false;
           }
         }
 
-        // Ensure the action item itself is visible on the action bar
-        const itemIsVisibleOnActionBar =
-          !!gameState.activeActionItems?.[requiredItemToClick];
-        if (!itemIsVisibleOnActionBar) {
-          if (logExec)
-            console.log(
-              `[RuleProc] Filter Fail (Item Avail): ${rule.id} - ActionItem '${requiredItemToClick}' not visible.`,
-            );
+        if (!gameState.activeActionItems?.[requiredItemToClick]) {
           return false;
         }
         return true;
@@ -489,10 +365,8 @@ class RuleProcessor {
     });
   }
 
-  // --- ManaSync Logic (from V1, largely unchanged) ---
+  // --- ManaSync Logic ---
   _handleAttackCooldownTransitions(now, gameState, activePreset, globalConfig) {
-    /* V1 logic */
-    const logExec = config.logging.logRuleExecutionDetails;
     const attackCdIsCurrentlyActive = gameState.attackCd;
     const attackCdJustStarted =
       attackCdIsCurrentlyActive && !this.lastAttackCooldownState;
@@ -501,9 +375,6 @@ class RuleProcessor {
     let executedManaSyncNow = false;
 
     if (attackCdJustEnded) {
-      if (logExec) {
-        /* ... logging ... */
-      }
       this.manaSyncWatchList.clear();
       this.executedManaSyncThisCooldown.clear();
       this.forcedManaSyncExecutedThisCooldown.clear();
@@ -511,8 +382,6 @@ class RuleProcessor {
     }
 
     if (attackCdJustStarted) {
-      if (logExec)
-        console.log(`[RuleProc] Attack CD Started at ${now}. Eval ManaSync...`);
       this.attackCooldownStartTime = now;
       this.manaSyncWatchList.clear();
       this.executedManaSyncThisCooldown.clear();
@@ -523,6 +392,7 @@ class RuleProcessor {
       const manaSyncRules = activePreset
         .filter((r) => r.enabled && r.id.startsWith(this.RULE_PREFIX.MANA_SYNC))
         .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
       for (const rule of manaSyncRules) {
         if (executedManaSyncNow || this.actionTakenThisAttackCooldown) break;
         const conditionsMet = this._checkManaSyncConditions(rule, gameState);
@@ -541,7 +411,6 @@ class RuleProcessor {
                 now,
               )
             ) {
-              // Pass 'manaSyncNormal' as type for _tryExecuteAction
               const keypressSent = this._tryExecuteAction(
                 now,
                 rule,
@@ -570,16 +439,16 @@ class RuleProcessor {
       executed: executedManaSyncNow,
     };
   }
+
   _processManaSyncWatch(now, gameState, activePreset, globalConfig) {
-    /* V1 logic, pass 'manaSyncNormal' to _tryExecuteAction */
-    const logExec = config.logging.logRuleExecutionDetails;
     if (this.manaSyncWatchList.size === 0 || this.actionTakenThisAttackCooldown)
       return false;
     let executedFromWatch = false;
     const rulesToRemoveFromWatch = [];
-    const sortedWatchKeys = Array.from(
-      this.manaSyncWatchList.keys(),
-    ).sort(/* by prio */);
+    const sortedWatchKeys = Array.from(this.manaSyncWatchList.keys())
+      .sort
+      /* by prio */
+      ();
 
     for (const ruleId of sortedWatchKeys) {
       if (executedFromWatch || this.actionTakenThisAttackCooldown) break;
@@ -623,15 +492,14 @@ class RuleProcessor {
             }
           }
         }
-        rulesToRemoveFromWatch.push(ruleId); // Remove once checked or executed
+        rulesToRemoveFromWatch.push(ruleId);
       }
     }
     rulesToRemoveFromWatch.forEach((id) => this.manaSyncWatchList.delete(id));
     return executedFromWatch;
   }
+
   _processForcedManaSyncExecution(now, gameState, activePreset, globalConfig) {
-    /* V1 logic, pass 'manaSyncForced' to _tryExecuteAction */
-    const logExec = config.logging.logRuleExecutionDetails;
     if (
       !gameState.attackCd ||
       !this.attackCooldownStartTime ||
@@ -650,7 +518,7 @@ class RuleProcessor {
       .filter((r) => r.enabled && r.id.startsWith(this.RULE_PREFIX.MANA_SYNC))
       .sort((a, b) => (b.priority || 0) - (a.priority || 0));
     for (const rule of manaSyncRules) {
-      if (this.actionTakenThisAttackCooldown) break; // Should be caught by outer check, but defensive
+      if (this.actionTakenThisAttackCooldown) break;
       if (
         this.executedManaSyncThisCooldown.has(rule.id) ||
         this.forcedManaSyncExecutedThisCooldown.has(rule.id)
@@ -683,8 +551,8 @@ class RuleProcessor {
     }
     return false;
   }
+
   _checkManaSyncConditions(rule, gameState) {
-    /* V1 logic */
     const hpMet = parseMathCondition(
       rule.hpTriggerCondition ?? '>=',
       parseInt(rule.hpTriggerPercentage ?? 0, 10),
@@ -698,13 +566,13 @@ class RuleProcessor {
     const statusMet = areCharStatusConditionsMet(rule, gameState);
     return { hpMet, manaMet, statusMet, all: hpMet && manaMet && statusMet };
   }
+
   _hasHigherPriorityEligibleHealFriend(
     gameState,
     activePreset,
     manaSyncPriority,
     now,
   ) {
-    /* V1 logic, ensure healRule delay check uses lastSuccessfulRuleActionTime */
     if (this.actionTakenThisAttackCooldown) return false;
     const competingHealFriends = activePreset.filter(
       (r) =>
@@ -720,10 +588,10 @@ class RuleProcessor {
         this.healFriendRuneExecutionsThisAttackCooldown >= 2
       )
         continue;
-      const healRuleDelay = healRule.delay ?? 0; // HealFriend rules can also have delays
+      const healRuleDelay = healRule.delay ?? 0;
       const timeSinceHealRuleLastTrigger =
         now - (this.lastSuccessfulRuleActionTime[healRule.id] || 0);
-      if (timeSinceHealRuleLastTrigger < healRuleDelay) continue; // Corrected typo here
+      if (timeSinceHealRuleLastTrigger < healRuleDelay) continue;
       if (this._shouldHealFriend(healRule, gameState) && healRule.actionItem)
         return true;
     }
@@ -732,7 +600,6 @@ class RuleProcessor {
 
   // --- Action Execution and Confirmation ---
   _processActionConfirmations(now, gameState) {
-    /* As before, just clears pending list */
     if (this.pendingActionConfirmations.size === 0) return;
     const ruleIdsToRemove = [];
     for (const [ruleId, data] of this.pendingActionConfirmations) {
@@ -746,27 +613,18 @@ class RuleProcessor {
     ruleIdsToRemove.forEach((id) => this.pendingActionConfirmations.delete(id));
   }
 
-  /**
-   * Attempts action for a non-ManaSync rule. Sets lastSuccessfulRuleActionTime.
-   */
   _attemptExecutionAndHandleOutcome(
     now,
     ruleToExecute,
     gameState,
     globalConfig,
   ) {
-    const logExec = config.logging.logRuleExecutionDetails;
     const ruleId = ruleToExecute.id;
 
     if (this.pendingActionConfirmations.has(ruleId)) {
-      if (logExec)
-        console.log(
-          `[RuleProc] Action for ${ruleId} skipped: Awaiting item confirmation.`,
-        );
       return false;
     }
 
-    // Pass 'standard' for non-ManaSync rules. This distinction is new in _tryExecuteAction
     const actionSuccess = this._tryExecuteAction(
       now,
       ruleToExecute,
@@ -776,12 +634,7 @@ class RuleProcessor {
     );
 
     if (actionSuccess) {
-      // THIS IS THE KEY: Set timestamp for individual delay of this non-ManaSync rule.
       this.lastSuccessfulRuleActionTime[ruleId] = now;
-      if (logExec)
-        console.log(
-          `[RuleProc] Action for ${ruleId} successful. lastSuccessfulRuleActionTime set to ${now}.`,
-        );
 
       if (ruleToExecute.category && ruleId.startsWith(this.RULE_PREFIX.USER)) {
         this.lastCategoryExecutionTime[ruleToExecute.category] = now;
@@ -807,22 +660,12 @@ class RuleProcessor {
       }
       return true;
     }
-    // If actionSuccess is false, lastSuccessfulRuleActionTime is NOT set.
     return false;
   }
 
-  /**
-   * Tries to execute the physical action.
-   * executionType: 'standard', 'manaSyncNormal', 'manaSyncForced', 'partyHealRune'
-   */
   _tryExecuteAction(now, rule, gameState, globalConfig, executionType) {
-    const logExec = config.logging.logRuleExecutionDetails;
     const ruleId = rule.id;
-
     const isManaSync = executionType.startsWith('manaSync');
-    const isPartyHealRune = executionType === 'partyHealRune'; // We'll call this specifically for runes
-
-    // Priority rules can bypass general effectiveCooldownEndTime if it's short
     const isPriorityRuleForCooldown =
       isManaSync ||
       (ruleId.startsWith(this.RULE_PREFIX.PARTY_HEAL) &&
@@ -830,20 +673,7 @@ class RuleProcessor {
         gameState.attackCd);
 
     if (!isPriorityRuleForCooldown && now < this.effectiveCooldownEndTime) {
-      if (logExec)
-        console.log(
-          `[RuleProc] Execute REJECTED (Global Cooldown): ${ruleId} (until ${this.effectiveCooldownEndTime}, now ${now})`,
-        );
       return false;
-    }
-    if (
-      isPriorityRuleForCooldown &&
-      now < this.effectiveCooldownEndTime &&
-      logExec
-    ) {
-      console.log(
-        `[RuleProc] Priority rule ${ruleId} attempting action despite global cooldown (until ${this.effectiveCooldownEndTime}).`,
-      );
     }
 
     if (!rule.key) {
@@ -859,10 +689,6 @@ class RuleProcessor {
       ) {
         const targetMember = this._findPartyHealTarget(rule, gameState);
         if (targetMember?.uhCoordinates) {
-          if (logExec)
-            console.log(
-              `[RuleProc] Executing PartyHeal Rune (${rule.actionItem}) on ${targetMember.id} (Key: ${rule.key})`,
-            );
           useItemOnCoordinates(
             globalConfig.windowId,
             globalConfig.display,
@@ -872,17 +698,11 @@ class RuleProcessor {
           );
           actionSent = true;
         } else {
-          if (logExec)
-            console.warn(
-              `[RuleProc] PartyHeal Rune ${ruleId}: No valid target found.`,
-            );
+          console.warn(
+            `[RuleProc] PartyHeal Rune ${ruleId}: No valid target found.`,
+          );
         }
       } else {
-        // 'standard' rules: userRule, equipRule, actionBarItem (non-rune party heal)
-        if (logExec)
-          console.log(
-            `[RuleProc] Executing Standard keypress for ${ruleId} (Key: ${rule.key})`,
-          );
         keyPress(globalConfig.windowId, globalConfig.display, rule.key, {
           speed: 'fast',
         });
@@ -893,10 +713,6 @@ class RuleProcessor {
         this.lastKeypressTime = now;
         this.effectiveCooldownEndTime =
           now + (isPriorityRuleForCooldown ? 25 : this.KEYPRESS_COOLDOWN_MS);
-        if (logExec)
-          console.log(
-            `[RuleProc] Action SENT for ${ruleId}. Effective CD until ${this.effectiveCooldownEndTime}.`,
-          );
       }
       return actionSent;
     } catch (error) {
@@ -904,13 +720,12 @@ class RuleProcessor {
         `[RuleProcessor] Error during action execution for ${ruleId} (Type: ${executionType}):`,
         error,
       );
-      return false; // Ensure returns false on error
+      return false;
     }
   }
 
-  // --- Party Heal Specific Logic (from V1) ---
+  // --- Party Heal Specific Logic ---
   _shouldHealFriend(rule, gameState) {
-    /* As before */
     if (!gameState?.partyMembers || rule.friendHpTriggerPercentage == null)
       return false;
     if (rule.requireAttackCooldown && !gameState.attackCd) return false;
@@ -941,8 +756,8 @@ class RuleProcessor {
       );
     }
   }
+
   _findPartyHealTarget(rule, gameState) {
-    /* As before */
     const hpTriggerPercentage = parseInt(rule.friendHpTriggerPercentage, 10);
     const partyPositionIndex = parseInt(rule.partyPosition, 10);
     if (

@@ -1,381 +1,604 @@
 /**
  * @file screenMonitor.js
- * @summary A dedicated worker for monitoring specific screen regions for game state changes.
- *
- * @description
- * This worker continuously analyzes specific, known regions of the screen to extract
- * real-time game state data (e.g., health, mana, cooldowns, status effects). It
- * relies on the `region-monitor` worker to first locate these regions.
- *
- * Key Architectural Decisions:
- * 1.  **CPU-Friendly Throttling:** The main loop is architected to "work-then-sleep".
- *     After each analysis cycle, it calculates the time remaining until the next
- *     interval and puts the worker thread to sleep. This ensures the worker consumes
- *     virtually zero CPU while idle, providing predictable performance.
- *
- * 2.  **Data Snapshotting:** To ensure data consistency for the entire analysis cycle,
- *     the worker creates a single, private copy (a "snapshot") of the shared screen
- *     buffer at the beginning of each loop. This prevents race conditions and memory
- *     accumulation from repeated `Buffer.from()` calls.
- *
- * 3.  **State-Driven:** The worker remains idle until it receives the necessary
- *     region coordinates from the main thread's global state. All operations are
- *     based on the last known good state.
+ * @summary A dedicated worker for processing game state data from pre-identified screen regions.
  */
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import {
-  resourceBars,
-  cooldownColorSequences,
-  battleListSequences,
-} from '../constants/index.js';
+import { resourceBars } from '../constants/index.js';
 import { setBattleListEntries } from '../../frontend/redux/slices/battleListSlice.js';
-import { calculatePartyEntryRegions } from '../screenMonitor/calcs/calculatePartyEntryRegions.js';
-import calculatePartyHpPercentage from '../screenMonitor/calcs/calculatePartyHpPercentage.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
-import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 50; // ~23.8 FPS. The target time between scans.
+const SCAN_INTERVAL_MS = 50;
+const PERFORMANCE_LOG_INTERVAL = 10000; // Log performance every 10 seconds
 
 // --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-const FRAME_COUNTER_INDEX = 0,
-  WIDTH_INDEX = 1,
-  HEIGHT_INDEX = 2,
-  IS_RUNNING_INDEX = 3;
-const HEADER_SIZE = 8;
-
 const sharedBufferView = Buffer.from(imageSAB);
 
+// --- Correct SharedArrayBuffer Indices ---
+const FRAME_COUNTER_INDEX = 0;
+const WIDTH_INDEX = 1;
+const HEIGHT_INDEX = 2;
+const IS_RUNNING_INDEX = 3;
+const DIRTY_REGION_COUNT_INDEX = 5;
+const DIRTY_REGIONS_START_INDEX = 6;
+
 // --- State Variables ---
-let state = null;
+let currentState = null;
 let lastProcessedFrameCounter = -1;
-let lastKnownGoodHealthPercentage = null;
-let lastKnownGoodManaPercentage = null;
-let lastKnownPlayerMinimapPosition = { x: 0, y: 0, z: 0 }; // Initialize with a default
-let lastMovementTimestamp = 0; // New variable to track last movement
-const WALKING_STICKY_DURATION_MS = 750; // 750ms duration for isWalking to stay true
+let isShuttingDown = false;
+let isInitialized = false;
+
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
+const initializedRegions = new Set();
 
-// --- Self-Contained Utilities ---
+// --- Performance Tracking ---
+let operationCount = 0;
+let calculationCount = 0;
+let totalOperationTime = 0;
+let totalCalculationTime = 0;
+let lastPerfReport = Date.now();
+
+// --- Cached State ---
+let lastCalculatedState = {
+  hppc: null,
+  mppc: null,
+  healingCd: { onCooldown: false, remaining: 0 },
+  supportCd: { onCooldown: false, remaining: 0 },
+  attackCd: { onCooldown: false, remaining: 0 },
+  characterStatus: {},
+  partyMembers: [],
+  isWalking: false,
+  activeActionItems: {},
+  equippedItems: {},
+  battleList: [],
+  lastMovementTimestamp: 0,
+  lastKnownPlayerMinimapPosition: null,
+  monsterNum: 0,
+};
+
+// --- Reusable objects to reduce GC pressure ---
+const reusableGameStateUpdate = {
+  storeUpdate: true,
+  type: 'gameState/updateGameStateFromMonitorData',
+  payload: {},
+};
+
+const reusableBattleListUpdate = {
+  storeUpdate: true,
+  type: setBattleListEntries.type,
+  payload: [],
+};
+
+// --- Utilities ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function getPartyData(partyListRegion, buffer, metadata) {
-  if (!partyListRegion || !buffer) return [];
-  const partyData = [];
-  const approxEntryHeight = 26;
-  const maxEntries = Math.floor(partyListRegion.height / approxEntryHeight);
-  if (maxEntries <= 0) return [];
-
-  const partyEntryRegions = calculatePartyEntryRegions(
-    { x: 0, y: 0 },
-    maxEntries,
-  );
-  for (let i = 0; i < partyEntryRegions.length; i++) {
-    const entry = partyEntryRegions[i];
-    const absoluteBarCoords = {
-      x: partyListRegion.x + entry.bar.x,
-      y: partyListRegion.y + entry.bar.y,
-    };
-    const hppc = calculatePartyHpPercentage(
-      buffer,
-      metadata,
-      absoluteBarCoords,
-      resourceBars.partyEntryHpBar,
-      130,
-    );
-    if (hppc >= 0) {
-      partyData.push({
-        id: i,
-        hppc,
-        uhCoordinates: entry.uhCoordinates,
-        isActive: true,
-      });
-    }
+function rectsIntersect(rectA, rectB) {
+  if (
+    !rectA ||
+    !rectB ||
+    rectA.width <= 0 ||
+    rectA.height <= 0 ||
+    rectB.width <= 0 ||
+    rectB.height <= 0
+  ) {
+    return false;
   }
-  return partyData;
+  return (
+    rectA.x < rectB.x + rectB.width &&
+    rectA.x + rectA.width > rectB.x &&
+    rectA.y < rectB.y + rectB.height &&
+    rectA.y + rectA.height > rectB.y
+  );
 }
 
+// --- Performance Monitoring ---
+function logPerformanceStats() {
+  const now = Date.now();
+  const timeSinceLastReport = now - lastPerfReport;
+
+  if (timeSinceLastReport >= PERFORMANCE_LOG_INTERVAL) {
+    const avgOpTime =
+      operationCount > 0 ? (totalOperationTime / operationCount).toFixed(2) : 0;
+    const avgCalcTime =
+      calculationCount > 0
+        ? (totalCalculationTime / calculationCount).toFixed(2)
+        : 0;
+    const opsPerSecond = (
+      (operationCount / timeSinceLastReport) *
+      1000
+    ).toFixed(1);
+    const calcsPerSecond = (
+      (calculationCount / timeSinceLastReport) *
+      1000
+    ).toFixed(1);
+
+    console.log(
+      `[ScreenMonitor] Performance: ${opsPerSecond} ops/sec (avg: ${avgOpTime}ms), ` +
+        `${calcsPerSecond} calcs/sec (avg: ${avgCalcTime}ms)`,
+    );
+
+    // Reset counters
+    operationCount = 0;
+    calculationCount = 0;
+    totalOperationTime = 0;
+    totalCalculationTime = 0;
+    lastPerfReport = now;
+  }
+}
+
+// --- Worker Initialization ---
+function initializeWorker() {
+  console.log('[ScreenMonitor] Initializing worker...');
+  isInitialized = true;
+}
+
+// --- Rule Processing ---
 function runRules(ruleInput) {
+  if (!currentState?.rules?.enabled) return;
+
   const currentPreset =
-    state?.rules?.presets?.[state?.rules?.activePresetIndex];
+    currentState?.rules?.presets?.[currentState?.rules?.activePresetIndex];
   if (!currentPreset) return;
+
   try {
-    console.log(state.global);
     ruleProcessorInstance.processRules(currentPreset, ruleInput, {
-      ...state.global,
-      isOnline: state?.regionCoordinates.regions.onlineMarker ?? false,
+      ...currentState.global,
+      isOnline: currentState?.regionCoordinates?.regions?.onlineMarker ?? false,
     });
   } catch (error) {
-    console.error('Rule processing error:', error);
+    console.error('[ScreenMonitor] Rule processing error:', error);
   }
 }
 
-/**
- * The main execution loop for the worker.
- */
-async function mainLoop() {
-  while (true) {
-    const loopStartTime = performance.now();
+// --- Calculation Functions ---
+function calculateHealthBar(bufferToUse, metadata, regions) {
+  if (!regions.healthBar) return lastCalculatedState.hppc;
 
-    try {
-      const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+  const calcStart = performance.now();
+  const result = calculatePercentages(
+    bufferToUse,
+    metadata,
+    regions.healthBar,
+    resourceBars.healthBar,
+    94,
+  );
+  const calcEnd = performance.now();
 
-      // Only proceed if there's a new frame and we have the necessary state from the main thread.
-      if (
-        newFrameCounter > lastProcessedFrameCounter &&
-        state?.regionCoordinates?.regions
-      ) {
-        if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
-          const width = Atomics.load(syncArray, WIDTH_INDEX);
-          const height = Atomics.load(syncArray, HEIGHT_INDEX);
-          const { regions } = state.regionCoordinates;
+  calculationCount++;
+  totalCalculationTime += calcEnd - calcStart;
 
-          // Ensure we have regions to work with and the frame dimensions are valid.
-          if (Object.keys(regions).length > 0 && width > 0 && height > 0) {
-            lastProcessedFrameCounter = newFrameCounter;
+  return result;
+}
 
-            const metadata = { width, height, frameCounter: newFrameCounter };
-            const bufferSize = HEADER_SIZE + width * height * 4;
+function calculateManaBar(bufferToUse, metadata, regions) {
+  if (!regions.manaBar) return lastCalculatedState.mppc;
 
-            // Use the sharedBufferView directly. The native modules are designed to work with SABs.
-            const bufferToUse = sharedBufferView;
+  const calcStart = performance.now();
+  const result = calculatePercentages(
+    bufferToUse,
+    metadata,
+    regions.manaBar,
+    resourceBars.manaBar,
+    94,
+  );
+  const calcEnd = performance.now();
 
-            // --- Start of Analysis Cycle ---
+  calculationCount++;
+  totalCalculationTime += calcEnd - calcStart;
 
-            const searchTasks = {};
-            if (regions.cooldowns)
-              searchTasks.cooldowns = {
-                sequences: cooldownColorSequences,
-                searchArea: regions.cooldowns,
-                occurrence: 'first',
-              };
-            if (regions.battleList)
-              searchTasks.battleList = {
-                sequences: { battleEntry: battleListSequences.battleEntry },
-                searchArea: regions.battleList,
-                occurrence: 'all',
-              };
+  return result;
+}
 
-            const searchResults = findSequences.findSequencesNativeBatch(
-              bufferToUse,
-              searchTasks,
-            );
+function calculateCooldowns(regions) {
+  const activeCooldowns = regions.cooldowns?.children || {};
 
-            const { newHealthPercentage, newManaPercentage } =
-              regions.healthBar && regions.manaBar
-                ? {
-                    newHealthPercentage: calculatePercentages(
-                      bufferToUse,
-                      metadata,
-                      regions.healthBar,
-                      resourceBars.healthBar,
-                      94,
-                    ),
-                    newManaPercentage: calculatePercentages(
-                      bufferToUse,
-                      metadata,
-                      regions.manaBar,
-                      resourceBars.manaBar,
-                      94,
-                    ),
-                  }
-                : {
-                    newHealthPercentage: lastKnownGoodHealthPercentage,
-                    newManaPercentage: lastKnownGoodManaPercentage,
-                  };
-            lastKnownGoodHealthPercentage =
-              newHealthPercentage ?? lastKnownGoodHealthPercentage;
-            lastKnownGoodManaPercentage =
-              newManaPercentage ?? lastKnownGoodManaPercentage;
+  const healingCd = cooldownManager.updateCooldown(
+    'healing',
+    !!activeCooldowns.healing,
+  );
+  const supportCd = cooldownManager.updateCooldown(
+    'support',
+    !!activeCooldowns.support,
+  );
+  const attackCd = cooldownManager.updateCooldown(
+    'attack',
+    !!activeCooldowns.attack,
+  );
 
-            const currentCooldowns = searchResults.cooldowns || {};
-            const healingCd = cooldownManager.updateCooldown(
-              'healing',
-              !!currentCooldowns.healing,
-            );
-            const supportCd = cooldownManager.updateCooldown(
-              'support',
-              !!currentCooldowns.support,
-            );
-            const attackCd = cooldownManager.updateCooldown(
-              'attack',
-              !!currentCooldowns.attack,
-            );
-            if (currentCooldowns.attackInactive)
-              cooldownManager.forceDeactivate('attack');
-            if (currentCooldowns.healingInactive)
-              cooldownManager.forceDeactivate('healing');
-            if (currentCooldowns.supportInactive)
-              cooldownManager.forceDeactivate('support');
+  // Handle inactive states
+  if (activeCooldowns.attackInactive) cooldownManager.forceDeactivate('attack');
+  if (activeCooldowns.healingInactive)
+    cooldownManager.forceDeactivate('healing');
+  if (activeCooldowns.supportInactive)
+    cooldownManager.forceDeactivate('support');
 
-            const characterStatus = {};
-            if (regions.statusBar?.children) {
-              Object.keys(regions.statusBar.children).forEach((key) => {
-                characterStatus[key] = !!regions.statusBar.children[key].x;
-              });
-            }
+  return { healingCd, supportCd, attackCd };
+}
 
-            const getEquippedItem = (slotRegion) => {
-              if (!slotRegion?.children) return 'Unknown';
+function calculateCharacterStatus(regions) {
+  const characterStatus = {};
+  if (regions.statusBar?.children) {
+    Object.keys(regions.statusBar.children).forEach((key) => {
+      characterStatus[key] = !!regions.statusBar.children[key].x;
+    });
+  }
+  return characterStatus;
+}
 
-              const foundItems = Object.entries(slotRegion.children)
-                .filter(
-                  ([key, child]) =>
-                    child && child.x !== undefined && child.y !== undefined,
-                )
-                .map(([key]) => key);
+function calculateEquippedItems(regions) {
+  const getEquippedItem = (slotRegion) => {
+    if (!slotRegion?.children) return 'Unknown';
+    const foundItems = Object.keys(slotRegion.children);
+    if (foundItems.length === 0) return 'Empty';
+    const actualItem = foundItems.find((item) => !item.includes('empty'));
+    return actualItem || 'Empty';
+  };
 
-              if (foundItems.length === 0) return 'Empty';
+  return {
+    amulet: getEquippedItem(regions.amuletSlot),
+    ring: getEquippedItem(regions.ringSlot),
+    boots: getEquippedItem(regions.bootsSlot),
+  };
+}
 
-              // Handle empty slot detection
-              const emptySlot = foundItems.find((item) =>
-                item.includes('empty'),
-              );
-              if (emptySlot) return 'Empty';
+function calculateActiveActionItems(regions) {
+  return regions.hotkeyBar?.children
+    ? Object.fromEntries(
+        Object.entries(regions.hotkeyBar.children).map(([key, child]) => [
+          key,
+          child,
+        ]),
+      )
+    : {};
+}
 
-              // Return the first non-empty item found
-              const actualItem = foundItems.find(
-                (item) => !item.includes('empty'),
-              );
-              return actualItem || 'Empty';
-            };
+function calculateBattleList(bufferToUse, metadata, regions) {
+  const battleListEntries = regions.battleList?.children?.entries?.list || [];
+  const uiBattleListNames = currentState.uiValues?.battleListEntries || [];
 
-            const equippedItemsResult = {
-              amulet: getEquippedItem(regions.amuletSlot),
-              ring: getEquippedItem(regions.ringSlot),
-              boots: getEquippedItem(regions.bootsSlot),
-            };
+  return battleListEntries.map((entry, index) => {
+    const calcStart = performance.now();
+    const health = calculatePercentages(
+      bufferToUse,
+      metadata,
+      entry.healthBarFill,
+      resourceBars.partyEntryHpBar,
+      entry.healthBarFill.width,
+    );
+    const calcEnd = performance.now();
 
-            const hasPositionChanged =
-              state.gameState.playerMinimapPosition.x !==
-                lastKnownPlayerMinimapPosition.x ||
-              state.gameState.playerMinimapPosition.y !==
-                lastKnownPlayerMinimapPosition.y ||
-              state.gameState.playerMinimapPosition.z !==
-                lastKnownPlayerMinimapPosition.z;
+    calculationCount++;
+    totalCalculationTime += calcEnd - calcStart;
 
-            if (hasPositionChanged) {
-              lastMovementTimestamp = performance.now();
-            }
+    return {
+      name: uiBattleListNames[index] || '',
+      health: health >= 0 ? health : 0,
+      isTargeted: entry.isTargeted,
+      isAttacking: entry.isAttacking,
+      region: entry.healthBarFull,
+    };
+  });
+}
 
-            const isWalking =
-              hasPositionChanged ||
-              performance.now() - lastMovementTimestamp <
-                WALKING_STICKY_DURATION_MS;
+function calculateWalkingState() {
+  if (!currentState?.gameState?.playerMinimapPosition) {
+    return lastCalculatedState.isWalking;
+  }
 
-            lastKnownPlayerMinimapPosition = {
-              ...state.gameState.playerMinimapPosition,
-            }; // Update for next cycle
+  const currentPos = currentState.gameState.playerMinimapPosition;
+  const lastPos = lastCalculatedState.lastKnownPlayerMinimapPosition;
 
-            const currentStateUpdate = {
-              hppc: lastKnownGoodHealthPercentage,
-              mppc: lastKnownGoodManaPercentage,
-              healingCd,
-              supportCd,
-              attackCd,
-              characterStatus,
-              partyMembers: getPartyData(
-                regions.partyList,
-                bufferToUse,
-                metadata,
-              ),
-              isWalking, // Set isWalking based on minimap position change and sticky duration
-              activeActionItems: regions.hotkeyBar?.children
-                ? Object.fromEntries(
-                    Object.entries(regions.hotkeyBar.children)
-                      .filter(
-                        ([, child]) =>
-                          child &&
-                          child.x !== undefined &&
-                          child.y !== undefined,
-                      )
-                      .map(([key, child]) => [key, child]),
-                  )
-                : {},
-              equippedItems: equippedItemsResult,
-              rulesEnabled: state?.rules?.enabled ?? false,
-            };
+  const hasPositionChanged =
+    !lastPos ||
+    currentPos.x !== lastPos.x ||
+    currentPos.y !== lastPos.y ||
+    currentPos.z !== lastPos.z;
 
-            // Process Battle List Entries
-            const battleListEntries =
-              regions.battleList?.children?.entries?.list || [];
-            const uiBattleListNames = state.uiValues?.battleListEntries || [];
+  if (hasPositionChanged) {
+    lastCalculatedState.lastMovementTimestamp = performance.now();
+    lastCalculatedState.lastKnownPlayerMinimapPosition = { ...currentPos };
+  }
 
-            const processedBattleListEntries = battleListEntries.map(
-              (entry, index) => {
-                const health = calculatePercentages(
-                  bufferToUse,
-                  metadata,
-                  entry.healthBarFill, // Use healthBarFill for scanning colors
-                  resourceBars.partyEntryHpBar, // Using partyEntryHpBar colors for battle list health
-                  entry.healthBarFill.width, // Use healthBarFull.width as the total width for percentage
-                );
-                return {
-                  name: uiBattleListNames[index] || '', // Get name from uiValues
-                  health: health >= 0 ? health : 0, // Ensure health is not negative
-                  isTargeted: entry.isTargeted,
-                  isAttacking: entry.isAttacking,
-                  region: entry.healthBarFull, // Use healthBarFull as the region for the entry
-                };
-              },
-            );
+  const isWalking =
+    hasPositionChanged ||
+    performance.now() - (lastCalculatedState.lastMovementTimestamp || 0) < 750;
 
-            parentPort.postMessage({
-              storeUpdate: true,
-              type: 'gameState/updateGameStateFromMonitorData',
-              payload: currentStateUpdate,
-            });
+  return isWalking;
+}
 
-            parentPort.postMessage({
-              storeUpdate: true,
-              type: setBattleListEntries.type,
-              payload: processedBattleListEntries,
-            });
+// --- Main Processing Function ---
+async function processGameState() {
+  if (!isInitialized || !currentState?.regionCoordinates?.regions) {
+    return;
+  }
 
-            if (state?.rules?.enabled) runRules(currentStateUpdate);
+  const opStart = performance.now();
 
-            // --- End of Analysis Cycle ---
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[ScreenMonitor] Fatal error in main loop:', err);
+  try {
+    const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+
+    if (newFrameCounter <= lastProcessedFrameCounter) {
+      return; // No new frame to process
     }
 
-    // --- CPU-Friendly Throttling Logic ---
-    const loopEndTime = performance.now();
-    const elapsedTime = loopEndTime - loopStartTime;
+    if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) {
+      return; // Capture not running
+    }
+
+    const width = Atomics.load(syncArray, WIDTH_INDEX);
+    const height = Atomics.load(syncArray, HEIGHT_INDEX);
+    const { regions } = currentState.regionCoordinates;
+
+    if (Object.keys(regions).length === 0 || width <= 0 || height <= 0) {
+      return; // No regions or invalid dimensions
+    }
+
+    lastProcessedFrameCounter = newFrameCounter;
+    const metadata = { width, height, frameCounter: newFrameCounter };
+    const bufferToUse = sharedBufferView;
+
+    // Get dirty regions
+    const dirtyRegionCount = Atomics.load(syncArray, DIRTY_REGION_COUNT_INDEX);
+    const dirtyRects = [];
+
+    for (let i = 0; i < Math.min(dirtyRegionCount, 64); i++) {
+      // Limit to max 64 regions
+      const offset = DIRTY_REGIONS_START_INDEX + i * 4;
+      const rect = {
+        x: Atomics.load(syncArray, offset + 0),
+        y: Atomics.load(syncArray, offset + 1),
+        width: Atomics.load(syncArray, offset + 2),
+        height: Atomics.load(syncArray, offset + 3),
+      };
+
+      if (rect.width > 0 && rect.height > 0) {
+        dirtyRects.push(rect);
+      }
+    }
+
+    // Determine what needs calculation
+    const shouldCalculate = (regionName) => {
+      if (!regions[regionName]) return false;
+      if (!initializedRegions.has(regionName)) return true;
+
+      for (const dirtyRect of dirtyRects) {
+        if (rectsIntersect(regions[regionName], dirtyRect)) return true;
+      }
+      return false;
+    };
+
+    let hasUpdates = false;
+
+    // Perform calculations only when needed
+    if (shouldCalculate('healthBar')) {
+      lastCalculatedState.hppc = calculateHealthBar(
+        bufferToUse,
+        metadata,
+        regions,
+      );
+      initializedRegions.add('healthBar');
+      hasUpdates = true;
+    }
+
+    if (shouldCalculate('manaBar')) {
+      lastCalculatedState.mppc = calculateManaBar(
+        bufferToUse,
+        metadata,
+        regions,
+      );
+      initializedRegions.add('manaBar');
+      hasUpdates = true;
+    }
+
+    if (shouldCalculate('cooldowns')) {
+      const cooldowns = calculateCooldowns(regions);
+      Object.assign(lastCalculatedState, cooldowns);
+      initializedRegions.add('cooldowns');
+      hasUpdates = true;
+    }
+
+    if (shouldCalculate('statusBar')) {
+      lastCalculatedState.characterStatus = calculateCharacterStatus(regions);
+      initializedRegions.add('statusBar');
+      hasUpdates = true;
+    }
+
+    const equipmentRegions = ['amuletSlot', 'ringSlot', 'bootsSlot'];
+    if (equipmentRegions.some(shouldCalculate)) {
+      lastCalculatedState.equippedItems = calculateEquippedItems(regions);
+      equipmentRegions.forEach((name) => initializedRegions.add(name));
+      hasUpdates = true;
+    }
+
+    if (shouldCalculate('hotkeyBar')) {
+      lastCalculatedState.activeActionItems =
+        calculateActiveActionItems(regions);
+      initializedRegions.add('hotkeyBar');
+      hasUpdates = true;
+    }
+
+    if (shouldCalculate('battleList')) {
+      lastCalculatedState.battleList = calculateBattleList(
+        bufferToUse,
+        metadata,
+        regions,
+      );
+      initializedRegions.add('battleList');
+      hasUpdates = true;
+    }
+
+    // Always calculate walking state and monster count (non-pixel based)
+    lastCalculatedState.isWalking = calculateWalkingState();
+    lastCalculatedState.monsterNum =
+      regions.battleList?.children?.entries?.list?.length || 0;
+
+    // Send updates if we have changes
+    if (hasUpdates || !initializedRegions.size) {
+      // Update reusable game state object
+      reusableGameStateUpdate.payload = {
+        hppc: lastCalculatedState.hppc,
+        mppc: lastCalculatedState.mppc,
+        monsterNum: lastCalculatedState.monsterNum,
+        partyMembers: lastCalculatedState.partyMembers,
+        healingCd: lastCalculatedState.healingCd,
+        supportCd: lastCalculatedState.supportCd,
+        attackCd: lastCalculatedState.attackCd,
+        characterStatus: lastCalculatedState.characterStatus,
+        isWalking: lastCalculatedState.isWalking,
+        activeActionItems: lastCalculatedState.activeActionItems,
+        equippedItems: lastCalculatedState.equippedItems,
+      };
+
+      parentPort.postMessage(reusableGameStateUpdate);
+
+      // Update battle list
+      reusableBattleListUpdate.payload = lastCalculatedState.battleList;
+      parentPort.postMessage(reusableBattleListUpdate);
+    }
+
+    // Run rules if enabled
+    if (currentState?.rules?.enabled && currentState.gameState) {
+      const ruleInput = {
+        ...currentState.gameState,
+        ...lastCalculatedState,
+        rulesEnabled: true,
+      };
+      runRules(ruleInput);
+    }
+  } catch (error) {
+    console.error('[ScreenMonitor] Error in processGameState:', error);
+  } finally {
+    const opEnd = performance.now();
+    const opTime = opEnd - opStart;
+
+    // Update performance stats
+    operationCount++;
+    totalOperationTime += opTime;
+
+    // Log slow operations
+    if (opTime > 25) {
+      console.log(`[ScreenMonitor] Slow operation: ${opTime.toFixed(2)}ms`);
+    }
+  }
+}
+
+// --- Main Loop ---
+async function mainLoop() {
+  console.log('[ScreenMonitor] Starting main loop...');
+
+  while (!isShuttingDown) {
+    const loopStart = performance.now();
+
+    try {
+      await processGameState();
+      logPerformanceStats();
+    } catch (error) {
+      console.error('[ScreenMonitor] Error in main loop:', error);
+      // Wait longer on error to avoid tight error loops
+      await delay(Math.max(SCAN_INTERVAL_MS * 2, 100));
+      continue;
+    }
+
+    const loopEnd = performance.now();
+    const elapsedTime = loopEnd - loopStart;
     const delayTime = Math.max(0, SCAN_INTERVAL_MS - elapsedTime);
 
     if (delayTime > 0) {
       await delay(delayTime);
     }
   }
+
+  console.log('[ScreenMonitor] Main loop stopped.');
 }
 
-// --- [MODIFIED] --- Updated message handler for new state management model.
+// --- Message Handler ---
 parentPort.on('message', (message) => {
-  if (message.type === 'state_diff') {
-    // Merge the incoming changed slices into the local state.
-    state = { ...state, ...message.payload };
-  } else if (message.type === undefined) {
-    // This is the initial, full state object sent when the worker starts.
-    state = message;
+  try {
+    if (message.type === 'state_diff') {
+      // Handle state updates from WorkerManager
+      if (!currentState) {
+        currentState = {};
+      }
+
+      // Apply state diff
+      Object.assign(currentState, message.payload);
+
+      // Handle specific state changes
+      if (message.payload.global) {
+        const globalState = message.payload.global;
+
+        // If window changed, reset initialized regions
+        if (
+          globalState.windowId !== undefined &&
+          currentState.global?.windowId !== globalState.windowId
+        ) {
+          console.log(
+            '[ScreenMonitor] Window changed, resetting calculations.',
+          );
+          initializedRegions.clear();
+          lastProcessedFrameCounter = -1;
+        }
+      }
+
+      // If regions changed, reset initialized regions
+      if (message.payload.regionCoordinates) {
+        console.log('[ScreenMonitor] Regions updated, resetting calculations.');
+        initializedRegions.clear();
+        lastProcessedFrameCounter = -1;
+      }
+    } else if (message.type === 'shutdown') {
+      console.log('[ScreenMonitor] Received shutdown command.');
+      isShuttingDown = true;
+    } else if (typeof message === 'object' && !message.type) {
+      // Handle full state updates (initial state from WorkerManager)
+      currentState = message;
+      console.log('[ScreenMonitor] Received initial state update.');
+
+      if (!isInitialized) {
+        initializeWorker();
+      }
+    } else {
+      console.log(
+        '[ScreenMonitor] Received message:',
+        message.type || 'unknown',
+      );
+    }
+  } catch (error) {
+    console.error('[ScreenMonitor] Error handling message:', error);
   }
 });
 
-function startWorker() {
-  console.log('[ScreenMonitor] Worker starting up...');
-  mainLoop();
+// --- Worker Startup ---
+async function startWorker() {
+  console.log(
+    '[ScreenMonitor] Worker starting up in hybrid calculation mode...',
+  );
+
+  // Handle graceful shutdown signals
+  process.on('SIGTERM', () => {
+    console.log('[ScreenMonitor] Received SIGTERM, shutting down...');
+    isShuttingDown = true;
+  });
+
+  process.on('SIGINT', () => {
+    console.log('[ScreenMonitor] Received SIGINT, shutting down...');
+    isShuttingDown = true;
+  });
+
+  // Start the main loop
+  mainLoop().catch((error) => {
+    console.error('[ScreenMonitor] Fatal error in main loop:', error);
+    process.exit(1);
+  });
 }
 
 startWorker();

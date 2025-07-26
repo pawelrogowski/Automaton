@@ -17,7 +17,9 @@ export function parseSkillsWidget(ocrData) {
   }
 
   // Filter valid items - the OCR library already returns structured data
-  return ocrData.filter((item) => item && typeof item === 'object' && item.text && item.text.trim());
+  return ocrData.filter(
+    (item) => item && typeof item === 'object' && item.text && item.text.trim(),
+  );
 }
 
 /**
@@ -100,7 +102,11 @@ export function parseVipWidget(ocrData) {
     // Check color to determine online/offline status
     // [96, 248, 96] = green = online
     // [248, 96, 96] = red = offline
-    const isOnline = item.color && item.color.r === 96 && item.color.g === 248 && item.color.b === 96;
+    const isOnline =
+      item.color &&
+      item.color.r === 96 &&
+      item.color.g === 248 &&
+      item.color.b === 96;
 
     if (isOnline) {
       online.push(item.text);

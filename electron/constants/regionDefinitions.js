@@ -96,6 +96,83 @@ const regionDefinitions = {
     ],
     width: 56,
     height: 4,
+    children: {
+      healing: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 }, // Placeholder, needs adjustment based on actual UI
+        sequence: [
+          [1, 37, 102],
+          [77, 111, 158],
+          [39, 75, 116],
+          [255, 255, 255],
+        ],
+        width: 1,
+        height: 4,
+      },
+      support: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 }, // Placeholder, needs adjustment based on actual UI
+        sequence: [
+          [0, 61, 52],
+          [0, 109, 99],
+          [52, 179, 172],
+          [255, 255, 255],
+        ],
+        width: 1,
+        height: 4,
+      },
+      attack: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 }, // Placeholder, needs adjustment based on actual UI
+        sequence: [
+          [0, 0, 6],
+          [70, 13, 1],
+          [171, 42, 9],
+          [255, 255, 255],
+        ],
+        width: 1,
+        height: 4,
+      },
+      healingInactive: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 }, // Placeholder, needs adjustment based on actual UI
+        sequence: [
+          [17, 29, 45],
+          [6, 16, 30],
+          [0, 0, 0],
+        ],
+        width: 1,
+        height: 3,
+      },
+      supportInactive: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 }, // Placeholder, needs adjustment based on actual UI
+        sequence: [
+          [42, 74, 73],
+          [28, 50, 48],
+          [0, 0, 0],
+        ],
+        width: 1,
+        height: 3,
+      },
+      attackInactive: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 }, // Placeholder, needs adjustment based on actual UI
+        sequence: [
+          [71, 13, 2],
+          [53, 10, 3],
+          [0, 0, 0],
+        ],
+        width: 1,
+        height: 3,
+      },
+    },
   },
   statusBar: {
     type: 'single',

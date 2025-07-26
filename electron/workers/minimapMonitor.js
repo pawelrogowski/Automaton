@@ -13,12 +13,16 @@
  *     interval and puts the worker thread to sleep. This ensures the worker consumes
  *     virtually zero CPU while idle.
  *
- * 2.  **Correct Data Extraction:** It uses a robust method to extract only the raw
+ * 2.  **Dirty Region Optimization:** The worker leverages dirty region data from the
+ *     capture module. It only processes image data if the minimap area has actually
+ *     changed, significantly reducing CPU load.
+ *
+ * 3.  **Correct Data Extraction:** It uses a robust method to extract only the raw
  *     pixel data for the minimap and floor indicator regions into small, private
  *     buffers. This guarantees the subsequent processing logic receives data in the
  *     exact format it expects, preventing coordinate errors.
  *
- * 3.  **State-Driven:** The worker remains idle until it receives the necessary
+ * 4.  **State-Driven:** The worker remains idle until it receives the necessary
  *     region coordinates from the main thread's global state. All operations are
  *     based on the last known good state.
  */
@@ -35,41 +39,127 @@ import {
 import findSequences from 'find-sequences-native';
 
 // --- Worker Configuration ---
-const { sharedData, paths } = workerData;
-const SCAN_INTERVAL_MS = 1; // Minimap position doesn't need to update as frequently.
-const logger = createLogger({ info: true, error: true, debug: false });
+const MAIN_LOOP_INTERVAL = 10; // Check for updates frequently, but dirty regions will prevent unnecessary work
+const PERFORMANCE_LOG_INTERVAL = 10000; // Log performance every 10 seconds
 
 // --- Shared Buffer Setup ---
+const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[MinimapMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-const FRAME_COUNTER_INDEX = 0,
-  WIDTH_INDEX = 1,
-  HEIGHT_INDEX = 2,
-  IS_RUNNING_INDEX = 3;
-const HEADER_SIZE = 8;
 
+// --- Shared buffer indices ---
+const FRAME_COUNTER_INDEX = 0;
+const WIDTH_INDEX = 1;
+const HEIGHT_INDEX = 2;
+const IS_RUNNING_INDEX = 3;
+const WINDOW_ID_INDEX = 4;
+const DIRTY_REGION_COUNT_INDEX = 5;
+const DIRTY_REGIONS_START_INDEX = 6;
+
+const HEADER_SIZE = 8;
 const sharedBufferView = Buffer.from(imageSAB);
 
-// --- Configuration ---
-const MINIMAP_WIDTH = 106,
-  MINIMAP_HEIGHT = 109;
-const minimapMatcher = new MinimapMatcher();
+// --- Worker State ---
+let currentState = null;
+let isShuttingDown = false;
+let isInitialized = false;
 
+// --- Performance Tracking ---
+let operationCount = 0;
+let totalOperationTime = 0;
+let lastPerfReport = Date.now();
+let lastProcessedFrameCounter = -1;
+
+// --- Minimap Configuration ---
+const MINIMAP_WIDTH = 106;
+const MINIMAP_HEIGHT = 109;
+let minimapMatcher = null;
+
+// Pre-build color lookup map for performance
 const colorToIndexMap = new Map();
 PALETTE_DATA.forEach((color, index) => {
   const intKey = (color.r << 16) | (color.g << 8) | color.b;
   colorToIndexMap.set(intKey, index);
 });
 
-// --- Worker State ---
-let lastProcessedFrameCounter = -1;
-let lastMinimapFrameData = null;
-// --- [MODIFIED] --- Renamed for clarity and consistency.
-let state = null;
+// --- Region tracking for change detection ---
+let lastKnownMinimapFull = null;
+let lastKnownMinimapFloor = null;
+
+// --- Logging ---
+const logger = createLogger({ info: true, error: true, debug: false });
 
 // --- Self-Contained Utilities ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// --- Performance Monitoring ---
+function logPerformanceStats() {
+  const now = Date.now();
+  const timeSinceLastReport = now - lastPerfReport;
+
+  if (timeSinceLastReport >= PERFORMANCE_LOG_INTERVAL) {
+    const avgOpTime =
+      operationCount > 0 ? (totalOperationTime / operationCount).toFixed(2) : 0;
+    const opsPerSecond = (
+      (operationCount / timeSinceLastReport) *
+      1000
+    ).toFixed(1);
+
+    logger(
+      'info',
+      `[MinimapMonitor] Performance: ${opsPerSecond} ops/sec, avg: ${avgOpTime}ms`,
+    );
+
+    // Reset counters
+    operationCount = 0;
+    totalOperationTime = 0;
+    lastPerfReport = now;
+  }
+}
+
+// --- Worker-specific initialization ---
+async function initializeWorker() {
+  logger('info', '[MinimapMonitor] Initializing worker...');
+
+  // Set minimap resources path
+  if (paths?.minimapResources) {
+    setMinimapResourcesPath(paths.minimapResources);
+    logger(
+      'info',
+      `[MinimapMonitor] Minimap resources path set to: ${paths.minimapResources}`,
+    );
+  }
+
+  // Initialize minimap matcher
+  minimapMatcher = new MinimapMatcher();
+  if (!minimapMatcher.isLoaded) {
+    await minimapMatcher.loadMapData();
+  }
+
+  isInitialized = true;
+  logger('info', '[MinimapMonitor] Worker initialized successfully');
+}
+
+// --- Helper function to check if two rectangles intersect ---
+function rectsIntersect(rectA, rectB) {
+  if (
+    !rectA ||
+    !rectB ||
+    rectA.width <= 0 ||
+    rectA.height <= 0 ||
+    rectB.width <= 0 ||
+    rectB.height <= 0
+  ) {
+    return false;
+  }
+  return (
+    rectA.x < rectB.x + rectB.width &&
+    rectA.x + rectA.width > rectB.x &&
+    rectA.y < rectB.y + rectB.height &&
+    rectA.y + rectA.height > rectB.y
+  );
+}
 
 /**
  * Extracts a region of raw BGRA pixel data from the main screen buffer.
@@ -80,25 +170,13 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @returns {Buffer|null} A new Buffer containing only the raw pixel data, or null if invalid.
  */
 function extractBGRA(sourceBuffer, sourceWidth, rect) {
-  logger('debug', 'extractBGRA called with:', { rect, sourceWidth });
-
   if (!rect || rect.width <= 0 || rect.height <= 0) {
-    logger('debug', 'extractBGRA: invalid rect', rect);
     return null;
   }
 
   const bytesPerPixel = 4;
   const targetSize = rect.width * rect.height * bytesPerPixel;
   const targetBuffer = Buffer.alloc(targetSize);
-
-  logger('debug', 'extractBGRA: extracting', {
-    targetSize,
-    sourceBufferLength: sourceBuffer.length,
-    expectedSourceEnd:
-      HEADER_SIZE +
-      (rect.y + rect.height - 1) * sourceWidth * bytesPerPixel +
-      (rect.x + rect.width) * bytesPerPixel,
-  });
 
   for (let y = 0; y < rect.height; y++) {
     const sourceY = rect.y + y;
@@ -110,10 +188,6 @@ function extractBGRA(sourceBuffer, sourceWidth, rect) {
       sourceRowStart < 0 ||
       sourceRowStart + rect.width * bytesPerPixel > sourceBuffer.length
     ) {
-      logger('debug', 'extractBGRA: out of bounds access', {
-        sourceRowStart,
-        requiredBytes: rect.width * bytesPerPixel,
-      });
       return null;
     }
 
@@ -125,7 +199,6 @@ function extractBGRA(sourceBuffer, sourceWidth, rect) {
     );
   }
 
-  logger('debug', 'extractBGRA: successfully extracted', targetSize, 'bytes');
   return targetBuffer;
 }
 
@@ -133,16 +206,6 @@ function extractBGRA(sourceBuffer, sourceWidth, rect) {
  * The core processing logic for analyzing the minimap.
  */
 async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
-  logger('debug', '=== Starting minimap processing ===');
-
-  // If the raw pixel data of the minimap hasn't changed, there's no work to do.
-  if (lastMinimapFrameData && lastMinimapFrameData.equals(minimapBuffer)) {
-    logger('debug', 'Minimap data unchanged, skipping processing');
-    return;
-  }
-  lastMinimapFrameData = minimapBuffer;
-  logger('debug', 'Processing new minimap data');
-
   // Create a temporary buffer with a header for the native module call.
   const floorIndicatorSearchBuffer = Buffer.alloc(
     HEADER_SIZE + floorIndicatorBuffer.length,
@@ -150,12 +213,6 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
   floorIndicatorSearchBuffer.writeUInt32LE(2, 0); // width of floor indicator region
   floorIndicatorSearchBuffer.writeUInt32LE(63, 4); // height of floor indicator region
   floorIndicatorBuffer.copy(floorIndicatorSearchBuffer, HEADER_SIZE);
-
-  logger(
-    'debug',
-    'Created floor indicator search buffer, length:',
-    floorIndicatorSearchBuffer.length,
-  );
 
   try {
     const searchResults = await findSequences.findSequencesNativeBatch(
@@ -169,12 +226,6 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
       },
     );
 
-    logger(
-      'debug',
-      'Floor indicator search results:',
-      JSON.stringify(searchResults),
-    );
-
     const foundFloor = searchResults.floor || {};
     const floorKey = Object.keys(foundFloor).reduce(
       (lowest, key) =>
@@ -185,21 +236,11 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
     ).key;
     const detectedZ = floorKey !== null ? parseInt(floorKey, 10) : null;
 
-    logger('debug', 'Detected floor level:', detectedZ, 'from key:', floorKey);
-
     if (detectedZ === null) {
-      logger(
-        'debug',
-        'Cannot determine floor level, aborting minimap processing',
-      );
       return; // Can't determine floor, cannot proceed.
     }
 
-    logger(
-      'debug',
-      'Creating minimap index data, buffer size:',
-      minimapBuffer.length,
-    );
+    // Convert minimap buffer to index data
     const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
     for (let i = 0; i < minimapIndexData.length; i++) {
       const p = i * 4;
@@ -210,8 +251,7 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
       minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
     }
 
-    logger('debug', 'Minimap index data created, searching for position...');
-
+    // Cancel any previous search and find position
     minimapMatcher.cancelCurrentSearch();
     const result = await minimapMatcher.findPosition(
       minimapIndexData,
@@ -219,7 +259,6 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
       MINIMAP_HEIGHT,
       detectedZ,
     );
-    logger('debug', 'Minimap search result:', JSON.stringify(result));
 
     if (result?.position) {
       const cleanPayload = {
@@ -227,62 +266,85 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
         y: result.position.y,
         z: result.position.z,
       };
-      logger('debug', 'Sending position update:', cleanPayload);
+
       parentPort.postMessage({
         storeUpdate: true,
         type: 'gameState/setPlayerMinimapPosition',
         payload: cleanPayload,
       });
-    } else {
-      logger('debug', 'No position found in minimap search result');
     }
   } catch (err) {
-    logger('error', `Minimap processing error: ${err.message}`);
+    logger('error', `[MinimapMonitor] Processing error: ${err.message}`);
   }
 }
 
-/**
- * The main execution loop for the worker.
- */
-async function mainLoop() {
-  while (true) {
-    const loopStartTime = performance.now();
+// --- Main worker operation ---
+async function performOperation() {
+  if (!isInitialized || !currentState) {
+    return; // Wait for initialization and state
+  }
 
-    try {
-      const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
+  const opStart = performance.now();
 
-      if (
-        newFrameCounter > lastProcessedFrameCounter &&
-        state?.regionCoordinates?.regions
-      ) {
-        if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
-          const { minimapFull, minimapFloorIndicatorColumn } =
-            state.regionCoordinates.regions;
-          const screenWidth = Atomics.load(syncArray, WIDTH_INDEX);
+  try {
+    const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
 
-          if (minimapFull && minimapFloorIndicatorColumn && screenWidth > 0) {
-            // Debug logging to verify regions are found
-            logger(
-              'debug',
-              `Minimap regions found: minimapFull=${JSON.stringify(minimapFull)}, minimapFloorIndicatorColumn=${JSON.stringify(minimapFloorIndicatorColumn)}`,
+    // Only process if we have a new frame and the necessary state
+    if (
+      newFrameCounter > lastProcessedFrameCounter &&
+      currentState?.regionCoordinates?.regions
+    ) {
+      // Check if capture is running
+      if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
+        const { minimapFull, minimapFloorIndicatorColumn } =
+          currentState.regionCoordinates.regions;
+        const screenWidth = Atomics.load(syncArray, WIDTH_INDEX);
+
+        if (minimapFull && minimapFloorIndicatorColumn && screenWidth > 0) {
+          let needsProcessing = false;
+
+          // 1. Force processing if the region definitions themselves have changed
+          if (
+            minimapFull !== lastKnownMinimapFull ||
+            minimapFloorIndicatorColumn !== lastKnownMinimapFloor
+          ) {
+            needsProcessing = true;
+            lastKnownMinimapFull = minimapFull;
+            lastKnownMinimapFloor = minimapFloorIndicatorColumn;
+          } else {
+            // 2. Check dirty regions for updates within the known region bounds
+            const dirtyRegionCount = Atomics.load(
+              syncArray,
+              DIRTY_REGION_COUNT_INDEX,
             );
+            if (dirtyRegionCount > 0) {
+              for (let i = 0; i < dirtyRegionCount; i++) {
+                const offset = DIRTY_REGIONS_START_INDEX + i * 4;
+                const dirtyRect = {
+                  x: Atomics.load(syncArray, offset + 0),
+                  y: Atomics.load(syncArray, offset + 1),
+                  width: Atomics.load(syncArray, offset + 2),
+                  height: Atomics.load(syncArray, offset + 3),
+                };
+
+                if (
+                  rectsIntersect(minimapFull, dirtyRect) ||
+                  rectsIntersect(minimapFloorIndicatorColumn, dirtyRect)
+                ) {
+                  needsProcessing = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (needsProcessing) {
             lastProcessedFrameCounter = newFrameCounter;
 
-            // --- Correct Data Extraction ---
-            logger(
-              'debug',
-              'Extracting minimap data with region:',
-              minimapFull,
-            );
             const minimapData = extractBGRA(
               sharedBufferView,
               screenWidth,
               minimapFull,
-            );
-            logger(
-              'debug',
-              'Extracting floor indicator data with region:',
-              minimapFloorIndicatorColumn,
             );
             const floorIndicatorData = extractBGRA(
               sharedBufferView,
@@ -290,67 +352,141 @@ async function mainLoop() {
               minimapFloorIndicatorColumn,
             );
 
-            logger('debug', 'Data extraction results:', {
-              minimapData: !!minimapData,
-              minimapDataLength: minimapData?.length,
-              floorIndicatorData: !!floorIndicatorData,
-              floorIndicatorDataLength: floorIndicatorData?.length,
-            });
-
             if (minimapData && floorIndicatorData) {
-              logger(
-                'debug',
-                'Both data buffers extracted successfully, processing minimap...',
-              );
               await processMinimapData(minimapData, floorIndicatorData);
-            } else {
-              logger(
-                'debug',
-                'Data extraction failed, skipping minimap processing',
-              );
             }
           }
         }
       }
-    } catch (err) {
-      logger('error', `Fatal error in mainLoop: ${err.stack}`);
+    }
+  } catch (error) {
+    logger('error', '[MinimapMonitor] Error in operation:', error);
+  } finally {
+    const opEnd = performance.now();
+    const opTime = opEnd - opStart;
+
+    // Update performance stats
+    operationCount++;
+    totalOperationTime += opTime;
+
+    // Log slow operations
+    if (opTime > 50) {
+      logger('info', `[MinimapMonitor] Slow operation: ${opTime.toFixed(2)}ms`);
+    }
+  }
+}
+
+// --- Main Loop ---
+async function mainLoop() {
+  logger('info', '[MinimapMonitor] Starting main loop...');
+
+  while (!isShuttingDown) {
+    const loopStart = performance.now();
+
+    try {
+      await performOperation();
+      logPerformanceStats();
+    } catch (error) {
+      logger('error', '[MinimapMonitor] Error in main loop:', error);
+      // Wait longer on error to avoid tight error loops
+      await delay(Math.max(MAIN_LOOP_INTERVAL * 2, 100));
+      continue;
     }
 
-    // --- CPU-Friendly Throttling Logic ---
-    const loopEndTime = performance.now();
-    const elapsedTime = loopEndTime - loopStartTime;
-    const delayTime = Math.max(0, SCAN_INTERVAL_MS - elapsedTime);
+    const loopEnd = performance.now();
+    const elapsedTime = loopEnd - loopStart;
+    const delayTime = Math.max(0, MAIN_LOOP_INTERVAL - elapsedTime);
 
     if (delayTime > 0) {
       await delay(delayTime);
     }
   }
+
+  logger('info', '[MinimapMonitor] Main loop stopped.');
 }
 
-// --- [MODIFIED] --- Updated message handler for new state management model.
+// --- Message Handler ---
 parentPort.on('message', (message) => {
-  if (message.type === 'state_diff') {
-    // Merge the incoming changed slices into the local state.
-    state = { ...state, ...message.payload };
-  } else if (message.type === undefined) {
-    // This is the initial, full state object sent when the worker starts.
-    state = message;
+  try {
+    if (message.type === 'state_diff') {
+      // Handle state updates from WorkerManager
+      if (!currentState) {
+        currentState = {};
+      }
+
+      // Apply state diff
+      Object.assign(currentState, message.payload);
+    } else if (message.type === 'shutdown') {
+      logger('info', '[MinimapMonitor] Received shutdown command.');
+      isShuttingDown = true;
+    } else if (typeof message === 'object' && !message.type) {
+      // Handle full state updates (initial state from WorkerManager)
+      currentState = message;
+
+      if (!isInitialized) {
+        initializeWorker().catch((error) => {
+          logger(
+            'error',
+            '[MinimapMonitor] Failed to initialize worker:',
+            error,
+          );
+          process.exit(1);
+        });
+      }
+    } else {
+      // Handle custom commands
+      logger('info', '[MinimapMonitor] Received message:', message);
+    }
+  } catch (error) {
+    logger('error', '[MinimapMonitor] Error handling message:', error);
   }
 });
 
-async function start() {
-  logger('info', 'Minimap monitor worker started. Waiting for global state...');
+// --- Worker Startup ---
+async function startWorker() {
+  logger('info', '[MinimapMonitor] Worker starting up...');
 
-  // Set the minimap resources path from workerData
-  if (paths?.minimapResources) {
-    setMinimapResourcesPath(paths.minimapResources);
-    logger('info', `Minimap resources path set to: ${paths.minimapResources}`);
-  }
+  // Handle graceful shutdown signals
+  process.on('SIGTERM', () => {
+    logger('info', '[MinimapMonitor] Received SIGTERM, shutting down...');
+    isShuttingDown = true;
+  });
 
-  if (!minimapMatcher.isLoaded) {
-    await minimapMatcher.loadMapData();
-  }
-  mainLoop();
+  process.on('SIGINT', () => {
+    logger('info', '[MinimapMonitor] Received SIGINT, shutting down...');
+    isShuttingDown = true;
+  });
+
+  // Start the main loop
+  mainLoop().catch((error) => {
+    logger('error', '[MinimapMonitor] Fatal error in main loop:', error);
+    process.exit(1);
+  });
 }
 
-start();
+// === WORKER-SPECIFIC HELPER FUNCTIONS ===
+
+function validateWorkerData() {
+  if (!workerData) {
+    throw new Error('[MinimapMonitor] Worker data not provided');
+  }
+
+  if (!workerData.sharedData) {
+    throw new Error('[MinimapMonitor] Shared data not provided in worker data');
+  }
+
+  if (!workerData.paths?.minimapResources) {
+    throw new Error(
+      '[MinimapMonitor] Minimap resources path not provided in worker data',
+    );
+  }
+}
+
+// Initialize and start the worker
+try {
+  validateWorkerData();
+  startWorker();
+} catch (error) {
+  logger('error', '[MinimapMonitor] Failed to start worker:', error);
+  process.exit(1);
+}
