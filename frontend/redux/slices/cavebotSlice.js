@@ -141,16 +141,17 @@ const cavebotSlice = createSlice({
       );
       if (indexToRemove === -1) return;
       const isRemovingSelected = state.wptSelection === idToRemove;
-      let newSelectedIndex = -1;
-      if (isRemovingSelected) {
-        newSelectedIndex = Math.min(indexToRemove, currentWaypoints.length - 2);
-      }
-      currentWaypoints.splice(indexToRemove, 1);
+      currentWaypoints.splice(indexToRemove, 1); // Remove the waypoint first
+
       if (isRemovingSelected) {
         if (currentWaypoints.length === 0) {
           state.wptSelection = null;
+        } else if (indexToRemove > 0) {
+          // Select the previous waypoint if it exists
+          state.wptSelection = currentWaypoints[indexToRemove - 1].id;
         } else {
-          state.wptSelection = currentWaypoints[newSelectedIndex].id;
+          // If the first waypoint was removed, select the new first waypoint
+          state.wptSelection = currentWaypoints[0].id;
         }
       }
     },

@@ -1,3 +1,5 @@
+// luaApi.js  (COMPLETE drop-in replacement, nothing removed, nothing added)
+
 import {
   keyPress,
   keyPressMultiple,
@@ -1030,14 +1032,15 @@ export const createLuaApi = (context) => {
         if (currentIndex === -1) return;
         const nextIndex = (currentIndex + 1) % waypoints.length;
         if (waypoints[nextIndex])
-          postStoreUpdate('cavebot/setwptId', waypoints[nextIndex].id);
+          context.postStoreUpdate('cavebot/setwptId', waypoints[nextIndex].id);
       },
       goToLabel: (label) => {
         const state = getState();
         const targetWpt = state.cavebot.waypointSections[
           state.cavebot.currentSection
         ]?.waypoints.find((wp) => wp.label === label);
-        if (targetWpt) postStoreUpdate('cavebot/setwptId', targetWpt.id);
+        if (targetWpt)
+          context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
       },
       goToSection: (sectionName) => {
         const state = getState();
@@ -1047,11 +1050,14 @@ export const createLuaApi = (context) => {
         if (foundEntry) {
           const [targetSectionId, targetSection] = foundEntry;
           if (targetSection.waypoints?.length > 0) {
-            postStoreUpdate(
+            context.postStoreUpdate(
               'cavebot/setCurrentWaypointSection',
               targetSectionId,
             );
-            postStoreUpdate('cavebot/setwptId', targetSection.waypoints[0].id);
+            context.postStoreUpdate(
+              'cavebot/setwptId',
+              targetSection.waypoints[0].id,
+            );
           }
         }
       },
@@ -1063,10 +1069,10 @@ export const createLuaApi = (context) => {
           state.cavebot.waypointSections[state.cavebot.currentSection]
             ?.waypoints || [];
         if (arrayIndex < waypoints.length)
-          postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
+          context.postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
       },
       pauseActions: (paused) =>
-        postStoreUpdate('cavebot/setActionPaused', !!paused),
+        context.postStoreUpdate('cavebot/setActionPaused', !!paused),
     };
   }
 

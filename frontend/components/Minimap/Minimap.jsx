@@ -19,6 +19,8 @@ import {
   removeWaypoint,
   setwptId,
   setwptSelection,
+  addSpecialArea,
+  removeSpecialArea,
 } from '../../redux/slices/cavebotSlice.js';
 import { MINIMAP_COLORS } from './colors.js';
 
@@ -26,6 +28,33 @@ import { MINIMAP_COLORS } from './colors.js';
 const CANVAS_SIZE = 500;
 const MIN_ZOOM = 2;
 const MAX_ZOOM = 50;
+
+const SPECIAL_AREA_TYPE_OPTIONS = [
+  {
+    value: 'cavebot_255',
+    label: 'Cavebot (Avoidance 255)',
+    type: 'cavebot',
+    avoidance: 255,
+  },
+  {
+    value: 'cavebot_20',
+    label: 'Cavebot (Avoidance 20)',
+    type: 'cavebot',
+    avoidance: 20,
+  },
+  {
+    value: 'targeting_255',
+    label: 'Targeting (Avoidance 255)',
+    type: 'targeting',
+    avoidance: 255,
+  },
+  {
+    value: 'targeting_20',
+    label: 'Targeting (Avoidance 20)',
+    type: 'targeting',
+    avoidance: 20,
+  },
+];
 
 const WAYPOINT_TYPE_OPTIONS = [
   { value: 'Node', label: 'Node' },
@@ -40,6 +69,7 @@ const Minimap = () => {
   const dispatch = useDispatch();
   const stageRef = useRef(null);
   const minimapContainerRef = useRef(null);
+  const contextMenuRef = useRef(null);
 
   // --- Redux State ---
   const playerPosition = useSelector(
@@ -71,10 +101,12 @@ const Minimap = () => {
     visible: false,
     x: 0,
     y: 0,
-    type: null,
+    stage: 0, // 0: main category selection, 1: waypoint actions, 2: special area actions
+    selectedCategory: null,
     targetPos: null,
-    targetId: null,
-    hoveredType: null,
+    targetWaypointId: null,
+    targetSpecialAreaId: null,
+    hoveredItem: null,
   });
   const [isLockedToPlayer, setIsLockedToPlayer] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -216,88 +248,142 @@ const Minimap = () => {
     setStagePos(e.target.position());
   };
 
-  const handleMouseDown = (e) => {
-    if (e.evt.button !== 2) return;
+  const handleContextMenu = (e) => {
     e.evt.preventDefault();
-
-    if (e.target.name() === 'player-marker') {
-      return; // Do not show context menu for the player marker
-    }
-
     const stage = e.target.getStage();
     const pointerPos = stage.getPointerPosition();
-    if (!pointerPos) return;
+    if (!pointerPos || !mapIndex) return;
 
-    if (e.target.name() === 'waypoint-marker') {
-      const waypointId = e.target.id();
-      setRightClickMenu({
-        visible: true,
-        x: e.evt.clientX,
-        y: e.evt.clientY,
-        type: 'delete',
-        targetId: waypointId,
-        targetPos: null,
-        hoveredType: null,
-      });
-    } else {
-      if (!mapIndex) return;
-      const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
-      const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
-      setRightClickMenu({
-        visible: true,
-        x: e.evt.clientX,
-        y: e.evt.clientY,
-        type: 'add',
-        targetId: null,
-        targetPos: { x: worldX, y: worldY, z: zLevel },
-        hoveredType: null,
-      });
+    const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
+    const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
+    const targetPos = { x: worldX, y: worldY, z: zLevel };
+
+    const existingWaypoint = visibleWaypoints.find(
+      (wp) => wp.x === worldX && wp.y === worldY && wp.z === zLevel,
+    );
+    const existingSpecialArea = visibleSpecialAreas.find(
+      (area) =>
+        worldX >= area.x &&
+        worldX < area.x + area.sizeX &&
+        worldY >= area.y &&
+        worldY < area.y + area.sizeY &&
+        area.z === zLevel,
+    );
+
+    const containerRect = minimapContainerRef.current.getBoundingClientRect();
+    let menuX = e.evt.clientX;
+    let menuY = e.evt.clientY;
+
+    const menuWidth = 180;
+    const menuHeight = 2 * 25 + 10; // Height for the initial menu
+
+    if (menuX + menuWidth > containerRect.right) {
+      menuX = containerRect.right - menuWidth;
     }
+    if (menuX < containerRect.left) {
+      menuX = containerRect.left;
+    }
+    if (menuY + menuHeight > containerRect.bottom) {
+      menuY = containerRect.bottom - menuHeight;
+    }
+    if (menuY < containerRect.top) {
+      menuY = containerRect.top;
+    }
+
+    setRightClickMenu({
+      visible: true,
+      x: menuX,
+      y: menuY,
+      stage: 0, // Always start at the main category selection
+      selectedCategory: null,
+      targetPos: targetPos,
+      targetWaypointId: existingWaypoint ? existingWaypoint.id : null,
+      targetSpecialAreaId: existingSpecialArea ? existingSpecialArea.id : null,
+      hoveredItem: null,
+    });
   };
 
-  const handleMenuItemHover = (itemType) =>
-    setRightClickMenu((prev) => ({ ...prev, hoveredType: itemType }));
+  const handleMenuItemHover = (item) =>
+    setRightClickMenu((prev) => ({ ...prev, hoveredItem: item }));
+
+  const handleMenuCategorySelect = (category) => {
+    setRightClickMenu((prev) => ({
+      ...prev,
+      stage: category === 'waypoints' ? 1 : 2,
+      selectedCategory: category,
+      hoveredItem: null,
+    }));
+  };
+
+  const handleMenuItemClick = (item) => {
+    const {
+      selectedCategory,
+      targetPos,
+      targetWaypointId,
+      targetSpecialAreaId,
+    } = rightClickMenu;
+
+    if (selectedCategory === 'waypoints') {
+      if (item === 'RemoveWaypoint' && targetWaypointId) {
+        dispatch(removeWaypoint(targetWaypointId));
+      } else {
+        const selectedOption = WAYPOINT_TYPE_OPTIONS.find(
+          (opt) => opt.value === item,
+        );
+        if (selectedOption && targetPos) {
+          dispatch(
+            addWaypoint({
+              id: uuidv4(),
+              type: selectedOption.value,
+              ...targetPos,
+              range: 1,
+              action:
+                selectedOption.value === 'Script' ? 'Enter your script' : '',
+            }),
+          );
+        }
+      }
+    } else if (selectedCategory === 'specialAreas') {
+      if (item === 'RemoveSpecialArea' && targetSpecialAreaId) {
+        dispatch(removeSpecialArea(targetSpecialAreaId));
+      } else {
+        const selectedOption = SPECIAL_AREA_TYPE_OPTIONS.find(
+          (opt) => opt.value === item,
+        );
+        if (selectedOption && targetPos) {
+          dispatch(
+            addSpecialArea({
+              id: uuidv4(),
+              x: targetPos.x,
+              y: targetPos.y,
+              z: targetPos.z,
+              sizeX: 1,
+              sizeY: 1,
+              avoidance: selectedOption.avoidance,
+              type: selectedOption.type,
+              enabled: true,
+            }),
+          );
+        }
+      }
+    }
+
+    setRightClickMenu({ visible: false, x: 0, y: 0, stage: 0 });
+  };
 
   useEffect(() => {
-    const handleGlobalMouseUp = () => {
-      if (!rightClickMenu.visible) return;
+    const handleClickOutside = (event) => {
       if (
-        rightClickMenu.type === 'add' &&
-        rightClickMenu.hoveredType &&
-        rightClickMenu.targetPos
+        rightClickMenu.visible &&
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(event.target)
       ) {
-        dispatch(
-          addWaypoint({
-            id: uuidv4(),
-            type: rightClickMenu.hoveredType,
-            ...rightClickMenu.targetPos,
-            range: 1,
-            action:
-              rightClickMenu.hoveredType === 'Script'
-                ? 'Enter your script'
-                : '',
-          }),
-        );
-      } else if (
-        rightClickMenu.type === 'delete' &&
-        rightClickMenu.hoveredType === 'Delete' &&
-        rightClickMenu.targetId
-      ) {
-        dispatch(removeWaypoint(rightClickMenu.targetId));
+        setRightClickMenu((prev) => ({ ...prev, visible: false }));
       }
-      setRightClickMenu({
-        visible: false,
-        x: 0,
-        y: 0,
-        type: null,
-        targetPos: null,
-        targetId: null,
-        hoveredType: null,
-      });
     };
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-  }, [rightClickMenu, dispatch]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [rightClickMenu.visible]);
 
   const handleWaypointClick = (e, waypointId) => {
     if (e.evt.button !== 2) dispatch(setwptSelection(waypointId));
@@ -446,8 +532,7 @@ const Minimap = () => {
           width={canvasDimensions.width}
           height={canvasDimensions.height}
           onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onContextMenu={(e) => e.evt.preventDefault()}
+          onContextMenu={handleContextMenu}
           ref={stageRef}
           x={stagePos.x}
           y={stagePos.y}
@@ -556,6 +641,7 @@ const Minimap = () => {
                 shadowOffsetX={0}
                 shadowOffsetY={0}
                 shadowOpacity={1}
+                listening={false}
               />
             )}
           </Layer>
@@ -599,6 +685,7 @@ const Minimap = () => {
 
       {rightClickMenu.visible && (
         <div
+          ref={contextMenuRef}
           style={{
             position: 'fixed',
             top: rightClickMenu.y,
@@ -611,44 +698,137 @@ const Minimap = () => {
             boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
           }}
         >
-          {rightClickMenu.type === 'add' &&
-            WAYPOINT_TYPE_OPTIONS.map((option) => (
+          {rightClickMenu.stage === 0 && (
+            <>
               <div
-                key={option.value}
-                onMouseEnter={() => handleMenuItemHover(option.value)}
+                onMouseEnter={() => handleMenuItemHover('waypoints')}
                 onMouseLeave={() => handleMenuItemHover(null)}
+                onClick={() => handleMenuCategorySelect('waypoints')}
                 style={{
                   padding: '6px 15px',
                   color: 'white',
                   fontSize: '13px',
                   cursor: 'pointer',
                   backgroundColor:
-                    rightClickMenu.hoveredType === option.value
+                    rightClickMenu.hoveredItem === 'waypoints'
                       ? '#007ACC'
                       : 'transparent',
                 }}
               >
-                {option.label}
+                Waypoints
               </div>
-            ))}
-          {rightClickMenu.type === 'delete' && (
-            <div
-              onMouseEnter={() => handleMenuItemHover('Delete')}
-              onMouseLeave={() => handleMenuItemHover(null)}
-              style={{
-                padding: '6px 15px',
-                color: '#FF5555',
-                fontWeight: 'bold',
-                fontSize: '13px',
-                cursor: 'pointer',
-                backgroundColor:
-                  rightClickMenu.hoveredType === 'Delete'
-                    ? '#B22222'
-                    : 'transparent',
-              }}
-            >
-              Delete
-            </div>
+              <div
+                onMouseEnter={() => handleMenuItemHover('specialAreas')}
+                onMouseLeave={() => handleMenuItemHover(null)}
+                onClick={() => handleMenuCategorySelect('specialAreas')}
+                style={{
+                  padding: '6px 15px',
+                  color: 'white',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  backgroundColor:
+                    rightClickMenu.hoveredItem === 'specialAreas'
+                      ? '#007ACC'
+                      : 'transparent',
+                }}
+              >
+                Special Areas
+              </div>
+            </>
+          )}
+
+          {rightClickMenu.stage === 1 && (
+            <>
+              {WAYPOINT_TYPE_OPTIONS.map((option) => (
+                <div
+                  key={option.value}
+                  onClick={() => handleMenuItemClick(option.value)}
+                  onMouseEnter={() => handleMenuItemHover(option.value)}
+                  onMouseLeave={() => handleMenuItemHover(null)}
+                  style={{
+                    padding: '6px 15px',
+                    color: 'white',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    backgroundColor:
+                      rightClickMenu.hoveredItem === option.value
+                        ? '#007ACC'
+                        : 'transparent',
+                  }}
+                >
+                  {`Add ${option.label}`}
+                </div>
+              ))}
+              {rightClickMenu.targetWaypointId && (
+                <div
+                  onClick={() => handleMenuItemClick('RemoveWaypoint')}
+                  onMouseEnter={() => handleMenuItemHover('RemoveWaypoint')}
+                  onMouseLeave={() => handleMenuItemHover(null)}
+                  style={{
+                    padding: '6px 15px',
+                    color: '#FF5555',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    backgroundColor:
+                      rightClickMenu.hoveredItem === 'RemoveWaypoint'
+                        ? '#B22222'
+                        : 'transparent',
+                    marginTop: '4px',
+                    borderTop: '1px solid #555',
+                  }}
+                >
+                  Remove Waypoint
+                </div>
+              )}
+            </>
+          )}
+
+          {rightClickMenu.stage === 2 && (
+            <>
+              {SPECIAL_AREA_TYPE_OPTIONS.map((option) => (
+                <div
+                  key={option.value}
+                  onClick={() => handleMenuItemClick(option.value)}
+                  onMouseEnter={() => handleMenuItemHover(option.value)}
+                  onMouseLeave={() => handleMenuItemHover(null)}
+                  style={{
+                    padding: '6px 15px',
+                    color: 'white',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    backgroundColor:
+                      rightClickMenu.hoveredItem === option.value
+                        ? '#007ACC'
+                        : 'transparent',
+                  }}
+                >
+                  {`Add ${option.label}`}
+                </div>
+              ))}
+              {rightClickMenu.targetSpecialAreaId && (
+                <div
+                  onClick={() => handleMenuItemClick('RemoveSpecialArea')}
+                  onMouseEnter={() => handleMenuItemHover('RemoveSpecialArea')}
+                  onMouseLeave={() => handleMenuItemHover(null)}
+                  style={{
+                    padding: '6px 15px',
+                    color: '#FF5555',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    backgroundColor:
+                      rightClickMenu.hoveredItem === 'RemoveSpecialArea'
+                        ? '#B22222'
+                        : 'transparent',
+                    marginTop: '4px',
+                    borderTop: '1px solid #555',
+                  }}
+                >
+                  Remove Special Area
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
