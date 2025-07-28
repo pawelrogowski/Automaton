@@ -738,7 +738,7 @@ export const createLuaApi = (context) => {
               logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
               if (modalInfo.name === 'ipChangedModal') {
                 await keyPress(windowId, display, 'Escape');
-                await wait(100);
+                await wait(500);
                 await keyPress(windowId, display, 'Escape');
                 await wait(400);
               } else {
