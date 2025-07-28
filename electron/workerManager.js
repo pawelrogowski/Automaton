@@ -20,6 +20,7 @@ const DEFAULT_WORKER_CONFIG = {
   minimapMonitor: true,
   ocrWorker: true,
   cavebotWorker: true,
+  pathfinderWorker: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -47,11 +48,9 @@ const WORKER_STATE_DEPENDENCIES = {
   cavebotWorker: [
     'cavebot',
     'global',
-    'lua',
     'gameState',
     'regionCoordinates',
     'statusMessages',
-    'settings',
   ],
   regionMonitor: ['global'],
   screenMonitor: [
@@ -64,6 +63,7 @@ const WORKER_STATE_DEPENDENCIES = {
   minimapMonitor: ['global', 'regionCoordinates'],
   ocrWorker: ['global', 'regionCoordinates'],
   captureWorker: ['global'],
+  pathfinderWorker: ['cavebot', 'gameState'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([

@@ -342,7 +342,7 @@ export class CavebotLuaExecutor {
           );
         }
 
-        this.lua.close();
+        this.lua.global.close();
         this.lua = null;
         this.isInitialized = false;
 

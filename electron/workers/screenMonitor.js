@@ -551,7 +551,7 @@ parentPort.on('message', (message) => {
 
       // If regions changed, reset initialized regions
       if (message.payload.regionCoordinates) {
-        console.log('[ScreenMonitor] Regions updated, resetting calculations.');
+        // console.log('[ScreenMonitor] Regions updated, resetting calculations.');
         initializedRegions.clear();
         lastProcessedFrameCounter = -1;
       }

@@ -1,3 +1,4 @@
+// @minimapMonitor.js (Revert to this optimized version)
 /**
  * @file minimap-monitor.js
  * @summary A dedicated worker for analyzing minimap data to determine player position.
@@ -163,11 +164,6 @@ function rectsIntersect(rectA, rectB) {
 
 /**
  * Extracts a region of raw BGRA pixel data from the main screen buffer.
- * This function is adapted from the original working code to ensure correctness.
- * @param {Buffer} sourceBuffer - The full shared screen buffer.
- * @param {number} sourceWidth - The width of the full screen buffer.
- * @param {object} rect - The {x, y, width, height} of the region to extract.
- * @returns {Buffer|null} A new Buffer containing only the raw pixel data, or null if invalid.
  */
 function extractBGRA(sourceBuffer, sourceWidth, rect) {
   if (!rect || rect.width <= 0 || rect.height <= 0) {
@@ -206,12 +202,11 @@ function extractBGRA(sourceBuffer, sourceWidth, rect) {
  * The core processing logic for analyzing the minimap.
  */
 async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
-  // Create a temporary buffer with a header for the native module call.
   const floorIndicatorSearchBuffer = Buffer.alloc(
     HEADER_SIZE + floorIndicatorBuffer.length,
   );
-  floorIndicatorSearchBuffer.writeUInt32LE(2, 0); // width of floor indicator region
-  floorIndicatorSearchBuffer.writeUInt32LE(63, 4); // height of floor indicator region
+  floorIndicatorSearchBuffer.writeUInt32LE(2, 0);
+  floorIndicatorSearchBuffer.writeUInt32LE(63, 4);
   floorIndicatorBuffer.copy(floorIndicatorSearchBuffer, HEADER_SIZE);
 
   try {
@@ -237,10 +232,9 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
     const detectedZ = floorKey !== null ? parseInt(floorKey, 10) : null;
 
     if (detectedZ === null) {
-      return; // Can't determine floor, cannot proceed.
+      return;
     }
 
-    // Convert minimap buffer to index data
     const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
     for (let i = 0; i < minimapIndexData.length; i++) {
       const p = i * 4;
@@ -251,8 +245,6 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
       minimapIndexData[i] = colorToIndexMap.get(key) ?? 0;
     }
 
-    // Cancel any previous search and find position
-    minimapMatcher.cancelCurrentSearch();
     const result = await minimapMatcher.findPosition(
       minimapIndexData,
       MINIMAP_WIDTH,
@@ -281,7 +273,7 @@ async function processMinimapData(minimapBuffer, floorIndicatorBuffer) {
 // --- Main worker operation ---
 async function performOperation() {
   if (!isInitialized || !currentState) {
-    return; // Wait for initialization and state
+    return;
   }
 
   const opStart = performance.now();
@@ -289,12 +281,10 @@ async function performOperation() {
   try {
     const newFrameCounter = Atomics.load(syncArray, FRAME_COUNTER_INDEX);
 
-    // Only process if we have a new frame and the necessary state
     if (
       newFrameCounter > lastProcessedFrameCounter &&
       currentState?.regionCoordinates?.regions
     ) {
-      // Check if capture is running
       if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 0) {
         const { minimapFull, minimapFloorIndicatorColumn } =
           currentState.regionCoordinates.regions;
@@ -303,7 +293,6 @@ async function performOperation() {
         if (minimapFull && minimapFloorIndicatorColumn && screenWidth > 0) {
           let needsProcessing = false;
 
-          // 1. Force processing if the region definitions themselves have changed
           if (
             minimapFull !== lastKnownMinimapFull ||
             minimapFloorIndicatorColumn !== lastKnownMinimapFloor
@@ -311,29 +300,28 @@ async function performOperation() {
             needsProcessing = true;
             lastKnownMinimapFull = minimapFull;
             lastKnownMinimapFloor = minimapFloorIndicatorColumn;
-          } else {
-            // 2. Check dirty regions for updates within the known region bounds
-            const dirtyRegionCount = Atomics.load(
-              syncArray,
-              DIRTY_REGION_COUNT_INDEX,
-            );
-            if (dirtyRegionCount > 0) {
-              for (let i = 0; i < dirtyRegionCount; i++) {
-                const offset = DIRTY_REGIONS_START_INDEX + i * 4;
-                const dirtyRect = {
-                  x: Atomics.load(syncArray, offset + 0),
-                  y: Atomics.load(syncArray, offset + 1),
-                  width: Atomics.load(syncArray, offset + 2),
-                  height: Atomics.load(syncArray, offset + 3),
-                };
+          }
 
-                if (
-                  rectsIntersect(minimapFull, dirtyRect) ||
-                  rectsIntersect(minimapFloorIndicatorColumn, dirtyRect)
-                ) {
-                  needsProcessing = true;
-                  break;
-                }
+          const dirtyRegionCount = Atomics.load(
+            syncArray,
+            DIRTY_REGION_COUNT_INDEX,
+          );
+          if (dirtyRegionCount > 0) {
+            for (let i = 0; i < dirtyRegionCount; i++) {
+              const offset = DIRTY_REGIONS_START_INDEX + i * 4;
+              const dirtyRect = {
+                x: Atomics.load(syncArray, offset + 0),
+                y: Atomics.load(syncArray, offset + 1),
+                width: Atomics.load(syncArray, offset + 2),
+                height: Atomics.load(syncArray, offset + 3),
+              };
+
+              if (
+                rectsIntersect(minimapFull, dirtyRect) ||
+                rectsIntersect(minimapFloorIndicatorColumn, dirtyRect)
+              ) {
+                needsProcessing = true;
+                break;
               }
             }
           }
@@ -365,11 +353,9 @@ async function performOperation() {
     const opEnd = performance.now();
     const opTime = opEnd - opStart;
 
-    // Update performance stats
     operationCount++;
     totalOperationTime += opTime;
 
-    // Log slow operations
     if (opTime > 50) {
       logger('info', `[MinimapMonitor] Slow operation: ${opTime.toFixed(2)}ms`);
     }
@@ -388,7 +374,6 @@ async function mainLoop() {
       logPerformanceStats();
     } catch (error) {
       logger('error', '[MinimapMonitor] Error in main loop:', error);
-      // Wait longer on error to avoid tight error loops
       await delay(Math.max(MAIN_LOOP_INTERVAL * 2, 100));
       continue;
     }
@@ -409,20 +394,15 @@ async function mainLoop() {
 parentPort.on('message', (message) => {
   try {
     if (message.type === 'state_diff') {
-      // Handle state updates from WorkerManager
       if (!currentState) {
         currentState = {};
       }
-
-      // Apply state diff
       Object.assign(currentState, message.payload);
     } else if (message.type === 'shutdown') {
       logger('info', '[MinimapMonitor] Received shutdown command.');
       isShuttingDown = true;
     } else if (typeof message === 'object' && !message.type) {
-      // Handle full state updates (initial state from WorkerManager)
       currentState = message;
-
       if (!isInitialized) {
         initializeWorker().catch((error) => {
           logger(
@@ -434,7 +414,6 @@ parentPort.on('message', (message) => {
         });
       }
     } else {
-      // Handle custom commands
       logger('info', '[MinimapMonitor] Received message:', message);
     }
   } catch (error) {
@@ -446,7 +425,6 @@ parentPort.on('message', (message) => {
 async function startWorker() {
   logger('info', '[MinimapMonitor] Worker starting up...');
 
-  // Handle graceful shutdown signals
   process.on('SIGTERM', () => {
     logger('info', '[MinimapMonitor] Received SIGTERM, shutting down...');
     isShuttingDown = true;
@@ -457,7 +435,6 @@ async function startWorker() {
     isShuttingDown = true;
   });
 
-  // Start the main loop
   mainLoop().catch((error) => {
     logger('error', '[MinimapMonitor] Fatal error in main loop:', error);
     process.exit(1);
@@ -465,16 +442,13 @@ async function startWorker() {
 }
 
 // === WORKER-SPECIFIC HELPER FUNCTIONS ===
-
 function validateWorkerData() {
   if (!workerData) {
     throw new Error('[MinimapMonitor] Worker data not provided');
   }
-
   if (!workerData.sharedData) {
     throw new Error('[MinimapMonitor] Shared data not provided in worker data');
   }
-
   if (!workerData.paths?.minimapResources) {
     throw new Error(
       '[MinimapMonitor] Minimap resources path not provided in worker data',
@@ -482,7 +456,6 @@ function validateWorkerData() {
   }
 }
 
-// Initialize and start the worker
 try {
   validateWorkerData();
   startWorker();

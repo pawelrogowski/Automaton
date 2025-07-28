@@ -2,7 +2,6 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import fs from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import Pathfinder from 'pathfinder-native';
 import keypress from 'keypress-native';
 import mouseController from 'mouse-controller';
@@ -24,9 +23,6 @@ const config = {
   thereIsNoWayLingerMs: 5000,
   keyboardFailureThreshold: 2,
   keyboardFailureWindowMs: 10000,
-  tempBlockMinLifetimeMs: 5000,
-  tempBlockMaxLifetimeMs: 20000,
-  tempBlockMsPerStep: 800,
   useMapclicks: true,
   switchToKeyboardDistance: 4,
   mapClickMaxDistance: 30,
@@ -59,7 +55,6 @@ let lastPerfReport = Date.now();
 let pathfinderInstance;
 let pathfinderLoaded = false;
 let lastSpecialAreasJson = '';
-let temporaryBlocks = [];
 let lastStuckEventHandledTimestamp = 0;
 let recentKeyboardFailures = [];
 let luaExecutor = null;
@@ -388,30 +383,6 @@ const updateContextualStandTime = (status, playerPos) => {
   return Date.now() - contextualStandStillStartTime;
 };
 
-// --- Temporary Block Management ---
-const applyTemporaryBlock = (blockedTile, reason) => {
-  if (blockedTile) {
-    logger(
-      'info',
-      `${reason} at [${blockedTile.x},${blockedTile.y}]. Applying temporary obstacle.`,
-    );
-    const newBlock = {
-      id: uuidv4(),
-      x: blockedTile.x,
-      y: blockedTile.y,
-      z: blockedTile.z,
-      sizeX: 1,
-      sizeY: 1,
-      avoidance: 9999,
-      type: 'cavebot',
-      enabled: true,
-      timerSet: false,
-    };
-    temporaryBlocks.push(newBlock);
-    lastStuckEventHandledTimestamp = Date.now();
-  }
-};
-
 // --- Stuck Detection ---
 const handleStuckCondition = (contextualStandTime, wptDistance) => {
   if (Date.now() < stuckDetectionGraceUntil || !currentState?.statusMessages) {
@@ -425,8 +396,11 @@ const handleStuckCondition = (contextualStandTime, wptDistance) => {
     sorryNotPossibleTimestamp > lastStuckEventHandledTimestamp;
 
   if (isSorryNotPossibleNew) {
-    const blockedTile = currentState.cavebot.pathWaypoints?.[0];
-    applyTemporaryBlock(blockedTile, "'Sorry, not possible' message detected");
+    logger(
+      'info',
+      "'Sorry, not possible' message detected. Registering keyboard failure.",
+    );
+    lastStuckEventHandledTimestamp = Date.now();
     recentKeyboardFailures.push(Date.now());
     return;
   }
@@ -439,8 +413,8 @@ const handleStuckCondition = (contextualStandTime, wptDistance) => {
     contextualStandTime > config.stuckTimeThresholdMs &&
     isStuckCooldownOver
   ) {
-    const blockedTile = currentState.cavebot.pathWaypoints?.[0];
-    applyTemporaryBlock(blockedTile, 'Bot is physically stuck');
+    logger('info', 'Bot is physically stuck.');
+    lastStuckEventHandledTimestamp = Date.now();
   }
 };
 
@@ -449,7 +423,7 @@ const runPathfinding = (playerPos, targetWaypoint) => {
   const permanentAreas = (currentState.cavebot?.specialAreas || []).filter(
     (area) => area.enabled,
   );
-  const allRelevantAreas = [...permanentAreas, ...temporaryBlocks];
+  const allRelevantAreas = [...permanentAreas];
   const newSpecialAreasJson = JSON.stringify(allRelevantAreas);
 
   if (newSpecialAreasJson !== lastSpecialAreasJson) {
@@ -474,32 +448,6 @@ const runPathfinding = (playerPos, targetWaypoint) => {
   );
 
   const path = result.path || [];
-
-  // Set timers for temporary blocks
-  temporaryBlocks.forEach((block) => {
-    if (!block.timerSet) {
-      const estimatedTime = path.length * config.tempBlockMsPerStep;
-      const timeout = Math.max(
-        config.tempBlockMinLifetimeMs,
-        Math.min(estimatedTime, config.tempBlockMaxLifetimeMs),
-      );
-
-      logger(
-        'info',
-        `New path length is ${path.length}. Setting temporary block lifetime to ${timeout}ms.`,
-      );
-
-      setTimeout(() => {
-        temporaryBlocks = temporaryBlocks.filter((b) => b.id !== block.id);
-        logger(
-          'info',
-          `Dynamic timer expired for block at ${block.x},${block.y}.`,
-        );
-      }, timeout);
-
-      block.timerSet = true;
-    }
-  });
 
   const distance =
     result.reason === 'NO_PATH_FOUND'
@@ -848,9 +796,8 @@ const handleWalkAction = async (path, chebyshevDistance) => {
     } else {
       logger(
         'warn',
-        `Keyboard move to [${nextStep.x},${nextStep.y}] was not confirmed. Immediately treating as stuck.`,
+        `Keyboard move to [${nextStep.x},${nextStep.y}] was not confirmed. Registering failure.`,
       );
-      applyTemporaryBlock(nextStep, 'Failed keyboard move');
       recentKeyboardFailures.push(Date.now());
     }
     return;
