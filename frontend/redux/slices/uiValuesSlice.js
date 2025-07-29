@@ -1,5 +1,4 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { parseChatData } from '../../../electron/workers/ocrWorker/parsers.js';
 
 const initialState = {
   skillsWidget: {
@@ -53,361 +52,96 @@ const initialState = {
     lastUpdate: null,
   },
   vipWidget: {
-    onlineVips: [],
-    offlineVips: [],
+    online: [],
+    offline: [],
     lastUpdate: null,
   },
-  // --- ADDED ---
-  // Holds the names of monsters currently in the battle list.
   battleListEntries: [],
 };
-
-// --- All parsing functions (parseSkillsWidgetData, etc.) are unchanged ---
-// (omitting them for brevity)
-function parseSkillsWidgetData(ocrData) {
-  if (!Array.isArray(ocrData) || ocrData.length === 0) {
-    return initialState.skillsWidget;
-  }
-
-  const result = { ...initialState.skillsWidget };
-  const skills = { ...initialState.skillsWidget.skills };
-  const combat = { ...initialState.skillsWidget.combat };
-
-  // Filter out artifacts like "-- -" and empty strings
-  const validData = ocrData.filter(
-    (item) =>
-      item.text &&
-      item.text.trim() &&
-      !item.text.match(/^[-\s]*$/) &&
-      item.text !== 'alue',
-  );
-
-  // Create a map of text labels to their corresponding values
-  const textMap = new Map();
-
-  // Group by approximate y-coordinate (within 5 pixels tolerance)
-  const rows = new Map();
-  validData.forEach((item) => {
-    let rowKey = null;
-    for (const [key, rowItems] of rows.entries()) {
-      if (Math.abs(item.y - key) <= 5) {
-        rowKey = key;
-        break;
-      }
-    }
-    if (rowKey === null) {
-      rowKey = item.y;
-    }
-    if (!rows.has(rowKey)) {
-      rows.set(rowKey, []);
-    }
-    rows.get(rowKey).push(item);
-  });
-
-  // Process each row to find label-value pairs
-  const processedRows = Array.from(rows.values());
-
-  processedRows.forEach((row) => {
-    // Sort by x-coordinate within each row
-    row.sort((a, b) => a.x - b.x);
-
-    // Find label-value pairs
-    for (let i = 0; i < row.length - 1; i++) {
-      const label = row[i].text.trim();
-      const value = row[i + 1]?.text?.trim();
-
-      if (!value) continue;
-
-      // Map labels to their corresponding fields
-      switch (label.toLowerCase()) {
-        case 'level':
-          result.level = parseInt(value) || null;
-          break;
-        case 'experience':
-          result.experience = parseInt(value.replace(/,/g, '')) || null;
-          break;
-        case 'xp gain rate':
-          result.xpGainRate = parseFloat(value.replace('%', '')) || null;
-          break;
-        case 'hit points':
-          result.hitPoints = parseInt(value) || null;
-          break;
-        case 'mana':
-          result.mana = parseInt(value) || null;
-          break;
-        case 'soul points':
-          result.soulPoints = parseInt(value) || null;
-          break;
-        case 'capacity':
-          result.capacity = parseInt(value) || null;
-          break;
-        case 'speed':
-          result.speed = parseInt(value) || null;
-          break;
-        case 'food':
-          result.food = value; // Keep as string for time format
-          break;
-        case 'stamina':
-          result.stamina = value; // Keep as string for time format
-          break;
-        case 'offline training':
-          result.offlineTraining = value; // Keep as string for time format
-          break;
-        case 'magic':
-          skills.magic = parseInt(value) || null;
-          break;
-        case 'fist':
-          skills.fist = parseInt(value) || null;
-          break;
-        case 'club':
-          skills.club = parseInt(value) || null;
-          break;
-        case 'sword':
-          skills.sword = parseInt(value) || null;
-          break;
-        case 'axe':
-          skills.axe = parseInt(value) || null;
-          break;
-        case 'distance':
-          skills.distance = parseInt(value) || null;
-          break;
-        case 'shielding':
-          skills.shielding = parseInt(value) || null;
-          break;
-        case 'fishing':
-          skills.fishing = parseInt(value) || null;
-          break;
-        case 'damage/healing':
-          combat.damageHealing = parseInt(value) || null;
-          break;
-        case 'attack':
-          if (value.endsWith('V')) {
-            combat.attack = parseInt(value.replace('V', '')) || null;
-          }
-          break;
-        case 'defence':
-          if (value.endsWith('V')) {
-            combat.defence = parseInt(value.replace('V', '')) || null;
-          }
-          break;
-        case 'armor':
-          if (value.endsWith('V')) {
-            combat.armor = parseInt(value.replace('V', '')) || null;
-          }
-          break;
-        case 'mantra':
-          if (value.endsWith('V')) {
-            combat.mantra = parseInt(value.replace('V', '')) || null;
-          }
-          break;
-        case 'mitigation':
-          if (value.includes('%')) {
-            combat.mitigation = parseFloat(value.replace(/[+%]/g, '')) || null;
-          }
-          break;
-      }
-    }
-  });
-
-  return {
-    ...result,
-    skills,
-    combat,
-  };
-}
-function parseChatTabsData(ocrData) {
-  if (!Array.isArray(ocrData) || ocrData.length === 0) {
-    return initialState.chatboxTabs;
-  }
-
-  const tabs = {};
-  let activeTab = null;
-
-  ocrData.forEach((item) => {
-    const tabName = item.text.trim();
-    if (!tabName) return;
-
-    // Create tab entry with position data
-    tabs[tabName] = {
-      tabName,
-      tabPosition: {
-        x: item.click.x,
-        y: item.click.y,
-      },
-      originalPosition: {
-        x: item.x,
-        y: item.y,
-      },
-    };
-
-    // Check if this is the active tab (color [223, 223, 223])
-    if (
-      item.color &&
-      item.color.r === 223 &&
-      item.color.g === 223 &&
-      item.color.b === 223
-    ) {
-      activeTab = tabName;
-    }
-  });
-
-  return {
-    activeTab,
-    tabs,
-    lastUpdate: Date.now(),
-  };
-}
-function parseSelectCharacterModalData(ocrData) {
-  if (!Array.isArray(ocrData) || ocrData.length === 0) {
-    return initialState.selectCharacterModal;
-  }
-
-  const characters = {};
-  let selectedCharacter = null;
-  let accountStatus = null;
-
-  ocrData.forEach((item) => {
-    const text = item.text.trim();
-    if (!text) return;
-
-    // Check for account status
-    if (text.includes('Account Status:')) {
-      // Assuming "Free Account" or similar will follow "Account Status:"
-      // This is a simple heuristic, might need refinement based on actual OCR output
-      const nextItem = ocrData.find(
-        (next) => next.y > item.y && Math.abs(next.x - item.x) < 50,
-      ); // Find next item roughly below "Account Status:"
-      if (nextItem) {
-        accountStatus = nextItem.text.trim();
-      }
-      return; // Skip adding "Account Status:" as a character
-    }
-
-    // Check for "Free Account" or similar if not already captured by "Account Status:"
-    if (text === 'Free Account' || text === 'Premium Account') {
-      if (!accountStatus) {
-        accountStatus = text;
-      }
-      return; // Skip adding account type as a character
-    }
-
-    // Assume remaining items are character names
-    characters[text] = {
-      name: text,
-      position: {
-        x: item.click.x,
-        y: item.click.y,
-      },
-      originalPosition: {
-        x: item.x,
-        y: item.y,
-      },
-      color: item.color,
-    };
-
-    // Check if this is the selected character (color [244, 244, 244])
-    if (
-      item.color &&
-      item.color.r === 244 &&
-      item.color.g === 244 &&
-      item.color.b === 244
-    ) {
-      selectedCharacter = text;
-    }
-  });
-
-  return {
-    selectedCharacter,
-    characters,
-    accountStatus,
-    lastUpdate: Date.now(),
-  };
-}
 
 const uiValuesSlice = createSlice({
   name: 'uiValues',
   initialState,
   reducers: {
-    /**
-     * Updates the skills widget with parsed OCR data
-     * @param {object} state - The current state
-     * @param {object} action - The action object
-     * @param {Array} action.payload - The OCR data array from skills widget
-     */
-    updateSkillsWidget: (state, action) => {
-      state.skillsWidget = parseSkillsWidgetData(action.payload);
-    },
-
-    // --- ADDED ---
-    /**
-     * Updates the battle list with an array of monster names.
-     * @param {object} state - The current state.
-     * @param {object} action - The action object.
-     * @param {string[]} action.payload - An array of monster names.
-     */
-    updateBattleListEntries: (state, action) => {
-      state.battleListEntries = action.payload;
-    },
-    // --- END ADDED ---
+    // --- All reducers are now simple, direct state assignments ---
 
     /**
-     * Updates a specific region with parsed data
-     * @param {object} state - The current state
-     * @param {object} action - The action object
-     * @param {string} action.payload.region - The region name (e.g., 'skillsWidget')
-     * @param {Array} action.payload.data - The OCR data array
+     * Sets the entire skills widget state from a fully parsed object.
      */
-    updateRegionData: (state, action) => {
-      const { region, data } = action.payload;
-      if (region === 'skillsWidget') {
-        state.skillsWidget = parseSkillsWidgetData(data);
-      } else if (region === 'chatboxMain') {
-        state.chatboxMain.messages = parseChatData(data);
-        state.chatboxMain.lastUpdate = Date.now();
-      } else if (region === 'chatboxSecondary') {
-        state.chatboxSecondary.messages = parseChatData(data);
-        state.chatboxSecondary.lastUpdate = Date.now();
-      } else if (region === 'chatBoxTabRow') {
-        state.chatboxTabs = parseChatTabsData(data);
-      } else if (region === 'selectCharacterModal') {
-        state.selectCharacterModal = parseSelectCharacterModalData(data);
-      } else if (region === 'vipWidget') {
-        state.vipWidget = data;
-        state.vipWidget.lastUpdate = Date.now();
+    setSkillsWidget: (state, action) => {
+      // The payload is the final, structured object from the worker's parser.
+      if (action.payload) {
+        state.skillsWidget = action.payload;
       }
     },
 
     /**
-     * Resets the entire uiValues state to initial state
+     * Sets the battle list with a final array of monster names.
      */
-    resetUiValues: (state) => {
-      return initialState;
+    setBattleListEntries: (state, action) => {
+      state.battleListEntries = action.payload;
     },
 
     /**
-     * Resets a specific region to its initial state
-     * @param {object} state - The current state
-     * @param {object} action - The action object
-     * @param {string} action.payload - The region name to reset
+     * Sets the main chatbox messages from a parsed array.
+     */
+    setChatboxMain: (state, action) => {
+      state.chatboxMain.messages = action.payload;
+      state.chatboxMain.lastUpdate = Date.now();
+    },
+
+    /**
+     * Sets the secondary chatbox messages from a parsed array.
+     */
+    setChatboxSecondary: (state, action) => {
+      state.chatboxSecondary.messages = action.payload;
+      state.chatboxSecondary.lastUpdate = Date.now();
+    },
+
+    /**
+     * Sets the chat tabs state from a parsed object.
+     */
+    setChatTabs: (state, action) => {
+      state.chatboxTabs = { ...action.payload, lastUpdate: Date.now() };
+    },
+
+    /**
+     * Sets the character selection modal state from a parsed object.
+     */
+    setSelectCharacterModal: (state, action) => {
+      state.selectCharacterModal = {
+        ...action.payload,
+        lastUpdate: Date.now(),
+      };
+    },
+
+    /**
+     * Sets the VIP widget state from a parsed object.
+     */
+    setVipWidget: (state, action) => {
+      state.vipWidget = { ...action.payload, lastUpdate: Date.now() };
+    },
+
+    // --- Utility Reducers (Unchanged) ---
+
+    /**
+     * Resets the entire uiValues state to its initial state.
+     */
+    resetUiValues: () => initialState,
+
+    /**
+     * Resets a specific region to its initial state.
+     * @param {string} action.payload - The region name to reset (e.g., 'skillsWidget').
      */
     resetRegion: (state, action) => {
       const region = action.payload;
-      if (region === 'skillsWidget') {
-        state.skillsWidget = initialState.skillsWidget;
-      } else if (region === 'selectCharacterModal') {
-        state.selectCharacterModal = initialState.selectCharacterModal;
+      if (initialState[region]) {
+        state[region] = initialState[region];
       }
-      // --- ADDED ---
-      else if (region === 'battleListEntries') {
-        state.battleListEntries = initialState.battleListEntries;
-      }
-      // --- END ADDED ---
     },
 
     /**
      * Replaces the entire slice state. Use with caution.
-     * @param {object} state - The current state
-     * @param {object} action - The action containing the new state
      */
     setState: (state, action) => {
       return action.payload;
@@ -415,18 +149,20 @@ const uiValuesSlice = createSlice({
   },
 });
 
-// --- MODIFIED ---
 export const {
-  updateSkillsWidget,
-  updateBattleListEntries, // Export the new action
-  updateRegionData,
+  setSkillsWidget,
+  setBattleListEntries,
+  setChatboxMain,
+  setChatboxSecondary,
+  setChatTabs,
+  setSelectCharacterModal,
+  setVipWidget,
   resetUiValues,
   resetRegion,
   setState,
 } = uiValuesSlice.actions;
-// --- END MODIFIED ---
 
-// Selectors
+// --- Selectors (Unchanged) ---
 export const selectSkillsWidget = (state) => state.uiValues.skillsWidget;
 export const selectSkillsData = (state) => state.uiValues.skillsWidget.skills;
 export const selectCombatData = (state) => state.uiValues.skillsWidget.combat;
@@ -447,13 +183,9 @@ export const selectChatboxActiveTab = (state) =>
   state.uiValues.chatboxTabs.activeTab;
 export const selectChatboxTabsList = (state) => state.uiValues.chatboxTabs.tabs;
 export const selectVipWidget = (state) => state.uiValues.vipWidget;
-export const selectOnlineVips = (state) => state.uiValues.vipWidget.onlineVips;
-export const selectOfflineVips = (state) =>
-  state.uiValues.vipWidget.offlineVips;
-
-// --- ADDED ---
+export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
+export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
 export const selectBattleListEntries = (state) =>
   state.uiValues.battleListEntries;
-// --- END ADDED ---
 
 export default uiValuesSlice;

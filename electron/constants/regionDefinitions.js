@@ -928,6 +928,11 @@ const regionDefinitions = {
     ],
   },
   chatBoxTabRow: {
+    ocrColors: [
+      [223, 223, 223],
+      [247, 95, 95],
+      [127, 127, 127],
+    ],
     type: 'boundingBox',
     start: {
       direction: 'vertical',

@@ -1,0 +1,219 @@
+/**
+ * @file parsers.js
+ * @summary The single source of truth for parsing all OCR data.
+ * @description This module contains powerful parsers that transform raw OCR text
+ * into the final, structured objects ready for the Redux state.
+ */
+
+// Note: Most of these functions are moved directly from the original uiValuesSlice.js
+
+function parseSkillsWidget(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) return null;
+  const result = {};
+  const skills = {};
+  const combat = {};
+  const validData = ocrData.filter(
+    (item) =>
+      item.text &&
+      item.text.trim() &&
+      !item.text.match(/^[-\s]*$/) &&
+      item.text !== 'alue',
+  );
+  const rows = new Map();
+  validData.forEach((item) => {
+    let rowKey = Array.from(rows.keys()).find(
+      (key) => Math.abs(item.y - key) <= 5,
+    );
+    if (rowKey === undefined) rowKey = item.y;
+    if (!rows.has(rowKey)) rows.set(rowKey, []);
+    rows.get(rowKey).push(item);
+  });
+  Array.from(rows.values()).forEach((row) => {
+    row.sort((a, b) => a.x - b.x);
+    for (let i = 0; i < row.length - 1; i++) {
+      const label = row[i].text.trim().toLowerCase();
+      const value = row[i + 1]?.text?.trim();
+      if (!value) continue;
+      switch (label) {
+        case 'level':
+          result.level = parseInt(value) || null;
+          break;
+        case 'experience':
+          result.experience = parseInt(value.replace(/,/g, '')) || null;
+          break;
+        case 'xp gain rate':
+          result.xpGainRate = parseFloat(value.replace('%', '')) || null;
+          break;
+        case 'hit points':
+          result.hitPoints = parseInt(value) || null;
+          break;
+        case 'mana':
+          result.mana = parseInt(value) || null;
+          break;
+        case 'soul points':
+          result.soulPoints = parseInt(value) || null;
+          break;
+        case 'capacity':
+          result.capacity = parseInt(value) || null;
+          break;
+        case 'speed':
+          result.speed = parseInt(value) || null;
+          break;
+        case 'food':
+          result.food = value;
+          break;
+        case 'stamina':
+          result.stamina = value;
+          break;
+        case 'offline training':
+          result.offlineTraining = value;
+          break;
+        case 'magic':
+          skills.magic = parseInt(value) || null;
+          break;
+        case 'fist':
+          skills.fist = parseInt(value) || null;
+          break;
+        case 'club':
+          skills.club = parseInt(value) || null;
+          break;
+        case 'sword':
+          skills.sword = parseInt(value) || null;
+          break;
+        case 'axe':
+          skills.axe = parseInt(value) || null;
+          break;
+        case 'distance':
+          skills.distance = parseInt(value) || null;
+          break;
+        case 'shielding':
+          skills.shielding = parseInt(value) || null;
+          break;
+        case 'fishing':
+          skills.fishing = parseInt(value) || null;
+          break;
+        case 'damage/healing':
+          combat.damageHealing = parseInt(value) || null;
+          break;
+        case 'attack':
+          if (value.endsWith('V'))
+            combat.attack = parseInt(value.replace('V', '')) || null;
+          break;
+        case 'defence':
+          if (value.endsWith('V'))
+            combat.defence = parseInt(value.replace('V', '')) || null;
+          break;
+        case 'armor':
+          if (value.endsWith('V'))
+            combat.armor = parseInt(value.replace('V', '')) || null;
+          break;
+        case 'mantra':
+          if (value.endsWith('V'))
+            combat.mantra = parseInt(value.replace('V', '')) || null;
+          break;
+        case 'mitigation':
+          if (value.includes('%'))
+            combat.mitigation = parseFloat(value.replace(/[+%]/g, '')) || null;
+          break;
+      }
+    }
+  });
+  return { ...result, skills, combat };
+}
+
+function parseChatData(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) return [];
+  return ocrData.filter((item) => item && typeof item === 'object');
+}
+
+function parseChatBoxTabRow(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0)
+    return { activeTab: null, tabs: {} };
+  const tabs = {};
+  let activeTab = null;
+  ocrData.forEach((item) => {
+    const tabName = item.text.trim();
+    if (!tabName) return;
+    tabs[tabName] = {
+      tabName,
+      tabPosition: { x: item.click.x, y: item.click.y },
+      originalPosition: { x: item.x, y: item.y },
+    };
+    if (
+      item.color &&
+      item.color.r === 223 &&
+      item.color.g === 223 &&
+      item.color.b === 223
+    ) {
+      activeTab = tabName;
+    }
+  });
+  return { activeTab, tabs };
+}
+
+function parseSelectCharacterModal(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0)
+    return { selectedCharacter: null, characters: {}, accountStatus: null };
+  const characters = {};
+  let selectedCharacter = null;
+  let accountStatus = null;
+  ocrData.forEach((item) => {
+    const text = item.text.trim();
+    if (!text) return;
+    if (text.includes('Account Status:')) {
+      const nextItem = ocrData.find(
+        (next) => next.y > item.y && Math.abs(next.x - item.x) < 50,
+      );
+      if (nextItem) accountStatus = nextItem.text.trim();
+      return;
+    }
+    if (text === 'Free Account' || text === 'Premium Account') {
+      if (!accountStatus) accountStatus = text;
+      return;
+    }
+    characters[text] = {
+      name: text,
+      position: { x: item.click.x, y: item.click.y },
+      originalPosition: { x: item.x, y: item.y },
+      color: item.color,
+    };
+    if (
+      item.color &&
+      item.color.r === 244 &&
+      item.color.g === 244 &&
+      item.color.b === 244
+    ) {
+      selectedCharacter = text;
+    }
+  });
+  return { selectedCharacter, characters, accountStatus };
+}
+
+function parseVipWidget(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0)
+    return { online: [], offline: [] };
+  const online = [];
+  const offline = [];
+  ocrData.forEach((item) => {
+    if (!item?.text) return;
+    const isOnline =
+      item.color &&
+      item.color.r === 96 &&
+      item.color.g === 248 &&
+      item.color.b === 96;
+    if (isOnline) online.push(item.text);
+    else offline.push(item.text);
+  });
+  online.sort((a, b) => a.localeCompare(b));
+  offline.sort((a, b) => a.localeCompare(b));
+  return { online, offline };
+}
+
+export const regionParsers = {
+  skillsWidget: parseSkillsWidget,
+  chatboxMain: parseChatData,
+  chatboxSecondary: parseChatData,
+  chatBoxTabRow: parseChatBoxTabRow,
+  selectCharacterModal: parseSelectCharacterModal,
+  vipWidget: parseVipWidget,
+};
