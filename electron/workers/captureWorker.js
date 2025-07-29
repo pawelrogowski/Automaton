@@ -35,7 +35,7 @@ const MAX_DIRTY_REGIONS = 64; // Must match workerManager.js
 const captureInstance = X11RegionCapture
   ? new X11RegionCapture.X11RegionCapture(display)
   : null;
-let targetFps = 20;
+let targetFps = 30;
 let isCapturing = false;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

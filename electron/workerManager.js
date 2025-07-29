@@ -28,7 +28,7 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const WORKER_INIT_DELAY = 50;
-const STORE_UPDATE_DEBOUNCE = 32; // 32 ms
+const STORE_UPDATE_DEBOUNCE = 5; // 32 ms
 
 // ------------------------------------------------------------------
 // Small non-crypto 32-bit FNV-1a hash for fast equality check
