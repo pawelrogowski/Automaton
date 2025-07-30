@@ -1,4 +1,3 @@
-// /home/orimorfus/Documents/Automaton/electron/main.js
 import {
   app,
   ipcMain,
@@ -11,7 +10,7 @@ import {
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
-import { appendFile } from 'fs/promises'; // <-- ADDED FOR LOGGING
+import { appendFile } from 'fs/promises';
 import {
   createMainWindow,
   toggleWidgetWindowVisibility,
@@ -22,10 +21,9 @@ import { getLinuxHardwareId } from './hardwareId.js';
 import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
 import windowinfo from 'windowinfo-native';
-import setGlobalState from './setGlobalState.js'; // Import setGlobalState for proper state sync
+import setGlobalState from './setGlobalState.js';
 
-// --- Main Process Memory Logging Setup ---
-const MAIN_LOG_INTERVAL_MS = 10000; // 10 seconds
+const MAIN_LOG_INTERVAL_MS = 10000;
 const MAIN_LOG_FILE_NAME = 'main-process-memory-usage.log';
 const MAIN_LOG_FILE_PATH = path.join(process.cwd(), MAIN_LOG_FILE_NAME);
 
@@ -50,15 +48,14 @@ async function logMainProcessMemoryUsage() {
     );
   }
 }
-// --- End of Main Process Memory Logging Setup ---
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 const log = createLogger();
 
-let selectWindow; // New window for selecting Tibia client
-let mainWindow; // Existing main window
+let selectWindow;
+let mainWindow;
 let isQuitting = false;
 
 const createSelectWindow = () => {
@@ -85,20 +82,17 @@ const createSelectWindow = () => {
   selectWindow.on('closed', () => {
     selectWindow = null;
     if (!isQuitting && !mainWindow) {
-      // If select window is closed and main window not created, exit app
       app.quit();
     }
   });
 };
 
-// Application initialization
 app.whenReady().then(async () => {
   try {
-    createSelectWindow(); // Launch the new window for selection
+    createSelectWindow();
 
-    workerManager.initialize(app, cwd, {}); // Pass an empty config to use default (all disabled)
+    workerManager.initialize(app, cwd, {});
 
-    // --- Start Main Process Memory Logging ---
     (async () => {
       try {
         const header = `\n--- Main Process Session Started at ${new Date().toISOString()} ---\n`;
@@ -116,7 +110,6 @@ app.whenReady().then(async () => {
         );
       }
     })();
-    // --- End of Main Process Memory Logging ---
   } catch (error) {
     console.error('[Main] FATAL: Error during application startup:', error);
     dialog.showErrorBox(
@@ -158,7 +151,6 @@ ipcMain.handle('get-tibia-window-list', async () => {
   }
 });
 
-// IPC handler for when a Tibia window is selected
 ipcMain.on('select-tibia-window', (event, windowId, display, windowName) => {
   if (selectWindow && !selectWindow.isDestroyed()) {
     selectWindow.close();
@@ -170,18 +162,13 @@ ipcMain.on('select-tibia-window', (event, windowId, display, windowName) => {
   mainWindow = createMainWindow(windowId, display, windowName);
 });
 
-// IPC handler for exiting the app from the select window
 ipcMain.on('exit-app', () => {
   isQuitting = true;
   app.quit();
 });
 
-// --- Widget IPC Handlers ---
-
-// IPC handler for receiving status updates from the widget
 ipcMain.on('update-bot-status', (event, { feature, isEnabled }) => {
   console.log(`[Main] Received update from widget: ${feature} - ${isEnabled}`);
-  // Dispatch actions to update the global state based on the widget's toggles
   switch (feature) {
     case 'healing':
       setGlobalState('rules/setenabled', isEnabled);
@@ -199,9 +186,5 @@ ipcMain.on('update-bot-status', (event, { feature, isEnabled }) => {
       console.warn(`[Main] Unknown feature received from widget: ${feature}`);
   }
 });
-
-// --- End of Widget IPC Handlers ---
-
-// --- End of Widget IPC Handlers ---
 
 export default app;
