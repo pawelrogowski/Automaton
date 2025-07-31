@@ -1,6 +1,6 @@
 {
-  "name": "flow_smooth_studio",
-  "version": "1.3.6b",
+  "name": "wave-mobile-graph",
+  "version": "1.3.7",
   "description": "automation tool for Tibia",
   "type": "module",
   "main": "electron/main.js",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.flow_smooth_studio",
-    "productName": "Flow Smooth Studio",
+    "appId": "com.electron.wave-mobile-graph",
+    "productName": "Wave Mobile Graph",
     "directories": {
       "output": "dist",
       "buildResources": "build"
