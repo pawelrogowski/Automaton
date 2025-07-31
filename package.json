@@ -1,5 +1,5 @@
 {
-  "name": "wave-mobile-graph",
+  "name": "element_postman",
   "version": "1.3.7",
   "description": "automation tool for Tibia",
   "type": "module",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.wave-mobile-graph",
-    "productName": "Wave Mobile Graph",
+    "appId": "com.electron.element_postman",
+    "productName": "Element Postman",
     "directories": {
       "output": "dist",
       "buildResources": "build"
