@@ -5,6 +5,7 @@ export class DirtyRectManager {
   constructor() {
     this.dirtyRects = [];
     this.lastFullScanTime = 0;
+    this.lastDirtyRectTime = 0;
   }
 
   /**
@@ -14,6 +15,9 @@ export class DirtyRectManager {
    */
   addDirtyRects(rects, frameCounter) {
     if (!rects || rects.length === 0) return;
+
+    // Update the last time we received dirty rectangles
+    this.lastDirtyRectTime = Date.now();
 
     for (const rect of rects) {
       if (rect && rect.width > 0 && rect.height > 0) {
@@ -119,42 +123,45 @@ export class DirtyRectManager {
   getDirtyAreaPercentage(rects, screenWidth, screenHeight) {
     if (screenHeight === 0 || screenWidth === 0) return 0;
 
-    // Calculate total dirty area, accounting for overlaps
     const totalScreenArea = screenWidth * screenHeight;
     if (totalScreenArea === 0) return 0;
 
-    // Create a grid to mark dirty pixels
-    const gridSize = 10; // Use a grid for efficiency
-    const gridWidth = Math.ceil(screenWidth / gridSize);
-    const gridHeight = Math.ceil(screenHeight / gridSize);
-    const dirtyGrid = new Array(gridWidth * gridHeight).fill(false);
+    // Calculate total dirty area, accounting for overlaps
+    let totalDirtyArea = 0;
+    const mergedRects = [...rects];
 
-    let dirtyCellCount = 0;
+    // Simple approach: sum all areas and subtract overlaps
+    for (let i = 0; i < mergedRects.length; i++) {
+      totalDirtyArea += mergedRects[i].width * mergedRects[i].height;
 
-    for (const rect of rects) {
-      const startX = Math.max(0, Math.floor(rect.x / gridSize));
-      const endX = Math.min(
-        gridWidth - 1,
-        Math.floor((rect.x + rect.width) / gridSize),
-      );
-      const startY = Math.max(0, Math.floor(rect.y / gridSize));
-      const endY = Math.min(
-        gridHeight - 1,
-        Math.floor((rect.y + rect.height) / gridSize),
-      );
-
-      for (let y = startY; y <= endY; y++) {
-        for (let x = startX; x <= endX; x++) {
-          const idx = y * gridWidth + x;
-          if (!dirtyGrid[idx]) {
-            dirtyGrid[idx] = true;
-            dirtyCellCount++;
-          }
-        }
+      // Subtract overlaps with subsequent rectangles
+      for (let j = i + 1; j < mergedRects.length; j++) {
+        const overlap = this.calculateOverlap(mergedRects[i], mergedRects[j]);
+        totalDirtyArea -= overlap;
       }
     }
 
-    return (dirtyCellCount / (gridWidth * gridHeight)) * 100;
+    return Math.min(100, (totalDirtyArea / totalScreenArea) * 100);
+  }
+
+  /**
+   * Calculate the overlapping area between two rectangles.
+   * @param {Object} rect1 - First rectangle
+   * @param {Object} rect2 - Second rectangle
+   * @returns {number} Overlapping area
+   */
+  calculateOverlap(rect1, rect2) {
+    const xOverlap = Math.max(
+      0,
+      Math.min(rect1.x + rect1.width, rect2.x + rect2.width) -
+        Math.max(rect1.x, rect2.x),
+    );
+    const yOverlap = Math.max(
+      0,
+      Math.min(rect1.y + rect1.height, rect2.y + rect2.height) -
+        Math.max(rect1.y, rect2.y),
+    );
+    return xOverlap * yOverlap;
   }
 
   /**
@@ -171,7 +178,16 @@ export class DirtyRectManager {
       currentTime - this.lastFullScanTime >
       config.FULL_SCAN_SAFETY_NET_INTERVAL_MS
     ) {
-      this.lastFullScanTime = currentTime;
+      return true;
+    }
+
+    // Check if we've received dirty rectangles recently but haven't done a full scan
+    if (
+      currentTime - this.lastDirtyRectTime >
+        config.FULL_SCAN_SAFETY_NET_INTERVAL_MS &&
+      currentTime - this.lastFullScanTime >
+        config.FULL_SCAN_SAFETY_NET_INTERVAL_MS / 2
+    ) {
       return true;
     }
 
@@ -182,11 +198,18 @@ export class DirtyRectManager {
       screenHeight,
     );
     if (dirtyPercentage > config.FULL_SCAN_FALLBACK_PERCENTAGE) {
-      this.lastFullScanTime = currentTime;
       return true;
     }
 
     return false;
+  }
+
+  /**
+   * Record that a full scan was performed.
+   * @param {number} currentTime - Current timestamp
+   */
+  recordFullScan(currentTime) {
+    this.lastFullScanTime = currentTime;
   }
 
   /**

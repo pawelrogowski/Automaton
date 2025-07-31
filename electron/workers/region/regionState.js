@@ -4,6 +4,7 @@ export class RegionState {
     this.regions = {};
     this.regionBounds = new Map(); // Cache for fast intersection tests
     this.lastUpdateTime = 0;
+    this.regionHistory = new Map(); // Track region changes over time
   }
 
   /**
@@ -21,6 +22,7 @@ export class RegionState {
   update(newRegions) {
     this.regions = newRegions;
     this.updateRegionBounds();
+    this.updateRegionHistory();
     this.lastUpdateTime = Date.now();
   }
 
@@ -51,6 +53,46 @@ export class RegionState {
         );
       }
     }
+  }
+
+  /**
+   * Update the history of region changes.
+   */
+  updateRegionHistory() {
+    const now = Date.now();
+
+    // Clean old entries (older than 10 seconds)
+    for (const [key, entries] of this.regionHistory.entries()) {
+      const recentEntries = entries.filter(
+        (entry) => now - entry.timestamp < 10000,
+      );
+      if (recentEntries.length === 0) {
+        this.regionHistory.delete(key);
+      } else {
+        this.regionHistory.set(key, recentEntries);
+      }
+    }
+
+    // Add current state to history
+    for (const [name, region] of Object.entries(this.regions)) {
+      if (!this.regionHistory.has(name)) {
+        this.regionHistory.set(name, []);
+      }
+
+      this.regionHistory.get(name).push({
+        timestamp: now,
+        region: { ...region },
+      });
+    }
+  }
+
+  /**
+   * Get the history of a specific region.
+   * @param {string} name - Region name
+   * @returns {Array} History of the region
+   */
+  getRegionHistory(name) {
+    return this.regionHistory.get(name) || [];
   }
 
   /**

@@ -2,43 +2,156 @@
 import findSequences from 'find-sequences-native';
 import regionDefinitions from '../../constants/regionDefinitions.js';
 import * as config from './config.js';
-import { DirtyRectManager } from './dirtyRectManager.js';
-import { RegionState } from './regionState.js';
+
+// --- BattleList Processing Helpers ---
+const BATTLE_LIST_ENTRY_HEIGHT = 20;
+const BATTLE_LIST_ENTRY_VERTICAL_PITCH = 22;
+
+function generateBattleListTasks(entriesRegion) {
+  const maxEntries = Math.floor(
+    (entriesRegion.height +
+      (BATTLE_LIST_ENTRY_VERTICAL_PITCH - BATTLE_LIST_ENTRY_HEIGHT)) /
+      BATTLE_LIST_ENTRY_VERTICAL_PITCH,
+  );
+  if (maxEntries <= 0) return null;
+  const pixelChecks = {
+    '#FF0000': [],
+    '#FF8080': [],
+    '#000000': [],
+  };
+  for (let i = 0; i < maxEntries; i++) {
+    const entryBaseY = entriesRegion.y + i * BATTLE_LIST_ENTRY_VERTICAL_PITCH;
+    const entryBaseX = entriesRegion.x;
+    pixelChecks['#FF0000'].push({
+      x: entryBaseX,
+      y: entryBaseY,
+      id: `entry_${i}_isTargeted_red`,
+    });
+    pixelChecks['#FF8080'].push({
+      x: entryBaseX,
+      y: entryBaseY,
+      id: `entry_${i}_isTargeted_hovered`,
+    });
+    pixelChecks['#000000'].push({
+      x: entryBaseX,
+      y: entryBaseY,
+      id: `entry_${i}_isAttacking_0_0`,
+    });
+    pixelChecks['#000000'].push({
+      x: entryBaseX + 1,
+      y: entryBaseY + 1,
+      id: `entry_${i}_isAttacking_1_1`,
+    });
+    pixelChecks['#000000'].push({
+      x: entryBaseX + 22,
+      y: entryBaseY + 15,
+      id: `entry_${i}_isValid`,
+    });
+  }
+  return { searchArea: entriesRegion, pixelChecks };
+}
+
+function processBattleListResults(checkResults, entriesRegion) {
+  const maxEntries = Math.floor(
+    (entriesRegion.height +
+      (BATTLE_LIST_ENTRY_VERTICAL_PITCH - BATTLE_LIST_ENTRY_HEIGHT)) /
+      BATTLE_LIST_ENTRY_VERTICAL_PITCH,
+  );
+  const entryList = [];
+  if (!checkResults || maxEntries <= 0) {
+    entriesRegion.list = [];
+    return;
+  }
+  for (let i = 0; i < maxEntries; i++) {
+    if (checkResults[`entry_${i}_isValid`]) {
+      const entryBaseY = entriesRegion.y + i * BATTLE_LIST_ENTRY_VERTICAL_PITCH;
+      const entryBaseX = entriesRegion.x;
+      entryList.push({
+        isValid: true,
+        isTargeted:
+          !!checkResults[`entry_${i}_isTargeted_red`] ||
+          !!checkResults[`entry_${i}_isTargeted_hovered`],
+        isAttacking:
+          !!checkResults[`entry_${i}_isAttacking_0_0`] ||
+          !!checkResults[`entry_${i}_isAttacking_1_1`],
+        name: { x: entryBaseX + 22, y: entryBaseY + 2, width: 131, height: 12 },
+        healthBarFull: {
+          x: entryBaseX + 22,
+          y: entryBaseY + 15,
+          width: 132,
+          height: 5,
+        },
+        healthBarFill: {
+          x: entryBaseX + 23,
+          y: entryBaseY + 16,
+          width: 130,
+          height: 3,
+        },
+      });
+    }
+  }
+  entriesRegion.list = entryList;
+}
 
 /**
- * Check if a point is within a given area.
- * @param {number} x - X coordinate
- * @param {number} y - Y coordinate
- * @param {Object} area - Area to check against
- * @returns {boolean} True if point is within area
+ * Find a single sequence in a specific area.
  */
-function isPointInArea(x, y, area) {
+async function findSequence(buffer, sequenceDef, searchArea, sequenceName) {
+  if (!sequenceDef || !searchArea || !sequenceName) {
+    return null;
+  }
+
+  // Ensure sequenceDef has the required properties
+  if (!sequenceDef.sequence || !Array.isArray(sequenceDef.sequence)) {
+    return null;
+  }
+
+  // Create the task structure expected by findSequencesNativeBatch
+  const searchTasks = {};
+  searchTasks[sequenceName] = {
+    sequences: { [sequenceName]: sequenceDef },
+    searchArea,
+    occurrence: 'first',
+  };
+
+  try {
+    const results = await findSequences.findSequencesNativeBatch(
+      buffer,
+      searchTasks,
+    );
+    return results[sequenceName]?.[sequenceName] || null;
+  } catch (error) {
+    console.error('[RegionProcessor] Error in findSequence:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if a point is within a rectangle.
+ */
+function isPointInRect(x, y, rect) {
   return (
-    x >= area.x &&
-    x < area.x + area.width &&
-    y >= area.y &&
-    y < area.y + area.height
+    x >= rect.x &&
+    x < rect.x + rect.width &&
+    y >= rect.y &&
+    y < rect.y + rect.height
   );
 }
 
 /**
- * Check if a rectangle is within or intersects a given area.
- * @param {Object} rect - Rectangle to check
- * @param {Object} area - Area to check against
- * @returns {boolean} True if rectangle intersects area
+ * Check if a rectangle intersects with another rectangle.
  */
-function isRectInArea(rect, area) {
+function rectsIntersect(rect1, rect2) {
   return !(
-    rect.x + rect.width < area.x ||
-    rect.x > area.x + area.width ||
-    rect.y + rect.height < area.y ||
-    rect.y > area.y + area.height
+    rect1.x + rect1.width < rect2.x ||
+    rect1.x > rect2.x + rect2.width ||
+    rect1.y + rect1.height < rect2.y ||
+    rect1.y > rect2.y + rect2.height
   );
 }
 
 /**
- * Recursively finds UI regions based on sequence definitions.
- * This is the core engine for locating elements on the screen.
+ * findRegionsRecursive - Adapted from original working code
  */
 async function findRegionsRecursive(
   buffer,
@@ -47,18 +160,16 @@ async function findRegionsRecursive(
   baseOffset,
   parentResult,
   metadata,
-  isFullScan = false,
 ) {
   const discoveryTasks = {};
   const boundingBoxDefs = {};
   const fixedDefs = {};
   const defEntries = Object.entries(definitions);
 
-  if (defEntries.length === 0) return;
-
-  // Step 1: Categorize definitions and build initial search tasks.
+  // Step 1: Generate discovery tasks
   for (const [name, def] of defEntries) {
-    switch (def.type) {
+    const type = def.type;
+    switch (type) {
       case 'single':
         discoveryTasks[name] = {
           sequences: { [name]: def },
@@ -67,8 +178,9 @@ async function findRegionsRecursive(
         };
         break;
       case 'boundingBox':
-        discoveryTasks[`${name}_start`] = {
-          sequences: { [`${name}_start`]: def.start },
+        const startTaskKey = `${name}_start`;
+        discoveryTasks[startTaskKey] = {
+          sequences: { [startTaskKey]: def.start },
           searchArea,
           occurrence: 'first',
         };
@@ -80,23 +192,19 @@ async function findRegionsRecursive(
     }
   }
 
-  // Process fixed regions immediately as they don't require searching.
+  // Process fixed regions
   for (const [name, def] of Object.entries(fixedDefs)) {
-    // For full scans, always include fixed regions
-    // For partial scans, only include if they're within the search area
-    if (isFullScan || isRectInArea(def, searchArea)) {
-      parentResult[name] = {
-        x: baseOffset.x + def.x,
-        y: baseOffset.y + def.y,
-        width: def.width,
-        height: def.height,
-      };
-    }
+    parentResult[name] = {
+      x: baseOffset.x + def.x,
+      y: baseOffset.y + def.y,
+      width: def.width,
+      height: def.height,
+    };
   }
 
   if (!Object.keys(discoveryTasks).length) return;
 
-  // Step 2: Run the initial discovery search for all start markers and single regions.
+  // Step 2: Run discovery search
   const discoveryResults = await findSequences.findSequencesNativeBatch(
     buffer,
     discoveryTasks,
@@ -106,16 +214,10 @@ async function findRegionsRecursive(
   const foundStarts = {};
   const childInvocations = [];
 
-  // Step 3: Process results for 'single' type regions.
+  // Step 3: Process 'single' results
   for (const [name, def] of defEntries) {
     if (def.type === 'single' && discoveryResults[name]?.[name]) {
       const result = discoveryResults[name][name];
-
-      // For partial scans, check if the result is within the search area
-      if (!isFullScan && !isPointInArea(result.x, result.y, searchArea)) {
-        continue;
-      }
-
       const region = {
         x: result.x,
         y: result.y,
@@ -126,7 +228,6 @@ async function findRegionsRecursive(
           y: result.y - (def.offset?.y || 0),
         },
       };
-
       parentResult[name] = region;
 
       if (def.children) {
@@ -135,73 +236,68 @@ async function findRegionsRecursive(
           findRegionsRecursive(
             buffer,
             def.children,
-            region,
-            region,
+            {
+              x: region.x,
+              y: region.y,
+              width: region.width,
+              height: region.height,
+            },
+            { x: region.x, y: region.y },
             parentResult[name].children,
             metadata,
-            isFullScan,
           ),
         );
       }
     }
   }
 
-  // Step 4: Prepare endpoint searches for bounding boxes where a start marker was found.
+  // Step 4: Process bounding boxes
   for (const [name, def] of Object.entries(boundingBoxDefs)) {
     const startResult = discoveryResults[`${name}_start`]?.[`${name}_start`];
-    if (startResult) {
-      // For partial scans, check if the result is within the search area
-      if (
-        !isFullScan &&
-        !isPointInArea(startResult.x, startResult.y, searchArea)
-      ) {
-        continue;
-      }
+    if (!startResult) continue;
 
-      foundStarts[name] = startResult;
+    foundStarts[name] = startResult;
+    const maxW = def.maxRight === 'fullWidth' ? metadata.width : def.maxRight;
+    const maxH = def.maxDown === 'fullHeight' ? metadata.height : def.maxDown;
 
-      const maxW = def.maxRight === 'fullWidth' ? metadata.width : def.maxRight;
-      const maxH = def.maxDown === 'fullHeight' ? metadata.height : def.maxDown;
+    const endSearchArea = {
+      x: startResult.x,
+      y: startResult.y,
+      width: Math.min(maxW, searchArea.x + searchArea.width - startResult.x),
+      height: Math.min(maxH, searchArea.y + searchArea.height - startResult.y),
+    };
 
-      const endSearchArea = {
-        x: startResult.x,
-        y: startResult.y,
-        width: Math.min(maxW, searchArea.x + searchArea.width - startResult.x),
-        height: Math.min(
-          maxH,
-          searchArea.y + searchArea.height - startResult.y,
-        ),
+    if (endSearchArea.width > 0 && endSearchArea.height > 0) {
+      endpointTasks[`${name}_end`] = {
+        sequences: { [`${name}_end`]: def.end },
+        searchArea: endSearchArea,
+        occurrence: 'first',
       };
-
-      if (endSearchArea.width > 0 && endSearchArea.height > 0) {
-        endpointTasks[`${name}_end`] = {
-          sequences: { [`${name}_end`]: def.end },
-          searchArea: endSearchArea,
-          occurrence: 'first',
-        };
-      }
     }
   }
 
-  // Step 5: Run the endpoint search if any start markers were found.
-  const endpointResults =
-    Object.keys(endpointTasks).length > 0
-      ? await findSequences.findSequencesNativeBatch(buffer, endpointTasks)
-      : {};
+  // Step 5: Run endpoint search
+  let endpointResults = {};
+  if (Object.keys(endpointTasks).length > 0) {
+    endpointResults = await findSequences.findSequencesNativeBatch(
+      buffer,
+      endpointTasks,
+    );
+  }
 
-  // Step 6: Assemble the final bounding box regions.
+  // Step 6: Assemble bounding boxes
   for (const [name, startPos] of Object.entries(foundStarts)) {
     const def = boundingBoxDefs[name];
     const endPos = endpointResults[`${name}_end`]?.[`${name}_end`];
-
+    const absStartPos = { x: startPos.x, y: startPos.y };
     const rawStartPos = {
-      x: startPos.x - (def.start.offset?.x || 0),
-      y: startPos.y - (def.start.offset?.y || 0),
+      x: absStartPos.x - (def.start.offset?.x || 0),
+      y: absStartPos.y - (def.start.offset?.y || 0),
     };
 
     if (!endPos) {
       parentResult[name] = {
-        ...startPos,
+        ...absStartPos,
         width: 0,
         height: 0,
         startFound: true,
@@ -211,10 +307,12 @@ async function findRegionsRecursive(
       continue;
     }
 
+    const rectWidth = endPos.x - startPos.x + 1;
+    const rectHeight = endPos.y - startPos.y + 1;
     const region = {
-      ...startPos,
-      width: Math.max(0, endPos.x - startPos.x + 1),
-      height: Math.max(0, endPos.y - startPos.y + 1),
+      ...absStartPos,
+      width: rectWidth > 0 ? rectWidth : 0,
+      height: rectHeight > 0 ? rectHeight : 0,
       startFound: true,
       endFound: true,
       rawStartPos,
@@ -232,112 +330,42 @@ async function findRegionsRecursive(
         findRegionsRecursive(
           buffer,
           def.children,
-          region,
-          region,
+          {
+            x: region.x,
+            y: region.y,
+            width: region.width,
+            height: region.height,
+          },
+          { x: region.x, y: region.y },
           parentResult[name].children,
           metadata,
-          isFullScan,
         ),
       );
     }
   }
 
-  // Step 7: Recursively process any child regions in parallel.
-  if (childInvocations.length > 0)
+  // Step 7: Parallelize child processing
+  if (childInvocations.length > 0) {
     await Promise.all(childInvocations.map((invoke) => invoke()));
+  }
 }
 
 /**
- * Generates pixel check tasks for all potential battle list entries.
+ * Process special regions like battle list and tile size
  */
-function generateBattleListTasks(entriesRegion) {
-  const maxEntries = Math.floor(
-    (entriesRegion.height +
-      (config.BATTLE_LIST_ENTRY_VERTICAL_PITCH -
-        config.BATTLE_LIST_ENTRY_HEIGHT)) /
-      config.BATTLE_LIST_ENTRY_VERTICAL_PITCH,
-  );
-
-  if (maxEntries <= 0) return null;
-
-  const pixelChecks = { '#FF0000': [], '#FF8080': [], '#000000': [] };
-
-  for (let i = 0; i < maxEntries; i++) {
-    const y = entriesRegion.y + i * config.BATTLE_LIST_ENTRY_VERTICAL_PITCH;
-    const x = entriesRegion.x;
-
-    pixelChecks['#FF0000'].push({ x, y, id: `entry_${i}_isTargeted_red` });
-    pixelChecks['#FF8080'].push({ x, y, id: `entry_${i}_isTargeted_hovered` });
-    pixelChecks['#000000'].push({ x, y, id: `entry_${i}_isAttacking_0_0` });
-    pixelChecks['#000000'].push({
-      x: x + 1,
-      y: y + 1,
-      id: `entry_${i}_isAttacking_1_1`,
-    });
-    pixelChecks['#000000'].push({
-      x: x + 22,
-      y: y + 15,
-      id: `entry_${i}_isValid`,
-    });
-  }
-
-  return { searchArea: entriesRegion, pixelChecks };
-}
-
-/**
- * Processes the results of the battle list pixel checks into a structured list.
- */
-function processBattleListResults(checkResults, entriesRegion) {
-  const maxEntries = Math.floor(
-    (entriesRegion.height +
-      (config.BATTLE_LIST_ENTRY_VERTICAL_PITCH -
-        config.BATTLE_LIST_ENTRY_HEIGHT)) /
-      config.BATTLE_LIST_ENTRY_VERTICAL_PITCH,
-  );
-
-  const entryList = [];
-
-  if (!checkResults || maxEntries <= 0) {
-    entriesRegion.list = [];
-    return;
-  }
-
-  for (let i = 0; i < maxEntries; i++) {
-    if (checkResults[`entry_${i}_isValid`]) {
-      const y = entriesRegion.y + i * config.BATTLE_LIST_ENTRY_VERTICAL_PITCH;
-      const x = entriesRegion.x;
-
-      entryList.push({
-        isValid: true,
-        isTargeted:
-          !!checkResults[`entry_${i}_isTargeted_red`] ||
-          !!checkResults[`entry_${i}_isTargeted_hovered`],
-        isAttacking:
-          !!checkResults[`entry_${i}_isAttacking_0_0`] ||
-          !!checkResults[`entry_${i}_isAttacking_1_1`],
-        name: { x: x + 22, y: y + 2, width: 131, height: 12 },
-        healthBarFull: { x: x + 22, y: y + 15, width: 132, height: 5 },
-        healthBarFill: { x: x + 23, y: y + 16, width: 130, height: 3 },
-      });
-    }
-  }
-
-  entriesRegion.list = entryList;
-}
-
-/**
- * Post-processes found regions to add dynamic data like battle list entries and tile size.
- */
-async function processSpecialRegions(buffer, regions, metadata) {
+async function processSpecialRegions(buffer, regions) {
+  // Process battle list if its container was found
   if (regions.battleList?.children?.entries?.endFound) {
     const battleListTask = generateBattleListTasks(
       regions.battleList.children.entries,
     );
 
     if (battleListTask) {
-      const results = await findSequences.findSequencesNativeBatch(buffer, {
-        battleListChecks: battleListTask,
-      });
+      const batchTask = { battleListChecks: battleListTask };
+      const results = await findSequences.findSequencesNativeBatch(
+        buffer,
+        batchTask,
+      );
 
       processBattleListResults(
         results.battleListChecks,
@@ -346,211 +374,423 @@ async function processSpecialRegions(buffer, regions, metadata) {
     }
   }
 
+  // Calculate tile size if the game world was found
   if (regions.gameWorld?.endFound) {
+    const { gameWorld } = regions;
     regions.tileSize = {
-      width: Math.round(regions.gameWorld.width / 15),
-      height: Math.round(regions.gameWorld.height / 11),
+      width: Math.round(gameWorld.width / 15),
+      height: Math.round(gameWorld.height / 11),
     };
   }
 }
 
 /**
- * Performs a full scan of the entire screen for all region definitions.
+ * Update a bounding box region with optimized vertical-only resizing logic
  */
-async function performFullScan(buffer, metadata) {
-  const foundRegions = {};
-
-  await findRegionsRecursive(
-    buffer,
-    regionDefinitions,
-    { x: 0, y: 0, width: metadata.width, height: metadata.height },
-    { x: 0, y: 0 },
-    foundRegions,
-    metadata,
-    true, // isFullScan
-  );
-
-  await processSpecialRegions(buffer, foundRegions, metadata);
-
-  return foundRegions;
-}
-
-/**
- * Performs a partial scan of only the dirty regions.
- */
-async function performPartialScan(
+async function updateBoundingBoxRegion(
   buffer,
+  name,
+  regionDef,
+  currentRegion,
+  dirtyRect,
   metadata,
-  dirtyRects,
-  lastKnownRegions,
 ) {
-  // If there are no dirty rectangles, return null
-  if (!dirtyRects || dirtyRects.length === 0) {
+  // Safety check for currentRegion
+  if (!currentRegion || typeof currentRegion !== 'object') {
     return null;
   }
 
-  // Create a copy of the last known regions
-  const newRegionsState = JSON.parse(JSON.stringify(lastKnownRegions));
+  // Check if dirty rectangle intersects with the region
+  const regionRect = {
+    x: currentRegion.x || 0,
+    y: currentRegion.y || 0,
+    width: currentRegion.width || 0,
+    height: currentRegion.height || 0,
+  };
 
-  // Determine which regions might be affected by the dirty rectangles
-  const potentiallyAffectedRegions = new Set();
+  const intersects = rectsIntersect(regionRect, dirtyRect);
 
-  // Add all top-level region names
-  for (const name in regionDefinitions) {
-    potentiallyAffectedRegions.add(name);
-  }
-
-  // For each dirty rectangle, check which regions it intersects
-  for (const dirtyRect of dirtyRects) {
-    for (const name of potentiallyAffectedRegions) {
-      const region = lastKnownRegions[name];
-
-      // If the region doesn't exist in the last known state, it might be a new region
-      if (!region) continue;
-
-      // Check if the dirty rectangle intersects with the region
-      if (isRectInArea(dirtyRect, region)) {
-        // The region is potentially affected, so we need to rescan it
-        // Remove it from the new state so it will be rescanned
-        delete newRegionsState[name];
-      }
+  if (intersects) {
+    // First, verify the start sequence is still there
+    // Add safety checks for rawStartPos
+    let rawStartPos = currentRegion.rawStartPos;
+    if (!rawStartPos) {
+      // If rawStartPos is missing, we need to recalculate it
+      rawStartPos = {
+        x: (currentRegion.x || 0) - (regionDef.start.offset?.x || 0),
+        y: (currentRegion.y || 0) - (regionDef.start.offset?.y || 0),
+      };
     }
-  }
 
-  // Create a combined search area that encompasses all dirty rectangles
-  let combinedSearchArea = { ...dirtyRects[0] };
-
-  for (let i = 1; i < dirtyRects.length; i++) {
-    const rect = dirtyRects[i];
-    const x = Math.min(combinedSearchArea.x, rect.x);
-    const y = Math.min(combinedSearchArea.y, rect.y);
-    const x2 = Math.max(
-      combinedSearchArea.x + combinedSearchArea.width,
-      rect.x + rect.width,
-    );
-    const y2 = Math.max(
-      combinedSearchArea.y + combinedSearchArea.height,
-      rect.y + rect.height,
-    );
-
-    combinedSearchArea = {
-      x,
-      y,
-      width: x2 - x,
-      height: y2 - y,
+    const startSearchArea = {
+      x: rawStartPos.x - 10,
+      y: rawStartPos.y - 10,
+      width: 20,
+      height: 20,
     };
-  }
 
-  // Only scan the potentially affected regions
-  const definitionsToFind = {};
+    const startResult = await findSequence(
+      buffer,
+      regionDef.start,
+      startSearchArea,
+      `${name}_start`,
+    );
 
-  for (const name of potentiallyAffectedRegions) {
-    if (!newRegionsState[name] && regionDefinitions[name]) {
-      definitionsToFind[name] = regionDefinitions[name];
+    if (startResult) {
+      // Start sequence found, now look for end sequence
+      // OPTIMIZATION: Since resizing is only vertical, we know the X position doesn't change
+
+      // Add safety checks for rawEndPos and width
+      let rawEndPos = currentRegion.rawEndPos;
+      const regionWidth = currentRegion.width || 0;
+
+      if (!rawEndPos || !regionWidth) {
+        // If rawEndPos or width is missing, we need to recalculate
+        rawEndPos = {
+          x:
+            (currentRegion.x || 0) +
+            regionWidth -
+            (regionDef.end.offset?.x || 0),
+          y:
+            (currentRegion.y || 0) +
+            (currentRegion.height || 0) -
+            (regionDef.end.offset?.y || 0),
+        };
+      }
+
+      const maxH =
+        regionDef.maxDown === 'fullHeight'
+          ? metadata.height
+          : regionDef.maxDown;
+
+      // Create narrow vertical search area at the known X position
+      const endSearchArea = {
+        x: rawEndPos.x - 10,
+        y: startResult.y,
+        width: 20,
+        height: Math.min(maxH, metadata.height - startResult.y),
+      };
+
+      const endResult = await findSequence(
+        buffer,
+        regionDef.end,
+        endSearchArea,
+        `${name}_end`,
+      );
+
+      if (endResult) {
+        // Found both sequences - update region with new height
+        return {
+          ...startResult,
+          width: regionWidth, // Width doesn't change in vertical resize
+          height: endResult.y - startResult.y + 1,
+          startFound: true,
+          endFound: true,
+          rawStartPos: {
+            x: startResult.x - (regionDef.start.offset?.x || 0),
+            y: startResult.y - (regionDef.start.offset?.y || 0),
+          },
+          rawEndPos: {
+            x: endResult.x - (regionDef.end.offset?.x || 0),
+            y: endResult.y - (regionDef.end.offset?.y || 0),
+          },
+        };
+      } else {
+        // Only found start sequence - keep it but mark end as missing
+        // This prevents the region from being lost during fast resizing
+        return {
+          ...startResult,
+          width: regionWidth,
+          height: 0,
+          startFound: true,
+          endFound: false,
+          rawStartPos: {
+            x: startResult.x - (regionDef.start.offset?.x || 0),
+            y: startResult.y - (regionDef.start.offset?.y || 0),
+          },
+          rawEndPos: rawEndPos, // Keep existing rawEndPos
+        };
+      }
+    } else {
+      // Couldn't find start sequence - remove region
+      return null;
     }
   }
 
-  // If there are no regions to find, return the current state
-  if (Object.keys(definitionsToFind).length === 0) {
-    return null;
-  }
-
-  // Perform the partial scan
-  await findRegionsRecursive(
-    buffer,
-    definitionsToFind,
-    combinedSearchArea,
-    { x: 0, y: 0 },
-    newRegionsState,
-    metadata,
-    false, // isFullScan
-  );
-
-  // Process special regions for any that were rescanned
-  await processSpecialRegions(buffer, newRegionsState, metadata);
-
-  // Check if the state has actually changed
-  if (JSON.stringify(newRegionsState) !== JSON.stringify(lastKnownRegions)) {
-    return newRegionsState;
-  }
-
-  return null;
+  // No intersection, no changes needed
+  return currentRegion;
 }
 
 /**
- * The main processing class that orchestrates the adaptive scanning strategy.
+ * Update a single region
+ */
+async function updateSingleRegion(
+  buffer,
+  name,
+  regionDef,
+  currentRegion,
+  dirtyRect,
+  metadata,
+) {
+  // Safety check for currentRegion
+  if (!currentRegion || typeof currentRegion !== 'object') {
+    return null;
+  }
+
+  // Check if the sequence anchor point is in the dirty rect
+  // Add safety check for rawPos
+  let rawPos = currentRegion.rawPos;
+  if (!rawPos) {
+    // If rawPos is missing, recalculate it
+    rawPos = {
+      x: (currentRegion.x || 0) - (regionDef.offset?.x || 0),
+      y: (currentRegion.y || 0) - (regionDef.offset?.y || 0),
+    };
+  }
+
+  if (isPointInRect(rawPos.x, rawPos.y, dirtyRect)) {
+    // Look for the sequence in the dirty rect
+    const result = await findSequence(buffer, regionDef, dirtyRect, name);
+
+    if (result) {
+      return {
+        x: result.x,
+        y: result.y,
+        width: regionDef.width || 0,
+        height: regionDef.height || 0,
+        rawPos: {
+          x: result.x - (regionDef.offset?.x || 0),
+          y: result.y - (regionDef.offset?.y || 0),
+        },
+      };
+    }
+    return null; // Region disappeared
+  }
+
+  // No intersection, no changes needed
+  return currentRegion;
+}
+
+/**
+ * The main processing class.
  */
 export class RegionProcessor {
   constructor() {
-    this.dirtyRectManager = new DirtyRectManager();
-    this.regionState = new RegionState();
+    this.regions = {}; // Simple object for region state
+    this.lastFullScanTime = 0;
   }
 
   /**
-   * The main entry point for processing a new frame.
-   * @param {Buffer} buffer - The screen capture buffer.
-   * @param {object} metadata - Frame metadata (width, height, etc.).
-   * @param {Array<object>} newDirtyRects - New dirty rectangles for this frame.
-   * @returns {object|null} The new region state if it has changed, otherwise null.
+   * Perform a full scan of the entire screen.
    */
-  async process(buffer, metadata, newDirtyRects) {
-    // Add new dirty rectangles to the manager
-    this.dirtyRectManager.addDirtyRects(newDirtyRects, metadata.frameCounter);
+  async performFullScan(buffer, metadata) {
+    const foundRegions = {};
 
-    // Get consolidated dirty rectangles
-    const consolidatedDirtyRects = this.dirtyRectManager.getConsolidatedRects(
-      metadata.frameCounter,
-    );
+    try {
+      // Always start a fresh recursive search from the top level
+      await findRegionsRecursive(
+        buffer,
+        regionDefinitions,
+        { x: 0, y: 0, width: metadata.width, height: metadata.height },
+        { x: 0, y: 0 },
+        foundRegions,
+        metadata,
+      );
 
-    // Check if a full scan is needed
-    const needsFullScan = this.dirtyRectManager.needsFullScan(
-      consolidatedDirtyRects,
-      metadata.width,
-      metadata.height,
-      metadata.timestamp,
-    );
+      // Process special regions
+      await processSpecialRegions(buffer, foundRegions);
 
-    let regions;
+      this.lastFullScanTime = Date.now();
+      return foundRegions;
+    } catch (error) {
+      console.error('[RegionProcessor] Error during full scan:', error);
+      return {};
+    }
+  }
 
-    if (needsFullScan) {
-      // Perform a full scan
-      if (Object.keys(this.regionState.get()).length === 0) {
-        console.log('[RegionProcessor] Performing initial full scan.');
-      } else {
-        console.log('[RegionProcessor] Performing scheduled full scan.');
+  /**
+   * Update regions based on dirty rectangles.
+   */
+  async updateRegionsWithDirtyRects(buffer, metadata, dirtyRects) {
+    const updatedRegions = { ...this.regions };
+    let hasChanges = false;
+
+    // For each dirty rectangle, check if it intersects with any known regions
+    for (const dirtyRect of dirtyRects) {
+      if (!dirtyRect) continue;
+
+      // Check all known regions
+      for (const [name, region] of Object.entries(this.regions)) {
+        const regionDef = regionDefinitions[name];
+
+        if (!regionDef) continue;
+
+        if (regionDef.type === 'single') {
+          const result = await updateSingleRegion(
+            buffer,
+            name,
+            regionDef,
+            region,
+            dirtyRect,
+            metadata,
+          );
+
+          if (result === null) {
+            // Region disappeared
+            delete updatedRegions[name];
+            hasChanges = true;
+          } else if (JSON.stringify(result) !== JSON.stringify(region)) {
+            // Region changed
+            updatedRegions[name] = result;
+            hasChanges = true;
+          }
+        } else if (regionDef.type === 'boundingBox') {
+          const result = await updateBoundingBoxRegion(
+            buffer,
+            name,
+            regionDef,
+            region,
+            dirtyRect,
+            metadata,
+          );
+
+          if (result === null) {
+            // Region disappeared
+            delete updatedRegions[name];
+            hasChanges = true;
+          } else if (JSON.stringify(result) !== JSON.stringify(region)) {
+            // Region changed
+            updatedRegions[name] = result;
+            hasChanges = true;
+          }
+        }
+        // Fixed regions don't need updates
       }
 
-      regions = await performFullScan(buffer, metadata);
-      this.dirtyRectManager.clear();
-    } else {
-      // Perform a partial scan
-      const lastKnownRegions = this.regionState.get();
+      // Look for new regions in the dirty rectangle
+      for (const [name, regionDef] of Object.entries(regionDefinitions)) {
+        // Skip if we already know this region
+        if (this.regions[name]) continue;
 
-      if (Object.keys(lastKnownRegions).length === 0) {
-        // If we don't have any regions yet, we need to do a full scan
-        console.log(
-          '[RegionProcessor] No regions known, performing full scan.',
-        );
-        regions = await performFullScan(buffer, metadata);
-        this.dirtyRectManager.clear();
-      } else {
-        // Perform a partial scan
-        regions = await performPartialScan(
-          buffer,
-          metadata,
-          consolidatedDirtyRects,
-          lastKnownRegions,
-        );
+        // Check if the region could fit in the dirty rectangle
+        if (regionDef.type === 'single') {
+          const seqLength = regionDef.sequence?.length || 0;
+          const direction = regionDef.direction || 'horizontal';
+
+          if (
+            (direction === 'horizontal' && seqLength <= dirtyRect.width) ||
+            (direction === 'vertical' && seqLength <= dirtyRect.height)
+          ) {
+            // Look for the region in the dirty rectangle
+            const result = {};
+            await findRegionsRecursive(
+              buffer,
+              { [name]: regionDef },
+              dirtyRect,
+              { x: 0, y: 0 },
+              result,
+              metadata,
+            );
+
+            if (result[name]) {
+              // Found a new region
+              updatedRegions[name] = result[name];
+              hasChanges = true;
+            }
+          }
+        } else if (regionDef.type === 'boundingBox') {
+          // For bounding box, check if start sequence could fit
+          const startSeqLength = regionDef.start?.sequence?.length || 0;
+          const startDirection = regionDef.start?.direction || 'horizontal';
+
+          if (
+            (startDirection === 'horizontal' &&
+              startSeqLength <= dirtyRect.width) ||
+            (startDirection === 'vertical' &&
+              startSeqLength <= dirtyRect.height)
+          ) {
+            // Look for the region in the dirty rectangle
+            const result = {};
+            await findRegionsRecursive(
+              buffer,
+              { [name]: regionDef },
+              dirtyRect,
+              { x: 0, y: 0 },
+              result,
+              metadata,
+            );
+
+            if (result[name]) {
+              // Found a new region
+              updatedRegions[name] = result[name];
+              hasChanges = true;
+            }
+          }
+        }
       }
     }
 
-    // Update the region state if we have new regions
-    if (regions) {
-      this.regionState.update(regions);
-      return regions;
+    // Process special regions if there were changes
+    if (hasChanges) {
+      await processSpecialRegions(buffer, updatedRegions);
     }
 
-    // No changes detected
-    return null;
+    // Update state if there were changes
+    if (hasChanges) {
+      this.regions = updatedRegions;
+
+      // Create a new object with only found regions (filter out undefined)
+      const foundRegions = {};
+
+      // Get all region names and sort them alphabetically
+      const sortedRegionNames = Object.keys(updatedRegions).sort();
+
+      // Only include regions that are actually found (not undefined)
+      for (const name of sortedRegionNames) {
+        if (
+          updatedRegions[name] !== undefined &&
+          updatedRegions[name] !== null
+        ) {
+          foundRegions[name] = updatedRegions[name];
+        }
+      }
+
+      return foundRegions;
+    }
+
+    return null; // No changes
+  }
+
+  /**
+   * Process a frame with dirty rectangles.
+   */
+  async process(buffer, metadata, dirtyRects) {
+    if (!buffer || !metadata || !dirtyRects) {
+      return null;
+    }
+
+    // If we have no regions or it's been more than 30 seconds since the last full scan, do a full scan
+    if (
+      Object.keys(this.regions).length === 0 ||
+      Date.now() - this.lastFullScanTime > 30000
+    ) {
+      const regions = await this.performFullScan(buffer, metadata);
+      this.regions = regions;
+
+      // Create a sorted object with only found regions
+      const foundRegions = {};
+      const sortedRegionNames = Object.keys(regions).sort();
+
+      for (const name of sortedRegionNames) {
+        if (regions[name] !== undefined && regions[name] !== null) {
+          foundRegions[name] = regions[name];
+        }
+      }
+
+      return foundRegions;
+    }
+
+    // Otherwise, update based on dirty rectangles
+    return await this.updateRegionsWithDirtyRects(buffer, metadata, dirtyRects);
   }
 }
