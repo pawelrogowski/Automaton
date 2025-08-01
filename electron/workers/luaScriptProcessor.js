@@ -3,7 +3,6 @@
  * This module contains utility functions for manipulating Lua script code before
  * it is run by the wasmoon engine.
  */
-
 /**
  * Replaces convenient '$' prefixed variables with their valid, secret internal counterparts.
  * This uses a regular expression to safely replace `$var` with `__BOT_STATE__.var`
@@ -16,7 +15,6 @@ const replaceShortcutVariables = (code) => {
   // This regex finds a literal '$' followed by a valid Lua identifier
   // (starts with a letter or underscore, followed by letters, numbers, or underscores).
   const regex = /\$([a-zA-Z_][a-zA-Z0-9_]*)/g;
-
   // The replacement string '__BOT_STATE__.$1' uses the captured group ($1)
   // to construct the valid Lua code, e.g., '$hp' becomes '__BOT_STATE__.hp'.
   return code.replace(regex, '__BOT_STATE__.$1');
@@ -33,26 +31,29 @@ const replaceShortcutVariables = (code) => {
  * @returns {string} The fully processed script with valid syntax, ready for execution.
  */
 export function preprocessLuaScript(scriptCode, asyncFunctionNames) {
-  // Step 1: Replace the convenient '$' variables first.
+  console.log('Original Lua code:', scriptCode);
+
+  // Step 1: Replace $ variables
   let processedCode = replaceShortcutVariables(scriptCode);
 
-  // Step 2: Apply the async/await transformation to the result of Step 1.
   if (!asyncFunctionNames || asyncFunctionNames.length === 0) {
+    console.log('Processed Lua code (no async functions):', processedCode);
     return processedCode;
   }
 
-  // Build a dynamic regex to match any of the specified async function names.
+  // Build regex for async functions
   const funcNamePattern = asyncFunctionNames.join('|');
-  const regex = new RegExp(`\\b(${funcNamePattern})\\s*\\([^)]*\\)`, 'g');
+
+  // This regex matches function calls that don't already have :await()
+  const regex = new RegExp(
+    `\\b(${funcNamePattern})\\s*\\((?:[^()]*|\\([^)]*\\))*\\)(?!:await\\(\\))`,
+    'g',
+  );
 
   processedCode = processedCode.replace(regex, (match) => {
-    // To prevent redundant additions, check if the function call already ends with ':await()'.
-    if (match.endsWith(':await()')) {
-      return match;
-    }
-    // Append the await call to the matched function string.
     return `${match}:await()`;
   });
 
+  console.log('Processed Lua code:', processedCode);
   return processedCode;
 }

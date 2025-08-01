@@ -1,5 +1,4 @@
 // luaApi.js  (COMPLETE drop-in replacement, nothing removed, nothing added)
-
 import {
   keyPress,
   keyPressMultiple,
@@ -18,7 +17,6 @@ import {
 import { setenabled as setRulesEnabled } from '../../frontend/redux/slices/ruleSlice.js';
 import { setenabled as setTargetingEnabled } from '../../frontend/redux/slices/targetingSlice.js';
 import { setenabled as setLuaEnabled } from '../../frontend/redux/slices/luaSlice.js';
-
 /**
  * Creates an object with getters for convenient, direct access to state in Lua.
  * This object will be exposed globally in Lua as `__BOT_STATE__`.
@@ -28,7 +26,6 @@ import { setenabled as setLuaEnabled } from '../../frontend/redux/slices/luaSlic
  */
 const createStateShortcutObject = (getState, type) => {
   const shortcuts = {};
-
   // --- Game State Getters (Available in ALL script types) ---
   Object.defineProperty(shortcuts, 'hppc', {
     get: () => getState().gameState?.hppc,
@@ -72,7 +69,6 @@ const createStateShortcutObject = (getState, type) => {
     get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
     enumerable: true,
   });
-
   // --- Action Items Getters ---
   Object.defineProperty(shortcuts, 'actionItems', {
     get: () => {
@@ -97,7 +93,6 @@ const createStateShortcutObject = (getState, type) => {
     },
     enumerable: true,
   });
-
   const gameState = getState().gameState;
   if (gameState && gameState.characterStatus) {
     for (const status in gameState.characterStatus) {
@@ -107,7 +102,6 @@ const createStateShortcutObject = (getState, type) => {
       });
     }
   }
-
   Object.defineProperty(shortcuts, 'pos', {
     get: () => {
       const pos = getState().gameState?.playerMinimapPosition || {};
@@ -115,7 +109,6 @@ const createStateShortcutObject = (getState, type) => {
     },
     enumerable: true,
   });
-
   // --- Cavebot-Specific Getters ---
   const cavebotState = getState().cavebot;
   if (type === 'cavebot' && cavebotState) {
@@ -157,7 +150,6 @@ const createStateShortcutObject = (getState, type) => {
       enumerable: true,
     });
   }
-
   // --- Bot Control State Variables ---
   Object.defineProperty(shortcuts, '$healing', {
     get: () => getState().rules?.enabled,
@@ -175,10 +167,8 @@ const createStateShortcutObject = (getState, type) => {
     get: () => getState().lua?.enabled,
     enumerable: true,
   });
-
   return shortcuts;
 };
-
 /**
  * Creates a consolidated API (functions and state object) to be exposed to a Lua environment.
  * @param {object} context - The context object from the calling worker.
@@ -200,6 +190,7 @@ export const createLuaApi = (context) => {
     'keyPress',
     'keyPressMultiple',
     'type',
+    'typeSequence',
     'rotate',
     'leftClick',
     'rightClick',
@@ -213,7 +204,6 @@ export const createLuaApi = (context) => {
   ];
   const getWindowId = () => getState()?.global?.windowId;
   const getDisplay = () => getState()?.global?.display || ':0';
-
   const baseApi = {
     getDistanceTo: (x, y, z) => {
       const playerPos = getState().gameState?.playerMinimapPosition;
@@ -266,38 +256,50 @@ export const createLuaApi = (context) => {
     },
     alert: () => postSystemMessage({ type: 'play_alert' }),
     wait: (min_ms, max_ms) => wait(min_ms, max_ms, refreshLuaGlobalState), // Pass the refresh callback
+    // Updated keyPress function - no windowId needed
     keyPress: (key, modifier = null) =>
-      keyPress(String(getWindowId()), getDisplay(), key, { modifier }),
+      keyPress(getDisplay(), key, { modifier }),
+    // Updated keyPressMultiple function - no windowId needed
     keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
-      keyPressMultiple(String(getWindowId()), getDisplay(), key, {
+      keyPressMultiple(getDisplay(), key, {
         count,
         modifier,
         delayMs,
       }),
-    type: (...args) => {
-      let [startAndEndWithEnter, ...texts] =
-        typeof args[0] === 'boolean' ? args : [true, ...args];
-      return typeText(
-        String(getWindowId()),
-        getDisplay(),
-        texts.map(String),
-        startAndEndWithEnter,
-      );
+    // Updated type function - no windowId needed
+    // In luaApi.js, modify the type function:
+    type: async (text, startAndEndWithEnter = true) => {
+      console.log('type() called with:', text, startAndEndWithEnter);
+      try {
+        await typeText(getDisplay(), text, startAndEndWithEnter);
+        // Add a small delay to ensure completion
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        console.log('type() completed for:', text);
+        return true;
+      } catch (error) {
+        console.error('type() error for', text, ':', error);
+        throw error;
+      }
     },
-    rotate: (direction) =>
-      rotate(String(getWindowId()), getDisplay(), direction),
+    typeSequence: async (texts, delayBetween = 100) => {
+      for (const text of texts) {
+        await typeText(getDisplay(), text, true);
+        if (delayBetween > 0) {
+          await wait(delayBetween);
+        }
+      }
+    },
+    // Updated rotate function - no windowId needed
+    rotate: (direction) => rotate(getDisplay(), direction),
     isTyping: () => getIsTyping(),
-
     // --- Mouse Click Functions (Async with 100ms delay) ---
     leftClick: async (x, y, position = 'bottomRight') => {
       const windowId = String(getWindowId());
       const state = getState();
-
       // Game world coordinates only
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
       const playerPos = state.gameState?.playerMinimapPosition;
-
       if (!gameWorld || !tileSize || !playerPos) {
         logger(
           'warn',
@@ -329,7 +331,6 @@ export const createLuaApi = (context) => {
       await wait(100); // 100ms delay after click
       return true;
     },
-
     // --- New Absolute Click Functions (Async with 100ms delay) ---
     leftClickAbsolute: async (x, y) => {
       const windowId = String(getWindowId());
@@ -337,23 +338,19 @@ export const createLuaApi = (context) => {
       await wait(100); // 100ms delay after click
       return true;
     },
-
     rightClickAbsolute: async (x, y) => {
       const windowId = String(getWindowId());
       mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
       await wait(100); // 100ms delay after click
       return true;
     },
-
     rightClick: async (x, y, position = 'bottomRight') => {
       const windowId = String(getWindowId());
       const state = getState();
-
       // Game world coordinates only
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
       const playerPos = state.gameState?.playerMinimapPosition;
-
       if (!gameWorld || !tileSize || !playerPos) {
         logger(
           'warn',
@@ -385,12 +382,10 @@ export const createLuaApi = (context) => {
       await wait(100); // 100ms delay after click
       return true;
     },
-
     // --- Minimap Click Function (Async with 100ms delay) ---
     mapClick: async (x, y, position = 'center') => {
       const windowId = String(getWindowId());
       const state = getState();
-
       // Minimap coordinates
       const minimapRegionDef = state.regionCoordinates?.regions?.minimapFull;
       const playerPos = state.gameState?.playerMinimapPosition;
@@ -423,17 +418,14 @@ export const createLuaApi = (context) => {
       await wait(100); // 100ms delay after click
       return true;
     },
-
     // --- Drag Functions (Async with 100ms delay) ---
     drag: async (startX, startY, endX, endY, button = 'left') => {
       const windowId = String(getWindowId());
       const state = getState();
-
       // Game world tile coordinates
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
       const playerPos = state.gameState?.playerMinimapPosition;
-
       if (!gameWorld || !tileSize || !playerPos) {
         logger(
           'warn',
@@ -441,7 +433,6 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       // Use bottomRight as default position for both start and end
       const startCoords = getAbsoluteGameWorldClickCoordinates(
         startX,
@@ -459,7 +450,6 @@ export const createLuaApi = (context) => {
         tileSize,
         'bottomRight',
       );
-
       if (!startCoords || !endCoords) {
         logger(
           'warn',
@@ -467,7 +457,6 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       // Move to start position
       mouseController.mouseMove(
         parseInt(windowId),
@@ -476,7 +465,6 @@ export const createLuaApi = (context) => {
         getDisplay(),
       );
       await wait(50);
-
       // Press button down
       if (button === 'right') {
         mouseController.rightMouseDown(
@@ -492,7 +480,6 @@ export const createLuaApi = (context) => {
         );
       }
       await wait(100);
-
       // Move to end position
       mouseController.mouseMove(
         parseInt(windowId),
@@ -501,7 +488,6 @@ export const createLuaApi = (context) => {
         getDisplay(),
       );
       await wait(100);
-
       // Release button
       if (button === 'right') {
         mouseController.rightMouseUp(
@@ -518,13 +504,10 @@ export const createLuaApi = (context) => {
         );
       }
       await wait(100);
-
       return true;
     },
-
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
       const windowId = String(getWindowId());
-
       // Direct window coordinates without translation
       mouseController.mouseMove(
         parseInt(windowId),
@@ -533,7 +516,6 @@ export const createLuaApi = (context) => {
         getDisplay(),
       );
       await wait(50);
-
       // Press button down
       if (button === 'right') {
         mouseController.rightMouseDown(
@@ -551,11 +533,9 @@ export const createLuaApi = (context) => {
         );
       }
       await wait(100);
-
       // Move to end position
       mouseController.mouseMove(parseInt(windowId), endX, endY, getDisplay());
       await wait(100);
-
       // Release button
       if (button === 'right') {
         mouseController.rightMouseUp(
@@ -568,17 +548,14 @@ export const createLuaApi = (context) => {
         mouseController.mouseUp(parseInt(windowId), endX, endY, getDisplay());
       }
       await wait(100);
-
       return true;
     },
-
     // --- Helper Functions for Tile Movement ---
     tileToCoordinate: (tileX, tileY, position = 'bottomRight') => {
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
       const playerPos = state.gameState?.playerMinimapPosition;
-
       if (!gameWorld || !tileSize || !playerPos) {
         logger(
           'warn',
@@ -586,7 +563,6 @@ export const createLuaApi = (context) => {
         );
         return null;
       }
-
       const coords = getAbsoluteGameWorldClickCoordinates(
         tileX,
         tileY,
@@ -597,13 +573,11 @@ export const createLuaApi = (context) => {
       );
       return coords ? { x: coords.x, y: coords.y } : null;
     },
-
     coordinateToTile: (screenX, screenY) => {
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
       const playerPos = state.gameState?.playerMinimapPosition;
-
       if (!gameWorld || !tileSize || !playerPos) {
         logger(
           'warn',
@@ -611,11 +585,9 @@ export const createLuaApi = (context) => {
         );
         return null;
       }
-
       // Calculate relative position from game world origin
       const relX = screenX - gameWorld.x;
       const relY = screenY - gameWorld.y;
-
       // Convert to tile coordinates
       const tileX =
         Math.floor(relX / tileSize.width) +
@@ -625,15 +597,12 @@ export const createLuaApi = (context) => {
         Math.floor(relY / tileSize.height) +
         playerPos.y -
         Math.floor(gameWorld.height / tileSize.height / 2);
-
       return { x: tileX, y: tileY };
     },
-
     // --- Chat Tab Functions ---
     focusTab: async (tabName) => {
       const state = getState();
       const tabs = state.uiValues?.chatboxTabs?.tabs;
-
       if (!tabs || !tabName) {
         logger(
           'warn',
@@ -641,7 +610,6 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       const tab = tabs[tabName];
       if (!tab || !tab.tabPosition) {
         logger(
@@ -650,15 +618,12 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       const windowId = String(getWindowId());
       const { x, y } = tab.tabPosition;
-
       mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
       await wait(100); // 100ms delay after click
       return true;
     },
-
     // --- Bot Control Functions ---
     setTargeting: (enabled) => {
       context.postStoreUpdate('targeting/setenabled', !!enabled);
@@ -688,15 +653,12 @@ export const createLuaApi = (context) => {
         `[Lua/${scriptName}] Scripts ${enabled ? 'enabled' : 'disabled'}`,
       );
     },
-
     // --- Login Function ---
     login: async (email, password, character) => {
       const windowId = String(getWindowId());
       const display = getDisplay();
       let state = getState();
-
       console.log('[LOGIN] === LOGIN FUNCTION STARTED ===');
-
       // 1. Check if we are already online
       if (state.regionCoordinates?.regions?.onlineMarker) {
         console.log('[LOGIN] Player already online - skipping login');
@@ -706,7 +668,6 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       // 2. Initial Modal Cleanup: Check for and close any pop-up modals
       console.log('[LOGIN] Starting initial modal cleanup...');
       const modalsToClose = [
@@ -717,13 +678,11 @@ export const createLuaApi = (context) => {
         { name: 'connectionFailedModal' },
         { name: 'warningModal' },
       ];
-
       let closedAModal;
       do {
         closedAModal = false;
         state = getState(); // Refresh state before each check
         const regions = state.regionCoordinates?.regions;
-
         if (regions) {
           for (const modalInfo of modalsToClose) {
             const modal = regions[modalInfo.name];
@@ -732,14 +691,13 @@ export const createLuaApi = (context) => {
               modal?.children?.abort ||
               modal?.children?.close ||
               modal?.children?.ok;
-
             if (button?.x && button?.y) {
               console.log(`[LOGIN] Found and closing '${modalInfo.name}'`);
               logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
               if (modalInfo.name === 'ipChangedModal') {
-                await keyPress(windowId, display, 'Escape');
+                await keyPress(display, 'Escape');
                 await wait(500);
-                await keyPress(windowId, display, 'Escape');
+                await keyPress(display, 'Escape');
                 await wait(400);
               } else {
                 mouseController.leftClick(
@@ -757,12 +715,10 @@ export const createLuaApi = (context) => {
         }
       } while (closedAModal);
       console.log('[LOGIN] Modal cleanup finished.');
-
       // 3. Check if we are already at the character selection screen
       state = getState(); // Get the latest state after cleanup
       let selectCharacterModal =
         state.regionCoordinates?.regions?.selectCharacterModal;
-
       if (selectCharacterModal) {
         console.log(
           '[LOGIN] Already at character selection screen, skipping login form.',
@@ -780,18 +736,15 @@ export const createLuaApi = (context) => {
           'info',
           `[Lua/${scriptName}] Starting login process for character: ${character}`,
         );
-
         const loginModal = state.regionCoordinates?.regions?.loginModal;
         if (!loginModal) {
           console.log('[LOGIN] ERROR: loginModal not found in state');
           logger('warn', `[Lua/${scriptName}] loginModal not found`);
           return false;
         }
-
         // Press escape to ensure login modal is focused
-        await keyPress(windowId, display, 'Escape');
+        await keyPress(display, 'Escape');
         await wait(100);
-
         // Type email
         const emailInput = loginModal.children?.emailInput;
         if (!emailInput) {
@@ -806,9 +759,8 @@ export const createLuaApi = (context) => {
           display,
         );
         await wait(50);
-        await typeText(windowId, display, [email], false);
+        await typeText(display, [email], false);
         await wait(100);
-
         // Type password
         const passwordInput = loginModal.children?.passwordInput;
         if (!passwordInput) {
@@ -823,29 +775,24 @@ export const createLuaApi = (context) => {
           display,
         );
         await wait(50);
-        await typeText(windowId, display, [password], false);
+        await typeText(display, [password], false);
         await wait(100);
-
         // Press enter to submit login
         console.log('[LOGIN] Pressing Enter to submit login form');
-        await keyPress(windowId, display, 'Enter');
+        await keyPress(display, 'Enter');
         await wait(200);
       }
-
       // 5. Wait for and handle Character Selection
       console.log('[LOGIN] Checking for character selection modal...');
       let currentState = getState();
       selectCharacterModal =
         currentState.regionCoordinates?.regions?.selectCharacterModal;
-
       const maxWaitForModal = 10000;
       const modalCheckInterval = 500;
       let modalWaitTime = 0;
-
       // --- NEW ROBUST LOGIC ---
       // This flag ensures we don't fail prematurely before the connectingModal has a chance to appear.
       let connectingModalWasSeen = false;
-
       while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
         console.log(
           `[LOGIN] Waiting for modal... (${modalWaitTime}ms elapsed)`,
@@ -853,16 +800,13 @@ export const createLuaApi = (context) => {
         await wait(modalCheckInterval);
         modalWaitTime += modalCheckInterval;
         currentState = getState();
-
         const regions = currentState.regionCoordinates?.regions;
         selectCharacterModal = regions?.selectCharacterModal;
         const connectingModal = regions?.connectingModal;
-
         // First, check if the connecting modal is visible. If so, we "arm" our failure check.
         if (connectingModal) {
           connectingModalWasSeen = true;
         }
-
         // Now, check for the failure condition:
         // We have seen the connecting modal before, but now it's gone, and we are NOT at the character select screen.
         if (
@@ -877,17 +821,15 @@ export const createLuaApi = (context) => {
             'warn',
             `[Lua/${scriptName}] Connection stalled or failed. Aborting login.`,
           );
-
           // Press escape 3 times to back out of the failed state
           for (let i = 0; i < 3; i++) {
-            await keyPress(windowId, display, 'Escape');
+            await keyPress(display, 'Escape');
             await wait(100);
           }
           return false; // Exit the function
         }
         // --- END OF NEW ROBUST LOGIC ---
       }
-
       if (!selectCharacterModal) {
         console.log(
           `[LOGIN] ERROR: selectCharacterModal not found after ${modalWaitTime}ms wait`,
@@ -898,9 +840,7 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       console.log('[LOGIN] SUCCESS: Character selection modal found!');
-
       // 6. Get character selection data and find the target character
       const characterData = currentState.uiValues?.selectCharacterModal;
       if (!characterData || !characterData.characters) {
@@ -908,22 +848,19 @@ export const createLuaApi = (context) => {
         logger('warn', `[Lua/${scriptName}] No character data for selection`);
         return false;
       }
-
       let characters = characterData.characters;
       let characterNames = Object.keys(characters);
       const targetCharacterLower = character.toLowerCase();
       let targetCharacterFound = characterNames.find((name) =>
         name.toLowerCase().includes(targetCharacterLower),
       );
-
       // If character not found, try pressing the first letter
       if (!targetCharacterFound) {
         console.log(
           '[LOGIN] Target character not visible, trying first letter approach',
         );
-        await keyPress(windowId, display, character[0].toUpperCase());
+        await keyPress(display, character[0].toUpperCase());
         await wait(500); // Wait for list to update
-
         // Refresh state and re-check
         currentState = getState();
         const updatedCharacterData =
@@ -936,7 +873,6 @@ export const createLuaApi = (context) => {
           );
         }
       }
-
       if (!targetCharacterFound) {
         console.log('[LOGIN] ERROR: Target character not found');
         logger(
@@ -945,7 +881,6 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       // 7. Click on the target character and log in
       const characterItem = characters[targetCharacterFound];
       if (!characterItem || !characterItem.position) {
@@ -958,7 +893,6 @@ export const createLuaApi = (context) => {
         );
         return false;
       }
-
       // Click on the character
       console.log(
         '[LOGIN] Clicking on target character:',
@@ -971,17 +905,14 @@ export const createLuaApi = (context) => {
         display,
       );
       await wait(100);
-
       // Press enter to select character
       console.log('[LOGIN] Pressing Enter to select character');
-      await keyPress(windowId, display, 'Enter');
-
+      await keyPress(display, 'Enter');
       // 8. Wait for login to complete (check if online)
       console.log('[LOGIN] Waiting for login completion...');
       const maxWaitTime = 10000;
       const checkInterval = 200;
       let elapsedTime = 0;
-
       while (elapsedTime < maxWaitTime) {
         await wait(checkInterval);
         elapsedTime += checkInterval;
@@ -995,7 +926,6 @@ export const createLuaApi = (context) => {
           return true;
         }
       }
-
       console.log(
         `[LOGIN] ERROR: Login timeout, player did not come online within ${maxWaitTime / 1000} seconds`,
       );
@@ -1006,7 +936,6 @@ export const createLuaApi = (context) => {
       return false;
     },
   };
-
   let navigationApi = {};
   if (type === 'cavebot') {
     // For CAVEBOT, use the direct function references passed from the worker.
@@ -1075,17 +1004,14 @@ export const createLuaApi = (context) => {
         context.postStoreUpdate('cavebot/setActionPaused', !!paused),
     };
   }
-
   const api = { ...baseApi, ...navigationApi };
   const stateObject = createStateShortcutObject(getState, type);
-
   // --- [ROBUST FIX] ---
   // Wrap the API with a proxy to track active async calls for safe shutdown.
   const asyncApiFunctionSet = new Set(asyncFunctionNames);
   const apiProxy = new Proxy(api, {
     get(target, prop, receiver) {
       const originalMember = target[prop];
-
       // Intercept calls to functions that are registered as asynchronous.
       if (
         typeof originalMember === 'function' &&
@@ -1104,11 +1030,9 @@ export const createLuaApi = (context) => {
           }
         };
       }
-
       // For non-async functions or other properties, pass them through.
       return Reflect.get(target, prop, receiver);
     },
   });
-
   return { api: apiProxy, asyncFunctionNames, stateObject };
 };

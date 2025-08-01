@@ -137,12 +137,17 @@ const executeOneShot = async () => {
   }
   try {
     _syncApiToLua();
-    await lua.doString(
-      preprocessLuaScript(scriptConfig.code, asyncFunctionNames),
+    const processedCode = preprocessLuaScript(
+      scriptConfig.code,
+      asyncFunctionNames,
     );
+    console.log('About to execute Lua code:', processedCode);
+    await lua.doString(processedCode);
+    console.log('Lua code execution completed');
   } catch (error) {
     const msg = error.message || String(error);
-    log('error', `[Lua Script Worker ${scriptConfig.id}] one-shot error:`, msg);
+    console.error('Lua execution error:', msg, error.stack);
+    log('error', `[Lua Script Worker ${scriptConfig.id}] loop error:`, msg);
     postStoreUpdate('lua/addLogEntry', {
       id: scriptConfig.id,
       message: `[ERROR] ${msg}`,
