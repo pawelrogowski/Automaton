@@ -16,7 +16,10 @@ import {
   toggleWidgetWindowVisibility,
 } from './createMainWindow.js';
 import './ipcListeners.js';
-import { unregisterGlobalShortcuts } from './globalShortcuts.js';
+import {
+  unregisterGlobalShortcuts,
+  registerGlobalShortcuts,
+} from './globalShortcuts.js';
 import { getLinuxHardwareId } from './hardwareId.js';
 import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
@@ -92,6 +95,8 @@ app.whenReady().then(async () => {
     createSelectWindow();
 
     workerManager.initialize(app, cwd, {});
+    registerGlobalShortcuts(); // Register global shortcuts on startup
+    setGlobalState('global/setGlobalShortcutsEnabled', true); // Set default to enabled
 
     (async () => {
       try {

@@ -13,6 +13,7 @@ const initialState = {
     lua: false,
     targeting: false,
   },
+  isGlobalShortcutsEnabled: true, // New: Global shortcuts enabled by default
 };
 
 const globalSlice = createSlice({
@@ -42,6 +43,9 @@ const globalSlice = createSlice({
     toggleNotifications: (state) => {
       state.notificationsEnabled = !state.notificationsEnabled;
     },
+    setGlobalShortcutsEnabled: (state, action) => {
+      state.isGlobalShortcutsEnabled = action.payload;
+    },
     setState: (state, action) => {
       const newState = { ...state };
 
@@ -70,6 +74,7 @@ export const {
   setWindowName, // Export the new action
   setRefreshRate,
   toggleNotifications,
+  setGlobalShortcutsEnabled, // Export the new action
   setState,
   setPreviousSectionStates,
   resetPreviousSectionStates,

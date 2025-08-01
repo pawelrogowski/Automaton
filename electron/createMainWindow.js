@@ -1,4 +1,3 @@
-// Automaton/electron/createMainWindow.js
 import {
   app,
   ipcMain,
@@ -12,9 +11,16 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { loadRulesFromFile, saveRulesToFile } from './saveManager.js';
-import { toggleNotifications } from '../frontend/redux/slices/globalSlice.js';
+import {
+  toggleNotifications,
+  setGlobalShortcutsEnabled,
+} from '../frontend/redux/slices/globalSlice.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
+import {
+  registerGlobalShortcuts,
+  unregisterGlobalShortcuts,
+} from './globalShortcuts.js';
 
 const HTML_PATH = '../dist/index.html';
 
@@ -22,12 +28,14 @@ let mainWindow;
 let tray;
 let isNotificationEnabled = false;
 let isTrayVisible = true;
-let widgetWindow = null; // Variable to hold the widget window instance
+let widgetWindow = null;
+let isMainWindowVisible = false;
+let isWidgetWindowVisible = false;
+let isGlobalShortcutsEnabled = true;
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-// Define paths relative to the script's directory
 const WIDGET_HTML_PATH = path.join(dirname, 'widget', 'widget.html');
 const WIDGET_PRELOAD_PATH = path.join(dirname, 'widget', 'preload.js');
 
@@ -74,10 +82,14 @@ const buildTrayContextMenu = () => {
     { type: 'separator' },
     {
       label: 'Show/Hide Main Window',
+      type: 'checkbox',
+      checked: isMainWindowVisible,
       click: toggleMainWindowVisibility,
     },
     {
       label: 'Show/Hide Controls Widget',
+      type: 'checkbox',
+      checked: isWidgetWindowVisible,
       click: toggleWidgetWindowVisibility,
     },
     {
@@ -85,6 +97,13 @@ const buildTrayContextMenu = () => {
       type: 'checkbox',
       checked: isNotificationEnabled,
       click: () => store.dispatch(toggleNotifications()),
+    },
+    {
+      label: 'Global Shortcuts',
+      type: 'checkbox',
+      checked: isGlobalShortcutsEnabled,
+      click: () =>
+        store.dispatch(setGlobalShortcutsEnabled(!isGlobalShortcutsEnabled)),
     },
     {
       label: isTrayVisible ? 'Hide Tray' : 'Show Tray',
@@ -100,20 +119,27 @@ const buildAppMenu = () => {
     {
       label: 'File',
       submenu: [
-        { label: 'Show/Hide Main Window', click: toggleMainWindowVisibility },
+        {
+          label: 'Show/Hide Main Window',
+          type: 'checkbox',
+          checked: isMainWindowVisible,
+          click: toggleMainWindowVisibility,
+        },
         {
           label: 'Show/Hide Controls Widget',
+          type: 'checkbox',
+          checked: isWidgetWindowVisible,
           click: toggleWidgetWindowVisibility,
         },
         { type: 'separator' },
         {
           label: 'Load Settings...',
-          click: () => loadRulesFromFile(() => {}), // Pass no-op callback
+          click: () => loadRulesFromFile(() => {}),
           accelerator: 'CmdOrCtrl+O',
         },
         {
           label: 'Save Settings As...',
-          click: () => saveRulesToFile(() => {}), // Pass no-op callback
+          click: () => saveRulesToFile(() => {}),
           accelerator: 'CmdOrCtrl+S',
         },
         { type: 'separator' },
@@ -128,6 +154,15 @@ const buildAppMenu = () => {
           type: 'checkbox',
           checked: isNotificationEnabled,
           click: () => store.dispatch(toggleNotifications()),
+        },
+        {
+          label: 'Global Shortcuts',
+          type: 'checkbox',
+          checked: isGlobalShortcutsEnabled,
+          click: () =>
+            store.dispatch(
+              setGlobalShortcutsEnabled(!isGlobalShortcutsEnabled),
+            ),
         },
         {
           label: isTrayVisible ? 'Hide Tray' : 'Show Tray',
@@ -196,16 +231,33 @@ export const createMainWindow = (selectedWindowId, display, windowName) => {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
+    isMainWindowVisible = true;
     createTray();
     Menu.setApplicationMenu(buildAppMenu());
     setGlobalState('global/setWindowId', selectedWindowId);
     setGlobalState('global/setDisplay', display);
     setGlobalState('global/setWindowName', windowName);
-    console.log(selectedWindowId, display, windowName, typeof windowName);
+    createWidgetWindow();
+    toggleWidgetWindowVisibility();
+    // Register global shortcuts on app start
+    const { isGlobalShortcutsEnabled: globalShortcutsState } =
+      store.getState().global;
+    if (globalShortcutsState) {
+      registerGlobalShortcuts();
+    }
   });
 
   mainWindow.on('show', () => {
     mainWindow.setMinimizable(false);
+    isMainWindowVisible = true;
+    Menu.setApplicationMenu(buildAppMenu());
+    if (tray) tray.setContextMenu(buildTrayContextMenu());
+  });
+
+  mainWindow.on('hide', () => {
+    isMainWindowVisible = false;
+    Menu.setApplicationMenu(buildAppMenu());
+    if (tray) tray.setContextMenu(buildTrayContextMenu());
   });
 
   mainWindow.on('close', handleMainWindowClose);
@@ -213,70 +265,80 @@ export const createMainWindow = (selectedWindowId, display, windowName) => {
 };
 
 export const toggleMainWindowVisibility = () => {
-  if (!mainWindow) return; // Ensure mainWindow exists
+  if (!mainWindow) return;
 
   if (mainWindow.isVisible()) {
     mainWindow.hide();
   } else {
     mainWindow.show();
     mainWindow.focus();
-    // Removed: no longer auto-hiding widget window
   }
+  isMainWindowVisible = mainWindow.isVisible();
+  Menu.setApplicationMenu(buildAppMenu());
+  if (tray) tray.setContextMenu(buildTrayContextMenu());
 };
 
-// Function to create and show the widget window
 export const createWidgetWindow = () => {
   if (widgetWindow && !widgetWindow.isDestroyed()) {
-    // If window already exists, just focus it
     if (widgetWindow.isMinimized()) widgetWindow.restore();
     widgetWindow.focus();
     return;
   }
 
   widgetWindow = new BrowserWindow({
-    width: 210, // Adjust width as needed
-    height: 250, // Further reduced height for cleaner look
-    // Set window as frameless and always on top
+    width: 210,
+    height: 250,
+    x: 100,
+    y: 100,
     frame: false,
-    show: false, // Initially hidden, will be shown by tray click
+    show: false,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    transparent: true, // Make window fully transparent
-    icon: ICON_PATHS.app, // Use the app icon
+    transparent: true,
+    icon: ICON_PATHS.app,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: WIDGET_PRELOAD_PATH, // Path to widget preload script
-      devTools: false, // Disable dev tools
+      preload: WIDGET_PRELOAD_PATH,
+      devTools: false,
     },
   });
 
-  // Dev tools disabled
-
   widgetWindow.loadURL(`file://${WIDGET_HTML_PATH}`).catch((err) => {
     console.error('Failed to load widget URL:', err);
-    widgetWindow = null; // Clear if loading fails
+    widgetWindow = null;
   });
 
   widgetWindow.on('closed', () => {
-    widgetWindow = null; // Clean up the reference
+    widgetWindow = null;
+    isWidgetWindowVisible = false;
+    Menu.setApplicationMenu(buildAppMenu());
+    if (tray) tray.setContextMenu(buildTrayContextMenu());
   });
 
-  // Remove auto-hide behavior - window will stay visible until explicitly closed
-  // widgetWindow.on('blur', () => {
-  //   widgetWindow.hide();
-  // });
+  widgetWindow.on('show', () => {
+    isWidgetWindowVisible = true;
+    Menu.setApplicationMenu(buildAppMenu());
+    if (tray) tray.setContextMenu(buildTrayContextMenu());
+  });
+
+  widgetWindow.on('hide', () => {
+    isWidgetWindowVisible = false;
+    Menu.setApplicationMenu(buildAppMenu());
+    if (tray) tray.setContextMenu(buildTrayContextMenu());
+  });
 };
 
-// Function to toggle the visibility of the widget window
 export const toggleWidgetWindowVisibility = () => {
   if (!widgetWindow) {
     createWidgetWindow();
-    // Wait for the window to be ready before showing
     widgetWindow.on('ready-to-show', () => {
       widgetWindow.show();
       widgetWindow.focus();
+      isWidgetWindowVisible = true;
+      Menu.setApplicationMenu(buildAppMenu());
+      if (tray) tray.setContextMenu(buildTrayContextMenu());
     });
   } else {
     if (widgetWindow.isVisible()) {
@@ -285,12 +347,31 @@ export const toggleWidgetWindowVisibility = () => {
       widgetWindow.show();
       widgetWindow.focus();
     }
+    isWidgetWindowVisible = widgetWindow.isVisible();
+    Menu.setApplicationMenu(buildAppMenu());
+    if (tray) tray.setContextMenu(buildTrayContextMenu());
   }
 };
 
 store.subscribe(() => {
-  const { notificationsEnabled } = store.getState().global;
+  const {
+    notificationsEnabled,
+    isGlobalShortcutsEnabled: globalShortcutsState,
+  } = store.getState().global;
   isNotificationEnabled = notificationsEnabled;
+  const prevGlobalShortcutsEnabled = isGlobalShortcutsEnabled;
+  isGlobalShortcutsEnabled = globalShortcutsState;
+
+  // Register/unregister global shortcuts based on state change
+  if (isGlobalShortcutsEnabled && !prevGlobalShortcutsEnabled) {
+    registerGlobalShortcuts();
+  } else if (!isGlobalShortcutsEnabled && prevGlobalShortcutsEnabled) {
+    unregisterGlobalShortcuts();
+  }
+
+  // Update visibility states based on actual window visibility
+  isMainWindowVisible = mainWindow ? mainWindow.isVisible() : false;
+  isWidgetWindowVisible = widgetWindow ? widgetWindow.isVisible() : false;
 
   if (tray) {
     tray.setContextMenu(buildTrayContextMenu());

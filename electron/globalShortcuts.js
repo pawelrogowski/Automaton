@@ -205,6 +205,10 @@ const debouncedToggleEverything = debounce(() => {
 
 export const registerGlobalShortcuts = () => {
   try {
+    if (globalShortcut.isRegistered('Alt+E')) {
+      log('info', '[Global Shortcuts] already registered, skipping.');
+      return;
+    }
     log('info', '[Global Shortcuts] registering');
     globalShortcut.register('Alt+E', debouncedToggleisBotEnabled);
     globalShortcut.register('Alt+V', debouncedToggleMainWindowVisibility);
@@ -226,14 +230,15 @@ export const registerGlobalShortcuts = () => {
     }
     log('info', '[Global Shortcuts] registered');
   } catch (error) {
-    log('error', `[Global Shortcuts] ${error}`);
+    log('error', `[Global Shortcuts] registration error: ${error}`);
   }
 };
 
 export const unregisterGlobalShortcuts = () => {
   try {
+    log('info', '[Global Shortcuts] unregistering all');
     globalShortcut.unregisterAll();
   } catch (error) {
-    log('error', `[Global Shortcuts] ${error}`);
+    log('error', `[Global Shortcuts] unregistration error: ${error}`);
   }
 };

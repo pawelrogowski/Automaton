@@ -16,12 +16,7 @@ export const PREPROCESSED_BASE_DIR = path.join(
 export const WAYPOINT_AVOIDANCE_MAP = {
   Node: 'cavebot',
   Stand: 'cavebot',
-  Shovel: 'cavebot',
-  Rope: 'cavebot',
-  Machete: 'cavebot',
   Ladder: 'cavebot',
-  Use: 'cavebot',
-  Action: 'cavebot',
+  Script: 'cavebot',
   Lure: 'targeting',
-  Attack: 'targeting',
 };
