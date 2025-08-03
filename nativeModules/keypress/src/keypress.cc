@@ -358,14 +358,17 @@ private:
 
 class TypeStringWorker : public Napi::AsyncWorker {
 public:
-    TypeStringWorker(Napi::Env env, Napi::Promise::Deferred deferred, std::string str, bool start_and_end_with_enter, std::string display_name)
-        : Napi::AsyncWorker(env), deferred(deferred), str(str), start_and_end_with_enter(start_and_end_with_enter), display_name(display_name) {}
+    TypeStringWorker(Napi::Env env, Napi::Promise::Deferred deferred,
+                     std::string str, bool start_and_end_with_enter,
+                     std::string display_name)
+        : Napi::AsyncWorker(env), deferred_(deferred), str_(str),
+          start_and_end_with_enter_(start_and_end_with_enter), display_name_(display_name) {}
 
 protected:
     void Execute() override {
-        Display *display = XOpenDisplay(display_name.empty() ? NULL : display_name.c_str());
+        Display *display = XOpenDisplay(display_name_.empty() ? NULL : display_name_.c_str());
         if (!display) {
-            SetError("Cannot open display: " + display_name);
+            SetError("Cannot open display: " + display_name_);
             return;
         }
 
@@ -376,15 +379,8 @@ protected:
         }
 
         auto behavior_profile = SessionManager::get_current_profile();
-        int base_delay = behavior_profile->get_base_delay();
-        int delay_variation = behavior_profile->get_delay_variation();
-
-        std::cout << "[TYPE_DEBUG] Starting to type: '" << str << "'" << std::endl;
-        std::cout << "[TYPE_DEBUG] Length: " << str.length() << std::endl;
-        std::cout << "[TYPE_DEBUG] start_and_end_with_enter: " << start_and_end_with_enter << std::endl;
 
         auto send_enter_key = [&](Display* d) {
-            std::cout << "[TYPE_DEBUG] Sending ENTER key" << std::endl;
             KeySym ks = XK_Return;
             KeyCode kc = XKeysymToKeycode(d, ks);
             if (kc != 0) {
@@ -397,176 +393,282 @@ protected:
             }
         };
 
-        if (start_and_end_with_enter) {
+        if (start_and_end_with_enter_) {
             send_enter_key(display);
             usleep(timing_generator.get_pro_gamer_delay(40, 15) * 1000);
         }
 
-        for (size_t i = 0; i < str.length(); i++) {
-            char c = str[i];
-            std::cout << "[TYPE_DEBUG] Typing character: '" << c << "' (" << (int)c << ")" << std::endl;
+        for (size_t i = 0; i < str_.length(); i++) {
+            char c = str_[i];
 
             if (timing_generator.should_add_micro_delay()) {
                 usleep(timing_generator.get_micro_delay() * 1000);
             }
 
-            process_character(display, c, behavior_profile);
+            KeySym keysym = NoSymbol;
+            unsigned int required_modifier = 0;
 
-            int actual_delay = timing_generator.get_pro_gamer_delay(base_delay, delay_variation);
-            usleep(actual_delay * 1000);
+            if (c == ' ') {
+                keysym = XK_space;
+            } else if (isalpha(c)) {
+                if (isupper(c)) {
+                    keysym = XK_a + (tolower(c) - 'a');
+                    required_modifier = ShiftMask;
+                } else {
+                    keysym = XK_a + (c - 'a');
+                }
+            } else if (isdigit(c)) {
+                keysym = XK_0 + (c - '0');
+            } else {
+                switch (c) {
+                    case '!': keysym = XK_1; required_modifier = ShiftMask; break;
+                    case '@': keysym = XK_2; required_modifier = ShiftMask; break;
+                    case '#': keysym = XK_3; required_modifier = ShiftMask; break;
+                    case '$': keysym = XK_4; required_modifier = ShiftMask; break;
+                    case '%': keysym = XK_5; required_modifier = ShiftMask; break;
+                    case '^': keysym = XK_6; required_modifier = ShiftMask; break;
+                    case '&': keysym = XK_7; required_modifier = ShiftMask; break;
+                    case '*': keysym = XK_8; required_modifier = ShiftMask; break;
+                    case '(': keysym = XK_9; required_modifier = ShiftMask; break;
+                    case ')': keysym = XK_0; required_modifier = ShiftMask; break;
+                    case '-': keysym = XK_minus; break;
+                    case '_': keysym = XK_minus; required_modifier = ShiftMask; break;
+                    case '=': keysym = XK_equal; break;
+                    case '+': keysym = XK_equal; required_modifier = ShiftMask; break;
+                    case '[': keysym = XK_bracketleft; break;
+                    case ']': keysym = XK_bracketright; break;
+                    case '{': keysym = XK_bracketleft; required_modifier = ShiftMask; break;
+                    case '}': keysym = XK_bracketright; required_modifier = ShiftMask; break;
+                    case ';': keysym = XK_semicolon; break;
+                    case ':': keysym = XK_semicolon; required_modifier = ShiftMask; break;
+                    case '\'': keysym = XK_apostrophe; break;
+                    case '"': keysym = XK_apostrophe; required_modifier = ShiftMask; break;
+                    case ',': keysym = XK_comma; break;
+                    case '<': keysym = XK_comma; required_modifier = ShiftMask; break;
+                    case '.': keysym = XK_period; break;
+                    case '>': keysym = XK_period; required_modifier = ShiftMask; break;
+                    case '/': keysym = XK_slash; break;
+                    case '?': keysym = XK_slash; required_modifier = ShiftMask; break;
+                    case '\\': keysym = XK_backslash; break;
+                    case '|': keysym = XK_backslash; required_modifier = ShiftMask; break;
+                    case '`': keysym = XK_grave; break;
+                    case '~': keysym = XK_grave; required_modifier = ShiftMask; break;
+                    default:
+                        keysym = XStringToKeysym(std::string(1, c).c_str());
+                        if (keysym == NoSymbol) {
+                            keysym = XStringToKeysym(std::string(1, tolower(c)).c_str());
+                            if (isupper(c)) {
+                                required_modifier = ShiftMask;
+                            }
+                        }
+                        break;
+                }
+            }
+
+            if (keysym == NoSymbol) continue;
+
+            KeyCode keycode = XKeysymToKeycode(display, keysym);
+            if (keycode == 0) continue;
+
+            int press_delay = timing_generator.get_pro_gamer_delay(15, 8);
+            int release_delay = timing_generator.get_pro_gamer_delay(12, 5);
+
+            send_xtest_key(display, keycode, true, required_modifier);
+            XFlush(display);
+            usleep(press_delay * 1000);
+
+            send_xtest_key(display, keycode, false, required_modifier);
+            XFlush(display);
+            usleep(release_delay * 1000);
         }
 
-        if (start_and_end_with_enter) {
+        if (start_and_end_with_enter_) {
             usleep(timing_generator.get_pro_gamer_delay(50, 20) * 1000);
             send_enter_key(display);
         }
 
         XSync(display, False);
         usleep(100 * 1000);
-
-        std::cout << "[TYPE_DEBUG] Finished typing: '" << str << "'" << std::endl;
         XCloseDisplay(display);
     }
 
     void OnOK() override {
-        deferred.Resolve(Napi::Boolean::New(Env(), true));
+        deferred_.Resolve(Napi::Boolean::New(Env(), true));
     }
 
     void OnError(const Napi::Error& e) override {
-        deferred.Reject(Napi::Error::New(Env(), e.Message()).Value());
+        deferred_.Reject(Napi::Error::New(Env(), e.Message()).Value());
     }
 
 private:
-    void process_character(Display* display, char c, std::shared_ptr<BehaviorProfile> behavior_profile) {
-        if (behavior_profile->should_make_error() && c != ' ' && c != '\n') {
-            simulate_typing_mistake(display, c, behavior_profile);
+    Napi::Promise::Deferred deferred_;
+    std::string str_;
+    bool start_and_end_with_enter_;
+    std::string display_name_;
+};
+
+class TypeStringArrayWorker : public Napi::AsyncWorker {
+public:
+    TypeStringArrayWorker(Napi::Env env, Napi::Promise::Deferred deferred,
+                         std::vector<std::string> strings, bool start_and_end_with_enter,
+                         std::string display_name)
+        : Napi::AsyncWorker(env), deferred_(deferred), strings_(strings),
+          start_and_end_with_enter_(start_and_end_with_enter), display_name_(display_name) {}
+
+protected:
+    void Execute() override {
+        Display *display = XOpenDisplay(display_name_.empty() ? NULL : display_name_.c_str());
+        if (!display) {
+            SetError("Cannot open display: " + display_name_);
             return;
         }
 
-        KeySym keysym = NoSymbol;
-        unsigned int required_modifier = 0;
+        if (!initialize_xtest(display)) {
+            XCloseDisplay(display);
+            SetError("XTest extension not available");
+            return;
+        }
 
-        if (c == ' ') {
-            keysym = XK_space;
-        } else if (isalpha(c)) {
-            if (isupper(c)) {
-                keysym = XK_a + (tolower(c) - 'a');
-                required_modifier = ShiftMask;
-            } else {
-                keysym = XK_a + (c - 'a');
+        // REMOVED: Unused variables to fix compiler warning
+        // auto behavior_profile = SessionManager::get_current_profile();
+        // int base_delay = behavior_profile->get_base_delay();
+        // int delay_variation = behavior_profile->get_delay_variation();
+
+        auto send_enter_key = [&](Display* d) {
+            KeySym ks = XK_Return;
+            KeyCode kc = XKeysymToKeycode(d, ks);
+            if (kc != 0) {
+                send_xtest_key(d, kc, true, 0);
+                XFlush(d);
+                usleep(timing_generator.get_pro_gamer_delay(25, 10) * 1000);
+                send_xtest_key(d, kc, false, 0);
+                XFlush(d);
+                usleep(50 * 1000);
             }
-        } else if (isdigit(c)) {
-            keysym = XK_0 + (c - '0');
-        } else {
-            switch (c) {
-                case '!': keysym = XK_1; required_modifier = ShiftMask; break;
-                case '@': keysym = XK_2; required_modifier = ShiftMask; break;
-                case '#': keysym = XK_3; required_modifier = ShiftMask; break;
-                case '$': keysym = XK_4; required_modifier = ShiftMask; break;
-                case '%': keysym = XK_5; required_modifier = ShiftMask; break;
-                case '^': keysym = XK_6; required_modifier = ShiftMask; break;
-                case '&': keysym = XK_7; required_modifier = ShiftMask; break;
-                case '*': keysym = XK_8; required_modifier = ShiftMask; break;
-                case '(': keysym = XK_9; required_modifier = ShiftMask; break;
-                case ')': keysym = XK_0; required_modifier = ShiftMask; break;
-                case '-': keysym = XK_minus; break;
-                case '_': keysym = XK_minus; required_modifier = ShiftMask; break;
-                case '=': keysym = XK_equal; break;
-                case '+': keysym = XK_equal; required_modifier = ShiftMask; break;
-                case '[': keysym = XK_bracketleft; break;
-                case ']': keysym = XK_bracketright; break;
-                case '{': keysym = XK_bracketleft; required_modifier = ShiftMask; break;
-                case '}': keysym = XK_bracketright; required_modifier = ShiftMask; break;
-                case ';': keysym = XK_semicolon; break;
-                case ':': keysym = XK_semicolon; required_modifier = ShiftMask; break;
-                case '\'': keysym = XK_apostrophe; break;
-                case '"': keysym = XK_apostrophe; required_modifier = ShiftMask; break;
-                case ',': keysym = XK_comma; break;
-                case '<': keysym = XK_comma; required_modifier = ShiftMask; break;
-                case '.': keysym = XK_period; break;
-                case '>': keysym = XK_period; required_modifier = ShiftMask; break;
-                case '/': keysym = XK_slash; break;
-                case '?': keysym = XK_slash; required_modifier = ShiftMask; break;
-                case '\\': keysym = XK_backslash; break;
-                case '|': keysym = XK_backslash; required_modifier = ShiftMask; break;
-                case '`': keysym = XK_grave; break;
-                case '~': keysym = XK_grave; required_modifier = ShiftMask; break;
-                default:
-                    keysym = XStringToKeysym(std::string(1, c).c_str());
-                    if (keysym == NoSymbol) {
-                        keysym = XStringToKeysym(std::string(1, tolower(c)).c_str());
-                        if (isupper(c)) {
-                            required_modifier = ShiftMask;
-                        }
+        };
+
+        for (size_t str_idx = 0; str_idx < strings_.size(); str_idx++) {
+            const std::string& str = strings_[str_idx];
+
+            if (start_and_end_with_enter_) {
+                send_enter_key(display);
+                usleep(timing_generator.get_pro_gamer_delay(40, 15) * 1000);
+            }
+
+            for (size_t i = 0; i < str.length(); i++) {
+                char c = str[i];
+
+                if (timing_generator.should_add_micro_delay()) {
+                    usleep(timing_generator.get_micro_delay() * 1000);
+                }
+
+                KeySym keysym = NoSymbol;
+                unsigned int required_modifier = 0;
+
+                if (c == ' ') {
+                    keysym = XK_space;
+                } else if (isalpha(c)) {
+                    if (isupper(c)) {
+                        keysym = XK_a + (tolower(c) - 'a');
+                        required_modifier = ShiftMask;
+                    } else {
+                        keysym = XK_a + (c - 'a');
                     }
-                    break;
+                } else if (isdigit(c)) {
+                    keysym = XK_0 + (c - '0');
+                } else {
+                    switch (c) {
+                        case '!': keysym = XK_1; required_modifier = ShiftMask; break;
+                        case '@': keysym = XK_2; required_modifier = ShiftMask; break;
+                        case '#': keysym = XK_3; required_modifier = ShiftMask; break;
+                        case '$': keysym = XK_4; required_modifier = ShiftMask; break;
+                        case '%': keysym = XK_5; required_modifier = ShiftMask; break;
+                        case '^': keysym = XK_6; required_modifier = ShiftMask; break;
+                        case '&': keysym = XK_7; required_modifier = ShiftMask; break;
+                        case '*': keysym = XK_8; required_modifier = ShiftMask; break;
+                        case '(': keysym = XK_9; required_modifier = ShiftMask; break;
+                        case ')': keysym = XK_0; required_modifier = ShiftMask; break;
+                        case '-': keysym = XK_minus; break;
+                        case '_': keysym = XK_minus; required_modifier = ShiftMask; break;
+                        case '=': keysym = XK_equal; break;
+                        case '+': keysym = XK_equal; required_modifier = ShiftMask; break;
+                        case '[': keysym = XK_bracketleft; break;
+                        case ']': keysym = XK_bracketright; break;
+                        case '{': keysym = XK_bracketleft; required_modifier = ShiftMask; break;
+                        case '}': keysym = XK_bracketright; required_modifier = ShiftMask; break;
+                        case ';': keysym = XK_semicolon; break;
+                        case ':': keysym = XK_semicolon; required_modifier = ShiftMask; break;
+                        case '\'': keysym = XK_apostrophe; break;
+                        case '"': keysym = XK_apostrophe; required_modifier = ShiftMask; break;
+                        case ',': keysym = XK_comma; break;
+                        case '<': keysym = XK_comma; required_modifier = ShiftMask; break;
+                        case '.': keysym = XK_period; break;
+                        case '>': keysym = XK_period; required_modifier = ShiftMask; break;
+                        case '/': keysym = XK_slash; break;
+                        case '?': keysym = XK_slash; required_modifier = ShiftMask; break;
+                        case '\\': keysym = XK_backslash; break;
+                        case '|': keysym = XK_backslash; required_modifier = ShiftMask; break;
+                        case '`': keysym = XK_grave; break;
+                        case '~': keysym = XK_grave; required_modifier = ShiftMask; break;
+                        default:
+                            keysym = XStringToKeysym(std::string(1, c).c_str());
+                            if (keysym == NoSymbol) {
+                                keysym = XStringToKeysym(std::string(1, tolower(c)).c_str());
+                                if (isupper(c)) {
+                                    required_modifier = ShiftMask;
+                                }
+                            }
+                            break;
+                    }
+                }
+
+                if (keysym == NoSymbol) continue;
+
+                KeyCode keycode = XKeysymToKeycode(display, keysym);
+                if (keycode == 0) continue;
+
+                int press_delay = timing_generator.get_pro_gamer_delay(15, 8);
+                int release_delay = timing_generator.get_pro_gamer_delay(12, 5);
+
+                send_xtest_key(display, keycode, true, required_modifier);
+                XFlush(display);
+                usleep(press_delay * 1000);
+
+                send_xtest_key(display, keycode, false, required_modifier);
+                XFlush(display);
+                usleep(release_delay * 1000);
+            }
+
+            if (start_and_end_with_enter_) {
+                usleep(timing_generator.get_pro_gamer_delay(50, 20) * 1000);
+                send_enter_key(display);
+            }
+
+            if (str_idx < strings_.size() - 1) {
+                usleep(timing_generator.get_pro_gamer_delay(200, 50) * 1000);
             }
         }
 
-        if (keysym == NoSymbol) return;
-
-        KeyCode keycode = XKeysymToKeycode(display, keysym);
-        if (keycode == 0) return;
-
-        int press_delay = timing_generator.get_pro_gamer_delay(15, 8);
-        int release_delay = timing_generator.get_pro_gamer_delay(12, 5);
-
-        send_xtest_key(display, keycode, true, required_modifier);
-        XFlush(display);
-        usleep(press_delay * 1000);
-
-        send_xtest_key(display, keycode, false, required_modifier);
-        XFlush(display);
-        usleep(release_delay * 1000);
+        XSync(display, False);
+        usleep(100 * 1000);
+        XCloseDisplay(display);
     }
 
-    void simulate_typing_mistake(Display* display, char correct_char, std::shared_ptr<BehaviorProfile> behavior_profile) {
-        char wrong_char = mistake_simulator.get_nearby_key(correct_char);
-
-        KeySym wrong_keysym = NoSymbol;
-        unsigned int wrong_modifier = 0;
-
-        if (isalpha(wrong_char)) {
-            if (isupper(wrong_char)) {
-                wrong_keysym = XK_a + (tolower(wrong_char) - 'a');
-                wrong_modifier = ShiftMask;
-            } else {
-                wrong_keysym = XK_a + (wrong_char - 'a');
-            }
-        } else if (isdigit(wrong_char)) {
-            wrong_keysym = XK_0 + (wrong_char - '0');
-        } else {
-            wrong_keysym = XStringToKeysym(std::string(1, wrong_char).c_str());
-        }
-
-        if (wrong_keysym != NoSymbol) {
-            KeyCode wrong_keycode = XKeysymToKeycode(display, wrong_keysym);
-            if (wrong_keycode != 0) {
-                send_xtest_key(display, wrong_keycode, true, wrong_modifier);
-                XFlush(display);
-                usleep(timing_generator.get_pro_gamer_delay(20, 10) * 1000);
-                send_xtest_key(display, wrong_keycode, false, wrong_modifier);
-                XFlush(display);
-
-                int correction_delay = behavior_profile->get_correction_delay();
-                usleep(correction_delay * 1000);
-
-                KeyCode backspace_keycode = XKeysymToKeycode(display, XK_BackSpace);
-                send_xtest_key(display, backspace_keycode, true, 0);
-                XFlush(display);
-                usleep(timing_generator.get_pro_gamer_delay(25, 12) * 1000);
-                send_xtest_key(display, backspace_keycode, false, 0);
-                XFlush(display);
-                usleep(timing_generator.get_pro_gamer_delay(20, 10) * 1000);
-            }
-        }
+    void OnOK() override {
+        deferred_.Resolve(Napi::Boolean::New(Env(), true));
     }
 
-    Napi::Promise::Deferred deferred;
-    std::string str;
-    bool start_and_end_with_enter;
-    std::string display_name;
+    void OnError(const Napi::Error& e) override {
+        deferred_.Reject(Napi::Error::New(Env(), e.Message()).Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred_;
+    std::vector<std::string> strings_;
+    bool start_and_end_with_enter_;
+    std::string display_name_;
 };
+
 class RotateWorker : public Napi::AsyncWorker {
 public:
     RotateWorker(Napi::Env env, Napi::Promise::Deferred deferred, char direction, std::string display_name)
@@ -848,6 +950,43 @@ Napi::Value TypeStringAsync(const Napi::CallbackInfo& info) {
     return deferred.Promise();
 }
 
+Napi::Value TypeStringArrayAsync(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    auto deferred = Napi::Promise::Deferred::New(env);
+
+    if (info.Length() < 2) {
+        deferred.Reject(Napi::TypeError::New(env, "typeArray(strings, display, [startAndEndWithEnter]) requires strings array and display.").Value());
+        return deferred.Promise();
+    }
+
+    std::vector<std::string> strings;
+
+    if (info[0].IsArray()) {
+        Napi::Array arr = info[0].As<Napi::Array>();
+        uint32_t len = arr.Length();
+        for (uint32_t i = 0; i < len; i++) {
+            Napi::Value val = arr[i];
+            if (val.IsString()) {
+                strings.push_back(val.As<Napi::String>().Utf8Value());
+            }
+        }
+    } else if (info[0].IsString()) {
+        strings.push_back(info[0].As<Napi::String>().Utf8Value());
+    } else {
+        deferred.Reject(Napi::TypeError::New(env, "First argument must be string or array of strings").Value());
+        return deferred.Promise();
+    }
+
+    std::string display_name = info[1].As<Napi::String>().Utf8Value();
+    bool start_and_end_with_enter = true;
+    if (info.Length() > 2 && info[2].IsBoolean()) {
+        start_and_end_with_enter = info[2].As<Napi::Boolean>().Value();
+    }
+
+    TypeStringArrayWorker* worker = new TypeStringArrayWorker(env, deferred, strings, start_and_end_with_enter, display_name);
+    worker->Queue();
+    return deferred.Promise();
+}
 Napi::Value RotateAsync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     auto deferred = Napi::Promise::Deferred::New(env);
@@ -923,6 +1062,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("sendKey", Napi::Function::New(env, SendKeyAsync));
     exports.Set("rotate", Napi::Function::New(env, RotateAsync));
     exports.Set("type", Napi::Function::New(env, TypeStringAsync));
+    exports.Set("typeArray", Napi::Function::New(env, TypeStringArrayAsync));
     exports.Set("keyDown", Napi::Function::New(env, KeyDownAsync));
     exports.Set("keyUp", Napi::Function::New(env, KeyUpAsync));
 
