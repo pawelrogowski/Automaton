@@ -1,3 +1,5 @@
+// minimap/processing.js (Optimized Drop-in Replacement)
+
 import { parentPort } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import findSequences from 'find-sequences-native';
@@ -8,6 +10,16 @@ import {
   HEADER_SIZE,
   colorToIndexMap,
 } from './config.js';
+import {
+  PLAYER_X_INDEX,
+  PLAYER_Y_INDEX,
+  PLAYER_Z_INDEX,
+  PLAYER_POS_UPDATE_COUNTER_INDEX,
+} from '../sharedConstants.js';
+
+// --- FIX: Add state to remember the last written position ---
+let lastWrittenPosition = null;
+// --- END FIX ---
 
 /**
  * Analyzes minimap and floor indicator data to determine player position.
@@ -17,11 +29,13 @@ export async function processMinimapData(
   minimapBuffer,
   floorIndicatorBuffer,
   minimapMatcher,
+  workerData,
 ) {
   const startTime = performance.now();
+  const { playerPosSAB } = workerData;
+  const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 
   try {
-    // ... (The logic for finding Z, converting the minimap, etc. is unchanged)
     const floorIndicatorSearchBuffer = Buffer.alloc(
       HEADER_SIZE + floorIndicatorBuffer.length,
     );
@@ -70,21 +84,41 @@ export async function processMinimapData(
     );
 
     if (result?.position) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'gameState/setPlayerMinimapPosition',
-        payload: {
-          x: result.position.x,
-          y: result.position.y,
-          z: result.position.z,
-        },
-      });
-      // Return the duration for performance tracking
+      const newPos = result.position;
+
+      // --- FIX: Check if the position has actually changed before updating ---
+      if (
+        !lastWrittenPosition ||
+        newPos.x !== lastWrittenPosition.x ||
+        newPos.y !== lastWrittenPosition.y ||
+        newPos.z !== lastWrittenPosition.z
+      ) {
+        // Update SharedArrayBuffer for player position
+        if (playerPosArray) {
+          Atomics.store(playerPosArray, PLAYER_X_INDEX, newPos.x);
+          Atomics.store(playerPosArray, PLAYER_Y_INDEX, newPos.y);
+          Atomics.store(playerPosArray, PLAYER_Z_INDEX, newPos.z);
+          Atomics.add(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX, 1);
+          Atomics.notify(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
+        }
+
+        // Also post to Redux for redundancy and other consumers
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'gameState/setPlayerMinimapPosition',
+          payload: { x: newPos.x, y: newPos.y, z: newPos.z },
+        });
+
+        // Update our state
+        lastWrittenPosition = newPos;
+      }
+      // --- END FIX ---
+
       return performance.now() - startTime;
     }
   } catch (err) {
     console.error(`[MinimapProcessing] Error: ${err.message}`);
   }
 
-  return null; // Return null if no position was found
+  return null;
 }

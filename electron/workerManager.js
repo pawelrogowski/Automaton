@@ -1,4 +1,4 @@
-// @workerManager.js  (drop-in replacement)
+// @workerManager.js (Definitive Freeze Fix)
 
 import { Worker } from 'worker_threads';
 import path from 'path';
@@ -10,6 +10,10 @@ import { showNotification } from './notificationHandler.js';
 import { createLogger } from './utils/logger.js';
 import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
+import {
+  PLAYER_POS_SAB_SIZE,
+  PATH_DATA_SAB_SIZE,
+} from './workers/sharedConstants.js';
 
 const log = createLogger();
 
@@ -28,11 +32,8 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const WORKER_INIT_DELAY = 50;
-const STORE_UPDATE_DEBOUNCE = 5; // 32 ms
+const STORE_UPDATE_DEBOUNCE = 5;
 
-// ------------------------------------------------------------------
-// Small non-crypto 32-bit FNV-1a hash for fast equality check
-// ------------------------------------------------------------------
 function quickHash(obj) {
   let h = 0x811c9dc5;
   const str = JSON.stringify(obj);
@@ -43,14 +44,13 @@ function quickHash(obj) {
   return h;
 }
 
-// Workers that need specific state slices
 const WORKER_STATE_DEPENDENCIES = {
   cavebotWorker: [
     'cavebot',
     'global',
-    'gameState',
     'regionCoordinates',
     'statusMessages',
+    'settings',
   ],
   regionMonitor: ['global'],
   screenMonitor: [
@@ -63,7 +63,7 @@ const WORKER_STATE_DEPENDENCIES = {
   minimapMonitor: ['global', 'regionCoordinates'],
   ocrWorker: ['global', 'regionCoordinates'],
   captureWorker: ['global'],
-  pathfinderWorker: ['cavebot', 'gameState'],
+  // Pathfinder is now handled with custom logic below to prevent feedback loops.
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -72,39 +72,27 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'minimapMonitor',
   'ocrWorker',
   'cavebotWorker',
+  'pathfinderWorker',
 ]);
 
 class WorkerManager {
   constructor() {
     const filename = fileURLToPath(import.meta.url);
     this.electronDir = dirname(filename);
-
     this.workers = new Map();
     this.workerPaths = new Map();
     this.restartLocks = new Map();
     this.restartAttempts = new Map();
     this.restartTimeouts = new Map();
-    this.sharedScreenState = null;
+    this.sharedData = null;
     this.workerConfig = {};
     this.paths = { utils: null, workers: null, minimapResources: null };
     this.previousState = null;
-
-    // Debouncing / batching
     this.storeUpdateTimeout = null;
-    this.pendingStateUpdate = false;
-    this.lastUpdateTime = 0;
-
-    // Performance tracking
     this.updateCount = 0;
     this.lastPerfReport = Date.now();
-
-    // Re-usable objects
-    this.reusableUpdateMessage = { type: 'state_diff', payload: {} };
     this.reusableChangedSlices = {};
-
-    // NEW: per-worker last-sent hash cache
     this.workerStateCache = new Map();
-
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
@@ -112,7 +100,6 @@ class WorkerManager {
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
   }
 
-  /* ------------ unchanged helper methods -------------- */
   setupPaths(app, cwd) {
     if (app.isPackaged) {
       this.paths.utils = path.join(
@@ -157,10 +144,9 @@ class WorkerManager {
   }
 
   getWorkerPath(workerName) {
-    const isUUID =
-      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-        workerName,
-      );
+    const isUUID = /^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$/.test(
+      workerName,
+    );
     if (isUUID) {
       return resolve(this.electronDir, './workers', 'luaScriptWorker.js');
     }
@@ -175,11 +161,14 @@ class WorkerManager {
     const syncSAB = new SharedArrayBuffer(
       SYNC_BUFFER_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
-    this.sharedScreenState = { imageSAB, syncSAB };
-    log(
-      'info',
-      '[Worker Manager] Created SharedArrayBuffers for screen capture.',
+    const playerPosSAB = new SharedArrayBuffer(
+      PLAYER_POS_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
+    const pathDataSAB = new SharedArrayBuffer(
+      PATH_DATA_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
+    this.sharedData = { imageSAB, syncSAB, playerPosSAB, pathDataSAB };
+    log('info', '[Worker Manager] Created SharedArrayBuffers.');
   }
 
   handleWorkerError(name, error) {
@@ -205,11 +194,9 @@ class WorkerManager {
     log('info', `[Worker Manager] Worker exited: ${name}, code ${code}`);
     this.workers.delete(name);
     this.workerPaths.delete(name);
-
-    const isUUID =
-      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-        name,
-      );
+    const isUUID = /^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$/.test(
+      name,
+    );
     if (!isUUID && code !== 0) {
       const attempts = this.restartAttempts.get(name) || 0;
       if (!this.restartLocks.get(name) && attempts < MAX_RESTART_ATTEMPTS) {
@@ -241,28 +228,15 @@ class WorkerManager {
     } else if (message.storeUpdate) {
       setGlobalState(message.type, message.payload);
     } else if (message.command === 'requestRegionRescan') {
-      log(
-        'info',
-        '[Worker Manager] Received request for region rescan. Relaying to regionMonitor...',
-      );
       const regionWorkerEntry = this.workers.get('regionMonitor');
       if (regionWorkerEntry?.worker) {
         regionWorkerEntry.worker.postMessage({ command: 'forceRegionSearch' });
-      } else {
-        log(
-          'warn',
-          '[Worker Manager] Could not relay rescan request: regionMonitor is not running.',
-        );
       }
     } else if (message.command === 'executeLuaScript') {
       const state = store.getState();
       const { enabled: luaEnabled } = state.lua;
       const { script, id } = message.payload;
       if (!luaEnabled) {
-        log(
-          'info',
-          `[Worker Manager] Skipping one-shot Lua script execution: ${id} - Lua scripts are disabled`,
-        );
         const cavebotWorkerEntry = this.workers.get('cavebotWorker');
         if (cavebotWorkerEntry?.worker) {
           cavebotWorkerEntry.worker.postMessage({
@@ -274,31 +248,17 @@ class WorkerManager {
         }
         return;
       }
-      log(
-        'info',
-        `[Worker Manager] Received request to execute one-shot Lua script: ${id}`,
-      );
       this.startWorker(id, { id, code: script, type: 'oneshot' }, this.paths);
     } else if (message.type === 'scriptExecutionResult') {
       const { id, success, error } = message;
-      log(
-        'info',
-        `[Worker Manager] One-shot script ${id} finished. Success: ${success}.`,
-      );
-      if (error) {
+      if (error)
         log(
           'error',
           `[Worker Manager] Script ${id} failed with error: ${error}`,
         );
-      }
       const cavebotWorkerEntry = this.workers.get('cavebotWorker');
       if (cavebotWorkerEntry?.worker) {
         cavebotWorkerEntry.worker.postMessage({ type: 'script-finished', id });
-      } else {
-        log(
-          'warn',
-          `[Worker Manager] Could not relay script-finished for ${id}: cavebotWorker is not running.`,
-        );
       }
       this.stopWorker(id);
     } else if (
@@ -323,13 +283,8 @@ class WorkerManager {
     }
   }
 
-  /* ------------ unchanged start/stop helpers -------------- */
   startWorker(name, scriptConfig = null, paths = null) {
-    log('debug', `[Worker Manager] Attempting to start worker: ${name}`);
-    if (this.workers.has(name)) {
-      log('warn', `[Worker Manager] Worker already exists: ${name}`);
-      return this.workers.get(name).worker;
-    }
+    if (this.workers.has(name)) return this.workers.get(name).worker;
     try {
       const workerPath = this.getWorkerPath(name);
       const needsSharedScreen = [
@@ -339,15 +294,24 @@ class WorkerManager {
         'regionMonitor',
         'ocrWorker',
       ].includes(name);
+      const needsPlayerPosSAB = [
+        'minimapMonitor',
+        'pathfinderWorker',
+        'cavebotWorker',
+      ].includes(name);
+      const needsPathDataSAB = ['pathfinderWorker', 'cavebotWorker'].includes(
+        name,
+      );
       const workerData = {
         paths: paths || this.paths,
-        sharedData: needsSharedScreen ? this.sharedScreenState : null,
+        sharedData: needsSharedScreen ? this.sharedData : null,
+        playerPosSAB: needsPlayerPosSAB ? this.sharedData.playerPosSAB : null,
+        pathDataSAB: needsPathDataSAB ? this.sharedData.pathDataSAB : null,
+        enableMemoryLogging: true,
       };
       if (needsSharedScreen) {
-        const state = store.getState();
-        workerData.display = state.global.display;
+        workerData.display = store.getState().global.display;
       }
-      workerData.enableMemoryLogging = true;
       const worker = new Worker(workerPath, { name, workerData });
       this.workers.set(name, { worker, config: scriptConfig });
       worker.on('message', (msg) => this.handleWorkerMessage(msg));
@@ -358,12 +322,11 @@ class WorkerManager {
         if (scriptConfig) {
           worker.postMessage({ type: 'init', script: scriptConfig });
         }
-        if (name !== 'captureWorker') {
-          const isOneShotLua =
-            /^[0-9a-fA-F]{8}-/.test(name) && scriptConfig?.type === 'oneshot';
-          if (!isOneShotLua) {
-            worker.postMessage(store.getState());
-          }
+        if (
+          name !== 'captureWorker' &&
+          !(/^[0-9a-fA-F]{8}-/.test(name) && scriptConfig?.type === 'oneshot')
+        ) {
+          worker.postMessage(store.getState());
         }
       }, WORKER_INIT_DELAY);
       return worker;
@@ -374,10 +337,7 @@ class WorkerManager {
   }
 
   async restartWorker(name, scriptConfig = null) {
-    if (this.restartLocks.get(name)) {
-      log('info', `[Worker Manager] Restart in progress, skipping: ${name}`);
-      return null;
-    }
+    if (this.restartLocks.get(name)) return null;
     this.restartLocks.set(name, true);
     this.restartAttempts.set(name, (this.restartAttempts.get(name) || 0) + 1);
     this.clearRestartLockWithTimeout(name);
@@ -397,39 +357,24 @@ class WorkerManager {
 
   stopWorker(name) {
     const workerEntry = this.workers.get(name);
-    if (!workerEntry?.worker) {
-      return Promise.resolve();
-    }
-
-    const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name);
-    const supportsGracefulShutdown = GRACEFUL_SHUTDOWN_WORKERS.has(name);
-
+    if (!workerEntry?.worker) return Promise.resolve();
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        log(
-          'warn',
-          `[Worker Manager] Force terminating worker after timeout: ${name}`,
-        );
-        if (!workerEntry.worker.killed) {
+        if (this.workers.has(name) && !workerEntry.worker.killed) {
           workerEntry.worker.terminate();
         }
         resolve();
       }, 5000);
-
       workerEntry.worker.once('exit', () => {
         clearTimeout(timeout);
-        log('debug', `Worker ${name} has confirmed exit.`);
         resolve();
       });
-
-      if (isLuaWorker || supportsGracefulShutdown) {
-        log(
-          'info',
-          `[Worker Manager] Requesting graceful shutdown for worker: ${name}`,
-        );
+      if (
+        /^[0-9a-fA-F]{8}-/.test(name) ||
+        GRACEFUL_SHUTDOWN_WORKERS.has(name)
+      ) {
         workerEntry.worker.postMessage({ type: 'shutdown' });
       } else {
-        log('info', `[Worker Manager] Terminating worker: ${name}`);
         workerEntry.worker.terminate();
       }
     });
@@ -437,75 +382,107 @@ class WorkerManager {
 
   async stopAllWorkers() {
     log('info', '[Worker Manager] Stopping all workers...');
-    const terminationPromises = [];
-    for (const name of this.workers.keys()) {
-      terminationPromises.push(this.stopWorker(name));
-    }
-    await Promise.all(terminationPromises);
+    await Promise.all(
+      Array.from(this.workers.keys()).map((name) => this.stopWorker(name)),
+    );
     log('info', '[Worker Manager] All workers have been terminated.');
   }
 
-  /* ------------ optimized state diff -------------- */
   getStateChanges(currentState, previousState) {
-    for (const key in this.reusableChangedSlices)
-      delete this.reusableChangedSlices[key];
+    const changedSlices = {};
     let hasChanges = false;
     for (const key in currentState) {
       if (currentState[key] !== previousState[key]) {
-        this.reusableChangedSlices[key] = currentState[key];
+        changedSlices[key] = currentState[key];
         hasChanges = true;
       }
     }
-    return hasChanges ? this.reusableChangedSlices : null;
+    return hasChanges ? changedSlices : null;
   }
 
   broadcastStateUpdate(changedSlices) {
     const changedKeys = Object.keys(changedSlices);
-    for (const [name, workerEntry] of this.workers) {
-      if (!workerEntry.worker || name === 'captureWorker') continue;
+    const currentState = store.getState(); // Get the full current state for comparison
 
-      const isOneShotLua =
-        /^[0-9a-fA-F]{8}-/.test(name) && workerEntry.config?.type === 'oneshot';
-      if (isOneShotLua) continue;
+    for (const [name, workerEntry] of this.workers) {
+      if (
+        !workerEntry.worker ||
+        name === 'captureWorker' ||
+        (/^[0-9a-fA-F]{8}-/.test(name) &&
+          workerEntry.config?.type === 'oneshot')
+      )
+        continue;
+
+      // --- FIX: Custom, precise dependency check for pathfinderWorker ---
+      if (name === 'pathfinderWorker') {
+        const relevantPayload = {};
+        let needsUpdate = false;
+
+        if (changedKeys.includes('gameState')) {
+          needsUpdate = true;
+          relevantPayload.gameState = changedSlices.gameState;
+        }
+
+        if (changedKeys.includes('cavebot')) {
+          const oldCavebot = this.previousState.cavebot;
+          const newCavebot = currentState.cavebot;
+          // Only trigger an update if the *inputs* to the pathfinder have changed.
+          // This prevents an update caused by its own `pathfindingFeedback` output.
+          if (
+            oldCavebot.wptId !== newCavebot.wptId ||
+            oldCavebot.currentSection !== newCavebot.currentSection ||
+            oldCavebot.waypointSections !== newCavebot.waypointSections ||
+            oldCavebot.specialAreas !== newCavebot.specialAreas
+          ) {
+            needsUpdate = true;
+            relevantPayload.cavebot = newCavebot;
+          }
+        }
+
+        if (needsUpdate) {
+          workerEntry.worker.postMessage({
+            type: 'state_diff',
+            payload: relevantPayload,
+          });
+        }
+        continue; // Move to the next worker
+      }
+      // --- END FIX ---
 
       const workerDeps = WORKER_STATE_DEPENDENCIES[name];
+      const relevant = {};
+      let needsUpdate = false;
       if (workerDeps) {
-        const needsUpdate = changedKeys.some((k) => workerDeps.includes(k));
-        if (!needsUpdate) continue;
-
-        const relevant = {};
-        for (const k of changedKeys)
-          if (workerDeps.includes(k)) relevant[k] = changedSlices[k];
-
-        if (Object.keys(relevant).length) {
-          const hash = quickHash(relevant);
-          if (this.workerStateCache.get(name) !== hash) {
-            this.workerStateCache.set(name, hash);
-            workerEntry.worker.postMessage({
-              type: 'state_diff',
-              payload: relevant,
-            });
+        for (const k of changedKeys) {
+          if (workerDeps.includes(k)) {
+            relevant[k] = changedSlices[k];
+            needsUpdate = true;
           }
         }
       } else {
-        const hash = quickHash(changedSlices);
+        Object.assign(relevant, changedSlices);
+        needsUpdate = true;
+      }
+      if (needsUpdate && Object.keys(relevant).length) {
+        const hash = quickHash(relevant);
         if (this.workerStateCache.get(name) !== hash) {
           this.workerStateCache.set(name, hash);
           workerEntry.worker.postMessage({
             type: 'state_diff',
-            payload: changedSlices,
+            payload: relevant,
           });
         }
       }
     }
   }
 
-  /* ------------ unchanged performance / debounce -------------- */
   logPerformanceStats() {
     const now = Date.now();
-    const timeSinceLastReport = now - this.lastPerfReport;
-    if (timeSinceLastReport >= 10000) {
-      const ups = ((this.updateCount / timeSinceLastReport) * 1000).toFixed(1);
+    if (now - this.lastPerfReport >= 10000) {
+      const ups = (
+        (this.updateCount / (now - this.lastPerfReport)) *
+        1000
+      ).toFixed(1);
       log(
         'debug',
         `[Worker Manager] Performance: ${ups} store updates/sec, ${this.workers.size} active workers`,
@@ -526,21 +503,18 @@ class WorkerManager {
   async handleStoreUpdate() {
     const perfStart = performance.now();
     this.updateCount++;
-
     try {
       const currentState = store.getState();
       const { windowId, display } = currentState.global;
-      const { enabled: cavebotEnabled } = currentState.cavebot;
       const { enabled: luaEnabled } = currentState.lua;
 
       if (windowId && display) {
-        if (!this.sharedScreenState) this.createSharedBuffers();
-
+        if (!this.sharedData) this.createSharedBuffers();
         if (
           !this.previousState ||
           currentState.global.windowId !== this.previousState.global.windowId
         ) {
-          const syncArray = new Int32Array(this.sharedScreenState.syncSAB);
+          const syncArray = new Int32Array(this.sharedData.syncSAB);
           Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
         }
 
@@ -567,29 +541,38 @@ class WorkerManager {
         if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
           this.startWorker('ocrWorker');
         if (
-          cavebotEnabled &&
           this.workerConfig.cavebotWorker &&
           !this.workers.has('cavebotWorker')
         )
-          this.startWorker('cavebotWorker', null, this.paths);
+          this.startWorker('cavebotWorker');
+        if (
+          this.workerConfig.pathfinderWorker &&
+          !this.workers.has('pathfinderWorker')
+        )
+          this.startWorker('pathfinderWorker');
       } else {
-        const essentialWorkers = new Set([
+        const persistentWorkers = [
           'captureWorker',
           'regionMonitor',
           'screenMonitor',
           'minimapMonitor',
-          'pathfinderWorker',
           'ocrWorker',
           'cavebotWorker',
-        ]);
-        const workersToStop = Array.from(this.workers.keys()).filter(
-          (name) => !essentialWorkers.has(name),
+          'pathfinderWorker',
+        ];
+        const workersToStop = Array.from(this.workers.keys()).filter((name) =>
+          persistentWorkers.includes(name),
         );
-        if (workersToStop.length)
+        if (workersToStop.length > 0) {
+          log(
+            'info',
+            '[Worker Manager] Window not detected, stopping persistent workers...',
+          );
           await Promise.all(workersToStop.map((w) => this.stopWorker(w)));
-        if (this.sharedScreenState) {
+        }
+        if (this.sharedData) {
           log('info', '[Worker Manager] Clearing SharedArrayBuffers.');
-          this.sharedScreenState = null;
+          this.sharedData = null;
         }
       }
 
@@ -604,7 +587,6 @@ class WorkerManager {
     } catch (error) {
       log('error', '[Worker Manager] Error in handleStoreUpdate:', error);
     }
-
     const updateTime = performance.now() - perfStart;
     if (updateTime > 16) {
       log(
@@ -619,40 +601,35 @@ class WorkerManager {
     const runningScriptWorkerIds = new Set(
       Array.from(this.workers.keys()).filter((n) => /^[0-9a-fA-F]{8}-/.test(n)),
     );
-
     if (this.workerConfig.enableLuaScriptWorkers && luaEnabled) {
       const activeScripts = allPersistentScripts.filter((s) => s.enabled);
       const activeScriptIds = new Set(activeScripts.map((s) => s.id));
-
-      const workersToStop = [];
-      for (const id of runningScriptWorkerIds) {
-        if (!activeScriptIds.has(id)) workersToStop.push(this.stopWorker(id));
-      }
-      if (workersToStop.length) await Promise.all(workersToStop);
-
+      const workersToStop = Array.from(runningScriptWorkerIds).filter(
+        (id) => !activeScriptIds.has(id),
+      );
+      if (workersToStop.length)
+        await Promise.all(workersToStop.map((id) => this.stopWorker(id)));
       for (const script of activeScripts) {
-        const workerName = script.id;
-        const entry = this.workers.get(workerName);
+        const entry = this.workers.get(script.id);
         if (!entry) {
-          this.startWorker(workerName, script, this.paths);
+          this.startWorker(script.id, script, this.paths);
+        } else if (
+          entry.config &&
+          (entry.config.code !== script.code ||
+            entry.config.loopMin !== script.loopMin ||
+            entry.config.loopMax !== script.loopMax)
+        ) {
+          await this.restartWorker(script.id, script);
         } else {
-          const old = entry.config;
-          if (
-            old &&
-            (old.code !== script.code ||
-              old.loopMin !== script.loopMin ||
-              old.loopMax !== script.loopMax)
-          ) {
-            await this.restartWorker(workerName, script);
-          } else {
-            entry.config = script;
-          }
+          entry.config = script;
         }
       }
     } else {
-      const workersToStop = Array.from(runningScriptWorkerIds);
-      if (workersToStop.length)
-        await Promise.all(workersToStop.map((id) => this.stopWorker(id)));
+      if (runningScriptWorkerIds.size > 0) {
+        await Promise.all(
+          Array.from(runningScriptWorkerIds).map((id) => this.stopWorker(id)),
+        );
+      }
     }
   }
 

@@ -104,6 +104,7 @@ async function performOperation() {
         minimapData,
         floorIndicatorData,
         minimapMatcher,
+        workerData, // Pass workerData to processing.js
       );
       // If the duration is a valid number, add it to our tracker
       if (typeof duration === 'number') {
