@@ -32,7 +32,7 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const WORKER_INIT_DELAY = 50;
-const STORE_UPDATE_DEBOUNCE = 5;
+const STORE_UPDATE_DEBOUNCE = 0;
 
 function quickHash(obj) {
   let h = 0x811c9dc5;
