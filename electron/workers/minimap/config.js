@@ -1,7 +1,7 @@
 import { PALETTE_DATA } from '../../constants/palette.js';
 
 // --- Worker Timing ---
-export const MAIN_LOOP_INTERVAL = 5;
+export const MAIN_LOOP_INTERVAL = 1;
 
 // --- Performance Logging ---
 export const PERFORMANCE_LOGGING_ENABLED = true; // Set to false to disable logging

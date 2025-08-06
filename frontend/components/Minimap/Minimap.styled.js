@@ -25,10 +25,10 @@ const StyledMinimap = styled.div`
       border: 1px solid rgb(53, 53, 53);
       border-radius: 4px;
       padding: 4px;
-      width: 25px;
-      height: 25px;
+      width: 42px;
+      height: 42px;
       cursor: pointer;
-      font-size: 11px;
+      font-size: 21px;
 
       &:hover {
         border: 1px solid rgb(80, 80, 80);
@@ -38,7 +38,7 @@ const StyledMinimap = styled.div`
 
     span {
       margin: 10px 0;
-      font-size: 11px;
+      font-size: 21px;
     }
   }
   .minimap-mode-control {
@@ -86,9 +86,9 @@ export const ControlButton = styled.button`
   color: #e0e0e0;
   border: none;
   // ============================= THE CHANGE: SMALLER BUTTONS =============================
-  width: 20px;
-  height: 20px;
-  font-size: 14px; // Slightly smaller font for the new size
+  width: 32px;
+  height: 32px;
+  font-size: 18px; // Slightly smaller font for the new size
   // =====================================================================================
   cursor: pointer;
   display: flex;

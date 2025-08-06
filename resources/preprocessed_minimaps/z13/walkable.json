@@ -1,8 +1,6 @@
 {
-  "z": 13,
   "minX": 31744,
   "minY": 30976,
   "width": 2560,
-  "height": 2048,
-  "bitsPerTile": 1
+  "height": 2048
 }
