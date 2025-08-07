@@ -15,6 +15,10 @@ import {
   PATH_UPDATE_COUNTER_INDEX,
   PATH_WAYPOINTS_START_INDEX,
   PATH_WAYPOINT_SIZE,
+  PATH_START_X_INDEX,
+  PATH_START_Y_INDEX,
+  PATH_START_Z_INDEX,
+  PATH_CHEBYSHEV_DISTANCE_INDEX,
 } from './sharedConstants.js';
 
 // --- Worker Configuration ---
@@ -58,6 +62,7 @@ let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
 let playerMinimapPosition = null;
 let path = [];
+let pathChebyshevDistance = null;
 
 // --- Shared Buffer Setup ---
 const { playerPosSAB, pathDataSAB } = workerData;
@@ -578,28 +583,51 @@ async function performOperation() {
       if (newPathDataCounter > lastPathDataCounter) {
         const lastPathUpdateTime = performance.now();
         const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
-        const newPath = [];
-        for (let i = 0; i < pathLength; i++) {
-          const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-          newPath.push({
-            x: Atomics.load(pathDataArray, offset + 0),
-            y: Atomics.load(pathDataArray, offset + 1),
-            z: Atomics.load(pathDataArray, offset + 2),
-          });
-        }
-        path = newPath;
-        lastPathDataCounter = newPathDataCounter;
+        const pathStartX = Atomics.load(pathDataArray, PATH_START_X_INDEX);
+        const pathStartY = Atomics.load(pathDataArray, PATH_START_Y_INDEX);
+        const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
 
-        pathingLogger('info', `Received new path. Length: ${pathLength}`);
-        if (lastPositionUpdateTime) {
-          const timeDiff = lastPathUpdateTime - lastPositionUpdateTime;
+        // Staleness Check
+        if (
+          playerMinimapPosition.x !== pathStartX ||
+          playerMinimapPosition.y !== pathStartY ||
+          playerMinimapPosition.z !== pathStartZ
+        ) {
           pathingLogger(
-            'info',
-            `Path received ${timeDiff.toFixed(
-              2,
-            )}ms after position update.`,
+            'warn',
+            `Stale path received. Player at (${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}), path for (${pathStartX},${pathStartY},${pathStartZ}). Discarding.`,
           );
-          lastPositionUpdateTime = null;
+          // We still update the counter to acknowledge we've seen this update,
+          // but we don't update the path, forcing the bot to wait for a valid one.
+          lastPathDataCounter = newPathDataCounter;
+        } else {
+          pathChebyshevDistance = Atomics.load(
+            pathDataArray,
+            PATH_CHEBYSHEV_DISTANCE_INDEX,
+          );
+          const newPath = [];
+          for (let i = 0; i < pathLength; i++) {
+            const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
+            newPath.push({
+              x: Atomics.load(pathDataArray, offset + 0),
+              y: Atomics.load(pathDataArray, offset + 1),
+              z: Atomics.load(pathDataArray, offset + 2),
+            });
+          }
+          path = newPath;
+          lastPathDataCounter = newPathDataCounter;
+
+          pathingLogger('info', `Received new path. Length: ${pathLength}`);
+          if (lastPositionUpdateTime) {
+            const timeDiff = lastPathUpdateTime - lastPositionUpdateTime;
+            pathingLogger(
+              'info',
+              `Path received ${timeDiff.toFixed(
+                2,
+              )}ms after position update.`,
+            );
+            lastPositionUpdateTime = null;
+          }
         }
       }
     }
@@ -670,10 +698,9 @@ async function performOperation() {
       return;
     }
 
-    const chebyshevDistance = getChebyshevDistance(
-      playerMinimapPosition,
-      targetWaypoint,
-    );
+    const chebyshevDistance =
+      pathChebyshevDistance ??
+      getChebyshevDistance(playerMinimapPosition, targetWaypoint);
     const hasArrived =
       targetWaypoint.type === 'Node' &&
       chebyshevDistance <= targetWaypoint.range - 1;
