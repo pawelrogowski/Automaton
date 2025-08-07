@@ -34,7 +34,7 @@ const config = {
   thereIsNoWayLingerMs: 5000,
   keyboardFailureThreshold: 2,
   keyboardFailureWindowMs: 10000,
-  useMapclicks: true,
+  useMapclicks: false,
   switchToKeyboardDistance: 4,
   mapClickMaxDistance: 30,
   mapClickPostClickDelayMs: 300,
@@ -90,7 +90,7 @@ let floorChangeGraceUntil = 0;
 let lastPositionUpdateTime = null;
 
 // --- Redux Update Throttling for Cavebot ---
-const CAVEBOT_REDUX_UPDATE_INTERVAL_MS = 150;
+const CAVEBOT_REDUX_UPDATE_INTERVAL_MS = 32;
 let lastStandTimeUpdateTime = 0;
 let standTimeUpdateTimeout = null;
 let pendingStandTime = null;
@@ -126,10 +126,7 @@ const CavebotActionStatus = {
   IDLE: 'IDLE',
   WALKING: 'WALKING',
   USING_LADDER: 'USING_LADDER',
-  USING_ROPE: 'USING_ROPE',
-  USING_SHOVEL: 'USING_SHOVEL',
   USING_MACHETE: 'USING_MACHETE',
-  PERFORMING_USE: 'PERFORMING_USE',
   EXECUTING_SCRIPT: 'EXECUTING_SCRIPT',
   SETTING_LURE: 'SETTING_LURE',
 };
@@ -138,8 +135,6 @@ const CavebotActionStatus = {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const getDistance = (p1, p2) =>
   Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-const getChebyshevDistance = (p1, p2) =>
-  Math.max(Math.abs(p1.x - p2.x), Math.abs(p1.y - p2.y));
 const getDirectionKey = (current, target) => {
   const dx = target.x - current.x;
   const dy = target.y - current.y;
@@ -208,13 +203,16 @@ const awaitStateChange = (condition, timeoutMs) => {
   });
 };
 
-const awaitNextStep = (posCounterBeforeMove, pathCounterBeforeMove, timeoutMs) => {
+const awaitWalkConfirmation = (
+  posCounterBeforeMove,
+  pathCounterBeforeMove,
+  timeoutMs,
+) => {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       clearInterval(intervalId);
-      reject(new Error(`awaitNextStep timed out after ${timeoutMs}ms`));
+      reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-
     const intervalId = setInterval(() => {
       const currentPosCounter = Atomics.load(
         playerPosArray,
@@ -224,14 +222,88 @@ const awaitNextStep = (posCounterBeforeMove, pathCounterBeforeMove, timeoutMs) =
         pathDataArray,
         PATH_UPDATE_COUNTER_INDEX,
       );
-
       const posChanged = currentPosCounter > posCounterBeforeMove;
       const pathChanged = currentPathCounter > pathCounterBeforeMove;
-
       if (posChanged && pathChanged) {
         clearTimeout(timeoutId);
         clearInterval(intervalId);
         resolve(true);
+      }
+    }, STATE_CHANGE_POLL_INTERVAL);
+  });
+};
+
+const awaitStandConfirmation = (initialPos, targetPos, timeoutMs) => {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const intervalId = setInterval(() => {
+      const finalPos = {
+        x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+        y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+        z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+      };
+      const zChanged = finalPos.z !== initialPos.z;
+      const teleported =
+        getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold;
+      const reachedTarget =
+        finalPos.x === targetPos.x &&
+        finalPos.y === targetPos.y &&
+        finalPos.z === targetPos.z;
+      if (zChanged || teleported || reachedTarget) {
+        clearInterval(intervalId);
+        resolve({ success: true, finalPos });
+      }
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(intervalId);
+        reject(
+          new Error(`awaitStandConfirmation timed out after ${timeoutMs}ms`),
+        );
+      }
+    }, STATE_CHANGE_POLL_INTERVAL);
+  });
+};
+
+const awaitValidPath = (targetZ, timeoutMs) => {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+
+    // Immediate check: See if a valid path for the target Z-level is already in the SAB.
+    const currentPathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
+    const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
+    if (pathLength > 0 && currentPathStartZ === targetZ) {
+      pathingLogger(
+        'info',
+        `awaitValidPath: Valid path already present for Z=${targetZ}.`,
+      );
+      resolve(true);
+      return;
+    }
+
+    let lastSeenPathCounter = Atomics.load(
+      pathDataArray,
+      PATH_UPDATE_COUNTER_INDEX,
+    );
+
+    const intervalId = setInterval(() => {
+      const newPathCounter = Atomics.load(
+        pathDataArray,
+        PATH_UPDATE_COUNTER_INDEX,
+      );
+
+      if (newPathCounter > lastSeenPathCounter) {
+        const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
+        lastSeenPathCounter = newPathCounter;
+
+        // Check if this new path is for the Z-level we're waiting for.
+        if (pathStartZ === targetZ) {
+          clearInterval(intervalId);
+          resolve(true);
+        }
+      }
+
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(intervalId);
+        reject(new Error(`awaitValidPath timed out after ${timeoutMs}ms`));
       }
     }, STATE_CHANGE_POLL_INTERVAL);
   });
@@ -407,29 +479,7 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
   }
   return false;
 };
-const handleUseAction = async (targetCoords) => {
-  await delay(config.preClickDelayMs);
-  const { gameWorld, tileSize } = currentState.regionCoordinates.regions;
-  if (!gameWorld || !tileSize) return false;
-  const initialPos = { ...playerMinimapPosition };
-  const clickCoords = getAbsoluteGameWorldClickCoordinates(
-    targetCoords.x,
-    targetCoords.y,
-    initialPos,
-    gameWorld,
-    tileSize,
-    'center',
-  );
-  if (!clickCoords) return false;
-  mouseController.rightClick(
-    parseInt(currentState.global.windowId, 10),
-    clickCoords.x,
-    clickCoords.y,
-    currentState.global.display || ':0',
-  );
-  await delay(config.postUseDelayMs);
-  return true;
-};
+
 const handleLadderAction = async (targetCoords) => {
   await delay(config.preClickDelayMs);
   const { gameWorld, tileSize } = currentState.regionCoordinates.regions;
@@ -477,66 +527,72 @@ const handleScriptAction = async (targetWpt) => {
 };
 const handleStandAction = async (targetWaypoint) => {
   const initialPos = { ...playerMinimapPosition };
-  const moveKey = getDirectionKey(initialPos, targetWaypoint);
-  if (!moveKey) return false;
 
-  const posCounterBeforeMove = lastPlayerPosCounter;
-  const pathCounterBeforeMove = lastPathDataCounter;
-
-  keypress.sendKey(moveKey, currentState.global.display || ':0');
+  // Send the key to move one step.
+  keypress.sendKey(
+    getDirectionKey(initialPos, targetWaypoint),
+    currentState.global.display || ':0',
+  );
 
   try {
-    await awaitNextStep(posCounterBeforeMove, pathCounterBeforeMove, 1500);
-  } catch (error) {
-    pathingLogger('error', `Stand action failed: ${error.message}`);
-    return false;
-  }
+    // Use the existing confirmation logic which correctly polls for a Z-level change or significant move.
+    const { finalPos } = await awaitStandConfirmation(
+      initialPos,
+      targetWaypoint,
+      1500, // A reasonable timeout for a single step.
+    );
 
-  const finalPos = playerMinimapPosition;
-  const success =
-    finalPos.z !== initialPos.z ||
-    getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold ||
-    (finalPos.x === targetWaypoint.x && finalPos.y === targetWaypoint.y);
+    // If awaitStandConfirmation resolves, the move was successful.
+    pathingLogger(
+      'info',
+      `Stand action successful. New position: { x: ${finalPos.x}, y: ${finalPos.y}, z: ${finalPos.z} }`,
+    );
 
-  if (success) {
+    // If the floor changed, allow a grace period before checking for z-level mismatches.
     if (finalPos.z !== initialPos.z) {
-      floorChangeGraceUntil = Date.now() + 500;
+      floorChangeGraceUntil = Date.now() + 100;
     }
+    // If the player moved a significant distance (e.g., teleport), allow a grace period for stuck detection.
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       stuckDetectionGraceUntil = Date.now() + config.postTeleportGraceMs;
     }
-  }
 
-  return success;
+    // By returning true, we signal to the main loop that it's time to advanceToNextWaypoint.
+    // The pathfinder will then get the new target and generate a path from our new location.
+    // This resolves the deadlock.
+    return true;
+  } catch (error) {
+    // The move was not confirmed within the timeout.
+    pathingLogger('error', `Stand action failed: ${error.message}`);
+    return false;
+  }
 };
 
 const handleWalkAction = async (currentPath, chebyshevDistance) => {
   currentActionStatus = CavebotActionStatus.WALKING;
-  const shouldUseKeyboard = true;
 
-  if (shouldUseKeyboard) {
-    const nextStep = currentPath[0];
-    const positionBeforeMove = { ...playerMinimapPosition };
-    const moveKey = getDirectionKey(positionBeforeMove, nextStep);
+  const nextStep = currentPath[0];
+  const positionBeforeMove = { ...playerMinimapPosition };
 
-    if (!moveKey) {
-      await delay(20);
-      return;
-    }
+  const posCounterBeforeMove = lastPlayerPosCounter;
+  const pathCounterBeforeMove = lastPathDataCounter;
 
-    const posCounterBeforeMove = lastPlayerPosCounter;
-    const pathCounterBeforeMove = lastPathDataCounter;
+  keypress.sendKey(
+    getDirectionKey(positionBeforeMove, nextStep),
+    currentState.global.display,
+  );
 
-    keypress.sendKey(moveKey, currentState.global.display || ':0');
-
-    try {
-      pathingLogger('info', `Step sent. Waiting for pos & path update...`);
-      await awaitNextStep(posCounterBeforeMove, pathCounterBeforeMove, 2000);
-      pathingLogger('info', `Update received. Proceeding.`);
-    } catch (error) {
-      pathingLogger('error', `Walk step failed: ${error.message}`);
-      recentKeyboardFailures.push(Date.now());
-    }
+  try {
+    pathingLogger('info', `Step sent. Waiting for pos & path update...`);
+    await awaitWalkConfirmation(
+      posCounterBeforeMove,
+      pathCounterBeforeMove,
+      2000,
+    );
+    pathingLogger('info', `Update received. Proceeding.`);
+  } catch (error) {
+    pathingLogger('error', `Walk step failed: ${error.message}`);
+    recentKeyboardFailures.push(Date.now());
   }
 };
 
@@ -622,9 +678,7 @@ async function performOperation() {
             const timeDiff = lastPathUpdateTime - lastPositionUpdateTime;
             pathingLogger(
               'info',
-              `Path received ${timeDiff.toFixed(
-                2,
-              )}ms after position update.`,
+              `Path received ${timeDiff.toFixed(2)}ms after position update.`,
             );
             lastPositionUpdateTime = null;
           }
@@ -698,9 +752,7 @@ async function performOperation() {
       return;
     }
 
-    const chebyshevDistance =
-      pathChebyshevDistance ??
-      getChebyshevDistance(playerMinimapPosition, targetWaypoint);
+    const chebyshevDistance = pathChebyshevDistance;
     const hasArrived =
       targetWaypoint.type === 'Node' &&
       chebyshevDistance <= targetWaypoint.range - 1;
@@ -728,29 +780,7 @@ async function performOperation() {
       currentActionStatus = CavebotActionStatus.SETTING_LURE;
       actionSucceeded = true;
       reasonForSuccess = 'Lure waypoint reached';
-    } else if (
-      ['Shovel', 'Machete', 'Rope'].includes(targetWaypoint.type) &&
-      pathDistance === 0
-    ) {
-      currentActionStatus =
-        CavebotActionStatus[`USING_${targetWaypoint.type.toUpperCase()}`];
-      actionSucceeded = await handleZLevelToolAction(
-        targetWaypoint.type,
-        playerMinimapPosition,
-      );
-      if (actionSucceeded) {
-        reasonForSuccess = `Used ${targetWaypoint.type} successfully`;
-      }
-    } else if (targetWaypoint.type === 'Use' && pathDistance === 1) {
-      currentActionStatus = CavebotActionStatus.PERFORMING_USE;
-      actionSucceeded = await handleUseAction(targetWaypoint);
-      if (actionSucceeded) {
-        reasonForSuccess = 'Use action succeeded';
-      }
-    } else if (
-      targetWaypoint.type === 'Stand' &&
-      chebyshevDistance === 1
-    ) {
+    } else if (targetWaypoint.type === 'Stand' && chebyshevDistance === 1) {
       currentActionStatus = CavebotActionStatus.IDLE;
       actionSucceeded = await handleStandAction(targetWaypoint);
       if (actionSucceeded) {
