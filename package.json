@@ -76,6 +76,7 @@
     "compression-webpack-plugin": "^11.1.0",
     "copy-webpack-plugin": "^11.0.0",
     "find-sequences-native": "file:./nativeModules/findSequences",
+    "find-health-bars-native": "file:./nativeModules/findHealthBars",
     "font-ocr": "file:./nativeModules/fontOcr",
     "keypress-native": "file:./nativeModules/keypress",
     "konva": "^9.3.20",
@@ -87,7 +88,6 @@
     "path-browserify": "^1.0.1",
     "pathfinder-native": "file:./nativeModules/pathfinder",
     "play-sound": "^1.1.6",
-    "pngjs": "^7.0.0",
     "process": "^0.11.10",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
@@ -100,7 +100,6 @@
     "react-router-dom": "^6.28.0",
     "react-table": "^7.8.0",
     "sharp": "^0.34.2",
-    "shm-typed-array": "^0.1.1",
     "styled-components": "^6.1.6",
     "use-image": "^1.1.4",
     "uuid": "^11.0.3",
@@ -111,6 +110,7 @@
     "mouse-controller": "file:./nativeModules/mouseController"
   },
   "devDependencies": {
+    "pngjs": "^7.0.0",
     "@babel/core": "^7.23.6",
     "@babel/eslint-parser": "^7.23.3",
     "@babel/preset-env": "^7.23.6",
