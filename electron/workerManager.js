@@ -25,6 +25,7 @@ const DEFAULT_WORKER_CONFIG = {
   ocrWorker: true,
   cavebotWorker: true,
   pathfinderWorker: true,
+  entityMonitor: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -53,6 +54,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'settings',
   ],
   regionMonitor: ['global'],
+  entityMonitor: ['global', 'regionCoordinates'],
   screenMonitor: [
     'global',
     'regionCoordinates',
@@ -73,6 +75,7 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'ocrWorker',
   'cavebotWorker',
   'pathfinderWorker',
+  'entityMonitor',
 ]);
 
 class WorkerManager {
@@ -293,6 +296,7 @@ class WorkerManager {
         'minimapMonitor',
         'regionMonitor',
         'ocrWorker',
+        'entityMonitor',
       ].includes(name);
       const needsPlayerPosSAB = [
         'minimapMonitor',
@@ -529,6 +533,11 @@ class WorkerManager {
         )
           this.startWorker('regionMonitor');
         if (
+          this.workerConfig.entityMonitor &&
+          !this.workers.has('entityMonitor')
+        )
+          this.startWorker('entityMonitor');
+        if (
           this.workerConfig.screenMonitor &&
           !this.workers.has('screenMonitor')
         )
@@ -559,6 +568,7 @@ class WorkerManager {
           'ocrWorker',
           'cavebotWorker',
           'pathfinderWorker',
+          'entityMonitor',
         ];
         const workersToStop = Array.from(this.workers.keys()).filter((name) =>
           persistentWorkers.includes(name),
