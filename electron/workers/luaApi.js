@@ -672,6 +672,7 @@ export const createLuaApi = (context) => {
         { name: 'connectionLostModal' },
         { name: 'connectionFailedModal' },
         { name: 'warningModal' },
+        { name: 'notLoggedInAnymoreModal' },
       ];
       let closedAModal;
       do {
@@ -687,11 +688,14 @@ export const createLuaApi = (context) => {
               modal?.children?.ok;
             if (button?.x && button?.y) {
               logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
-              if (modalInfo.name === 'ipChangedModal') {
+              if (
+                modalInfo.name === 'ipChangedModal' ||
+                modalInfo.name === 'notLoggedInAnymoreModal'
+              ) {
                 await keyPress(display, 'Escape');
-                await wait(500);
+                await wait(200);
                 await keyPress(display, 'Escape');
-                await wait(400);
+                await wait(200);
               } else {
                 mouseController.leftClick(
                   parseInt(windowId),
@@ -699,7 +703,7 @@ export const createLuaApi = (context) => {
                   button.y,
                   display,
                 );
-                await wait(500);
+                await wait(200);
               }
               closedAModal = true;
               break;
@@ -766,7 +770,6 @@ export const createLuaApi = (context) => {
       let modalWaitTime = 0;
       let connectingModalWasSeen = false;
       while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
-        console.log();
         await wait(modalCheckInterval);
         modalWaitTime += modalCheckInterval;
         currentState = getState();
@@ -811,8 +814,8 @@ export const createLuaApi = (context) => {
         name.toLowerCase().includes(targetCharacterLower),
       );
       if (!targetCharacterFound) {
-        await keyPress(display, character[0].toUpperCase());
-        await wait(500);
+        await keyPress(display, character[0]);
+        await wait(100);
         currentState = getState();
         const updatedCharacterData =
           currentState.uiValues?.selectCharacterModal;

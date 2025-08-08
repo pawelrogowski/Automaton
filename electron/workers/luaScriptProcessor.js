@@ -31,13 +31,10 @@ const replaceShortcutVariables = (code) => {
  * @returns {string} The fully processed script with valid syntax, ready for execution.
  */
 export function preprocessLuaScript(scriptCode, asyncFunctionNames) {
-  console.log('Original Lua code:', scriptCode);
-
   // Step 1: Replace $ variables
   let processedCode = replaceShortcutVariables(scriptCode);
 
   if (!asyncFunctionNames || asyncFunctionNames.length === 0) {
-    console.log('Processed Lua code (no async functions):', processedCode);
     return processedCode;
   }
 
@@ -54,6 +51,5 @@ export function preprocessLuaScript(scriptCode, asyncFunctionNames) {
     return `${match}:await()`;
   });
 
-  console.log('Processed Lua code:', processedCode);
   return processedCode;
 }
