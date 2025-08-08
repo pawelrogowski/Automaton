@@ -382,3 +382,4 @@ store.subscribe(() => {
 });
 
 export const getMainWindow = () => mainWindow;
+export const getWidgetWindow = () => widgetWindow;

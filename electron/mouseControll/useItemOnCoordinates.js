@@ -4,7 +4,7 @@ import { keyPress } from '../keyboardControll/keyPress.js';
 function useItemOnCoordinates(targetWindowId, display, targetX, targetY, key) {
   // Add display parameter
   // First press the key
-  keyPress(parseInt(targetWindowId), display, key); // Pass display to keyPress
+  keyPress(display, key); // Pass display to keyPress
 
   // Then perform left click on coordinates
   mouseController.leftClick(

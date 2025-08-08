@@ -703,9 +703,7 @@ class RuleProcessor {
           );
         }
       } else {
-        keyPress(globalConfig.windowId, globalConfig.display, rule.key, {
-          speed: 'fast',
-        });
+        keyPress(globalConfig.display, rule.key);
         actionSent = true;
       }
 

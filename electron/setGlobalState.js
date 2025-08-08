@@ -1,5 +1,5 @@
 import store from './store.js';
-import { getMainWindow } from './createMainWindow.js';
+import { getMainWindow, getWidgetWindow } from './createMainWindow.js';
 
 /**
  * A centralized function to update the main process Redux store
@@ -9,6 +9,7 @@ import { getMainWindow } from './createMainWindow.js';
  */
 function setGlobalState(type, payload) {
   const mainWindow = getMainWindow();
+  const widgetWindow = getWidgetWindow();
 
   const action = {
     type,
@@ -22,6 +23,10 @@ function setGlobalState(type, payload) {
   // 2. Broadcast the action to the renderer window so its store can sync.
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('state-update', action);
+  }
+
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    widgetWindow.webContents.send('state-update', action);
   }
 }
 
