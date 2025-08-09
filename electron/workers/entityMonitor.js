@@ -64,7 +64,7 @@ async function mainLoop() {
           try {
             // Pass the gameWorld region as the search area.
             // I am assuming the native module accepts a searchArea object as the second argument.
-            const results = await findHealthBars.findHealthBarsNative(
+            const results = await findHealthBars.findHealthBars(
               sharedBufferView,
               gameWorld,
             );

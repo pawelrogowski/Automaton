@@ -11,6 +11,7 @@
 #include <chrono>
 #include <string>
 #include <functional>
+#include <climits>
 
 // Internal-only helper struct.
 struct SpecialArea {
@@ -20,149 +21,323 @@ struct SpecialArea {
 };
 
 namespace AStar {
-    // isWalkable is shared and unchanged.
+    // Configuration: costs tuned for Tibia as discussed
+    static constexpr int BASE_MOVE_COST = 10;
+    static constexpr int DIAGONAL_MOVE_COST = 25; // 2.5x slower than straight move (intentionally)
+    static constexpr int DIAGONAL_TIE_PENALTY = 1; // tiny penalty to prefer straight moves on ties
+
+    // isWalkable with safer bounds checks for the bit grid
     bool isWalkable(int x, int y, const MapData& mapData) {
         if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
         int linearIndex = y * mapData.width + x;
         int byteIndex = linearIndex / 8;
         int bitIndex = linearIndex % 8;
+        if (byteIndex < 0 || byteIndex >= (int)mapData.grid.size()) return false;
         return (mapData.grid[byteIndex] & (1 << bitIndex)) != 0;
     }
 
-    // REVERTED: Heuristic back to Manhattan distance, as it's more suitable with high diagonal costs.
-    int heuristic(const Node& a, const Node& b) {
-        return (std::abs(a.x - b.x) + std::abs(a.y - b.y)) * 10;
-    }
-
-    // findNearestWalkable is shared and unchanged.
+    // Spiral search for nearest walkable (small radius, no large allocations)
     Node findNearestWalkable(const Node& point, const MapData& mapData) {
         if (isWalkable(point.x, point.y, mapData)) return point;
-        for (int dy = -1; dy <= 1; ++dy) {
-            for (int dx = -1; dx <= 1; ++dx) {
-                if (dx == 0 && dy == 0) continue;
-                int checkX = point.x + dx;
-                int checkY = point.y + dy;
-                if (isWalkable(checkX, checkY, mapData)) {
-                    return {checkX, checkY, 0, 0, nullptr, point.z};
+
+        const int W = mapData.width;
+        const int H = mapData.height;
+        if (point.x < 0 || point.x >= W || point.y < 0 || point.y >= H) return {-1, -1, 0, 0, nullptr, point.z};
+
+        const int radiusLimit = 5; // small and fast; used only for start recovery
+        for (int r = 1; r <= radiusLimit; ++r) {
+            // top/bottom
+            for (int dx = -r; dx <= r; ++dx) {
+                int xTop = point.x + dx;
+                int yTop = point.y - r;
+                if (xTop >= 0 && xTop < W && yTop >= 0 && yTop < H && isWalkable(xTop, yTop, mapData)) {
+                    return {xTop, yTop, 0, 0, nullptr, point.z};
+                }
+                int xBot = point.x + dx;
+                int yBot = point.y + r;
+                if (xBot >= 0 && xBot < W && yBot >= 0 && yBot < H && isWalkable(xBot, yBot, mapData)) {
+                    return {xBot, yBot, 0, 0, nullptr, point.z};
+                }
+            }
+            // left/right
+            for (int dy = -r + 1; dy <= r - 1; ++dy) {
+                int xLeft = point.x - r;
+                int yLeft = point.y + dy;
+                if (xLeft >= 0 && xLeft < W && yLeft >= 0 && yLeft < H && isWalkable(xLeft, yLeft, mapData)) {
+                    return {xLeft, yLeft, 0, 0, nullptr, point.z};
+                }
+                int xRight = point.x + r;
+                int yRight = point.y + dy;
+                if (xRight >= 0 && xRight < W && yRight >= 0 && yRight < H && isWalkable(xRight, yRight, mapData)) {
+                    return {xRight, yRight, 0, 0, nullptr, point.z};
                 }
             }
         }
         return {-1, -1, 0, 0, nullptr, point.z};
     }
 
-    // --- VERSION 1: The fast, default A* without cost grid logic ---
-    // EDITED: Removed turn penalty. Diagonals are now always allowed but have a very high cost.
-    std::vector<Node> findPath(const Node& start, const Node& end, const Node& heuristicTarget, const MapData& mapData, std::function<void()> onCancelled) {
-        std::vector<Node> path;
-        std::vector<Node*> allNodes;
-        const int BASE_MOVE_COST = 10;
-        // A diagonal move costs the same as 5 straight moves.
-        const int DIAGONAL_MOVE_COST = 50;
-
-        auto cmp = [](const Node* left, const Node* right) { if (left->f() != right->f()) return left->f() > right->f(); return left->h > right->h; };
-        std::priority_queue<Node*, std::vector<Node*>, decltype(cmp)> openSet(cmp);
-        std::unordered_map<Node, int, NodeHash> gCostMap;
-        Node* startNode = new Node{start.x, start.y, 0, heuristic(start, heuristicTarget), nullptr, start.z};
-        allNodes.push_back(startNode);
-        openSet.push(startNode);
-        gCostMap[*startNode] = 0;
-        Node* finalNode = nullptr;
-        int iterations = 0;
-        while (!openSet.empty()) {
-            if (++iterations % 1000 == 0) onCancelled();
-            Node* current = openSet.top();
-            openSet.pop();
-            if (gCostMap.count(*current) && current->g > gCostMap.at(*current)) continue;
-            if (current->x == end.x && current->y == end.y) { finalNode = current; break; }
-
-            for (int dx = -1; dx <= 1; ++dx) {
-                for (int dy = -1; dy <= 1; ++dy) {
-                    if (dx == 0 && dy == 0) continue;
-
-                    int nextX = current->x + dx, nextY = current->y + dy;
-                    if (!isWalkable(nextX, nextY, mapData)) continue;
-
-                    bool isDiagonal = (dx != 0 && dy != 0);
-                    int moveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
-                    int newG = current->g + moveCost;
-
-                    Node neighborTemplate = {nextX, nextY, 0, 0, nullptr, current->z};
-                    auto it = gCostMap.find(neighborTemplate);
-                    if (it != gCostMap.end() && newG >= it->second) continue;
-                    gCostMap[neighborTemplate] = newG;
-                    Node* neighbor = new Node{nextX, nextY, newG, heuristic(neighborTemplate, heuristicTarget), current, current->z};
-                    allNodes.push_back(neighbor);
-                    openSet.push(neighbor);
-                }
-            }
-        }
-        if (finalNode) {
-            Node* current = finalNode;
-            while (current) { path.push_back(*current); current = const_cast<Node*>(current->parent); }
-            std::reverse(path.begin(), path.end());
-        }
-        for (Node* node : allNodes) delete node;
-        return path;
+    inline bool inBounds(int x, int y, const MapData& mapData) {
+        return x >= 0 && x < mapData.width && y >= 0 && y < mapData.height;
     }
 
-    // --- VERSION 2: The A* that handles cost grids ---
-    // EDITED: Removed turn penalty. Diagonals are now always allowed but have a very high cost.
-    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const Node& heuristicTarget, const MapData& mapData, const std::vector<int>& cost_grid, std::function<void()> onCancelled) {
+    inline int manhattanHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST) {
+        return (std::abs(x1 - x2) + std::abs(y1 - y2)) * D;
+    }
+
+    inline int octileHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST, int D2 = DIAGONAL_MOVE_COST) {
+        int dx = std::abs(x1 - x2);
+        int dy = std::abs(y1 - y2);
+        int mn = std::min(dx, dy);
+        // int mx = std::max(dx, dy); // This was unused, causing a warning.
+        return D * (dx + dy) + (D2 - 2 * D) * mn;
+    }
+
+    static const int INF_COST = 0x3f3f3f3f;
+
+    // ---- Reusable scratch buffers (thread-local) to avoid per-call allocations ----
+    struct ScratchBuffers {
+        std::vector<int> gScore;
+        std::vector<int> parent;
+        std::vector<int> mark;
+        std::vector<int> closedMark;
+        int visitToken = 1;
+    };
+
+    static thread_local ScratchBuffers sb;
+
+    static inline void ensureBuffersSize(int required) {
+        if ((int)sb.gScore.size() < required) {
+            sb.gScore.assign(required, INF_COST);
+            sb.parent.assign(required, -1);
+            sb.mark.assign(required, 0);
+            sb.closedMark.assign(required, 0);
+            sb.visitToken = 1;
+        }
+    }
+
+    static inline void nextVisitToken() {
+        sb.visitToken++;
+        if (sb.visitToken == 0 || sb.visitToken == INT_MAX) {
+            std::fill(sb.mark.begin(), sb.mark.end(), 0);
+            std::fill(sb.closedMark.begin(), sb.closedMark.end(), 0);
+            sb.visitToken = 1;
+        }
+    }
+
+    // --- A* implementation without cost grid ---
+    std::vector<Node> findPath(const Node& start, const Node& end, const MapData& mapData, std::function<void()> onCancelled) {
         std::vector<Node> path;
-        std::vector<Node*> allNodes;
-        const int BASE_MOVE_COST = 10;
-        // A diagonal move costs the same as 5 straight moves.
-        const int DIAGONAL_MOVE_COST = 50;
 
-        auto cmp = [](const Node* left, const Node* right) { if (left->f() != right->f()) return left->f() > right->f(); return left->h > right->h; };
-        std::priority_queue<Node*, std::vector<Node*>, decltype(cmp)> openSet(cmp);
-        std::unordered_map<Node, int, NodeHash> gCostMap;
-        Node* startNode = new Node{start.x, start.y, 0, heuristic(start, heuristicTarget), nullptr, start.z};
-        allNodes.push_back(startNode);
-        openSet.push(startNode);
-        gCostMap[*startNode] = 0;
-        Node* finalNode = nullptr;
+        int W = mapData.width;
+        int H = mapData.height;
+        if (W <= 0 || H <= 0) return path;
+        int mapSize = W * H;
+        ensureBuffersSize(mapSize);
+        nextVisitToken();
+        int visit = sb.visitToken;
+
+        auto indexOf = [&](int x, int y) { return y * W + x; };
+
+        if (!inBounds(end.x, end.y, mapData)) return path;
+
+        auto walkableOrDest = [&](int x, int y) {
+            if (!inBounds(x, y, mapData)) return false;
+            if (x == end.x && y == end.y) return true;
+            return isWalkable(x, y, mapData);
+        };
+
+        bool useOctile = (DIAGONAL_MOVE_COST < BASE_MOVE_COST * 3);
+        int h0 = useOctile ? octileHeuristic(start.x, start.y, end.x, end.y) : manhattanHeuristic(start.x, start.y, end.x, end.y);
+
+        using PQItem = std::tuple<int,int,int,int>;
+        struct Compare {
+            bool operator()(PQItem const& a, PQItem const& b) const {
+                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
+                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
+                return std::get<2>(a) > std::get<2>(b);
+            }
+        };
+        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
+
+        int startIdx = indexOf(start.x, start.y);
+        int endIdx = indexOf(end.x, end.y);
+
+        sb.gScore[startIdx] = 0;
+        sb.parent[startIdx] = -1;
+        sb.mark[startIdx] = visit;
+        open.emplace(h0 + 0, h0, 0, startIdx);
+
         int iterations = 0;
-        while (!openSet.empty()) {
+        const int dxs[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+        const int dys[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+
+        while (!open.empty()) {
             if (++iterations % 1000 == 0) onCancelled();
-            Node* current = openSet.top();
-            openSet.pop();
-            if (gCostMap.count(*current) && current->g > gCostMap.at(*current)) continue;
-            if (current->x == end.x && current->y == end.y) { finalNode = current; break; }
 
-            for (int dx = -1; dx <= 1; ++dx) {
-                for (int dy = -1; dy <= 1; ++dy) {
-                    if (dx == 0 && dy == 0) continue;
+            auto [f, h, g, idx] = open.top();
+            open.pop();
 
-                    int nextX = current->x + dx, nextY = current->y + dy;
-                    if (!isWalkable(nextX, nextY, mapData)) continue;
+            if (sb.closedMark[idx] == visit) continue;
+            if (!(sb.mark[idx] == visit)) continue;
+            if (g > sb.gScore[idx]) continue;
 
-                    int additional_cost = 0;
-                    int cost_grid_index = nextY * mapData.width + nextX;
-                    if(cost_grid_index >= 0 && cost_grid_index < cost_grid.size()) {
-                        additional_cost = cost_grid[cost_grid_index];
-                    }
+            int cx = idx % W;
+            int cy = idx / W;
 
-                    bool isDiagonal = (dx != 0 && dy != 0);
-                    int moveCost = (isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST) + additional_cost;
-                    int newG = current->g + moveCost;
+            if (idx == endIdx) {
+                int cur = endIdx;
+                while (cur != -1) {
+                    // --- COMPILATION FIX: Reverted to push_back ---
+                    Node node_to_add;
+                    node_to_add.x = cur % W;
+                    node_to_add.y = cur / W;
+                    node_to_add.z = start.z;
+                    path.push_back(node_to_add);
+                    cur = sb.parent[cur];
+                }
+                std::reverse(path.begin(), path.end());
+                return path;
+            }
 
-                    Node neighborTemplate = {nextX, nextY, 0, 0, nullptr, current->z};
-                    auto it = gCostMap.find(neighborTemplate);
-                    if (it != gCostMap.end() && newG >= it->second) continue;
-                    gCostMap[neighborTemplate] = newG;
-                    Node* neighbor = new Node{nextX, nextY, newG, heuristic(neighborTemplate, heuristicTarget), current, current->z};
-                    allNodes.push_back(neighbor);
-                    openSet.push(neighbor);
+            sb.closedMark[idx] = visit;
+
+            for (int dir = 0; dir < 8; ++dir) {
+                int nx = cx + dxs[dir];
+                int ny = cy + dys[dir];
+                if (!inBounds(nx, ny, mapData)) continue;
+
+                // --- CORNER-CUTTING PREVENTION REMOVED as requested ---
+
+                if (!walkableOrDest(nx, ny)) continue;
+
+                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+                int moveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                int nIdx = indexOf(nx, ny);
+
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + moveCost;
+
+                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
+                    sb.gScore[nIdx] = tentativeG;
+                    sb.parent[nIdx] = idx;
+                    sb.mark[nIdx] = visit;
+                    int nh = useOctile ? octileHeuristic(nx, ny, end.x, end.y) : manhattanHeuristic(nx, ny, end.x, end.y);
+                    int nf = tentativeG + nh;
+                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
+                    open.emplace(nf, nh, tentativeG, nIdx);
                 }
             }
         }
-        if (finalNode) {
-            Node* current = finalNode;
-            while (current) { path.push_back(*current); current = const_cast<Node*>(current->parent); }
-            std::reverse(path.begin(), path.end());
+
+        return path; // empty -> no path
+    }
+
+    // --- A* implementation with cost grid ---
+    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, std::function<void()> onCancelled) {
+        std::vector<Node> path;
+
+        int W = mapData.width;
+        int H = mapData.height;
+        if (W <= 0 || H <= 0) return path;
+        int mapSize = W * H;
+        ensureBuffersSize(mapSize);
+        nextVisitToken();
+        int visit = sb.visitToken;
+
+        auto indexOf = [&](int x, int y) { return y * W + x; };
+
+        if (!inBounds(end.x, end.y, mapData)) return path;
+
+        auto walkableOrDest = [&](int x, int y) {
+            if (!inBounds(x, y, mapData)) return false;
+            if (x == end.x && y == end.y) return true;
+            return isWalkable(x, y, mapData);
+        };
+
+        bool useOctile = (DIAGONAL_MOVE_COST <= 2 * BASE_MOVE_COST);
+        int h0 = useOctile ? octileHeuristic(start.x, start.y, end.x, end.y) : manhattanHeuristic(start.x, start.y, end.x, end.y);
+
+        using PQItem = std::tuple<int,int,int,int>;
+        struct Compare {
+            bool operator()(PQItem const& a, PQItem const& b) const {
+                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
+                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
+                return std::get<2>(a) > std::get<2>(b);
+            }
+        };
+        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
+
+        int startIdx = indexOf(start.x, start.y);
+        int endIdx = indexOf(end.x, end.y);
+
+        sb.gScore[startIdx] = 0;
+        sb.parent[startIdx] = -1;
+        sb.mark[startIdx] = visit;
+        open.emplace(h0 + 0, h0, 0, startIdx);
+
+        int iterations = 0;
+        const int dxs[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
+        const int dys[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+
+        while (!open.empty()) {
+            if (++iterations % 1000 == 0) onCancelled();
+
+            auto [f, h, g, idx] = open.top();
+            open.pop();
+
+            if (sb.closedMark[idx] == visit) continue;
+            if (!(sb.mark[idx] == visit)) continue;
+            if (g > sb.gScore[idx]) continue;
+
+            int cx = idx % W;
+            int cy = idx / W;
+
+            if (idx == endIdx) {
+                int cur = endIdx;
+                while (cur != -1) {
+                    // --- COMPILATION FIX: Reverted to push_back ---
+                    Node node_to_add;
+                    node_to_add.x = cur % W;
+                    node_to_add.y = cur / W;
+                    node_to_add.z = start.z;
+                    path.push_back(node_to_add);
+                    cur = sb.parent[cur];
+                }
+                std::reverse(path.begin(), path.end());
+                return path;
+            }
+
+            sb.closedMark[idx] = visit;
+
+            for (int dir = 0; dir < 8; ++dir) {
+                int nx = cx + dxs[dir];
+                int ny = cy + dys[dir];
+                if (!inBounds(nx, ny, mapData)) continue;
+
+                // --- CORNER-CUTTING PREVENTION REMOVED as requested ---
+
+                if (!walkableOrDest(nx, ny)) continue;
+
+                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                int addCost = 0;
+                int costIndex = ny * W + nx;
+                if (costIndex >= 0 && costIndex < (int)cost_grid.size()) addCost = cost_grid[costIndex];
+
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addCost;
+                int nIdx = indexOf(nx, ny);
+
+                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
+                    sb.gScore[nIdx] = tentativeG;
+                    sb.parent[nIdx] = idx;
+                    sb.mark[nIdx] = visit;
+                    int nh = useOctile ? octileHeuristic(nx, ny, end.x, end.y) : manhattanHeuristic(nx, ny, end.x, end.y);
+                    int nf = tentativeG + nh;
+                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
+                    open.emplace(nf, nh, tentativeG, nIdx);
+                }
+            }
         }
-        for (Node* node : allNodes) delete node;
+
         return path;
     }
 }
@@ -209,6 +384,13 @@ Napi::Value Pathfinder::LoadMapData(const Napi::CallbackInfo& info) {
         map.minY = dataForZ.Get("minY").As<Napi::Number>().Int32Value();
         map.width = dataForZ.Get("width").As<Napi::Number>().Int32Value();
         map.height = dataForZ.Get("height").As<Napi::Number>().Int32Value();
+
+        size_t expectedBytes = ((size_t)map.width * (size_t)map.height + 7) / 8;
+        if (gridBuffer.Length() < expectedBytes) {
+            Napi::TypeError::New(env, "Grid buffer shorter than expected for provided width/height").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+
         map.grid.assign(gridBuffer.Data(), gridBuffer.Data() + gridBuffer.Length());
         this->allMapData[z] = std::move(map);
     }
@@ -223,7 +405,7 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
         return env.Undefined();
     }
 
-    this->cost_grid_cache.clear(); // Clear all cache, as we're rebuilding for the current Z
+    this->cost_grid_cache.clear();
 
     Napi::Array areas_array = info[0].As<Napi::Array>();
     int current_z = info[1].As<Napi::Number>().Int32Value();
@@ -238,14 +420,13 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
         area.avoidance = area_obj.Get("avoidance").As<Napi::Number>().Int32Value();
         area.width = area_obj.Get("width").As<Napi::Number>().Int32Value();
         area.height = area_obj.Get("height").As<Napi::Number>().Int32Value();
-        if (area.z == current_z) { // Only consider areas on the current Z-level
+        if (area.z == current_z) {
             areas_on_current_z.push_back(area);
         }
     }
 
     auto it_map = this->allMapData.find(current_z);
     if (it_map == this->allMapData.end()) {
-        // Map data for this Z-level is not loaded, nothing to update.
         return env.Undefined();
     }
     const MapData& mapData = it_map->second;
@@ -282,12 +463,6 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
     Napi::Object endObj = info[1].As<Napi::Object>();
     Node end = {endObj.Get("x").As<Napi::Number>().Int32Value(), endObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, endObj.Get("z").As<Napi::Number>().Int32Value()};
 
-    std::string waypointType = "";
-    if (info.Length() > 2 && info[2].IsObject()) {
-        Napi::Object options = info[2].As<Napi::Object>();
-        if (options.Has("waypointType")) waypointType = options.Get("waypointType").As<Napi::String>().Utf8Value();
-    }
-
     Napi::Object result = Napi::Object::New(env);
     std::string searchStatus = "UNKNOWN";
     std::vector<Node> pathResult;
@@ -299,57 +474,37 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
     }
     const MapData& mapData = it_map->second;
 
-    Node originalLocalStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
-    Node originalLocalEnd = {end.x - mapData.minX, end.y - mapData.minY, 0, 0, nullptr, end.z};
-    int dx_abs = std::abs(originalLocalStart.x - originalLocalEnd.x);
-    int dy_abs = std::abs(originalLocalStart.y - originalLocalEnd.y);
-    bool isAdjacent = (dx_abs <= 1 && dy_abs <= 1 && (dx_abs + dy_abs > 0));
-    bool isAlreadyAtTarget = (dx_abs == 0 && dy_abs == 0);
+    Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
+    Node localEnd = {end.x - mapData.minX, end.y - mapData.minY, 0, 0, nullptr, end.z};
 
-    if (isAlreadyAtTarget) {
-        searchStatus = "WAYPOINT_REACHED";
-    } else if (isAdjacent) {
-        bool isCardinalMove = (dx_abs + dy_abs) == 1;
-        bool canMoveDiagonally = (waypointType == "Stand" || waypointType == "Machete" || waypointType == "Rope" || waypointType == "Shovel");
-        if (isCardinalMove || canMoveDiagonally) {
-            pathResult.push_back(originalLocalEnd);
+    // ============================ MODIFICATION START ============================
+    // Assume start location is always valid to start from, even if unwalkable.
+    // This prevents finding a path from a nearby walkable tile, which causes "weird" initial steps
+    // when the character is on an unwalkable tile (e.g., a fire field).
+    // We still check if the start coordinates are within the map's bounds.
+    if (!AStar::inBounds(localStart.x, localStart.y, mapData)) {
+        searchStatus = "NO_VALID_START";
+    } else {
+        // Use localStart directly, regardless of whether the tile is marked as walkable.
+        // The A* algorithm can start from an unwalkable tile and find a path to its walkable neighbors.
+        Node effectiveStart = localStart;
+
+        auto it_cache = this->cost_grid_cache.find(start.z);
+        if (it_cache != this->cost_grid_cache.end()) {
+            pathResult = AStar::findPathWithCosts(effectiveStart, localEnd, mapData, it_cache->second, [](){});
+        } else {
+            pathResult = AStar::findPath(effectiveStart, localEnd, mapData, [](){});
+        }
+
+        if (!pathResult.empty()) {
             searchStatus = "PATH_FOUND";
         } else {
-            isAdjacent = false;
+            searchStatus = "NO_PATH_FOUND";
         }
     }
+    // ============================= MODIFICATION END =============================
 
-    if (!isAdjacent && !isAlreadyAtTarget) {
-        Node effectiveStart = AStar::findNearestWalkable(originalLocalStart, mapData);
-        if (effectiveStart.x == -1) {
-            searchStatus = "NO_VALID_START";
-        } else {
-            bool endIsWalkable = AStar::isWalkable(originalLocalEnd.x, originalLocalEnd.y, mapData);
-            Node effectiveEnd = endIsWalkable ? originalLocalEnd : AStar::findNearestWalkable(originalLocalEnd, mapData);
-            if (effectiveEnd.x == -1) {
-                searchStatus = "NO_VALID_END";
-            } else if (effectiveStart.x == effectiveEnd.x && effectiveStart.y == effectiveEnd.y) {
-                if (!endIsWalkable) pathResult.push_back(originalLocalEnd);
-                searchStatus = "WAYPOINT_REACHED";
-            } else {
-                auto it_cache = this->cost_grid_cache.find(start.z);
-                if (it_cache != this->cost_grid_cache.end()) {
-                    pathResult = AStar::findPathWithCosts(effectiveStart, effectiveEnd, originalLocalEnd, mapData, it_cache->second, [](){});
-                } else {
-                    pathResult = AStar::findPath(effectiveStart, effectiveEnd, originalLocalEnd, mapData, [](){});
-                }
-
-                if (!pathResult.empty()) {
-                    searchStatus = "PATH_FOUND";
-                    if (!endIsWalkable) pathResult.push_back(originalLocalEnd);
-                } else {
-                    searchStatus = "NO_PATH_FOUND";
-                }
-            }
-        }
-    }
-
-    if (!pathResult.empty() && pathResult[0].x == originalLocalStart.x && pathResult[0].y == originalLocalStart.y) {
+    if (!pathResult.empty() && !pathResult.empty() && pathResult[0].x == localStart.x && pathResult[0].y == localStart.y) {
         pathResult.erase(pathResult.begin());
     }
 

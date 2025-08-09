@@ -65,3 +65,25 @@ export const rotate = async (display, direction) => {
  * @returns {boolean} Always returns false.
  */
 export const getIsTyping = () => false;
+
+/**
+ * Holds a key down.
+ * @param {string} display - The display to send the key to.
+ * @param {string} key - The key to hold down.
+ * @param {object} [options] - Optional parameters.
+ * @param {string|null} [options.modifier=null] - The modifier key.
+ */
+export const keyDown = (display, key, { modifier = null } = {}) => {
+  keypress.keyDown(key, display, modifier);
+};
+
+/**
+ * Releases a key.
+ * @param {string} display - The display to send the key to.
+ * @param {string} key - The key to release.
+ * @param {object} [options] - Optional parameters.
+ * @param {string|null} [options.modifier=null] - The modifier key.
+ */
+export const keyUp = (display, key, { modifier = null } = {}) => {
+  keypress.keyUp(key, display, modifier);
+};
