@@ -37,12 +37,12 @@ const PERFORMANCE_LOG_INTERVAL = 10000;
 
 // --- Configuration ---
 const config = {
-  actionStateChangeTimeoutMs: 600,
+  actionStateChangeTimeoutMs: 200,
   preClickDelayMs: 250,
   toolHotkeyWaitMs: 150,
   teleportDistanceThreshold: 5,
   postTeleportGraceMs: 1250,
-  moveConfirmTimeoutMs: 500,
+  moveConfirmTimeoutMs: 400,
 };
 
 // --- Worker State ---
@@ -273,7 +273,7 @@ const handleStandAction = async (targetWaypoint) => {
     const { finalPos } = await awaitStandConfirmation(
       initialPos,
       targetWaypoint,
-      1500,
+      500,
     );
     if (finalPos.z !== initialPos.z) floorChangeGraceUntil = Date.now() + 500;
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {

@@ -89,10 +89,14 @@ export const loadRulesFromFile = async (callback) => {
       }
       if (loaded_state.lua)
         setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      if (loaded_state.cavebot)
-        setGlobalState('cavebot/setState', loaded_state.cavebot);
-      if (loaded_state.targeting)
-        setGlobalState('targeting/setState', loaded_state.targeting);
+      if (loaded_state.cavebot) {
+        const cavebotState = { ...loaded_state.cavebot, enabled: false };
+        setGlobalState('cavebot/setState', cavebotState);
+      }
+      if (loaded_state.targeting) {
+        const targetingState = { ...loaded_state.targeting, enabled: false };
+        setGlobalState('targeting/setState', targetingState);
+      }
 
       showNotification(`📤 Loaded | ${path.basename(file_path)}`);
     }
@@ -148,10 +152,14 @@ export const autoLoadRules = async () => {
       }
       if (loaded_state.lua)
         setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      if (loaded_state.cavebot)
-        setGlobalState('cavebot/setState', loaded_state.cavebot);
-      if (loaded_state.targeting)
-        setGlobalState('targeting/setState', loaded_state.targeting);
+      if (loaded_state.cavebot) {
+        const cavebotState = { ...loaded_state.cavebot, enabled: false };
+        setGlobalState('cavebot/setState', cavebotState);
+      }
+      if (loaded_state.targeting) {
+        const targetingState = { ...loaded_state.targeting, enabled: false };
+        setGlobalState('targeting/setState', targetingState);
+      }
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -170,10 +178,15 @@ let previous_targeting_state = null;
 
 const has_state_changed = (new_state, prev_state) => {
   if (prev_state === null) return true;
-  return (
-    Object.keys(new_state).length !== Object.keys(prev_state).length ||
-    Object.keys(new_state).some((key) => new_state[key] !== prev_state[key])
-  );
+  // Use JSON.stringify for a deep comparison, which is more reliable for nested objects.
+  // This is safer for detecting changes in complex state slices.
+  try {
+    return JSON.stringify(new_state) !== JSON.stringify(prev_state);
+  } catch (error) {
+    console.error('Error comparing state for auto-save:', error);
+    // If serialization fails, assume a change to be safe.
+    return true;
+  }
 };
 
 store.subscribe(() => {
@@ -197,11 +210,12 @@ store.subscribe(() => {
   ) {
     auto_save_rules();
 
-    // Update previous state only if it changed
-    if (rules_changed) previous_rules_state = { ...rules };
-    if (global_changed) previous_global_state = { ...global };
-    if (lua_changed) previous_lua_state = { ...lua };
-    if (cavebot_changed) previous_cavebot_state = { ...cavebot };
-    if (targeting_changed) previous_targeting_state = { ...targeting };
+    // Update previous state only if it changed.
+    // With immutable state, we can just store a reference to the new state object.
+    if (rules_changed) previous_rules_state = rules;
+    if (global_changed) previous_global_state = global;
+    if (lua_changed) previous_lua_state = lua;
+    if (cavebot_changed) previous_cavebot_state = cavebot;
+    if (targeting_changed) previous_targeting_state = targeting;
   }
 });

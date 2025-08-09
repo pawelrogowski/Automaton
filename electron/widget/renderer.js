@@ -45,6 +45,30 @@ function handleStateUpdates() {
       case 'lua/setenabled':
         document.getElementById('scripts-switch').checked = action.payload;
         break;
+      case 'rules/setState':
+        if (action.payload) {
+          document.getElementById('healing-switch').checked =
+            action.payload.enabled;
+        }
+        break;
+      case 'cavebot/setState':
+        if (action.payload) {
+          document.getElementById('cavebot-switch').checked =
+            action.payload.enabled;
+        }
+        break;
+      case 'targeting/setState':
+        if (action.payload) {
+          document.getElementById('targeting-switch').checked =
+            action.payload.enabled;
+        }
+        break;
+      case 'lua/setState':
+        if (action.payload) {
+          document.getElementById('scripts-switch').checked =
+            action.payload.enabled;
+        }
+        break;
     }
   });
 }
