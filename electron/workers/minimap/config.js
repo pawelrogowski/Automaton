@@ -1,10 +1,10 @@
 import { PALETTE_DATA } from '../../constants/palette.js';
 
 // --- Worker Timing ---
-export const MAIN_LOOP_INTERVAL = 1;
-
+export const MAIN_LOOP_INTERVAL = 32;
+export const MAX_FRAME_FALLBEHIND = 15;
 // --- Performance Logging ---
-export const PERFORMANCE_LOGGING_ENABLED = true; // Set to false to disable logging
+export const PERFORMANCE_LOGGING_ENABLED = false; // Set to false to disable logging
 export const PERFORMANCE_LOG_INTERVAL_MS = 10000; // Log stats every 10 seconds
 
 // --- SharedArrayBuffer (SAB) Indices ---

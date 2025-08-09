@@ -27,12 +27,13 @@ import {
   PATH_STATUS_DIFFERENT_FLOOR,
   PATH_STATUS_ERROR,
   PATH_STATUS_NO_VALID_START_OR_END,
+  MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
 // --- Worker Configuration ---
-const MAIN_LOOP_INTERVAL = 5;
+const MAIN_LOOP_INTERVAL = 25;
+const STATE_CHANGE_POLL_INTERVAL = 5;
 const PERFORMANCE_LOG_INTERVAL = 10000;
-const STATE_CHANGE_POLL_INTERVAL = 10;
 
 // --- Configuration ---
 const config = {
@@ -615,7 +616,8 @@ const fsm = {
 };
 
 // --- Data Update and Contextual Logic ---
-function updateSABData() {
+
+const updateSABData = () => {
   if (playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
       playerPosArray,
@@ -631,52 +633,88 @@ function updateSABData() {
     }
   }
 
+  // --- This is the new, safe read logic for the path data ---
   if (pathDataArray) {
-    const newPathDataCounter = Atomics.load(
-      pathDataArray,
-      PATH_UPDATE_COUNTER_INDEX,
-    );
-    if (newPathDataCounter > lastPathDataCounter) {
+    let consistentRead = false;
+    let attempts = 0;
+
+    // We might need to loop if a write happens while we're reading.
+    // A simple attempt limit prevents any infinite loops in weird edge cases.
+    do {
+      const counterBeforeRead = Atomics.load(
+        pathDataArray,
+        PATH_UPDATE_COUNTER_INDEX,
+      );
+
+      // Only proceed if there's new data to read.
+      if (counterBeforeRead === lastPathDataCounter) {
+        return; // No new data, exit.
+      }
+
+      // --- Read the entire data block ---
       const pathStartX = Atomics.load(pathDataArray, PATH_START_X_INDEX);
       const pathStartY = Atomics.load(pathDataArray, PATH_START_Y_INDEX);
       const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
-
-      if (
-        playerMinimapPosition &&
-        (playerMinimapPosition.x !== pathStartX ||
-          playerMinimapPosition.y !== pathStartY ||
-          playerMinimapPosition.z !== pathStartZ)
-      ) {
-        pathingLogger(
-          'warn',
-          `Stale path received. Discarding and waiting for new path.`,
-        );
-        lastPathDataCounter = newPathDataCounter;
-        path = [];
-        pathfindingStatus = PATH_STATUS_IDLE;
-        return;
-      }
-
-      pathfindingStatus = Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX);
-      pathChebyshevDistance = Atomics.load(
+      const tempPathfindingStatus = Atomics.load(
+        pathDataArray,
+        PATHFINDING_STATUS_INDEX,
+      );
+      const tempPathChebyshevDistance = Atomics.load(
         pathDataArray,
         PATH_CHEBYSHEV_DISTANCE_INDEX,
       );
       const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
-      const newPath = [];
-      for (let i = 0; i < pathLength; i++) {
+      const tempPath = [];
+
+      // Boundary check to prevent reading out of bounds if pathLength is corrupt
+      const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);
+      for (let i = 0; i < safePathLength; i++) {
         const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-        newPath.push({
+        tempPath.push({
           x: Atomics.load(pathDataArray, offset + 0),
           y: Atomics.load(pathDataArray, offset + 1),
           z: Atomics.load(pathDataArray, offset + 2),
         });
       }
-      path = newPath;
-      lastPathDataCounter = newPathDataCounter;
-    }
+
+      // --- Read the counter again ---
+      const counterAfterRead = Atomics.load(
+        pathDataArray,
+        PATH_UPDATE_COUNTER_INDEX,
+      );
+
+      // --- The Consistency Check ---
+      if (counterBeforeRead === counterAfterRead) {
+        // SUCCESS! The data is consistent.
+        consistentRead = true;
+
+        // Now, perform the validation against our current player position.
+        if (
+          !playerMinimapPosition ||
+          playerMinimapPosition.x !== pathStartX ||
+          playerMinimapPosition.y !== pathStartY ||
+          playerMinimapPosition.z !== pathStartZ
+        ) {
+          // The data is consistent, but stale. We ignore it.
+          // This isn't an error, just the pathfinder lagging behind.
+        } else {
+          // The data is consistent AND valid for our current position.
+          // Commit the read data to our worker's state.
+          path = tempPath;
+          pathfindingStatus = tempPathfindingStatus;
+          pathChebyshevDistance = tempPathChebyshevDistance;
+        }
+
+        // Mark this update counter as processed, so we don't try to read it again.
+        lastPathDataCounter = counterAfterRead;
+      } else {
+        // A "torn read" occurred. The writer updated the buffer while we were reading.
+        // We will loop and try again.
+        attempts++;
+      }
+    } while (!consistentRead && attempts < 3);
   }
-}
+};
 
 function findCurrentWaypoint() {
   if (!globalState?.cavebot) return null;

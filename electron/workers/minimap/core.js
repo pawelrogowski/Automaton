@@ -6,7 +6,7 @@ import {
 import * as config from './config.js';
 import { rectsIntersect, extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
-import { PerformanceTracker } from './performanceTracker.js'; // Import the tracker
+import { PerformanceTracker } from './performanceTracker.js';
 
 // --- Worker State ---
 let currentState = null;
@@ -22,7 +22,6 @@ const perfTracker = new PerformanceTracker();
 let lastPerfReportTime = Date.now();
 
 // --- Shared Buffer Setup ---
-// ... (this part is unchanged)
 if (!workerData.sharedData)
   throw new Error('[MinimapCore] Shared data not provided.');
 const { imageSAB, syncSAB } = workerData.sharedData;
@@ -32,7 +31,6 @@ const sharedBufferView = Buffer.from(imageSAB);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function initialize() {
-  // ... (this part is unchanged)
   console.log('[MinimapCore] Initializing...');
   setMinimapResourcesPath(workerData.paths.minimapResources);
   minimapMatcher = new MinimapMatcher();
@@ -42,8 +40,9 @@ async function initialize() {
 }
 
 async function performOperation() {
-  // ... (the logic to check if processing is needed is unchanged)
-  if (!isInitialized || !currentState?.regionCoordinates?.regions) return;
+  if (!isInitialized || !currentState?.regionCoordinates?.regions) {
+    return;
+  }
 
   const newFrameCounter = Atomics.load(syncArray, config.FRAME_COUNTER_INDEX);
   if (
@@ -59,38 +58,35 @@ async function performOperation() {
   if (!minimapFull || !minimapFloorIndicatorColumn || screenWidth <= 0) return;
 
   let needsProcessing = false;
-  if (
-    minimapFull !== lastKnownMinimapFull ||
-    minimapFloorIndicatorColumn !== lastKnownMinimapFloor
-  ) {
-    needsProcessing = true;
-    lastKnownMinimapFull = minimapFull;
-    lastKnownMinimapFloor = minimapFloorIndicatorColumn;
-  } else {
-    const dirtyRegionCount = Atomics.load(
-      syncArray,
-      config.DIRTY_REGION_COUNT_INDEX,
-    );
-    for (let i = 0; i < dirtyRegionCount; i++) {
-      const offset = config.DIRTY_REGIONS_START_INDEX + i * 4;
-      const dirtyRect = {
-        x: Atomics.load(syncArray, offset + 0),
-        y: Atomics.load(syncArray, offset + 1),
-        width: Atomics.load(syncArray, offset + 2),
-        height: Atomics.load(syncArray, offset + 3),
-      };
-      if (
-        rectsIntersect(minimapFull, dirtyRect) ||
-        rectsIntersect(minimapFloorIndicatorColumn, dirtyRect)
-      ) {
-        needsProcessing = true;
-        break;
-      }
+  const dirtyRegionCount = Atomics.load(
+    syncArray,
+    config.DIRTY_REGION_COUNT_INDEX,
+  );
+  for (let i = 0; i < dirtyRegionCount; i++) {
+    const offset = config.DIRTY_REGIONS_START_INDEX + i * 4;
+    const dirtyRect = {
+      x: Atomics.load(syncArray, offset + 0),
+      y: Atomics.load(syncArray, offset + 1),
+      width: Atomics.load(syncArray, offset + 2),
+      height: Atomics.load(syncArray, offset + 3),
+    };
+    if (
+      rectsIntersect(minimapFull, dirtyRect) ||
+      rectsIntersect(minimapFloorIndicatorColumn, dirtyRect)
+    ) {
+      needsProcessing = true;
+      break;
     }
   }
 
-  if (needsProcessing) {
+  // --- Robust Frame-Based Fallback Logic ---
+  const framesBehind = newFrameCounter - lastProcessedFrameCounter;
+  const isFallbackTriggered = framesBehind > config.MAX_FRAME_FALLBEHIND;
+
+  if (needsProcessing || isFallbackTriggered) {
+    // Update the counter to prevent reprocessing the same frame.
     lastProcessedFrameCounter = newFrameCounter;
+
     const minimapData = extractBGRA(sharedBufferView, screenWidth, minimapFull);
     const floorIndicatorData = extractBGRA(
       sharedBufferView,
@@ -99,14 +95,12 @@ async function performOperation() {
     );
 
     if (minimapData && floorIndicatorData) {
-      // Get the duration back from the processing function
       const duration = await processMinimapData(
         minimapData,
         floorIndicatorData,
         minimapMatcher,
-        workerData, // Pass workerData to processing.js
+        workerData,
       );
-      // If the duration is a valid number, add it to our tracker
       if (typeof duration === 'number') {
         perfTracker.addMeasurement(duration);
       }
@@ -144,7 +138,6 @@ async function mainLoop() {
   console.log('[MinimapCore] Main loop stopped.');
 }
 
-// ... (handleMessage and start functions are unchanged)
 function handleMessage(message) {
   if (message.type === 'shutdown') {
     console.log('[MinimapCore] Received shutdown command.');

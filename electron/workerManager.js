@@ -33,7 +33,6 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const WORKER_INIT_DELAY = 50;
-const STORE_UPDATE_DEBOUNCE = 0;
 
 function quickHash(obj) {
   let h = 0x811c9dc5;
@@ -497,11 +496,7 @@ class WorkerManager {
   }
 
   debouncedStoreUpdate() {
-    if (this.storeUpdateTimeout) clearTimeout(this.storeUpdateTimeout);
-    this.storeUpdateTimeout = setTimeout(() => {
-      this.handleStoreUpdate();
-      this.storeUpdateTimeout = null;
-    }, STORE_UPDATE_DEBOUNCE);
+    this.handleStoreUpdate();
   }
 
   async handleStoreUpdate() {
