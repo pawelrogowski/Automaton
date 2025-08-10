@@ -134,4 +134,79 @@ export const FloorDisplay = styled.div`
   border-bottom: 1px solid #4a4f54;
 `;
 
+export const ModalOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1002;
+`;
+
+export const ModalContent = styled.div`
+  background: #1c1c1e;
+  border: 1px solid #b700ff;
+  border-radius: 12px;
+  padding: 25px;
+  width: 450px;
+  max-width: 95%;
+  box-shadow: 0 8px 32px rgba(183, 0, 255, 0.3);
+  color: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+`;
+
+export const ModalHeader = styled.h2`
+  font-size: 22px;
+  font-weight: bold;
+  color: #d89fff;
+  margin: 0;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(183, 0, 255, 0.5);
+`;
+
+export const ControlsGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+`;
+
+export const ControlLabel = styled.span`
+  font-size: 16px;
+  padding-left: ${({ isSub }) => (isSub ? '20px' : '0')};
+  color: ${({ isSub }) => (isSub ? '#c7c7c7' : '#fafafa')};
+`;
+
+export const ColorInput = styled.input.attrs({ type: 'color' })`
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 50px;
+  height: 28px;
+  background-color: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+
+  &:hover {
+    border-color: #b700ff;
+  }
+
+  &::-webkit-color-swatch {
+    border-radius: 4px;
+    border: none;
+  }
+  &::-moz-color-swatch {
+    border-radius: 4px;
+    border: none;
+  }
+`;
+
 export default StyledMinimap;

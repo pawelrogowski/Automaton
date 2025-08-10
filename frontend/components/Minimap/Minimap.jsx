@@ -13,7 +13,14 @@ import StyledMinimap, {
   StyledMapControls,
   ControlGroup,
   ControlButton,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ControlsGrid,
+  ControlLabel,
+  ColorInput,
 } from './Minimap.styled.js';
+import CustomSwitch from '../CustomSwitch/CustomSwitch.js';
 import {
   addWaypoint,
   removeWaypoint,
@@ -64,6 +71,121 @@ const WAYPOINT_TYPE_OPTIONS = [
   { value: 'Lure', label: 'Lure' },
 ];
 
+// --- Settings Modal Component ---
+const MinimapSettingsModal = React.memo(
+  ({ isOpen, onClose, settings, onChange }) => {
+    useEffect(() => {
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') onClose();
+      };
+      if (isOpen) {
+        window.addEventListener('keydown', handleKeyDown);
+      }
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
+    if (!isOpen) return null;
+
+    const handleColorChange = (category, key, value) => {
+      onChange((prev) => ({
+        ...prev,
+        [category]: { ...prev[category], [key]: value },
+      }));
+    };
+
+    const handleWaypointColorChange = (type, value) => {
+      onChange((prev) => ({
+        ...prev,
+        waypoints: {
+          ...prev.waypoints,
+          typeColors: { ...prev.waypoints.typeColors, [type]: value },
+        },
+      }));
+    };
+
+    const handleToggle = (category) => {
+      onChange((prev) => ({
+        ...prev,
+        [category]: { ...prev[category], draw: !prev[category].draw },
+      }));
+    };
+
+    return (
+      <ModalOverlay onClick={onClose}>
+        <ModalContent onClick={(e) => e.stopPropagation()}>
+          <ModalHeader>Minimap Display Settings</ModalHeader>
+          <ControlsGrid>
+            {/* Player */}
+            <ControlLabel>Player</ControlLabel>
+            <ColorInput
+              value={settings.player.color}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleColorChange('player', 'color', e.target.value)
+              }
+            />
+            <CustomSwitch
+              checked={settings.player.draw}
+              onChange={() => handleToggle('player')}
+            />
+
+            {/* Path */}
+            <ControlLabel>Path</ControlLabel>
+            <ColorInput
+              value={settings.path.color}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleColorChange('path', 'color', e.target.value)
+              }
+            />
+            <CustomSwitch
+              checked={settings.path.draw}
+              onChange={() => handleToggle('path')}
+            />
+
+            {/* Special Areas */}
+            <ControlLabel>Special Areas</ControlLabel>
+            <ColorInput
+              value={settings.specialAreas.fill}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleColorChange('specialAreas', 'fill', e.target.value)
+              }
+            />
+            <CustomSwitch
+              checked={settings.specialAreas.draw}
+              onChange={() => handleToggle('specialAreas')}
+            />
+
+            {/* Waypoints Header */}
+            <ControlLabel>Waypoints</ControlLabel>
+            <div />
+            <CustomSwitch
+              checked={settings.waypoints.draw}
+              onChange={() => handleToggle('waypoints')}
+            />
+
+            {/* Waypoint Types */}
+            {WAYPOINT_TYPE_OPTIONS.map((opt) => (
+              <React.Fragment key={opt.value}>
+                <ControlLabel isSub>{opt.label}</ControlLabel>
+                <ColorInput
+                  value={settings.waypoints.typeColors[opt.value]}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    handleWaypointColorChange(opt.value, e.target.value)
+                  }
+                />
+                <div />
+              </React.Fragment>
+            ))}
+          </ControlsGrid>
+        </ModalContent>
+      </ModalOverlay>
+    );
+  },
+);
+
 // --- Component ---
 const Minimap = () => {
   const dispatch = useDispatch();
@@ -113,6 +235,20 @@ const Minimap = () => {
   const [canvasDimensions, setCanvasDimensions] = useState({
     width: CANVAS_SIZE,
     height: CANVAS_SIZE,
+  });
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [drawSettings, setDrawSettings] = useState({
+    player: { draw: true, color: MINIMAP_COLORS.PLAYER },
+    path: { draw: true, color: MINIMAP_COLORS.PATH },
+    waypoints: {
+      draw: true,
+      typeColors: { ...MINIMAP_COLORS.WAYPOINT_TYPE },
+    },
+    specialAreas: {
+      draw: true,
+      fill: MINIMAP_COLORS.SPECIAL_AREA.fill,
+      stroke: MINIMAP_COLORS.SPECIAL_AREA.stroke,
+    },
   });
 
   const [mapImage, mapImageStatus] = useImage(mapUrl);
@@ -220,6 +356,10 @@ const Minimap = () => {
   };
   const handleMapModeToggle = () =>
     setMapMode((prevMode) => (prevMode === 'map' ? 'waypoint' : 'map'));
+
+  const handleCloseModal = useCallback(() => {
+    setIsSettingsModalOpen(false);
+  }, []);
 
   // --- Konva Event Handlers ---
   const handleWheel = (e) => {
@@ -400,438 +540,472 @@ const Minimap = () => {
   }, [handleLockToggle]);
 
   return (
-    <StyledMinimap
-      ref={minimapContainerRef}
-      style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
-      tabIndex={0}
-    >
-      <StyledMapControls>
-        <ControlGroup>
-          <ControlButton
-            position="top"
-            onClick={() => handleZChange(-1)}
-            title="Go Up"
-          >
-            ▲
-          </ControlButton>
-          <ControlButton
-            position="bottom"
-            onClick={() => handleZChange(+1)}
-            title="Go Down"
-          >
-            ▼
-          </ControlButton>
-        </ControlGroup>
-        <ControlGroup>
-          <ControlButton
-            position="single"
-            onClick={handleMapModeToggle}
-            active={mapMode === 'waypoint'}
-            title={
-              mapMode === 'map' ? 'Show Walkable Area' : 'Show Map Texture'
-            }
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
+    <StyledMinimap ref={minimapContainerRef} tabIndex={0}>
+      <div style={{ position: 'relative', width: '100%', height: CANVAS_SIZE }}>
+        <StyledMapControls>
+          <ControlGroup>
+            <ControlButton
+              position="top"
+              onClick={() => handleZChange(-1)}
+              title="Go Up"
             >
-              <path
-                d="M5 13C5 13 8 13 8 9C8 5 8 5 11 5"
+              ▲
+            </ControlButton>
+            <ControlButton
+              position="bottom"
+              onClick={() => handleZChange(+1)}
+              title="Go Down"
+            >
+              ▼
+            </ControlButton>
+          </ControlGroup>
+          <ControlGroup>
+            <ControlButton
+              position="single"
+              onClick={handleMapModeToggle}
+              active={mapMode === 'waypoint'}
+              title={
+                mapMode === 'map' ? 'Show Walkable Area' : 'Show Map Texture'
+              }
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M5 13C5 13 8 13 8 9C8 5 8 5 11 5"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </ControlButton>
+          </ControlGroup>
+          <ControlGroup>
+            <ControlButton
+              position="single"
+              onClick={handleLockToggle}
+              active={isLockedToPlayer}
+              title="Center on Player (Space)"
+            >
+              <div
+                style={{
+                  width: '12px',
+                  height: '12px',
+                  border: '2px solid currentColor',
+                  borderRadius: '50%',
+                }}
+              ></div>
+            </ControlButton>
+            <ControlButton
+              position="single"
+              onClick={handleFullscreenToggle}
+              style={{ marginTop: '8px' }}
+              title="Toggle Fullscreen"
+            >
+              <div
+                style={{ width: '14px', height: '14px', position: 'relative' }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '4px',
+                    height: '4px',
+                    borderTop: '2px solid currentColor',
+                    borderLeft: '2px solid currentColor',
+                  }}
+                ></div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: '4px',
+                    height: '4px',
+                    borderTop: '2px solid currentColor',
+                    borderRight: '2px solid currentColor',
+                  }}
+                ></div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    width: '4px',
+                    height: '4px',
+                    borderBottom: '2px solid currentColor',
+                    borderLeft: '2px solid currentColor',
+                  }}
+                ></div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    right: 0,
+                    width: '4px',
+                    height: '4px',
+                    borderBottom: '2px solid currentColor',
+                    borderRight: '2px solid currentColor',
+                  }}
+                ></div>
+              </div>
+            </ControlButton>
+          </ControlGroup>
+          <ControlGroup>
+            <ControlButton
+              position="single"
+              onClick={() => setIsSettingsModalOpen(true)}
+              title="Display Settings"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
-              />
-            </svg>
-          </ControlButton>
-        </ControlGroup>
-        <ControlGroup>
-          <ControlButton
-            position="single"
-            onClick={handleLockToggle}
-            active={isLockedToPlayer}
-            title="Center on Player (Space)"
-          >
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                border: '2px solid currentColor',
-                borderRadius: '50%',
-              }}
-            ></div>
-          </ControlButton>
-          <ControlButton
-            position="single"
-            onClick={handleFullscreenToggle}
-            style={{ marginTop: '8px' }}
-            title="Toggle Fullscreen"
-          >
-            <div
-              style={{ width: '14px', height: '14px', position: 'relative' }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '4px',
-                  height: '4px',
-                  borderTop: '2px solid currentColor',
-                  borderLeft: '2px solid currentColor',
-                }}
-              ></div>
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  right: 0,
-                  width: '4px',
-                  height: '4px',
-                  borderTop: '2px solid currentColor',
-                  borderRight: '2px solid currentColor',
-                }}
-              ></div>
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  left: 0,
-                  width: '4px',
-                  height: '4px',
-                  borderBottom: '2px solid currentColor',
-                  borderLeft: '2px solid currentColor',
-                }}
-              ></div>
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 0,
-                  right: 0,
-                  width: '4px',
-                  height: '4px',
-                  borderBottom: '2px solid currentColor',
-                  borderRight: '2px solid currentColor',
-                }}
-              ></div>
-            </div>
-          </ControlButton>
-        </ControlGroup>
-      </StyledMapControls>
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          cursor: 'grab',
-          background: '#222',
-        }}
-      >
-        <Stage
-          width={canvasDimensions.width}
-          height={canvasDimensions.height}
-          onWheel={handleWheel}
-          onContextMenu={handleContextMenu}
-          ref={stageRef}
-          x={stagePos.x}
-          y={stagePos.y}
-          scaleX={stageScale}
-          scaleY={stageScale}
-          draggable
-          onDragEnd={handleDragEnd}
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V15a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51-1z"></path>
+              </svg>
+            </ControlButton>
+          </ControlGroup>
+        </StyledMapControls>
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            cursor: 'grab',
+            background: '#222',
+            overflow: 'hidden',
+            borderRadius: '4px',
+          }}
         >
-          <Layer imageSmoothingEnabled={false}>
-            {mapImageStatus === 'loaded' && mapIndex && (
-              <Image image={mapImage} x={mapIndex.minX} y={mapIndex.minY} />
-            )}
+          <Stage
+            width={canvasDimensions.width}
+            height={canvasDimensions.height}
+            onWheel={handleWheel}
+            onContextMenu={handleContextMenu}
+            ref={stageRef}
+            x={stagePos.x}
+            y={stagePos.y}
+            scaleX={stageScale}
+            scaleY={stageScale}
+            draggable
+            onDragEnd={handleDragEnd}
+          >
+            <Layer imageSmoothingEnabled={false}>
+              {mapImageStatus === 'loaded' && mapIndex && (
+                <Image image={mapImage} x={mapIndex.minX} y={mapIndex.minY} />
+              )}
 
-            {visibleSpecialAreas.map((area) => (
-              <Rect
-                key={area.id}
-                x={area.x}
-                y={area.y}
-                width={area.sizeX}
-                height={area.sizeY}
-                fill={MINIMAP_COLORS.SPECIAL_AREA.fill}
-                stroke={MINIMAP_COLORS.SPECIAL_AREA.stroke}
-                strokeWidth={0.1}
-                listening={false}
-              />
-            ))}
+              {drawSettings.specialAreas.draw &&
+                visibleSpecialAreas.map((area) => (
+                  <Rect
+                    key={area.id}
+                    x={area.x}
+                    y={area.y}
+                    width={area.sizeX}
+                    height={area.sizeY}
+                    fill={drawSettings.specialAreas.fill}
+                    stroke={drawSettings.specialAreas.stroke}
+                    strokeWidth={0.1}
+                    listening={false}
+                  />
+                ))}
 
-            <Line
-              points={visiblePathPoints}
-              stroke={MINIMAP_COLORS.PATH}
-              strokeWidth={2 / stageScale}
-              lineCap="square"
-              lineJoin="miter"
-              listening={false}
-              shadowColor={MINIMAP_COLORS.SHADOW}
-              shadowBlur={8 / stageScale}
-              shadowOffsetX={0}
-              shadowOffsetY={0}
-              shadowOpacity={0.9}
-            />
+              {drawSettings.path.draw && (
+                <Line
+                  points={visiblePathPoints}
+                  stroke={drawSettings.path.color}
+                  strokeWidth={2 / stageScale}
+                  lineCap="square"
+                  lineJoin="miter"
+                  listening={false}
+                  shadowColor={MINIMAP_COLORS.SHADOW}
+                  shadowBlur={8 / stageScale}
+                  shadowOffsetX={0}
+                  shadowOffsetY={0}
+                  shadowOpacity={0.9}
+                />
+              )}
 
-            {visibleWaypoints.map((waypoint) => {
-              const isSelected = waypoint.id === wptSelection;
-              const isActive = waypoint.id === wptId;
-              const strokeColor = isActive
-                ? MINIMAP_COLORS.WAYPOINT_STATE_STROKE.active
-                : isSelected
-                  ? MINIMAP_COLORS.WAYPOINT_STATE_STROKE.selected
-                  : MINIMAP_COLORS.WAYPOINT_STATE_STROKE.default;
-              const strokeWidth = isActive ? 0.2 : isSelected ? 0.15 : 0;
+              {drawSettings.waypoints.draw &&
+                visibleWaypoints.map((waypoint) => {
+                  const isSelected = waypoint.id === wptSelection;
+                  const isActive = waypoint.id === wptId;
+                  const strokeColor = isActive
+                    ? MINIMAP_COLORS.WAYPOINT_STATE_STROKE.active
+                    : isSelected
+                      ? MINIMAP_COLORS.WAYPOINT_STATE_STROKE.selected
+                      : MINIMAP_COLORS.WAYPOINT_STATE_STROKE.default;
+                  const strokeWidth = isActive ? 0.2 : isSelected ? 0.15 : 0;
 
-              return (
+                  return (
+                    <Rect
+                      key={waypoint.id}
+                      id={waypoint.id}
+                      name="waypoint-marker"
+                      x={waypoint.x}
+                      y={waypoint.y}
+                      width={1}
+                      height={1}
+                      fill={
+                        drawSettings.waypoints.typeColors[waypoint.type] ||
+                        MINIMAP_COLORS.WAYPOINT_TYPE.Default
+                      }
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
+                      shadowColor={MINIMAP_COLORS.SHADOW}
+                      shadowBlur={8 / stageScale}
+                      shadowOffsetX={0}
+                      shadowOffsetY={0}
+                      shadowOpacity={1}
+                      onClick={(e) => handleWaypointClick(e, waypoint.id)}
+                      onTap={(e) => handleWaypointClick(e, waypoint.id)}
+                      onDblClick={() => handleWaypointDoubleClick(waypoint.id)}
+                      onDblTap={() => handleWaypointDoubleClick(waypoint.id)}
+                      onMouseEnter={(e) => {
+                        e.target.getStage().container().style.cursor =
+                          'pointer';
+                        let tooltipText = waypoint.type;
+                        if (waypoint.label?.trim())
+                          tooltipText += ` - ${waypoint.label}`;
+                        setTooltip({
+                          visible: true,
+                          x: e.evt.clientX + 15,
+                          y: e.evt.clientY,
+                          text: tooltipText,
+                        });
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.getStage().container().style.cursor = 'grab';
+                        setTooltip({ visible: false, x: 0, y: 0, text: '' });
+                      }}
+                    />
+                  );
+                })}
+
+              {drawSettings.player.draw && playerPosition.z === zLevel && (
                 <Rect
-                  key={waypoint.id}
-                  id={waypoint.id}
-                  name="waypoint-marker"
-                  x={waypoint.x}
-                  y={waypoint.y}
+                  x={playerPosition.x}
+                  y={playerPosition.y}
+                  name="player-marker"
                   width={1}
                   height={1}
-                  fill={
-                    MINIMAP_COLORS.WAYPOINT_TYPE[waypoint.type] ||
-                    MINIMAP_COLORS.WAYPOINT_TYPE.Default
-                  }
-                  stroke={strokeColor}
-                  strokeWidth={strokeWidth}
+                  fill={drawSettings.player.color}
                   shadowColor={MINIMAP_COLORS.SHADOW}
                   shadowBlur={8 / stageScale}
                   shadowOffsetX={0}
                   shadowOffsetY={0}
                   shadowOpacity={1}
-                  onClick={(e) => handleWaypointClick(e, waypoint.id)}
-                  onTap={(e) => handleWaypointClick(e, waypoint.id)}
-                  onDblClick={() => handleWaypointDoubleClick(waypoint.id)}
-                  onDblTap={() => handleWaypointDoubleClick(waypoint.id)}
-                  onMouseEnter={(e) => {
-                    e.target.getStage().container().style.cursor = 'pointer';
-                    let tooltipText = waypoint.type;
-                    if (waypoint.label?.trim())
-                      tooltipText += ` - ${waypoint.label}`;
-                    setTooltip({
-                      visible: true,
-                      x: e.evt.clientX + 15,
-                      y: e.evt.clientY,
-                      text: tooltipText,
-                    });
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.getStage().container().style.cursor = 'grab';
-                    setTooltip({ visible: false, x: 0, y: 0, text: '' });
-                  }}
+                  listening={false}
                 />
-              );
-            })}
+              )}
+            </Layer>
+          </Stage>
+        </div>
 
-            {playerPosition.z === zLevel && (
-              <Rect
-                x={playerPosition.x}
-                y={playerPosition.y}
-                name="player-marker"
-                width={1}
-                height={1}
-                fill={MINIMAP_COLORS.PLAYER}
-                shadowColor={MINIMAP_COLORS.SHADOW}
-                shadowBlur={8 / stageScale}
-                shadowOffsetX={0}
-                shadowOffsetY={0}
-                shadowOpacity={1}
-                listening={false}
-              />
-            )}
-          </Layer>
-        </Stage>
-      </div>
-
-      <span
-        style={{
-          position: 'absolute',
-          bottom: 5,
-          left: 5,
-          background: 'rgba(0,0,0,0.6)',
-          color: 'white',
-          padding: '2px 5px',
-          borderRadius: '3px',
-          fontSize: '12px',
-          pointerEvents: 'none',
-        }}
-      >
-        {playerTile.x},{playerTile.y},{zLevel}
-      </span>
-
-      {tooltip.visible && (
-        <div
+        <span
           style={{
-            position: 'fixed',
-            top: tooltip.y,
-            left: tooltip.x,
-            background: 'rgba(0, 0, 0, 0.75)',
+            position: 'absolute',
+            bottom: 5,
+            left: 5,
+            background: 'rgba(0,0,0,0.6)',
             color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
+            padding: '2px 5px',
+            borderRadius: '3px',
             fontSize: '12px',
-            zIndex: 1001,
             pointerEvents: 'none',
           }}
         >
-          {tooltip.text}
-        </div>
-      )}
+          {playerTile.x},{playerTile.y},{zLevel}
+        </span>
 
-      {rightClickMenu.visible && (
-        <div
-          ref={contextMenuRef}
-          style={{
-            position: 'fixed',
-            top: rightClickMenu.y,
-            left: rightClickMenu.x,
-            zIndex: 1000,
-            background: 'rgba(30, 30, 30, 0.9)',
-            border: '1px solid #555',
-            borderRadius: '4px',
-            padding: '4px 0',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
-          }}
-        >
-          {rightClickMenu.stage === 0 && (
-            <>
-              <div
-                onMouseEnter={() => handleMenuItemHover('waypoints')}
-                onMouseLeave={() => handleMenuItemHover(null)}
-                onClick={() => handleMenuCategorySelect('waypoints')}
-                style={{
-                  padding: '6px 15px',
-                  color: 'white',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  backgroundColor:
-                    rightClickMenu.hoveredItem === 'waypoints'
-                      ? '#007ACC'
-                      : 'transparent',
-                }}
-              >
-                Waypoints
-              </div>
-              <div
-                onMouseEnter={() => handleMenuItemHover('specialAreas')}
-                onMouseLeave={() => handleMenuItemHover(null)}
-                onClick={() => handleMenuCategorySelect('specialAreas')}
-                style={{
-                  padding: '6px 15px',
-                  color: 'white',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  backgroundColor:
-                    rightClickMenu.hoveredItem === 'specialAreas'
-                      ? '#007ACC'
-                      : 'transparent',
-                }}
-              >
-                Special Areas
-              </div>
-            </>
-          )}
+        {tooltip.visible && (
+          <div
+            style={{
+              position: 'fixed',
+              top: tooltip.y,
+              left: tooltip.x,
+              background: 'rgba(0, 0, 0, 0.75)',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '12px',
+              zIndex: 1001,
+              pointerEvents: 'none',
+            }}
+          >
+            {tooltip.text}
+          </div>
+        )}
 
-          {rightClickMenu.stage === 1 && (
-            <>
-              {WAYPOINT_TYPE_OPTIONS.map((option) => (
+        {rightClickMenu.visible && (
+          <div
+            ref={contextMenuRef}
+            style={{
+              position: 'fixed',
+              top: rightClickMenu.y,
+              left: rightClickMenu.x,
+              zIndex: 1000,
+              background: 'rgba(30, 30, 30, 0.9)',
+              border: '1px solid #555',
+              borderRadius: '4px',
+              padding: '4px 0',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
+            }}
+          >
+            {rightClickMenu.stage === 0 && (
+              <>
                 <div
-                  key={option.value}
-                  onClick={() => handleMenuItemClick(option.value)}
-                  onMouseEnter={() => handleMenuItemHover(option.value)}
+                  onMouseEnter={() => handleMenuItemHover('waypoints')}
                   onMouseLeave={() => handleMenuItemHover(null)}
+                  onClick={() => handleMenuCategorySelect('waypoints')}
                   style={{
                     padding: '6px 15px',
                     color: 'white',
                     fontSize: '13px',
                     cursor: 'pointer',
                     backgroundColor:
-                      rightClickMenu.hoveredItem === option.value
+                      rightClickMenu.hoveredItem === 'waypoints'
                         ? '#007ACC'
                         : 'transparent',
                   }}
                 >
-                  {`Add ${option.label}`}
+                  Waypoints
                 </div>
-              ))}
-              {rightClickMenu.targetWaypointId && (
                 <div
-                  onClick={() => handleMenuItemClick('RemoveWaypoint')}
-                  onMouseEnter={() => handleMenuItemHover('RemoveWaypoint')}
+                  onMouseEnter={() => handleMenuItemHover('specialAreas')}
                   onMouseLeave={() => handleMenuItemHover(null)}
-                  style={{
-                    padding: '6px 15px',
-                    color: '#FF5555',
-                    fontWeight: 'bold',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    backgroundColor:
-                      rightClickMenu.hoveredItem === 'RemoveWaypoint'
-                        ? '#B22222'
-                        : 'transparent',
-                    marginTop: '4px',
-                    borderTop: '1px solid #555',
-                  }}
-                >
-                  Remove Waypoint
-                </div>
-              )}
-            </>
-          )}
-
-          {rightClickMenu.stage === 2 && (
-            <>
-              {SPECIAL_AREA_TYPE_OPTIONS.map((option) => (
-                <div
-                  key={option.value}
-                  onClick={() => handleMenuItemClick(option.value)}
-                  onMouseEnter={() => handleMenuItemHover(option.value)}
-                  onMouseLeave={() => handleMenuItemHover(null)}
+                  onClick={() => handleMenuCategorySelect('specialAreas')}
                   style={{
                     padding: '6px 15px',
                     color: 'white',
                     fontSize: '13px',
                     cursor: 'pointer',
                     backgroundColor:
-                      rightClickMenu.hoveredItem === option.value
+                      rightClickMenu.hoveredItem === 'specialAreas'
                         ? '#007ACC'
                         : 'transparent',
                   }}
                 >
-                  {`Add ${option.label}`}
+                  Special Areas
                 </div>
-              ))}
-              {rightClickMenu.targetSpecialAreaId && (
-                <div
-                  onClick={() => handleMenuItemClick('RemoveSpecialArea')}
-                  onMouseEnter={() => handleMenuItemHover('RemoveSpecialArea')}
-                  onMouseLeave={() => handleMenuItemHover(null)}
-                  style={{
-                    padding: '6px 15px',
-                    color: '#FF5555',
-                    fontWeight: 'bold',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    backgroundColor:
-                      rightClickMenu.hoveredItem === 'RemoveSpecialArea'
-                        ? '#B22222'
-                        : 'transparent',
-                    marginTop: '4px',
-                    borderTop: '1px solid #555',
-                  }}
-                >
-                  Remove Special Area
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+              </>
+            )}
+
+            {rightClickMenu.stage === 1 && (
+              <>
+                {WAYPOINT_TYPE_OPTIONS.map((option) => (
+                  <div
+                    key={option.value}
+                    onClick={() => handleMenuItemClick(option.value)}
+                    onMouseEnter={() => handleMenuItemHover(option.value)}
+                    onMouseLeave={() => handleMenuItemHover(null)}
+                    style={{
+                      padding: '6px 15px',
+                      color: 'white',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      backgroundColor:
+                        rightClickMenu.hoveredItem === option.value
+                          ? '#007ACC'
+                          : 'transparent',
+                    }}
+                  >
+                    {`Add ${option.label}`}
+                  </div>
+                ))}
+                {rightClickMenu.targetWaypointId && (
+                  <div
+                    onClick={() => handleMenuItemClick('RemoveWaypoint')}
+                    onMouseEnter={() => handleMenuItemHover('RemoveWaypoint')}
+                    onMouseLeave={() => handleMenuItemHover(null)}
+                    style={{
+                      padding: '6px 15px',
+                      color: '#FF5555',
+                      fontWeight: 'bold',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      backgroundColor:
+                        rightClickMenu.hoveredItem === 'RemoveWaypoint'
+                          ? '#B22222'
+                          : 'transparent',
+                      marginTop: '4px',
+                      borderTop: '1px solid #555',
+                    }}
+                  >
+                    Remove Waypoint
+                  </div>
+                )}
+              </>
+            )}
+
+            {rightClickMenu.stage === 2 && (
+              <>
+                {SPECIAL_AREA_TYPE_OPTIONS.map((option) => (
+                  <div
+                    key={option.value}
+                    onClick={() => handleMenuItemClick(option.value)}
+                    onMouseEnter={() => handleMenuItemHover(option.value)}
+                    onMouseLeave={() => handleMenuItemHover(null)}
+                    style={{
+                      padding: '6px 15px',
+                      color: 'white',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      backgroundColor:
+                        rightClickMenu.hoveredItem === option.value
+                          ? '#007ACC'
+                          : 'transparent',
+                    }}
+                  >
+                    {`Add ${option.label}`}
+                  </div>
+                ))}
+                {rightClickMenu.targetSpecialAreaId && (
+                  <div
+                    onClick={() => handleMenuItemClick('RemoveSpecialArea')}
+                    onMouseEnter={() =>
+                      handleMenuItemHover('RemoveSpecialArea')
+                    }
+                    onMouseLeave={() => handleMenuItemHover(null)}
+                    style={{
+                      padding: '6px 15px',
+                      color: '#FF5555',
+                      fontWeight: 'bold',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      backgroundColor:
+                        rightClickMenu.hoveredItem === 'RemoveSpecialArea'
+                          ? '#B22222'
+                          : 'transparent',
+                      marginTop: '4px',
+                      borderTop: '1px solid #555',
+                    }}
+                  >
+                    Remove Special Area
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <MinimapSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={handleCloseModal}
+        settings={drawSettings}
+        onChange={setDrawSettings}
+      />
     </StyledMinimap>
   );
 };
