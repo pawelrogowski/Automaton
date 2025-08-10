@@ -237,19 +237,56 @@ const Minimap = () => {
     height: CANVAS_SIZE,
   });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [drawSettings, setDrawSettings] = useState({
-    player: { draw: true, color: MINIMAP_COLORS.PLAYER },
-    path: { draw: true, color: MINIMAP_COLORS.PATH },
-    waypoints: {
-      draw: true,
-      typeColors: { ...MINIMAP_COLORS.WAYPOINT_TYPE },
-    },
-    specialAreas: {
-      draw: true,
-      fill: MINIMAP_COLORS.SPECIAL_AREA.fill,
-      stroke: MINIMAP_COLORS.SPECIAL_AREA.stroke,
-    },
+  const [drawSettings, setDrawSettings] = useState(() => {
+    const defaultSettings = {
+      player: { draw: true, color: MINIMAP_COLORS.PLAYER },
+      path: { draw: true, color: MINIMAP_COLORS.PATH },
+      waypoints: {
+        draw: true,
+        typeColors: { ...MINIMAP_COLORS.WAYPOINT_TYPE },
+      },
+      specialAreas: {
+        draw: true,
+        fill: MINIMAP_COLORS.SPECIAL_AREA.fill,
+        stroke: MINIMAP_COLORS.SPECIAL_AREA.stroke,
+      },
+    };
+
+    try {
+      const saved = localStorage.getItem('minimapDrawSettings');
+      if (!saved) return defaultSettings;
+
+      const parsed = JSON.parse(saved);
+
+      // Deep merge to ensure compatibility with new versions
+      const merged = { ...defaultSettings, ...parsed };
+      merged.player = { ...defaultSettings.player, ...parsed.player };
+      merged.path = { ...defaultSettings.path, ...parsed.path };
+      merged.waypoints = { ...defaultSettings.waypoints, ...parsed.waypoints };
+      if (merged.waypoints && parsed.waypoints) {
+        merged.waypoints.typeColors = {
+          ...defaultSettings.waypoints.typeColors,
+          ...parsed.waypoints.typeColors,
+        };
+      }
+      merged.specialAreas = {
+        ...defaultSettings.specialAreas,
+        ...parsed.specialAreas,
+      };
+      return merged;
+    } catch (e) {
+      console.error('Failed to load minimap settings, using defaults.', e);
+      return defaultSettings;
+    }
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('minimapDrawSettings', JSON.stringify(drawSettings));
+    } catch (e) {
+      console.error('Failed to save minimap settings.', e);
+    }
+  }, [drawSettings]);
 
   const [mapImage, mapImageStatus] = useImage(mapUrl);
 
