@@ -1,4 +1,4 @@
-// findHealthBars.cc – Final optimization with Multi-Row Vertical SIMD Check
+// findHealthBars.cc – Final Production Version
 #include <napi.h>
 #include <vector>
 #include <thread>
@@ -7,8 +7,6 @@
 #include <mutex>
 #include <algorithm>
 #include <cmath>
-#include <chrono>
-#include <iostream>
 #include <set>
 #include <immintrin.h>
 
@@ -53,7 +51,6 @@ void HealthBarWorker(WorkerData data) {
 
         uint32_t endY = std::min(startY + rowChunkSize, data.searchY + data.searchH);
 
-        // We need to read 4 rows at a time, so adjust the loop boundary
         for (uint32_t y = startY; y < endY - 3; ++y) {
             const uint8_t* row0 = data.bgraData + (y * data.stride);
             const uint8_t* row1 = data.bgraData + ((y + 1) * data.stride);
@@ -64,31 +61,26 @@ void HealthBarWorker(WorkerData data) {
             const uint32_t endX = data.searchX + data.searchW - 31;
 
             for (; x + 8 <= endX; x += 8) {
-                // --- Stage 1: Find a complete 4-pixel vertical black line using only AVX2 ---
                 __m256i chunk0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row0 + x * 4));
                 __m256i chunk1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row1 + x * 4));
                 __m256i chunk2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row2 + x * 4));
                 __m256i chunk3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row3 + x * 4));
 
-                // Mask out the alpha channel for all 4 rows
                 chunk0 = _mm256_and_si256(chunk0, bgr_mask);
                 chunk1 = _mm256_and_si256(chunk1, bgr_mask);
                 chunk2 = _mm256_and_si256(chunk2, bgr_mask);
                 chunk3 = _mm256_and_si256(chunk3, bgr_mask);
 
-                // Compare each row to zero
                 __m256i cmp0 = _mm256_cmpeq_epi32(chunk0, zero);
                 __m256i cmp1 = _mm256_cmpeq_epi32(chunk1, zero);
                 __m256i cmp2 = _mm256_cmpeq_epi32(chunk2, zero);
                 __m256i cmp3 = _mm256_cmpeq_epi32(chunk3, zero);
 
-                // Combine the results. A bit is 1 only if it was 1 in ALL FOUR comparisons.
                 __m256i vertical_match = _mm256_and_si256(_mm256_and_si256(cmp0, cmp1), _mm256_and_si256(cmp2, cmp3));
                 int mask = _mm256_movemask_ps(_mm256_castsi256_ps(vertical_match));
 
-                if (mask == 0) continue; // The fastest path. No vertical black lines found.
+                if (mask == 0) continue;
 
-                // --- Stage 2 & 3: A vertical line was found, now do the final C++ checks ---
                 for (int j = 0; j < 8; ++j) {
                     if (mask & (1 << j)) {
                         uint32_t current_x = x + j;
@@ -108,7 +100,6 @@ void HealthBarWorker(WorkerData data) {
                 }
             }
 
-            // Remainder loop (unchanged, as it's not performance-critical)
             for (; x < endX; ++x) {
                 if (!IsBlack(row0 + x * 4)) continue;
                 if (!IsBlack(row1 + x * 4)) continue;
@@ -131,7 +122,6 @@ void HealthBarWorker(WorkerData data) {
     }
 }
 
-// ... (IsTouching, FindHealthBars, and Init functions are unchanged) ...
 bool IsTouching(const FoundHealthBar& a, const FoundHealthBar& b) {
     const int barWidth = 31;
     const int barHeight = 4;
@@ -141,7 +131,6 @@ bool IsTouching(const FoundHealthBar& a, const FoundHealthBar& b) {
 }
 
 Napi::Value FindHealthBars(const Napi::CallbackInfo& info) {
-    auto startTime = std::chrono::high_resolution_clock::now();
     Napi::Env env = info.Env();
 
     if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsObject()) {
@@ -193,8 +182,6 @@ Napi::Value FindHealthBars(const Napi::CallbackInfo& info) {
 
     for (auto& t : threads) t.join();
 
-    size_t initialResultsCount = results.size();
-
     std::vector<FoundHealthBar> isolatedResults;
     if (!results.empty()) {
         std::vector<bool> visited(results.size(), false);
@@ -226,13 +213,6 @@ Napi::Value FindHealthBars(const Napi::CallbackInfo& info) {
         obj.Set("y", isolatedResults[i].y);
         out[i] = obj;
     }
-
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
-    std::cout << "[findHealthBars] Processed in " << duration << "us. "
-              << "Threads: " << numThreads << ". "
-              << "Initial Detections: " << initialResultsCount << ". "
-              << "Final Results: " << isolatedResults.size() << "." << std::endl;
 
     return out;
 }
