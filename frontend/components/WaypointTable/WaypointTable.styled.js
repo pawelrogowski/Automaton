@@ -1,7 +1,7 @@
 import styled from 'styled-components';
 
 export const StyledWaypointTable = styled.div`
-  font-family: monospace !important;
+  height: 500px;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
@@ -177,7 +177,8 @@ export const SectionButtonsContainer = styled.div`
 `;
 
 export const SectionButton = styled.button`
-  background-color: ${(props) => (props.active ? 'transparent' : 'transparent')};
+  background-color: ${(props) =>
+    props.active ? 'transparent' : 'transparent'};
   color: white;
   border: none;
   padding: 6px 10px; /* Slightly smaller padding for more compact buttons */
@@ -186,7 +187,8 @@ export const SectionButton = styled.button`
   font-size: 12px; /* Smaller font size */
   white-space: nowrap; /* Prevent text wrapping */
   flex-shrink: 0; /* Prevent buttons from shrinking */
-  border-bottom: 1px solid ${(props) => (props.active ? '#b700ff' : 'transparent')};
+  border-bottom: 1px solid
+    ${(props) => (props.active ? '#b700ff' : 'transparent')};
   &:hover {
     background-color: ${(props) => (props.active ? '#b700ff' : 'transparent')};
     border-radius: 3px;
