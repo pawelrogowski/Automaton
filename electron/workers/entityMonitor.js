@@ -4,7 +4,7 @@ import findHealthBars from 'find-health-bars-native';
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 500;
+const SCAN_INTERVAL_MS = 50;
 
 if (!sharedData) {
   throw new Error('[EntityMonitor] Shared data not provided.');
