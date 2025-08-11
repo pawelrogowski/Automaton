@@ -1,3 +1,5 @@
+// entityMonitor.js (Updated)
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import findHealthBars from 'find-health-bars-native';
@@ -129,39 +131,25 @@ async function mainLoop() {
                     return null;
                   }
 
-                  // --- FINAL REFINED LOGIC ---
-
-                  // 1. Check if the health bar's physical screen Y-coordinate is within the top tile's boundaries.
                   const isOnTopRow =
                     screenY >= gameWorld.y &&
                     screenY < gameWorld.y + tileSize.height;
 
                   if (isOnTopRow) {
-                    // CASE 1: The health bar is on the top row. It needs special nested logic.
-                    // This threshold marks the 60% point down the height of the top tile.
                     const topRowThresholdY =
                       gameWorld.y + tileSize.height * 0.6;
 
                     if (screenY < topRowThresholdY) {
-                      // The health bar is in the TOP 60% of the top tile.
-                      // This belongs to an entity on the SAME tile (no shift).
+                      // Entity is on the same tile
                     } else {
-                      // The health bar is in the BOTTOM 40% of the top tile.
-                      // This belongs to an entity on the tile BELOW (shift by +1).
-                      gameCoords.y += 1;
+                      gameCoords.y += 1; // Entity is on the tile below
                     }
                   } else {
-                    // CASE 2: The health bar is on any other row.
-                    // The rule is simple: the entity is on the tile BELOW (shift by +1).
-                    gameCoords.y += 1;
+                    gameCoords.y += 1; // Entity is on the tile below
                   }
 
-                  // 3. Round the final coordinates to handle smooth animations and ensure integer values.
                   gameCoords.x = Math.round(gameCoords.x);
                   gameCoords.y = Math.round(gameCoords.y);
-
-                  // --- END OF FINAL LOGIC ---
-
                   gameCoords.z = playerMinimapPosition.z;
 
                   return {
@@ -180,19 +168,18 @@ async function mainLoop() {
 
             if (!deepCompareEntities(entitiesWithCoords, lastSentEntities)) {
               lastSentEntities = entitiesWithCoords;
+              // --- FIX START: Removed player position update from this worker ---
+              // The minimapMonitor is now responsible for this update.
               parentPort.postMessage({
                 type: 'batch-update',
                 payload: [
-                  {
-                    type: 'gameState/setPlayerMinimapPosition',
-                    payload: playerMinimapPosition,
-                  },
                   {
                     type: 'targeting/setEntities',
                     payload: entitiesWithCoords,
                   },
                 ],
               });
+              // --- FIX END ---
             }
           } finally {
             isScanning = false;

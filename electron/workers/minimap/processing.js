@@ -1,4 +1,4 @@
-// minimap/processing.js (Optimized Drop-in Replacement)
+// minimap/processing.js (Updated)
 
 import { parentPort } from 'worker_threads';
 import { performance } from 'perf_hooks';
@@ -17,9 +17,7 @@ import {
   PLAYER_POS_UPDATE_COUNTER_INDEX,
 } from '../sharedConstants.js';
 
-// --- FIX: Add state to remember the last written position ---
 let lastWrittenPosition = null;
-// --- END FIX ---
 
 /**
  * Analyzes minimap and floor indicator data to determine player position.
@@ -86,14 +84,26 @@ export async function processMinimapData(
     if (result?.position) {
       const newPos = result.position;
 
-      // --- FIX: Check if the position has actually changed before updating ---
       if (
         !lastWrittenPosition ||
         newPos.x !== lastWrittenPosition.x ||
         newPos.y !== lastWrittenPosition.y ||
         newPos.z !== lastWrittenPosition.z
       ) {
-        // Update SharedArrayBuffer for player position
+        // --- FIX START: Directly update Redux from minimapMonitor ---
+        // Post a message to the main thread to update the global Redux store.
+        parentPort.postMessage({
+          type: 'batch-update',
+          payload: [
+            {
+              type: 'gameState/setPlayerMinimapPosition',
+              payload: newPos,
+            },
+          ],
+        });
+        // --- FIX END ---
+
+        // Update SharedArrayBuffer for other workers (like entityMonitor) to consume.
         if (playerPosArray) {
           Atomics.store(playerPosArray, PLAYER_X_INDEX, newPos.x);
           Atomics.store(playerPosArray, PLAYER_Y_INDEX, newPos.y);
@@ -102,10 +112,8 @@ export async function processMinimapData(
           Atomics.notify(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
         }
 
-        // Update our state
         lastWrittenPosition = newPos;
       }
-      // --- END FIX ---
 
       return performance.now() - startTime;
     }
