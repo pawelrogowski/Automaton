@@ -53,7 +53,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'settings',
   ],
   regionMonitor: ['global'],
-  entityMonitor: ['global', 'regionCoordinates'],
+  entityMonitor: ['global', 'regionCoordinates', 'gameState'],
   screenMonitor: [
     'global',
     'regionCoordinates',
@@ -228,7 +228,14 @@ class WorkerManager {
     if (message.notification) {
       showNotification(message.notification.title, message.notification.body);
     } else if (message.storeUpdate) {
-      setGlobalState(message.type, message.payload);
+      this.incomingActionQueue.push({
+        type: message.type,
+        payload: message.payload,
+      });
+    } else if (message.type === 'batch-update') {
+      for (const action of message.payload) {
+        setGlobalState(action.type, action.payload);
+      }
     } else if (message.command === 'requestRegionRescan') {
       const regionWorkerEntry = this.workers.get('regionMonitor');
       if (regionWorkerEntry?.worker) {
@@ -301,6 +308,7 @@ class WorkerManager {
         'minimapMonitor',
         'pathfinderWorker',
         'cavebotWorker',
+        'entityMonitor',
       ].includes(name);
       const needsPathDataSAB = ['pathfinderWorker', 'cavebotWorker'].includes(
         name,
@@ -385,6 +393,10 @@ class WorkerManager {
 
   async stopAllWorkers() {
     log('info', '[Worker Manager] Stopping all workers...');
+    if (this.incomingActionInterval) {
+      clearInterval(this.incomingActionInterval);
+      this.incomingActionInterval = null;
+    }
     await Promise.all(
       Array.from(this.workers.keys()).map((name) => this.stopWorker(name)),
     );
@@ -644,6 +656,19 @@ class WorkerManager {
     log('info', '[Worker Manager] Initializing with debounced store updates.');
     this.previousState = store.getState();
     store.subscribe(this.debouncedStoreUpdate);
+
+    this.incomingActionQueue = [];
+    this.incomingActionInterval = setInterval(() => {
+      if (this.incomingActionQueue.length > 0) {
+        const batch = this.incomingActionQueue.splice(
+          0,
+          this.incomingActionQueue.length,
+        );
+        for (const action of batch) {
+          setGlobalState(action.type, action.payload);
+        }
+      }
+    }, 5);
   }
 }
 

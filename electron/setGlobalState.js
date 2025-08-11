@@ -1,6 +1,38 @@
 import store from './store.js';
 import { getMainWindow, getWidgetWindow } from './createMainWindow.js';
 
+let actionQueue = [];
+let isScheduled = false;
+
+function sendBatch() {
+  if (actionQueue.length === 0) {
+    isScheduled = false;
+    return;
+  }
+
+  const mainWindow = getMainWindow();
+  const widgetWindow = getWidgetWindow();
+  const batch = [...actionQueue];
+  actionQueue = [];
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('state-update-batch', batch);
+  }
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    widgetWindow.webContents.send('state-update-batch', batch);
+  }
+
+  isScheduled = false;
+}
+
+function scheduleBatch() {
+  if (!isScheduled) {
+    isScheduled = true;
+    // Use setImmediate for high-throughput, non-UI-blocking batching
+    setImmediate(sendBatch);
+  }
+}
+
 /**
  * A centralized function to update the main process Redux store
  * and broadcast the change to the renderer process.
@@ -8,26 +40,18 @@ import { getMainWindow, getWidgetWindow } from './createMainWindow.js';
  * @param {*} payload - The action payload.
  */
 function setGlobalState(type, payload) {
-  const mainWindow = getMainWindow();
-  const widgetWindow = getWidgetWindow();
-
   const action = {
     type,
     payload,
-    origin: 'backend', // Mark this action as originating from the main process
+    origin: 'backend',
   };
 
-  // 1. Dispatch the action to the main process store.
+  // 1. Dispatch the action to the main process store immediately.
   store.dispatch(action);
 
-  // 2. Broadcast the action to the renderer window so its store can sync.
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('state-update', action);
-  }
-
-  if (widgetWindow && !widgetWindow.isDestroyed()) {
-    widgetWindow.webContents.send('state-update', action);
-  }
+  // 2. Queue the action to be sent to the renderer in a batch.
+  actionQueue.push(action);
+  scheduleBatch();
 }
 
 export default setGlobalState;

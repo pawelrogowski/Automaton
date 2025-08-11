@@ -51,7 +51,8 @@ void HealthBarWorker(WorkerData data) {
 
         uint32_t endY = std::min(startY + rowChunkSize, data.searchY + data.searchH);
 
-        for (uint32_t y = startY; y < endY - 3; ++y) {
+        for (uint32_t y = startY; y < endY; ++y) {
+            if (y + 3 >= data.searchY + data.searchH) break;
             const uint8_t* row0 = data.bgraData + (y * data.stride);
             const uint8_t* row1 = data.bgraData + ((y + 1) * data.stride);
             const uint8_t* row2 = data.bgraData + ((y + 2) * data.stride);
@@ -182,17 +183,25 @@ Napi::Value FindHealthBars(const Napi::CallbackInfo& info) {
 
     for (auto& t : threads) t.join();
 
-    std::vector<FoundHealthBar> isolatedResults;
+    std::vector<FoundHealthBar> mergedResults;
     if (!results.empty()) {
         std::vector<bool> visited(results.size(), false);
         for (size_t i = 0; i < results.size(); ++i) {
             if (visited[i]) continue;
+
             std::vector<size_t> q;
             q.push_back(i);
             visited[i] = true;
+
+            double sumX = 0;
+            double sumY = 0;
             size_t head = 0;
+
             while(head < q.size()){
                 size_t current_idx = q[head++];
+                sumX += results[current_idx].x;
+                sumY += results[current_idx].y;
+
                 for (size_t j = 0; j < results.size(); ++j) {
                     if (!visited[j] && IsTouching(results[current_idx], results[j])) {
                         visited[j] = true;
@@ -200,17 +209,19 @@ Napi::Value FindHealthBars(const Napi::CallbackInfo& info) {
                     }
                 }
             }
-            if (q.size() == 1) {
-                isolatedResults.push_back(results[i]);
-            }
+
+            mergedResults.push_back({
+                static_cast<int>(std::round(sumX / q.size())),
+                static_cast<int>(std::round(sumY / q.size()))
+            });
         }
     }
 
-    Napi::Array out = Napi::Array::New(env, isolatedResults.size());
-    for (size_t i = 0; i < isolatedResults.size(); ++i) {
+    Napi::Array out = Napi::Array::New(env, mergedResults.size());
+    for (size_t i = 0; i < mergedResults.size(); ++i) {
         Napi::Object obj = Napi::Object::New(env);
-        obj.Set("x", isolatedResults[i].x);
-        obj.Set("y", isolatedResults[i].y);
+        obj.Set("x", mergedResults[i].x);
+        obj.Set("y", mergedResults[i].y);
         out[i] = obj;
     }
 

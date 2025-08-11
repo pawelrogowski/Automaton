@@ -157,6 +157,20 @@ const MinimapSettingsModal = React.memo(
               onChange={() => handleToggle('specialAreas')}
             />
 
+            {/* Entities */}
+            <ControlLabel>Entities</ControlLabel>
+            <ColorInput
+              value={settings.entity.color}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                handleColorChange('entity', 'color', e.target.value)
+              }
+            />
+            <CustomSwitch
+              checked={settings.entity.draw}
+              onChange={() => handleToggle('entity')}
+            />
+
             {/* Waypoints Header */}
             <ControlLabel>Waypoints</ControlLabel>
             <div />
@@ -194,17 +208,29 @@ const Minimap = () => {
   const contextMenuRef = useRef(null);
 
   // --- Redux State ---
-  const playerPosition = useSelector(
-    (state) => state.gameState.playerMinimapPosition,
-  );
-  const currentSection = useSelector((state) => state.cavebot.currentSection);
-  const allWaypoints = useSelector(
-    (state) => state.cavebot.waypointSections[currentSection]?.waypoints || [],
-  );
-  const wptSelection = useSelector((state) => state.cavebot.wptSelection);
-  const wptId = useSelector((state) => state.cavebot.wptId);
-  const allPathWaypoints = useSelector((state) => state.cavebot.pathWaypoints);
-  const specialAreas = useSelector((state) => state.cavebot.specialAreas);
+  const {
+    playerPosition,
+    currentSection,
+    allWaypoints,
+    wptSelection,
+    wptId,
+    allPathWaypoints,
+    specialAreas,
+    entities,
+  } = useSelector((state) => {
+    const currentSection = state.cavebot.currentSection;
+    return {
+      playerPosition: state.gameState.playerMinimapPosition,
+      currentSection,
+      allWaypoints:
+        state.cavebot.waypointSections[currentSection]?.waypoints || [],
+      wptSelection: state.cavebot.wptSelection,
+      wptId: state.cavebot.wptId,
+      allPathWaypoints: state.cavebot.pathWaypoints,
+      specialAreas: state.cavebot.specialAreas,
+      entities: state.targeting.entities,
+    };
+  });
 
   // --- Component State ---
   const [mapMode, setMapMode] = useState('map');
@@ -250,6 +276,7 @@ const Minimap = () => {
         fill: MINIMAP_COLORS.SPECIAL_AREA.fill,
         stroke: MINIMAP_COLORS.SPECIAL_AREA.stroke,
       },
+      entity: { draw: true, color: MINIMAP_COLORS.ENTITY },
     };
 
     try {
@@ -273,6 +300,7 @@ const Minimap = () => {
         ...defaultSettings.specialAreas,
         ...parsed.specialAreas,
       };
+      merged.entity = { ...defaultSettings.entity, ...parsed.entity };
       return merged;
     } catch (e) {
       console.error('Failed to load minimap settings, using defaults.', e);
@@ -331,6 +359,10 @@ const Minimap = () => {
   const visibleSpecialAreas = useMemo(
     () => specialAreas.filter((area) => area.z === zLevel && area.enabled),
     [specialAreas, zLevel],
+  );
+  const visibleEntities = useMemo(
+    () => entities.filter((e) => e.gameCoords.z === zLevel),
+    [entities, zLevel],
   );
 
   // --- Centering & Resizing Logic ---
@@ -846,6 +878,27 @@ const Minimap = () => {
                   listening={false}
                 />
               )}
+
+              {/* Render Entities */}
+              {drawSettings.entity.draw &&
+                visibleEntities.map((entity) => (
+                  <Rect
+                    key={
+                      entity.absoluteCoords.x + '-' + entity.absoluteCoords.y
+                    }
+                    x={entity.gameCoords.x}
+                    y={entity.gameCoords.y}
+                    width={1}
+                    height={1}
+                    fill={drawSettings.entity.color}
+                    listening={false}
+                    shadowColor={MINIMAP_COLORS.SHADOW}
+                    shadowBlur={8 / stageScale}
+                    shadowOffsetX={0}
+                    shadowOffsetY={0}
+                    shadowOpacity={0.9}
+                  />
+                ))}
             </Layer>
           </Stage>
         </div>

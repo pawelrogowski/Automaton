@@ -102,13 +102,6 @@ export async function processMinimapData(
           Atomics.notify(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
         }
 
-        // Also post to Redux for redundancy and other consumers
-        parentPort.postMessage({
-          storeUpdate: true,
-          type: 'gameState/setPlayerMinimapPosition',
-          payload: { x: newPos.x, y: newPos.y, z: newPos.z },
-        });
-
         // Update our state
         lastWrittenPosition = newPos;
       }

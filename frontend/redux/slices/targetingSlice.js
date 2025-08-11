@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   enabled: false,
+  entities: [],
 };
 
 const targetingSlice = createSlice({
@@ -11,9 +12,12 @@ const targetingSlice = createSlice({
     setenabled: (state, action) => {
       state.enabled = action.payload;
     },
+    setEntities: (state, action) => {
+      state.entities = action.payload;
+    },
   },
 });
 
-export const { setenabled } = targetingSlice.actions;
+export const { setenabled, setEntities } = targetingSlice.actions;
 
 export default targetingSlice;

@@ -15,11 +15,13 @@ window.onload = () => {
   window.electron.ipcRenderer.send('renderer-ready');
 };
 
-ipcRenderer.on('state-update', (_, update) => {
-  console.log('[Renderer] Received state-update:', update);
-  if (update.origin === 'backend') {
-    console.log('[Renderer] Dispatching to store:', update.type);
-    store.dispatch(update);
+ipcRenderer.on('state-update-batch', (_, batch) => {
+  if (Array.isArray(batch)) {
+    for (const action of batch) {
+      if (action.origin === 'backend') {
+        store.dispatch(action);
+      }
+    }
   }
 });
 
