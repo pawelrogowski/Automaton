@@ -339,12 +339,13 @@ const handleLadderAction = async (targetCoords) => {
 };
 
 const handleZLevelToolAction = async (toolType, targetCoords) => {
-  const hotkey = globalState.settings.hotkeys[toolType.toLowerCase()];
+  const state = globalState;
+  const hotkey = state.settings.hotkeys[toolType.toLowerCase()];
   if (!hotkey) return false;
-  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
+  const { gameWorld, tileSize } = state.regionCoordinates.regions;
   if (!gameWorld || !tileSize) return false;
   const initialPos = { ...playerMinimapPosition };
-  keypress.sendKey(hotkey, globalState.global.display || ':0');
+  keypress.sendKey(hotkey, state.global.display || ':0');
   await delay(config.toolHotkeyWaitMs + config.preClickDelayMs);
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
@@ -356,18 +357,18 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
   );
   if (!clickCoords) return false;
   mouseController.leftClick(
-    parseInt(globalState.global.windowId, 10),
+    parseInt(state.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
-    globalState.global.display || ':0',
+    state.global.display || ':0',
   );
   const zChanged = await awaitStateChange(
-    (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
+    (s) => s.gameState?.playerMinimapPosition?.z !== initialPos.z,
     config.actionStateChangeTimeoutMs,
   );
   if (zChanged) {
     floorChangeGraceUntil = Date.now() + 500;
-    const finalPos = globalState.gameState.playerMinimapPosition;
+    const finalPos = globalState.gameState.playerMinimapPosition; // globalState is updated by awaitStateChange
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       stuckDetectionGraceUntil = Date.now() + config.postTeleportGraceMs;
     }

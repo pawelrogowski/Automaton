@@ -29,7 +29,7 @@ export function runPathfindingLogic(context) {
   const {
     state,
     pathfinderInstance,
-    lastJsonForType,
+    lastConfigForType,
     logger,
     pathDataArray,
     throttleReduxUpdate,
@@ -65,8 +65,13 @@ export function runPathfindingLogic(context) {
       const permanentAreas = (state.cavebot?.specialAreas || []).filter(
         (area) => area.enabled && area.type === requiredAvoidanceType,
       );
-      const currentJson = JSON.stringify(permanentAreas);
-      if (currentJson !== lastJsonForType.get(requiredAvoidanceType)) {
+
+      // Create a cheap-to-compute string signature instead of JSON.stringify
+      const currentKey = permanentAreas
+        .map((a) => `${a.x},${a.y},${a.z},${a.avoidance},${a.sizeX},${a.sizeY}`)
+        .join('|');
+
+      if (currentKey !== lastConfigForType.get(requiredAvoidanceType)) {
         const areasForNative = permanentAreas.map((area) => ({
           x: area.x,
           y: area.y,
@@ -76,7 +81,7 @@ export function runPathfindingLogic(context) {
           height: area.sizeY,
         }));
         pathfinderInstance.updateSpecialAreas(areasForNative, z);
-        lastJsonForType.set(requiredAvoidanceType, currentJson);
+        lastConfigForType.set(requiredAvoidanceType, currentKey);
       }
     }
 
@@ -147,42 +152,42 @@ export function runPathfindingLogic(context) {
 
     // --- Write Results to Shared Array Buffer ---
     const pathSignature = `${statusCode}:${path.map((p) => `${p.x},${p.y}`).join(';')}`;
-    if (pathSignature !== lastWrittenPathSignature) {
-      if (pathDataArray) {
-        const pathLength = Math.min(path.length, MAX_PATH_WAYPOINTS);
-        const chebyshevDistance = Math.max(
-          Math.abs(x - targetWaypoint.x),
-          Math.abs(y - targetWaypoint.y),
-        );
+    if (pathSignature === lastWrittenPathSignature) return;
 
-        // Store all path metadata in the SAB
-        Atomics.store(pathDataArray, PATH_LENGTH_INDEX, pathLength);
-        Atomics.store(
-          pathDataArray,
-          PATH_CHEBYSHEV_DISTANCE_INDEX,
-          chebyshevDistance,
-        );
-        Atomics.store(pathDataArray, PATH_START_X_INDEX, x);
-        Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
-        Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
+    if (pathDataArray) {
+      const pathLength = Math.min(path.length, MAX_PATH_WAYPOINTS);
+      const chebyshevDistance = Math.max(
+        Math.abs(x - targetWaypoint.x),
+        Math.abs(y - targetWaypoint.y),
+      );
 
-        // ** THE CRUCIAL CHANGE: Store the definitive status code **
-        Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
+      // Store all path metadata in the SAB
+      Atomics.store(pathDataArray, PATH_LENGTH_INDEX, pathLength);
+      Atomics.store(
+        pathDataArray,
+        PATH_CHEBYSHEV_DISTANCE_INDEX,
+        chebyshevDistance,
+      );
+      Atomics.store(pathDataArray, PATH_START_X_INDEX, x);
+      Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
+      Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
 
-        // Store the waypoints
-        for (let i = 0; i < pathLength; i++) {
-          const waypoint = path[i];
-          const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-          Atomics.store(pathDataArray, offset + 0, waypoint.x);
-          Atomics.store(pathDataArray, offset + 1, waypoint.y);
-          Atomics.store(pathDataArray, offset + 2, waypoint.z);
-        }
+      // ** THE CRUCIAL CHANGE: Store the definitive status code **
+      Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
 
-        // Increment update counter to notify consumers
-        Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
+      // Store the waypoints
+      for (let i = 0; i < pathLength; i++) {
+        const waypoint = path[i];
+        const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
+        Atomics.store(pathDataArray, offset + 0, waypoint.x);
+        Atomics.store(pathDataArray, offset + 1, waypoint.y);
+        Atomics.store(pathDataArray, offset + 2, waypoint.z);
       }
-      lastWrittenPathSignature = pathSignature;
+
+      // Increment update counter to notify consumers
+      Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
     }
+    lastWrittenPathSignature = pathSignature;
 
     // --- Throttle Redux Update for UI (Unchanged) ---
     const distance =

@@ -10,6 +10,7 @@ import { setBattleListEntries } from '../../frontend/redux/slices/battleListSlic
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
+import { rectsIntersect } from './minimap/helpers.js';
 
 // --- Worker Configuration ---
 const { sharedData } = workerData;
@@ -81,25 +82,6 @@ const reusableBattleListUpdate = {
 // --- Utilities ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function rectsIntersect(rectA, rectB) {
-  if (
-    !rectA ||
-    !rectB ||
-    rectA.width <= 0 ||
-    rectA.height <= 0 ||
-    rectB.width <= 0 ||
-    rectB.height <= 0
-  ) {
-    return false;
-  }
-  return (
-    rectA.x < rectB.x + rectB.width &&
-    rectA.x + rectA.width > rectB.x &&
-    rectA.y < rectB.y + rectB.height &&
-    rectA.y + rectA.height > rectB.y
-  );
-}
-
 // --- Performance Monitoring ---
 function logPerformanceStats() {
   const now = Date.now();
@@ -143,16 +125,16 @@ function initializeWorker() {
 
 // --- Rule Processing ---
 function runRules(ruleInput) {
-  if (!currentState?.rules?.enabled) return;
+  const { rules, global, regionCoordinates } = currentState;
+  if (!rules?.enabled) return;
 
-  const currentPreset =
-    currentState?.rules?.presets?.[currentState?.rules?.activePresetIndex];
+  const currentPreset = rules.presets?.[rules.activePresetIndex];
   if (!currentPreset) return;
 
   try {
     ruleProcessorInstance.processRules(currentPreset, ruleInput, {
-      ...currentState.global,
-      isOnline: currentState?.regionCoordinates?.regions?.onlineMarker ?? false,
+      ...global,
+      isOnline: regionCoordinates?.regions?.onlineMarker ?? false,
     });
   } catch (error) {
     console.error('[ScreenMonitor] Rule processing error:', error);
@@ -160,14 +142,14 @@ function runRules(ruleInput) {
 }
 
 // --- Calculation Functions ---
-function calculateHealthBar(bufferToUse, metadata, regions) {
-  if (!regions.healthBar) return lastCalculatedState.hppc;
+function calculateHealthBar(bufferToUse, metadata, healthBarRegion) {
+  if (!healthBarRegion) return lastCalculatedState.hppc;
 
   const calcStart = performance.now();
   const result = calculatePercentages(
     bufferToUse,
     metadata,
-    regions.healthBar,
+    healthBarRegion,
     resourceBars.healthBar,
     94,
   );
@@ -179,14 +161,14 @@ function calculateHealthBar(bufferToUse, metadata, regions) {
   return result;
 }
 
-function calculateManaBar(bufferToUse, metadata, regions) {
-  if (!regions.manaBar) return lastCalculatedState.mppc;
+function calculateManaBar(bufferToUse, metadata, manaBarRegion) {
+  if (!manaBarRegion) return lastCalculatedState.mppc;
 
   const calcStart = performance.now();
   const result = calculatePercentages(
     bufferToUse,
     metadata,
-    regions.manaBar,
+    manaBarRegion,
     resourceBars.manaBar,
     94,
   );
@@ -198,8 +180,8 @@ function calculateManaBar(bufferToUse, metadata, regions) {
   return result;
 }
 
-function calculateCooldowns(regions) {
-  const activeCooldowns = regions.cooldowns?.children || {};
+function calculateCooldowns(cooldownsRegion) {
+  const activeCooldowns = cooldownsRegion?.children || {};
 
   const healingCd = cooldownManager.updateCooldown(
     'healing',
@@ -224,17 +206,17 @@ function calculateCooldowns(regions) {
   return { healingCd, supportCd, attackCd };
 }
 
-function calculateCharacterStatus(regions) {
+function calculateCharacterStatus(statusBarRegion) {
   const characterStatus = {};
-  if (regions.statusBar?.children) {
-    Object.keys(regions.statusBar.children).forEach((key) => {
-      characterStatus[key] = !!regions.statusBar.children[key].x;
+  if (statusBarRegion?.children) {
+    Object.keys(statusBarRegion.children).forEach((key) => {
+      characterStatus[key] = !!statusBarRegion.children[key].x;
     });
   }
   return characterStatus;
 }
 
-function calculateEquippedItems(regions) {
+function calculateEquippedItems(amuletSlot, ringSlot, bootsSlot) {
   const getEquippedItem = (slotRegion) => {
     if (!slotRegion?.children) return 'Unknown';
     const foundItems = Object.keys(slotRegion.children);
@@ -244,16 +226,16 @@ function calculateEquippedItems(regions) {
   };
 
   return {
-    amulet: getEquippedItem(regions.amuletSlot),
-    ring: getEquippedItem(regions.ringSlot),
-    boots: getEquippedItem(regions.bootsSlot),
+    amulet: getEquippedItem(amuletSlot),
+    ring: getEquippedItem(ringSlot),
+    boots: getEquippedItem(bootsSlot),
   };
 }
 
-function calculateActiveActionItems(regions) {
-  return regions.hotkeyBar?.children
+function calculateActiveActionItems(hotkeyBarRegion) {
+  return hotkeyBarRegion?.children
     ? Object.fromEntries(
-        Object.entries(regions.hotkeyBar.children).map(([key, child]) => [
+        Object.entries(hotkeyBarRegion.children).map(([key, child]) => [
           key,
           child,
         ]),
@@ -261,8 +243,8 @@ function calculateActiveActionItems(regions) {
     : {};
 }
 
-function calculateBattleList(bufferToUse, metadata, regions) {
-  const battleListEntries = regions.battleList?.children?.entries?.list || [];
+function calculateBattleList(bufferToUse, metadata, battleListRegion) {
+  const battleListEntries = battleListRegion?.children?.entries?.list || [];
   const uiBattleListNames = currentState.uiValues?.battleListEntries || [];
 
   return battleListEntries.map((entry, index) => {
@@ -290,11 +272,12 @@ function calculateBattleList(bufferToUse, metadata, regions) {
 }
 
 function calculateWalkingState() {
-  if (!currentState?.gameState?.playerMinimapPosition) {
+  const { gameState } = currentState;
+  if (!gameState?.playerMinimapPosition) {
     return lastCalculatedState.isWalking;
   }
 
-  const currentPos = currentState.gameState.playerMinimapPosition;
+  const currentPos = gameState.playerMinimapPosition;
   const lastPos = lastCalculatedState.lastKnownPlayerMinimapPosition;
 
   const hasPositionChanged =
@@ -306,13 +289,12 @@ function calculateWalkingState() {
   if (hasPositionChanged) {
     lastCalculatedState.lastMovementTimestamp = performance.now();
     lastCalculatedState.lastKnownPlayerMinimapPosition = { ...currentPos };
+    return true;
   }
 
-  const isWalking =
-    hasPositionChanged ||
-    performance.now() - (lastCalculatedState.lastMovementTimestamp || 0) < 750;
-
-  return isWalking;
+  const timeSinceLastMove =
+    performance.now() - (lastCalculatedState.lastMovementTimestamp || 0);
+  return timeSinceLastMove < 750;
 }
 
 // --- Main Processing Function ---
@@ -337,109 +319,95 @@ async function processGameState() {
     const width = Atomics.load(syncArray, WIDTH_INDEX);
     const height = Atomics.load(syncArray, HEIGHT_INDEX);
     const { regions } = currentState.regionCoordinates;
-
     if (Object.keys(regions).length === 0 || width <= 0 || height <= 0) {
       return; // No regions or invalid dimensions
     }
+
+    // Destructure regions once for the frame to avoid repeated property access.
+    const {
+      healthBar,
+      manaBar,
+      cooldowns,
+      statusBar,
+      amuletSlot,
+      ringSlot,
+      bootsSlot,
+      hotkeyBar,
+      battleList,
+    } = regions;
 
     lastProcessedFrameCounter = newFrameCounter;
     const metadata = { width, height, frameCounter: newFrameCounter };
     const bufferToUse = sharedBufferView;
 
-    // Get dirty regions
+    // --- Dirty Region Optimization ---
     const dirtyRegionCount = Atomics.load(syncArray, DIRTY_REGION_COUNT_INDEX);
-    const dirtyRects = [];
+    let hasPixelChanges =
+      dirtyRegionCount === 0 && initializedRegions.size > 0 ? false : true;
 
-    for (let i = 0; i < Math.min(dirtyRegionCount, 64); i++) {
-      // Limit to max 64 regions
-      const offset = DIRTY_REGIONS_START_INDEX + i * 4;
-      const rect = {
-        x: Atomics.load(syncArray, offset + 0),
-        y: Atomics.load(syncArray, offset + 1),
-        width: Atomics.load(syncArray, offset + 2),
-        height: Atomics.load(syncArray, offset + 3),
-      };
+    if (!hasPixelChanges) {
+      const watchedRegions = Object.values(regions).filter(Boolean);
+      for (let i = 0; i < dirtyRegionCount; i++) {
+        const offset = DIRTY_REGIONS_START_INDEX + i * 4;
+        const dirtyRect = {
+          x: Atomics.load(syncArray, offset + 0),
+          y: Atomics.load(syncArray, offset + 1),
+          width: Atomics.load(syncArray, offset + 2),
+          height: Atomics.load(syncArray, offset + 3),
+        };
 
-      if (rect.width > 0 && rect.height > 0) {
-        dirtyRects.push(rect);
+        if (dirtyRect.width > 0 && dirtyRect.height > 0) {
+          for (const watched of watchedRegions) {
+            if (rectsIntersect(watched, dirtyRect)) {
+              hasPixelChanges = true;
+              break;
+            }
+          }
+        }
+        if (hasPixelChanges) break;
       }
     }
-
-    // Determine what needs calculation
-    const shouldCalculate = (regionName) => {
-      if (!regions[regionName]) return false;
-      if (!initializedRegions.has(regionName)) return true;
-
-      for (const dirtyRect of dirtyRects) {
-        if (rectsIntersect(regions[regionName], dirtyRect)) return true;
-      }
-      return false;
-    };
 
     let hasUpdates = false;
 
-    // Perform calculations only when needed
-    if (shouldCalculate('healthBar')) {
+    if (hasPixelChanges) {
       lastCalculatedState.hppc = calculateHealthBar(
         bufferToUse,
         metadata,
-        regions,
+        healthBar,
       );
-      initializedRegions.add('healthBar');
-      hasUpdates = true;
-    }
-
-    if (shouldCalculate('manaBar')) {
       lastCalculatedState.mppc = calculateManaBar(
         bufferToUse,
         metadata,
-        regions,
+        manaBar,
       );
-      initializedRegions.add('manaBar');
-      hasUpdates = true;
-    }
-
-    if (shouldCalculate('cooldowns')) {
-      const cooldowns = calculateCooldowns(regions);
-      Object.assign(lastCalculatedState, cooldowns);
-      initializedRegions.add('cooldowns');
-      hasUpdates = true;
-    }
-
-    if (shouldCalculate('statusBar')) {
-      lastCalculatedState.characterStatus = calculateCharacterStatus(regions);
-      initializedRegions.add('statusBar');
-      hasUpdates = true;
-    }
-
-    const equipmentRegions = ['amuletSlot', 'ringSlot', 'bootsSlot'];
-    if (equipmentRegions.some(shouldCalculate)) {
-      lastCalculatedState.equippedItems = calculateEquippedItems(regions);
-      equipmentRegions.forEach((name) => initializedRegions.add(name));
-      hasUpdates = true;
-    }
-
-    if (shouldCalculate('hotkeyBar')) {
+      const cooldownsResult = calculateCooldowns(cooldowns);
+      Object.assign(lastCalculatedState, cooldownsResult);
+      lastCalculatedState.characterStatus = calculateCharacterStatus(statusBar);
+      lastCalculatedState.equippedItems = calculateEquippedItems(
+        amuletSlot,
+        ringSlot,
+        bootsSlot,
+      );
       lastCalculatedState.activeActionItems =
-        calculateActiveActionItems(regions);
-      initializedRegions.add('hotkeyBar');
-      hasUpdates = true;
-    }
-
-    if (shouldCalculate('battleList')) {
+        calculateActiveActionItems(hotkeyBar);
       lastCalculatedState.battleList = calculateBattleList(
         bufferToUse,
         metadata,
-        regions,
+        battleList,
       );
-      initializedRegions.add('battleList');
       hasUpdates = true;
+
+      // Mark all regions as initialized after the first full calculation
+      if (initializedRegions.size === 0) {
+        Object.keys(regions).forEach((name) => initializedRegions.add(name));
+      }
     }
 
     // Always calculate walking state and monster count (non-pixel based)
     lastCalculatedState.isWalking = calculateWalkingState();
     lastCalculatedState.monsterNum =
-      regions.battleList?.children?.entries?.list?.length || 0;
+      battleList?.children?.entries?.list?.length || 0;
 
     // Send updates if we have changes
     if (hasUpdates || !initializedRegions.size) {

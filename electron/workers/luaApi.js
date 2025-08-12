@@ -26,52 +26,61 @@ import { setenabled as setLuaEnabled } from '../../frontend/redux/slices/luaSlic
  */
 const createStateShortcutObject = (getState, type) => {
   const shortcuts = {};
+  const state = getState();
+  const {
+    gameState,
+    regionCoordinates,
+    uiValues,
+    cavebot,
+    rules,
+    targeting,
+    lua,
+  } = state;
+
   Object.defineProperty(shortcuts, 'hppc', {
-    get: () => getState().gameState?.hppc,
+    get: () => gameState?.hppc,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'mppc', {
-    get: () => getState().gameState?.mppc,
+    get: () => gameState?.mppc,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isChatOff', {
-    get: () => getState().gameState?.isChatOff,
+    get: () => gameState?.isChatOff,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'monsterNum', {
     get: () =>
-      getState().regionCoordinates.regions.battleList?.children?.entries?.list
-        ?.length,
+      regionCoordinates.regions.battleList?.children?.entries?.list?.length,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'battleList', {
     get: () => ({
       entries:
-        getState().regionCoordinates.regions.battleList?.children?.entries
-          ?.list || [],
+        regionCoordinates.regions.battleList?.children?.entries?.list || [],
     }),
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'partyNum', {
-    get: () => getState().gameState?.partyNum,
+    get: () => gameState?.partyNum,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isTyping', {
-    get: () => getState().gameState?.isTyping,
+    get: () => gameState?.isTyping,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isOnline', {
-    get: () => !!getState().regionCoordinates?.regions?.onlineMarker,
+    get: () => !!regionCoordinates?.regions?.onlineMarker,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'activeTab', {
-    get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
+    get: () => uiValues?.chatboxTabs?.activeTab || 'unknown',
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'actionItems', {
     get: () => {
       const hotkeyBarChildren =
-        getState().regionCoordinates?.regions?.hotkeyBar?.children || {};
+        regionCoordinates?.regions?.hotkeyBar?.children || {};
       return new Proxy(
         {},
         {
@@ -90,43 +99,38 @@ const createStateShortcutObject = (getState, type) => {
     },
     enumerable: true,
   });
-  const gameState = getState().gameState;
+
   if (gameState && gameState.characterStatus) {
     for (const status in gameState.characterStatus) {
       Object.defineProperty(shortcuts, status, {
-        get: () => getState().gameState.characterStatus[status],
+        get: () => gameState.characterStatus[status],
         enumerable: true,
       });
     }
   }
   Object.defineProperty(shortcuts, 'pos', {
     get: () => {
-      const pos = getState().gameState?.playerMinimapPosition || {};
+      const pos = gameState?.playerMinimapPosition || {};
       return { x: pos.x, y: pos.y, z: pos.z };
     },
     enumerable: true,
   });
-  const cavebotState = getState().cavebot;
-  if (type === 'cavebot' && cavebotState) {
+
+  if (type === 'cavebot' && cavebot) {
     Object.defineProperty(shortcuts, 'cavebot', {
-      get: () => getState().cavebot?.enabled,
+      get: () => cavebot?.enabled,
       enumerable: true,
     });
     Object.defineProperty(shortcuts, 'section', {
-      get: () =>
-        getState().cavebot?.waypointSections[getState().cavebot?.currentSection]
-          ?.name,
+      get: () => cavebot?.waypointSections[cavebot?.currentSection]?.name,
       enumerable: true,
     });
     Object.defineProperty(shortcuts, 'wpt', {
       get: () => {
-        const currentCavebotState = getState().cavebot;
         const currentWaypoints =
-          currentCavebotState?.waypointSections[
-            currentCavebotState?.currentSection
-          ]?.waypoints || [];
+          cavebot?.waypointSections[cavebot?.currentSection]?.waypoints || [];
         const currentWptIndex = currentWaypoints.findIndex(
-          (wp) => wp.id === currentCavebotState?.wptId,
+          (wp) => wp.id === cavebot?.wptId,
         );
         const currentWpt =
           currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
@@ -138,7 +142,7 @@ const createStateShortcutObject = (getState, type) => {
             z: currentWpt.z,
             type: currentWpt.type,
             label: currentWpt.label,
-            distance: currentCavebotState.wptDistance,
+            distance: cavebot.wptDistance,
           };
         }
         return null;
@@ -147,19 +151,19 @@ const createStateShortcutObject = (getState, type) => {
     });
   }
   Object.defineProperty(shortcuts, '$healing', {
-    get: () => getState().rules?.enabled,
+    get: () => rules?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, '$targeting', {
-    get: () => getState().targeting?.enabled,
+    get: () => targeting?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, '$cavebot', {
-    get: () => getState().cavebot?.enabled,
+    get: () => cavebot?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, '$scripts', {
-    get: () => getState().lua?.enabled,
+    get: () => lua?.enabled,
     enumerable: true,
   });
   return shortcuts;
@@ -202,7 +206,8 @@ export const createLuaApi = (context) => {
   const getDisplay = () => getState()?.global?.display || ':0';
   const baseApi = {
     getDistanceTo: (x, y, z) => {
-      const playerPos = getState().gameState?.playerMinimapPosition;
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
       if (!playerPos) return 9999;
       if (z !== undefined && playerPos.z !== z) return 9999;
       return Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
@@ -238,7 +243,8 @@ export const createLuaApi = (context) => {
       const message = messages.map(String).join(' ');
       logger('info', `[Lua/${scriptName}] print: ${message}`);
       if (type === 'cavebot') {
-        const scriptId = getState().cavebot.wptId;
+        const state = getState();
+        const scriptId = state.cavebot.wptId;
         context.postStoreUpdate('cavebot/addWaypointLogEntry', {
           id: scriptId,
           message: message,
@@ -816,9 +822,9 @@ export const createLuaApi = (context) => {
       if (!targetCharacterFound) {
         await keyPress(display, character[0]);
         await wait(100);
-        currentState = getState();
+        const updatedState = getState();
         const updatedCharacterData =
-          currentState.uiValues?.selectCharacterModal;
+          updatedState.uiValues?.selectCharacterModal;
         if (updatedCharacterData && updatedCharacterData.characters) {
           characters = updatedCharacterData.characters;
           characterNames = Object.keys(characters);
@@ -900,15 +906,17 @@ export const createLuaApi = (context) => {
       },
       goToLabel: (label) => {
         const state = getState();
-        const targetWpt = state.cavebot.waypointSections[
-          state.cavebot.currentSection
-        ]?.waypoints.find((wp) => wp.label === label);
+        const { waypointSections, currentSection } = state.cavebot;
+        const targetWpt = waypointSections[currentSection]?.waypoints.find(
+          (wp) => wp.label === label,
+        );
         if (targetWpt)
           context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
       },
       goToSection: (sectionName) => {
         const state = getState();
-        const foundEntry = Object.entries(state.cavebot.waypointSections).find(
+        const { waypointSections } = state.cavebot;
+        const foundEntry = Object.entries(waypointSections).find(
           ([, s]) => s.name === sectionName,
         );
         if (foundEntry) {
@@ -929,9 +937,8 @@ export const createLuaApi = (context) => {
         const arrayIndex = parseInt(index, 10) - 1;
         if (isNaN(arrayIndex) || arrayIndex < 0) return;
         const state = getState();
-        const waypoints =
-          state.cavebot.waypointSections[state.cavebot.currentSection]
-            ?.waypoints || [];
+        const { waypointSections, currentSection } = state.cavebot;
+        const waypoints = waypointSections[currentSection]?.waypoints || [];
         if (arrayIndex < waypoints.length)
           context.postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
       },

@@ -4,6 +4,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import findHealthBars from 'find-health-bars-native';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
+import { rectsIntersect } from './minimap/helpers.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -28,6 +29,8 @@ const FRAME_COUNTER_INDEX = 0;
 const WIDTH_INDEX = 1;
 const HEIGHT_INDEX = 2;
 const IS_RUNNING_INDEX = 3;
+const DIRTY_REGION_COUNT_INDEX = 5;
+const DIRTY_REGIONS_START_INDEX = 6;
 
 // --- State ---
 let lastProcessedFrameCounter = -1;
@@ -36,6 +39,7 @@ let isShuttingDown = false;
 let isScanning = false;
 let gameWorld = null; // To store the gameWorld region
 let tileSize = null;
+let hasScannedOnce = false;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -99,12 +103,41 @@ async function mainLoop() {
         const height = Atomics.load(syncArray, HEIGHT_INDEX);
 
         if (width > 0 && height > 0) {
+          // --- Dirty Rectangle Check ---
+          const dirtyRegionCount = Atomics.load(
+            syncArray,
+            DIRTY_REGION_COUNT_INDEX,
+          );
+          let gameWorldIsDirty = !hasScannedOnce; // Always scan the first time
+
+          if (!gameWorldIsDirty && dirtyRegionCount > 0) {
+            for (let i = 0; i < dirtyRegionCount; i++) {
+              const offset = DIRTY_REGIONS_START_INDEX + i * 4;
+              const dirtyRect = {
+                x: Atomics.load(syncArray, offset + 0),
+                y: Atomics.load(syncArray, offset + 1),
+                width: Atomics.load(syncArray, offset + 2),
+                height: Atomics.load(syncArray, offset + 3),
+              };
+              if (rectsIntersect(gameWorld, dirtyRect)) {
+                gameWorldIsDirty = true;
+                break;
+              }
+            }
+          }
+
+          if (!gameWorldIsDirty) {
+            await delay(SCAN_INTERVAL_MS);
+            continue;
+          }
+
           isScanning = true;
           try {
             const results = await findHealthBars.findHealthBars(
               sharedBufferView,
               gameWorld,
             );
+            hasScannedOnce = true; // Mark that we've scanned at least once
 
             const playerMinimapPosition = {
               x: Atomics.load(playerPosArray, PLAYER_X_INDEX),

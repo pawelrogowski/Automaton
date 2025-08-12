@@ -1,5 +1,6 @@
 import actionBarItems from './actionBarItems.js';
 
+const actionBarEntries = Object.entries(actionBarItems);
 const regionDefinitions = {
   healthBar: {
     type: 'single',
@@ -626,7 +627,7 @@ const regionDefinitions = {
     maxRight: 2000,
     maxDown: 110,
     children: Object.fromEntries(
-      Object.entries(actionBarItems).map(([key, value]) => {
+      actionBarEntries.map(([key, value]) => {
         const isVertical = value.direction === 'vertical';
         const seqLen = value.sequence.length;
         return [

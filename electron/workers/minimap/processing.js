@@ -19,6 +19,9 @@ import {
 
 let lastWrittenPosition = null;
 
+// Pre-allocate the buffer for minimap processing to avoid re-allocation on every frame.
+const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
+
 /**
  * Analyzes minimap and floor indicator data to determine player position.
  * @returns {Promise<number|null>} The processing duration in ms if successful, otherwise null.
@@ -64,9 +67,9 @@ export async function processMinimapData(
 
     if (detectedZ === null) return null;
 
-    const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
     for (let i = 0; i < minimapIndexData.length; i++) {
       const p = i * 4;
+      // BGRA to RGB integer key
       const key =
         (minimapBuffer[p + 2] << 16) |
         (minimapBuffer[p + 1] << 8) |

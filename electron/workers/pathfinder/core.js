@@ -24,7 +24,7 @@ let lastPlayerPosCounter = -1;
 const logicContext = {
   lastPlayerPosKey: null,
   lastTargetWptId: null,
-  lastJsonForType: new Map(),
+  lastConfigForType: new Map(),
 };
 
 // --- Shared Buffer Setup ---

@@ -28,8 +28,14 @@ function sendBatch() {
 function scheduleBatch() {
   if (!isScheduled) {
     isScheduled = true;
-    // Use setImmediate for high-throughput, non-UI-blocking batching
-    setImmediate(sendBatch);
+    // Defer batch sending until the main thread is idle.
+    // requestIdleCallback is ideal, but not always available in all Node.js/Electron versions.
+    // setTimeout(0) is a reliable fallback.
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(sendBatch, { timeout: 100 }); // 100ms timeout to ensure it runs
+    } else {
+      setTimeout(sendBatch, 0);
+    }
   }
 }
 

@@ -45,10 +45,7 @@ async function performOperation() {
   }
 
   const newFrameCounter = Atomics.load(syncArray, config.FRAME_COUNTER_INDEX);
-  if (
-    newFrameCounter <= lastProcessedFrameCounter ||
-    Atomics.load(syncArray, config.IS_RUNNING_INDEX) === 0
-  ) {
+  if (newFrameCounter <= lastProcessedFrameCounter) {
     return;
   }
 

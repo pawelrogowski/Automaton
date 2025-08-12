@@ -1449,4 +1449,6 @@ const actionBarItems = {
   },
 };
 
+Object.freeze(actionBarItems);
+
 export default actionBarItems;
