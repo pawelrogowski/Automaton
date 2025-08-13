@@ -1,5 +1,8 @@
 import store from './store.js';
-import { getMainWindow, getWidgetWindow } from './createMainWindow.js';
+import {
+  getMainWindow,
+  getWidgetWindow,
+} from '../windows/createMainWindow.js';
 
 let actionQueue = [];
 let isScheduled = false;

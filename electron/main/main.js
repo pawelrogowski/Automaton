@@ -14,18 +14,18 @@ import { appendFile } from 'fs/promises';
 import {
   createMainWindow,
   toggleWidgetWindowVisibility,
-} from './createMainWindow.js';
-import './ipcListeners.js';
+} from './windows/createMainWindow.js';
+import './ipc/ipcListeners.js';
 import {
   unregisterGlobalShortcuts,
   registerGlobalShortcuts,
-} from './globalShortcuts.js';
-import { getLinuxHardwareId } from './hardwareId.js';
-import { autoLoadRules } from './saveManager.js';
+} from './core/globalShortcuts.js';
+import { getLinuxHardwareId } from './core/hardwareId.js';
+import { autoLoadRules } from './core/saveManager.js';
 import { createLogger } from './utils/logger.js';
-import workerManager from './workerManager.js';
+import workerManager from './core/workerManager.js';
 import windowinfo from 'windowinfo-native';
-import setGlobalState from './setGlobalState.js';
+import setGlobalState from './core/setGlobalState.js';
 
 const MAIN_LOG_INTERVAL_MS = 10000;
 const MAIN_LOG_FILE_NAME = 'main-process-memory-usage.log';
@@ -55,7 +55,7 @@ async function logMainProcessMemoryUsage() {
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
-const preloadPath = path.join(cwd, '/preload.js');
+const preloadPath = path.join(cwd, '../renderer/preload/preload.js');
 const log = createLogger();
 
 let selectWindow;
@@ -76,11 +76,14 @@ const createSelectWindow = () => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(cwd, 'selectWindow', 'preload.js'),
+      preload: path.join(cwd, '../renderer/preload/selectWindowPreload.js'),
     },
   });
 
-  const selectHtmlPath = path.join(cwd, 'selectWindow', 'selectWindow.html');
+  const selectHtmlPath = path.join(
+    cwd,
+    '../renderer/selectWindow/selectWindow.html',
+  );
   selectWindow.loadFile(selectHtmlPath);
 
   selectWindow.on('closed', () => {
@@ -96,7 +99,7 @@ app.whenReady().then(async () => {
     await autoLoadRules();
     createSelectWindow();
 
-    workerManager.initialize(app, cwd, {});
+    workerManager.initialize(app, path.join(cwd, '..'), {});
     registerGlobalShortcuts(); // Register global shortcuts on startup
     setGlobalState('global/setGlobalShortcutsEnabled', true); // Set default to enabled
 

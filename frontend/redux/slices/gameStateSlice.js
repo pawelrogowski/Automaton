@@ -1,5 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { createLogger } from '../../../electron/utils/logger.js';
+import { createLogger } from '../../../electron/main/utils/logger.js';
 const logger = createLogger({ info: true, error: true, debug: true });
 
 const initialState = {

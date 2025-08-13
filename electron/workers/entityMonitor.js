@@ -3,7 +3,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import findHealthBars from 'find-health-bars-native';
-import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
+import { getGameCoordinatesFromScreen } from '../main/utils/gameWorldClickTranslator.js';
 import { rectsIntersect } from './minimap/helpers.js';
 import {
   PLAYER_X_INDEX,

@@ -2,7 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import {
   MinimapMatcher,
   setMinimapResourcesPath,
-} from '../../utils/minimapMatcher.js';
+} from '../../main/utils/minimapMatcher.js';
 import * as config from './config.js';
 import { rectsIntersect, extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';

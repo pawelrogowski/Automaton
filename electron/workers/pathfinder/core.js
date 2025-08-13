@@ -2,7 +2,7 @@
 
 import { parentPort, workerData } from 'worker_threads';
 import Pathfinder from 'pathfinder-native';
-import { createLogger } from '../../utils/logger.js';
+import { createLogger } from '../../main/utils/logger.js';
 import * as config from './config.js';
 import { loadAllMapData } from './dataLoader.js';
 import { runPathfindingLogic } from './logic.js';

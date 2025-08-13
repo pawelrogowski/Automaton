@@ -2,9 +2,9 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
 import mouseController from 'mouse-controller';
-import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
-import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
-import { createLogger } from '../utils/logger.js';
+import { getAbsoluteClickCoordinates } from '../main/utils/minimapClickTranslator.js';
+import { getAbsoluteGameWorldClickCoordinates } from '../main/utils/gameWorldClickTranslator.js';
+import { createLogger } from '../main/utils/logger.js';
 import { CavebotLuaExecutor } from './cavebotLuaExecutor.js';
 import {
   PLAYER_X_INDEX,

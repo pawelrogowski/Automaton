@@ -2,18 +2,17 @@
 
 import { Worker } from 'worker_threads';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { showNotification } from './notificationHandler.js';
-import { createLogger } from './utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
-} from './workers/sharedConstants.js';
+} from '../../workers/sharedConstants.js';
 
 const log = createLogger();
 
@@ -79,8 +78,7 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
 
 class WorkerManager {
   constructor() {
-    const filename = fileURLToPath(import.meta.url);
-    this.electronDir = dirname(filename);
+    this.electronDir = null; // To be set in initialize()
     this.workers = new Map();
     this.workerPaths = new Map();
     this.restartLocks = new Map();
@@ -146,13 +144,14 @@ class WorkerManager {
   }
 
   getWorkerPath(workerName) {
+    console.log('this.electronDir:', this.electronDir);
     const isUUID = /^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$/.test(
       workerName,
     );
     if (isUUID) {
-      return resolve(this.electronDir, './workers', 'luaScriptWorker.js');
+      return resolve(this.electronDir, 'workers', 'luaScriptWorker.js');
     }
-    return resolve(this.electronDir, './workers', `${workerName}.js`);
+    return resolve(this.electronDir, 'workers', `${workerName}.js`);
   }
 
   createSharedBuffers() {
@@ -651,6 +650,7 @@ class WorkerManager {
   }
 
   initialize(app, cwd, config = {}) {
+    this.electronDir = cwd;
     this.setupPaths(app, cwd);
     this.workerConfig = { ...DEFAULT_WORKER_CONFIG, ...config };
     log('info', '[Worker Manager] Initializing with debounced store updates.');

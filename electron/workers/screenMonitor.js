@@ -5,9 +5,9 @@
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import { resourceBars } from '../constants/index.js';
+import { resourceBars } from '../shared/constants/index.js';
 import { setBattleListEntries } from '../../frontend/redux/slices/battleListSlice.js';
-import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
+import calculatePercentages from '../main/utils/screenMonitor/calcs/calculatePercentages.js';
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { rectsIntersect } from './minimap/helpers.js';

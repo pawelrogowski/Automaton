@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
-import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
+import actionBarItemsData from '../../../electron/shared/constants/actionBarItems.js';
 import { removeRule, updateRule, updateCondition } from '../../redux/slices/ruleSlice.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 import {

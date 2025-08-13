@@ -2,7 +2,7 @@
 
 import { parentPort, workerData, threadId } from 'worker_threads';
 import { LuaFactory } from 'wasmoon';
-import { createLogger } from '../utils/logger.js';
+import { createLogger } from '../main/utils/logger.js';
 import { createLuaApi } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
 
