@@ -1,7 +1,7 @@
 // @regionMonitor.js
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import regionDefinitions from '../constants/regionDefinitions.js';
+import regionDefinitions from '../shared/constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
 import findSequences from 'find-sequences-native';
 

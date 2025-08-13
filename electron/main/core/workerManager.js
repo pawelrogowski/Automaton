@@ -7,13 +7,13 @@ import { dirname, resolve } from 'path';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import { showNotification } from './notificationHandler.js';
-import { createLogger } from './utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
-} from './workers/sharedConstants.js';
+} from '../../workers/sharedConstants.js';
 
 const log = createLogger();
 
@@ -150,9 +150,9 @@ class WorkerManager {
       workerName,
     );
     if (isUUID) {
-      return resolve(this.electronDir, './workers', 'luaScriptWorker.js');
+      return resolve(this.electronDir, 'workers', 'luaScriptWorker.js');
     }
-    return resolve(this.electronDir, './workers', `${workerName}.js`);
+    return resolve(this.electronDir, 'workers', `${workerName}.js`);
   }
 
   createSharedBuffers() {

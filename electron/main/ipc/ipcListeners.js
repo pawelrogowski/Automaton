@@ -1,23 +1,16 @@
 // /home/orimorfus/Documents/Automaton/electron/ipcListeners.js
 import { ipcMain, BrowserWindow } from 'electron';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import store from './store.js';
+import store from '../core/store.js';
 import {
   saveRulesToFile,
   loadRulesFromFile,
   autoLoadRules,
-} from './saveManager.js';
-import { playSound, registerGlobalShortcuts } from './globalShortcuts.js';
-import { getMainWindow } from './createMainWindow.js';
-import luaSlice from '../frontend/redux/slices/luaSlice.js'; // Import the luaSlice
-import setGlobalState from './setGlobalState.js';
+} from '../core/saveManager.js';
+import { playSound, registerGlobalShortcuts } from '../core/globalShortcuts.js';
+import { getMainWindow } from '../windows/createMainWindow.js';
+import luaSlice from '../../../frontend/redux/slices/luaSlice.js'; // Import the luaSlice
+import setGlobalState from '../core/setGlobalState.js';
 const { updateScript, removeScript } = luaSlice.actions; // Destructure actions from the slice
-
-const filename = fileURLToPath(import.meta.url);
-const cwd = dirname(filename);
-const preloadPath = path.join(cwd, '/preload.js');
 
 // --- THIS IS THE CORRECTED LISTENER ---
 ipcMain.on('state-change', (_, serializedAction) => {

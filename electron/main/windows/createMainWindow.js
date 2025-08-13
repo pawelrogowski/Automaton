@@ -10,19 +10,22 @@ import {
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { loadRulesFromFile, saveRulesToFile } from './saveManager.js';
+import {
+  loadRulesFromFile,
+  saveRulesToFile,
+} from '../core/saveManager.js';
 import {
   toggleNotifications,
   setGlobalShortcutsEnabled,
-} from '../frontend/redux/slices/globalSlice.js';
-import store from './store.js';
-import setGlobalState from './setGlobalState.js';
+} from '../../../frontend/redux/slices/globalSlice.js';
+import store from '../core/store.js';
+import setGlobalState from '../core/setGlobalState.js';
 import {
   registerGlobalShortcuts,
   unregisterGlobalShortcuts,
-} from './globalShortcuts.js';
+} from '../core/globalShortcuts.js';
 
-const HTML_PATH = '../dist/index.html';
+const HTML_PATH = '../../../dist/index.html';
 
 let mainWindow;
 let tray;
@@ -36,14 +39,20 @@ let isGlobalShortcutsEnabled = true;
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-const WIDGET_HTML_PATH = path.join(dirname, 'widget', 'widget.html');
-const WIDGET_PRELOAD_PATH = path.join(dirname, 'widget', 'preload.js');
+const WIDGET_HTML_PATH = path.join(
+  dirname,
+  '../../renderer/widget/widget.html',
+);
+const WIDGET_PRELOAD_PATH = path.join(
+  dirname,
+  '../../renderer/preload/widgetPreload.js',
+);
 
 const ICON_PATHS = {
-  white: path.join(dirname, './icons/white_dot.png'),
-  green: path.join(dirname, './icons/green_dot.png'),
-  red: path.join(dirname, './icons/red_dot.png'),
-  app: path.join(dirname, './icons/automaton.png'),
+  white: path.join(dirname, '../../assets/icons/white_dot.png'),
+  green: path.join(dirname, '../../assets/icons/green_dot.png'),
+  red: path.join(dirname, '../../assets/icons/red_dot.png'),
+  app: path.join(dirname, '../../assets/icons/automaton.png'),
 };
 
 const updateTrayIcon = () => {
@@ -221,7 +230,7 @@ export const createMainWindow = (selectedWindowId, display, windowName) => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(dirname, '/preload.js'),
+      preload: path.join(dirname, '../../renderer/preload/preload.js'),
     },
   });
 

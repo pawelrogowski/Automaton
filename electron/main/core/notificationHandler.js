@@ -8,7 +8,11 @@ let notiEnabled = false;
 const __filenamePath = fileURLToPath(import.meta.url);
 const __dirnamePath = path.dirname(__filenamePath);
 
-const iconPath = path.join(__dirnamePath, 'icons', 'greenSkull.png');
+const iconPath = path.join(
+  __dirnamePath,
+  '../../assets/icons',
+  'greenSkull.png',
+);
 
 let windowName = '';
 

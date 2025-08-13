@@ -1,6 +1,6 @@
 import { globalShortcut } from 'electron';
 import setGlobalState from './setGlobalState.js';
-import { getMainWindow } from './createMainWindow.js';
+import { getMainWindow } from '../windows/createMainWindow.js';
 
 import { showNotification } from './notificationHandler.js';
 import debounce from 'lodash/debounce.js';
@@ -10,7 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { exec } from 'child_process';
-import { createLogger } from './utils/logger.js';
+import { createLogger } from '../utils/logger.js';
 
 const log = createLogger();
 const debounceTime = 25;
@@ -57,7 +57,7 @@ store.subscribe(() => {
 const soundCache = new Map();
 
 export const playSound = (filePath) => {
-  const asarPath = path.join(__dirname, 'sounds', filePath);
+  const asarPath = path.join(__dirname, '../../assets/sounds', filePath);
   if (soundCache.has(filePath)) {
     const cachedPath = soundCache.get(filePath);
     exec(`aplay '${cachedPath}'`);
