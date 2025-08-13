@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { v4 as uuidv4 } from 'uuid';
-import actionBarItemsData from '../../../electron/constants/actionBarItems.js'; // Import for defaults
-import equippedItems from '../../../electron/constants/equippedItems.js'; // Import for equipped items
+import actionBarItemsData from '../../../electron/shared/constants/actionBarItems.js'; // Import for defaults
+import equippedItems from '../../../electron/shared/constants/equippedItems.js'; // Import for equipped items
 
 // Define the allowed potion keys for ManaSync rules (can be shared or redefined)
 const ALLOWED_POTION_KEYS = new Set([
