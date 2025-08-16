@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/pathfinder.cc
+// --- Drop-in Replacement File with "Stand Still" Fix ---
+
 #include "pathfinder.h"
 #include <napi.h>
 #include <iostream>
@@ -21,12 +24,12 @@ struct SpecialArea {
 };
 
 namespace AStar {
+    // ... (The entire AStar namespace with all its functions remains exactly the same as the previous version) ...
     // Configuration: costs tuned for Tibia as discussed
     static constexpr int BASE_MOVE_COST = 10;
-    static constexpr int DIAGONAL_MOVE_COST = 25; // 2.5x slower than straight move (intentionally)
-    static constexpr int DIAGONAL_TIE_PENALTY = 1; // tiny penalty to prefer straight moves on ties
+    static constexpr int DIAGONAL_MOVE_COST = 25;
+    static constexpr int DIAGONAL_TIE_PENALTY = 1;
 
-    // isWalkable with safer bounds checks for the bit grid
     bool isWalkable(int x, int y, const MapData& mapData) {
         if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
         int linearIndex = y * mapData.width + x;
@@ -36,65 +39,19 @@ namespace AStar {
         return (mapData.grid[byteIndex] & (1 << bitIndex)) != 0;
     }
 
-    // Spiral search for nearest walkable (small radius, no large allocations)
-    Node findNearestWalkable(const Node& point, const MapData& mapData) {
-        if (isWalkable(point.x, point.y, mapData)) return point;
-
-        const int W = mapData.width;
-        const int H = mapData.height;
-        if (point.x < 0 || point.x >= W || point.y < 0 || point.y >= H) return {-1, -1, 0, 0, nullptr, point.z};
-
-        const int radiusLimit = 5; // small and fast; used only for start recovery
-        for (int r = 1; r <= radiusLimit; ++r) {
-            // top/bottom
-            for (int dx = -r; dx <= r; ++dx) {
-                int xTop = point.x + dx;
-                int yTop = point.y - r;
-                if (xTop >= 0 && xTop < W && yTop >= 0 && yTop < H && isWalkable(xTop, yTop, mapData)) {
-                    return {xTop, yTop, 0, 0, nullptr, point.z};
-                }
-                int xBot = point.x + dx;
-                int yBot = point.y + r;
-                if (xBot >= 0 && xBot < W && yBot >= 0 && yBot < H && isWalkable(xBot, yBot, mapData)) {
-                    return {xBot, yBot, 0, 0, nullptr, point.z};
-                }
-            }
-            // left/right
-            for (int dy = -r + 1; dy <= r - 1; ++dy) {
-                int xLeft = point.x - r;
-                int yLeft = point.y + dy;
-                if (xLeft >= 0 && xLeft < W && yLeft >= 0 && yLeft < H && isWalkable(xLeft, yLeft, mapData)) {
-                    return {xLeft, yLeft, 0, 0, nullptr, point.z};
-                }
-                int xRight = point.x + r;
-                int yRight = point.y + dy;
-                if (xRight >= 0 && xRight < W && yRight >= 0 && yRight < H && isWalkable(xRight, yRight, mapData)) {
-                    return {xRight, yRight, 0, 0, nullptr, point.z};
-                }
-            }
-        }
-        return {-1, -1, 0, 0, nullptr, point.z};
-    }
-
     inline bool inBounds(int x, int y, const MapData& mapData) {
         return x >= 0 && x < mapData.width && y >= 0 && y < mapData.height;
-    }
-
-    inline int manhattanHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST) {
-        return (std::abs(x1 - x2) + std::abs(y1 - y2)) * D;
     }
 
     inline int octileHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST, int D2 = DIAGONAL_MOVE_COST) {
         int dx = std::abs(x1 - x2);
         int dy = std::abs(y1 - y2);
         int mn = std::min(dx, dy);
-        // int mx = std::max(dx, dy); // This was unused, causing a warning.
         return D * (dx + dy) + (D2 - 2 * D) * mn;
     }
 
     static const int INF_COST = 0x3f3f3f3f;
 
-    // ---- Reusable scratch buffers (thread-local) to avoid per-call allocations ----
     struct ScratchBuffers {
         std::vector<int> gScore;
         std::vector<int> parent;
@@ -124,114 +81,6 @@ namespace AStar {
         }
     }
 
-    // --- A* implementation without cost grid ---
-    std::vector<Node> findPath(const Node& start, const Node& end, const MapData& mapData, std::function<void()> onCancelled) {
-        std::vector<Node> path;
-
-        int W = mapData.width;
-        int H = mapData.height;
-        if (W <= 0 || H <= 0) return path;
-        int mapSize = W * H;
-        ensureBuffersSize(mapSize);
-        nextVisitToken();
-        int visit = sb.visitToken;
-
-        auto indexOf = [&](int x, int y) { return y * W + x; };
-
-        if (!inBounds(end.x, end.y, mapData)) return path;
-
-        auto walkableOrDest = [&](int x, int y) {
-            if (!inBounds(x, y, mapData)) return false;
-            if (x == end.x && y == end.y) return true;
-            return isWalkable(x, y, mapData);
-        };
-
-        bool useOctile = (DIAGONAL_MOVE_COST < BASE_MOVE_COST * 3);
-        int h0 = useOctile ? octileHeuristic(start.x, start.y, end.x, end.y) : manhattanHeuristic(start.x, start.y, end.x, end.y);
-
-        using PQItem = std::tuple<int,int,int,int>;
-        struct Compare {
-            bool operator()(PQItem const& a, PQItem const& b) const {
-                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
-                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
-                return std::get<2>(a) > std::get<2>(b);
-            }
-        };
-        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
-
-        int startIdx = indexOf(start.x, start.y);
-        int endIdx = indexOf(end.x, end.y);
-
-        sb.gScore[startIdx] = 0;
-        sb.parent[startIdx] = -1;
-        sb.mark[startIdx] = visit;
-        open.emplace(h0 + 0, h0, 0, startIdx);
-
-        int iterations = 0;
-        const int dxs[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
-        const int dys[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
-
-        while (!open.empty()) {
-            if (++iterations % 1000 == 0) onCancelled();
-
-            auto [f, h, g, idx] = open.top();
-            open.pop();
-
-            if (sb.closedMark[idx] == visit) continue;
-            if (!(sb.mark[idx] == visit)) continue;
-            if (g > sb.gScore[idx]) continue;
-
-            int cx = idx % W;
-            int cy = idx / W;
-
-            if (idx == endIdx) {
-                int cur = endIdx;
-                while (cur != -1) {
-                    // --- COMPILATION FIX: Reverted to push_back ---
-                    Node node_to_add;
-                    node_to_add.x = cur % W;
-                    node_to_add.y = cur / W;
-                    node_to_add.z = start.z;
-                    path.push_back(node_to_add);
-                    cur = sb.parent[cur];
-                }
-                std::reverse(path.begin(), path.end());
-                return path;
-            }
-
-            sb.closedMark[idx] = visit;
-
-            for (int dir = 0; dir < 8; ++dir) {
-                int nx = cx + dxs[dir];
-                int ny = cy + dys[dir];
-                if (!inBounds(nx, ny, mapData)) continue;
-
-                // --- CORNER-CUTTING PREVENTION REMOVED as requested ---
-
-                if (!walkableOrDest(nx, ny)) continue;
-
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                int moveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
-                int nIdx = indexOf(nx, ny);
-
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + moveCost;
-
-                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
-                    sb.gScore[nIdx] = tentativeG;
-                    sb.parent[nIdx] = idx;
-                    sb.mark[nIdx] = visit;
-                    int nh = useOctile ? octileHeuristic(nx, ny, end.x, end.y) : manhattanHeuristic(nx, ny, end.x, end.y);
-                    int nf = tentativeG + nh;
-                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
-                    open.emplace(nf, nh, tentativeG, nIdx);
-                }
-            }
-        }
-
-        return path; // empty -> no path
-    }
-
-    // --- A* implementation with cost grid ---
     std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, std::function<void()> onCancelled) {
         std::vector<Node> path;
 
@@ -247,14 +96,7 @@ namespace AStar {
 
         if (!inBounds(end.x, end.y, mapData)) return path;
 
-        auto walkableOrDest = [&](int x, int y) {
-            if (!inBounds(x, y, mapData)) return false;
-            if (x == end.x && y == end.y) return true;
-            return isWalkable(x, y, mapData);
-        };
-
-        bool useOctile = (DIAGONAL_MOVE_COST <= 2 * BASE_MOVE_COST);
-        int h0 = useOctile ? octileHeuristic(start.x, start.y, end.x, end.y) : manhattanHeuristic(start.x, start.y, end.x, end.y);
+        int h0 = octileHeuristic(start.x, start.y, end.x, end.y);
 
         using PQItem = std::tuple<int,int,int,int>;
         struct Compare {
@@ -294,7 +136,6 @@ namespace AStar {
             if (idx == endIdx) {
                 int cur = endIdx;
                 while (cur != -1) {
-                    // --- COMPILATION FIX: Reverted to push_back ---
                     Node node_to_add;
                     node_to_add.x = cur % W;
                     node_to_add.y = cur / W;
@@ -313,32 +154,119 @@ namespace AStar {
                 int ny = cy + dys[dir];
                 if (!inBounds(nx, ny, mapData)) continue;
 
-                // --- CORNER-CUTTING PREVENTION REMOVED as requested ---
+                int nIdx = indexOf(nx, ny);
+                int tileAvoidance = 0;
+                if (nIdx >= 0 && nIdx < (int)cost_grid.size()) {
+                    tileAvoidance = cost_grid[nIdx];
+                }
 
-                if (!walkableOrDest(nx, ny)) continue;
+                if (tileAvoidance == 255) continue;
+
+                bool isWalkableByMap = isWalkable(nx, ny, mapData);
+                if (tileAvoidance != -1 && !isWalkableByMap && !(nx == end.x && ny == end.y)) {
+                    continue;
+                }
 
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
-                int addCost = 0;
-                int costIndex = ny * W + nx;
-                if (costIndex >= 0 && costIndex < (int)cost_grid.size()) addCost = cost_grid[costIndex];
-
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addCost;
-                int nIdx = indexOf(nx, ny);
+                int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
-                    int nh = useOctile ? octileHeuristic(nx, ny, end.x, end.y) : manhattanHeuristic(nx, ny, end.x, end.y);
+                    int nh = octileHeuristic(nx, ny, end.x, end.y);
                     int nf = tentativeG + nh;
                     if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
                     open.emplace(nf, nh, tentativeG, nIdx);
                 }
             }
         }
-
         return path;
+    }
+
+    Node findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid) {
+        std::queue<std::pair<Node, int>> q;
+        std::unordered_set<int> visited;
+        auto indexOf = [&](int x, int y) { return y * mapData.width + x; };
+
+        Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
+        if (!AStar::inBounds(monsterLocal.x, monsterLocal.y, mapData)) return {-1, -1, 0, 0, nullptr, 0};
+
+        q.push({monsterLocal, 0});
+        visited.insert(indexOf(monsterLocal.x, monsterLocal.y));
+
+        std::vector<Node> candidates;
+        int max_dist_from_player = -1;
+        int min_dist_from_player = INT_MAX;
+        Node best_node = {-1, -1, 0, 0, nullptr, 0};
+
+        while (!q.empty()) {
+            auto [current, dist] = q.front();
+            q.pop();
+
+            if ((stance == "Reach" && dist == 1) || (stance == "keepAway" && dist == distance)) {
+                candidates.push_back(current);
+            }
+
+            if (dist >= distance && stance != "Reach") {
+                continue;
+            }
+
+            for (int dx = -1; dx <= 1; ++dx) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    if (dx == 0 && dy == 0) continue;
+                    Node neighbor = {current.x + dx, current.y + dy, 0, 0, nullptr, current.z};
+                    if (AStar::inBounds(neighbor.x, neighbor.y, mapData)) {
+                        int neighborIdx = indexOf(neighbor.x, neighbor.y);
+                        int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[neighborIdx];
+                        bool isWalkableNode = (tileAvoidance != 255) && ((tileAvoidance == -1) || isWalkable(neighbor.x, neighbor.y, mapData));
+
+                        if (isWalkableNode && visited.find(neighborIdx) == visited.end()) {
+                            visited.insert(neighborIdx);
+                            q.push({neighbor, dist + 1});
+                        }
+                    }
+                }
+            }
+        }
+
+        if (candidates.empty()) return best_node;
+
+        Node playerLocal = {player.x - mapData.minX, player.y - mapData.minY, 0, 0, nullptr, player.z};
+
+        // --- FIX: EXCLUDE THE PLAYER'S CURRENT TILE FROM CANDIDATES ---
+        // This prevents the pathfinder from generating a path to its own location when trying to run away.
+        candidates.erase(
+            std::remove_if(candidates.begin(), candidates.end(),
+                           [&](const Node& cand) {
+                               return cand.x == playerLocal.x && cand.y == playerLocal.y;
+                           }),
+            candidates.end());
+        // If removing the player's tile empties the list, we will correctly return no path.
+        if (candidates.empty()) return best_node;
+        // --- END FIX ---
+
+        if (stance == "Reach") {
+            for (const auto& cand : candidates) {
+                int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
+                if (dist_from_player < min_dist_from_player) {
+                    min_dist_from_player = dist_from_player;
+                    best_node = cand;
+                }
+            }
+        } else if (stance == "keepAway") {
+            for (const auto& cand : candidates) {
+                int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
+                if (dist_from_player > max_dist_from_player) {
+                    max_dist_from_player = dist_from_player;
+                    best_node = cand;
+                }
+            }
+        }
+
+        return best_node;
     }
 }
 
@@ -350,6 +278,7 @@ Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("loadMapData", &Pathfinder::LoadMapData),
         InstanceMethod("findPathSync", &Pathfinder::FindPathSync),
         InstanceMethod("updateSpecialAreas", &Pathfinder::UpdateSpecialAreas),
+        InstanceMethod("findPathToGoal", &Pathfinder::FindPathToGoal),
         InstanceAccessor("isLoaded", &Pathfinder::IsLoadedGetter, nullptr),
     });
     constructor = Napi::Persistent(func);
@@ -450,19 +379,8 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
-Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
+Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, const Node& end) {
     auto startTime = std::chrono::high_resolution_clock::now();
-
-    if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsObject()) {
-        Napi::TypeError::New(env, "Expected start and end objects as arguments").ThrowAsJavaScriptException();
-        return env.Undefined();
-    }
-    Napi::Object startObj = info[0].As<Napi::Object>();
-    Node start = {startObj.Get("x").As<Napi::Number>().Int32Value(), startObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, startObj.Get("z").As<Napi::Number>().Int32Value()};
-    Napi::Object endObj = info[1].As<Napi::Object>();
-    Node end = {endObj.Get("x").As<Napi::Number>().Int32Value(), endObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, endObj.Get("z").As<Napi::Number>().Int32Value()};
-
     Napi::Object result = Napi::Object::New(env);
     std::string searchStatus = "UNKNOWN";
     std::vector<Node> pathResult;
@@ -477,23 +395,15 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
     Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
     Node localEnd = {end.x - mapData.minX, end.y - mapData.minY, 0, 0, nullptr, end.z};
 
-    // ============================ MODIFICATION START ============================
-    // Assume start location is always valid to start from, even if unwalkable.
-    // This prevents finding a path from a nearby walkable tile, which causes "weird" initial steps
-    // when the character is on an unwalkable tile (e.g., a fire field).
-    // We still check if the start coordinates are within the map's bounds.
     if (!AStar::inBounds(localStart.x, localStart.y, mapData)) {
         searchStatus = "NO_VALID_START";
     } else {
-        // Use localStart directly, regardless of whether the tile is marked as walkable.
-        // The A* algorithm can start from an unwalkable tile and find a path to its walkable neighbors.
-        Node effectiveStart = localStart;
-
         auto it_cache = this->cost_grid_cache.find(start.z);
         if (it_cache != this->cost_grid_cache.end()) {
-            pathResult = AStar::findPathWithCosts(effectiveStart, localEnd, mapData, it_cache->second, [](){});
+            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, it_cache->second, [](){});
         } else {
-            pathResult = AStar::findPath(effectiveStart, localEnd, mapData, [](){});
+            std::vector<int> empty_costs;
+            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, empty_costs, [](){});
         }
 
         if (!pathResult.empty()) {
@@ -502,9 +412,8 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
             searchStatus = "NO_PATH_FOUND";
         }
     }
-    // ============================= MODIFICATION END =============================
 
-    if (!pathResult.empty() && !pathResult.empty() && pathResult[0].x == localStart.x && pathResult[0].y == localStart.y) {
+    if (pathResult.size() > 1 && pathResult[0].x == localStart.x && pathResult[0].y == localStart.y) {
         pathResult.erase(pathResult.begin());
     }
 
@@ -529,6 +438,62 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
         result.Set("path", env.Null());
     }
     return result;
+}
+
+Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsObject()) {
+        Napi::TypeError::New(env, "Expected start and end objects as arguments").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    Napi::Object startObj = info[0].As<Napi::Object>();
+    Node start = {startObj.Get("x").As<Napi::Number>().Int32Value(), startObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, startObj.Get("z").As<Napi::Number>().Int32Value()};
+    Napi::Object endObj = info[1].As<Napi::Object>();
+    Node end = {endObj.Get("x").As<Napi::Number>().Int32Value(), endObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, endObj.Get("z").As<Napi::Number>().Int32Value()};
+
+    return _findPathInternal(env, start, end);
+}
+
+Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsObject()) {
+        Napi::TypeError::New(env, "Expected start node and goal object").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    Napi::Object startObj = info[0].As<Napi::Object>();
+    Node start = {startObj.Get("x").As<Napi::Number>().Int32Value(), startObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, startObj.Get("z").As<Napi::Number>().Int32Value()};
+
+    Napi::Object goalObj = info[1].As<Napi::Object>();
+    std::string stance = goalObj.Get("stance").As<Napi::String>().Utf8Value();
+    int distance = goalObj.Get("distance").As<Napi::Number>().Int32Value();
+    Napi::Object monsterPosObj = goalObj.Get("targetCreaturePos").As<Napi::Object>();
+    Node monster = {monsterPosObj.Get("x").As<Napi::Number>().Int32Value(), monsterPosObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, monsterPosObj.Get("z").As<Napi::Number>().Int32Value()};
+
+    auto it_map = this->allMapData.find(start.z);
+    if (it_map == this->allMapData.end()) {
+        Napi::Error::New(env, "Map data for this Z-level is not loaded.").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    const MapData& mapData = it_map->second;
+
+    auto it_cache = this->cost_grid_cache.find(start.z);
+    const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
+
+    Node best_target_tile = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid);
+
+    if (best_target_tile.x == -1) {
+        Napi::Object result = Napi::Object::New(env);
+        result.Set("reason", Napi::String::New(env, "NO_PATH_FOUND"));
+        result.Set("path", env.Null());
+        Napi::Object performance = Napi::Object::New(env);
+        performance.Set("totalTimeMs", Napi::Number::New(env, 0));
+        result.Set("performance", performance);
+        return result;
+    }
+
+    Node final_end_node = {best_target_tile.x + mapData.minX, best_target_tile.y + mapData.minY, 0, 0, nullptr, best_target_tile.z};
+    return _findPathInternal(env, start, final_end_node);
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {

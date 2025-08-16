@@ -13,9 +13,6 @@ import {
   setActionPaused,
   setenabled as setCavebotEnabled,
 } from '../../frontend/redux/slices/cavebotSlice.js';
-import { setenabled as setRulesEnabled } from '../../frontend/redux/slices/ruleSlice.js';
-import { setenabled as setTargetingEnabled } from '../../frontend/redux/slices/targetingSlice.js';
-import { setenabled as setLuaEnabled } from '../../frontend/redux/slices/luaSlice.js';
 
 /**
  * Creates an object with getters for convenient, direct access to state in Lua.

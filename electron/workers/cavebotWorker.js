@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebotWorker.js
+// --- Full file with fix for getDirectionKey null error ---
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
@@ -125,7 +128,7 @@ function logPerformanceStats() {
   }
 }
 
-// --- Store & State Management ---
+// --- Store & State Messaging ---
 const postStoreUpdate = (type, payload) =>
   parentPort.postMessage({ storeUpdate: true, type, payload });
 
@@ -146,19 +149,16 @@ const awaitStateChange = (condition, timeoutMs) => {
   });
 };
 
+// --- Z-level helper ---
 const awaitZLevelChange = (initialZ, timeoutMs) => {
   return new Promise((resolve) => {
     const startTime = Date.now();
     const intervalId = setInterval(() => {
       const currentZ = Atomics.load(playerPosArray, PLAYER_Z_INDEX);
-
-      // If Z-level has changed, the action was a success.
       if (currentZ !== initialZ) {
         clearInterval(intervalId);
         resolve(true);
       }
-
-      // If the timeout is reached without a Z-level change, it failed.
       if (Date.now() - startTime > timeoutMs) {
         clearInterval(intervalId);
         resolve(false);
@@ -167,7 +167,7 @@ const awaitZLevelChange = (initialZ, timeoutMs) => {
   });
 };
 
-// --- Navigation Functions ---
+// --- Navigation Functions (minimal advance logic) ---
 const advanceToNextWaypoint = async () => {
   if (!globalState?.cavebot) return false;
   const {
@@ -182,20 +182,22 @@ const advanceToNextWaypoint = async () => {
   const nextIndex = (currentIndex + 1) % waypoints.length;
   const nextWpt = waypoints[nextIndex];
   if (nextWpt) {
+    // Post the action and wait briefly for Redux to accept it.
     postStoreUpdate('cavebot/setwptId', nextWpt.id);
-    const success = await awaitStateChange(
-      (state) => state.cavebot.wptId === nextWpt.id,
+    const confirmed = await awaitStateChange(
+      (state) => state?.cavebot?.wptId === nextWpt.id,
       500,
     );
-    if (success) {
+    if (confirmed) {
       lastProcessedWptId = nextWpt.id;
+      pathingLogger('info', `Advanced to waypoint ${nextWpt.id}`);
     } else {
       pathingLogger(
         'error',
         `Failed to confirm waypoint advance from ${oldWptId} to ${nextWpt.id} within timeout!`,
       );
     }
-    return success;
+    return confirmed;
   }
   return false;
 };
@@ -243,14 +245,47 @@ const goToWpt = async (index) => {
 };
 
 // --- Action Handlers ---
-const handleWalkAction = async () => {
-  const nextStep = path[0];
+const handleWalkAction = async (targetWaypoint) => {
+  // If the path is empty (which happens on the final adjacent step),
+  // use the target waypoint itself as the next step.
+  const nextStep = path[0] || targetWaypoint;
+
+  if (!nextStep) {
+    pathingLogger('warn', 'handleWalkAction called but has no path or target');
+    return;
+  }
+
+  // *** THE FIX ***
+  // Re-validate before acting. If we are already on the next step tile
+  // (due to lag, manual movement, or a race condition), do nothing.
+  // This prevents the getDirectionKey error.
+  if (
+    playerMinimapPosition.x === nextStep.x &&
+    playerMinimapPosition.y === nextStep.y
+  ) {
+    pathingLogger(
+      'warn',
+      `handleWalkAction: Already at next step ${JSON.stringify(
+        nextStep,
+      )}. Skipping move.`,
+    );
+    // Wait a moment to allow the FSM to re-evaluate on the next tick with correct info.
+    await delay(MAIN_LOOP_INTERVAL);
+    return;
+  }
+
   const posCounterBeforeMove = lastPlayerPosCounter;
   const pathCounterBeforeMove = lastPathDataCounter;
-  keypress.sendKey(
-    getDirectionKey(playerMinimapPosition, nextStep),
-    globalState.global.display,
-  );
+  const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
+  if (!dirKey) {
+    pathingLogger(
+      'error',
+      `getDirectionKey returned null for nextStep=${JSON.stringify(nextStep)}`,
+    );
+    return;
+  }
+
+  keypress.sendKey(dirKey, globalState.global.display);
   try {
     await awaitWalkConfirmation(
       posCounterBeforeMove,
@@ -265,10 +300,15 @@ const handleWalkAction = async () => {
 
 const handleStandAction = async (targetWaypoint) => {
   const initialPos = { ...playerMinimapPosition };
-  keypress.sendKey(
-    getDirectionKey(initialPos, targetWaypoint),
-    globalState.global.display,
-  );
+  const dirKey = getDirectionKey(initialPos, targetWaypoint);
+  if (!dirKey) {
+    pathingLogger(
+      'error',
+      `handleStandAction: invalid direction for target ${JSON.stringify(targetWaypoint)}`,
+    );
+    return false;
+  }
+  keypress.sendKey(dirKey, globalState.global.display);
   try {
     const { finalPos } = await awaitStandConfirmation(
       initialPos,
@@ -288,10 +328,8 @@ const handleStandAction = async (targetWaypoint) => {
 
 const handleLadderAction = async (targetCoords) => {
   const initialPos = { ...playerMinimapPosition };
-  if (!initialPos) return false; // Safety check
-
+  if (!initialPos) return false;
   await delay(config.preClickDelayMs);
-
   const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
   if (!gameWorld || !tileSize) {
     logger(
@@ -300,16 +338,14 @@ const handleLadderAction = async (targetCoords) => {
     );
     return false;
   }
-
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
     targetCoords.y,
     initialPos,
     gameWorld,
     tileSize,
-    'bottomRight', // Using 'bottomRight' as it was in the original code
+    'bottomRight',
   );
-
   if (!clickCoords) {
     logger(
       'error',
@@ -317,35 +353,27 @@ const handleLadderAction = async (targetCoords) => {
     );
     return false;
   }
-
   mouseController.rightClick(
     parseInt(globalState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
     globalState.global.display || ':0',
   );
-
-  // Wait for a Z-level change within 500ms, as per your requirement.
   const zChanged = await awaitZLevelChange(initialPos.z, 500);
-
   if (zChanged) {
-    // Success! Give the game a moment to settle after a floor change.
     floorChangeGraceUntil = Date.now() + 500;
     return true;
   }
-
-  // Failure: Z-level did not change in time.
   return false;
 };
 
 const handleZLevelToolAction = async (toolType, targetCoords) => {
-  const state = globalState;
-  const hotkey = state.settings.hotkeys[toolType.toLowerCase()];
+  const hotkey = globalState.settings.hotkeys[toolType.toLowerCase()];
   if (!hotkey) return false;
-  const { gameWorld, tileSize } = state.regionCoordinates.regions;
+  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
   if (!gameWorld || !tileSize) return false;
   const initialPos = { ...playerMinimapPosition };
-  keypress.sendKey(hotkey, state.global.display || ':0');
+  keypress.sendKey(hotkey, globalState.global.display || ':0');
   await delay(config.toolHotkeyWaitMs + config.preClickDelayMs);
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
@@ -357,18 +385,18 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
   );
   if (!clickCoords) return false;
   mouseController.leftClick(
-    parseInt(state.global.windowId, 10),
+    parseInt(globalState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
-    state.global.display || ':0',
+    globalState.global.display || ':0',
   );
   const zChanged = await awaitStateChange(
-    (s) => s.gameState?.playerMinimapPosition?.z !== initialPos.z,
+    (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
     config.actionStateChangeTimeoutMs,
   );
   if (zChanged) {
     floorChangeGraceUntil = Date.now() + 500;
-    const finalPos = globalState.gameState.playerMinimapPosition; // globalState is updated by awaitStateChange
+    const finalPos = globalState.gameState.playerMinimapPosition;
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       stuckDetectionGraceUntil = Date.now() + config.postTeleportGraceMs;
     }
@@ -400,13 +428,16 @@ const awaitWalkConfirmation = (
       reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     const intervalId = setInterval(() => {
-      const posChanged =
-        Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
-        posCounterBeforeMove;
-      const pathChanged =
-        Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
-        pathCounterBeforeMove;
-      if (posChanged && pathChanged) {
+      const posChanged = playerPosArray
+        ? Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
+          posCounterBeforeMove
+        : false;
+      const pathChanged = pathDataArray
+        ? Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
+          pathCounterBeforeMove
+        : false;
+      // Accept either we moved OR pathfinder updated the path — both are valid signals.
+      if (posChanged || pathChanged) {
         clearTimeout(timeoutId);
         clearInterval(intervalId);
         resolve(true);
@@ -427,13 +458,10 @@ const awaitStandConfirmation = (initialPos, targetPos, timeoutMs) => {
       const zChanged = finalPos.z !== initialPos.z;
       const teleported =
         getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold;
-      const reachedTarget =
-        finalPos.x === targetPos.x &&
-        finalPos.y === targetPos.y &&
-        finalPos.z === targetPos.z;
-      if (zChanged || teleported || reachedTarget) {
+      // Stand waypoint type: ignore exact tile equality, only care about floor change or teleport distance
+      if (zChanged || teleported) {
         clearInterval(intervalId);
-        resolve({ success: true, finalPos });
+        setTimeout(() => resolve({ success: true, finalPos }), 10); // add 10ms grace delay
       }
       if (Date.now() - startTime > timeoutMs) {
         clearInterval(intervalId);
@@ -458,108 +486,94 @@ const fsm = {
       const { playerPos, targetWaypoint, status, path, chebyshevDist } =
         context;
 
-      // Helper function for advancing to the next waypoint
-      const handleAdvance = async (reason) => {
+      // Debug: log path length and wptDistance (if present on context) to help diagnose
+      try {
+        const wptDistance =
+          context.wptDistance !== undefined
+            ? ` wptDistance=${context.wptDistance}`
+            : '';
         pathingLogger(
           'info',
-          `${reason} for waypoint ${targetWaypoint.id}. Advancing.`,
+          `Evaluating waypoint ${targetWaypoint.id}: pathLen=${(path || []).length}${wptDistance} cheb=${chebyshevDist}`,
         );
-        const advanced = await advanceToNextWaypoint();
-        // Go IDLE to re-evaluate the new state, or if advancing fails
-        return 'IDLE';
-      };
+      } catch (e) {
+        /* ignore logging errors */
+      }
 
-      // --- Step 1: Handle each waypoint type with its specific logic ---
+      // If the player's exact position matches the waypoint coordinates, advance immediately.
+      if (
+        playerPos.x === targetWaypoint.x &&
+        playerPos.y === targetWaypoint.y &&
+        playerPos.z === targetWaypoint.z
+      ) {
+        pathingLogger(
+          'info',
+          `Player at waypoint ${targetWaypoint.id}; advancing.`,
+        );
+        await advanceToNextWaypoint();
+        return 'IDLE';
+      }
+
+      // Waypoint type specific checks (Stand / Ladder)
       switch (targetWaypoint.type) {
         case 'Script':
-          // Scripts are executed immediately, position is irrelevant.
           return 'EXECUTING_SCRIPT';
-
-        case 'Node':
-          // Success condition: Player is at the exact waypoint coordinates.
-          if (
-            playerPos.x === targetWaypoint.x &&
-            playerPos.y === targetWaypoint.y &&
-            playerPos.z === targetWaypoint.z
-          ) {
-            return await handleAdvance('SUCCESS: Reached Node waypoint');
-          }
-          // If not at the node, fall through to the pathing logic below.
-          break;
-
         case 'Stand':
-          // Success condition: Player is exactly 1 tile away (adjacent).
-          if (chebyshevDist === 1) {
-            return 'PERFORMING_ACTION';
-          }
-          // If not adjacent, fall through to the pathing logic below.
+          if (chebyshevDist === 1) return 'PERFORMING_ACTION';
           break;
-
         case 'Ladder':
-          // Success condition: Player is on the tile or adjacent.
-          if (chebyshevDist <= 1) {
-            return 'PERFORMING_ACTION';
-          }
-          // If not close enough, fall through to the pathing logic below.
+          if (chebyshevDist <= 1) return 'PERFORMING_ACTION';
           break;
-
         default:
-          pathingLogger(
-            'warn',
-            `Unknown waypoint type "${targetWaypoint.type}". Treating as Node.`,
-          );
-          if (
-            playerPos.x === targetWaypoint.x &&
-            playerPos.y === targetWaypoint.y &&
-            playerPos.z === targetWaypoint.z
-          ) {
-            return await handleAdvance(
-              `SUCCESS: Reached unknown waypoint type '${targetWaypoint.type}'`,
-            );
-          }
           break;
       }
 
-      // --- Step 2: If no success condition was met, use pathfinder to move ---
-      // This block is only reached if we need to walk towards the target.
+      // THE FIX: Handle the "adjacent but empty path" edge case.
+      // This is the root cause of the loop. path.length === 0 does NOT mean arrival
+      // if we are not on the tile yet (chebyshevDist > 0).
+      if (
+        (status === PATH_STATUS_PATH_FOUND ||
+          status === PATH_STATUS_WAYPOINT_REACHED) &&
+        Array.isArray(path) &&
+        path.length === 0 &&
+        chebyshevDist > 0
+      ) {
+        pathingLogger(
+          'info',
+          `Adjacent to ${targetWaypoint.id} with empty path. Forcing final step.`,
+        );
+        return 'WALKING'; // Force the final step instead of incorrectly advancing.
+      }
+
+      // If pathfinder explicitly reported WAYPOINT_REACHED (and we are on the tile, cheb=0), advance.
+      if (status === PATH_STATUS_WAYPOINT_REACHED) {
+        pathingLogger(
+          'info',
+          `Pathfinder confirms arrival for ${targetWaypoint.id}; advancing.`,
+        );
+        await advanceToNextWaypoint();
+        return 'IDLE';
+      }
+
+      // Pathfinder-driven movement
       switch (status) {
         case PATH_STATUS_PATH_FOUND:
-          if (path.length > 0) {
-            // We have a valid path with steps, so let's walk.
-            return 'WALKING';
-          } else {
-            // Anomaly: path is found but empty, and we are NOT at the target.
-            // This could be a stale path. Wait for a new path from the pathfinder.
-            pathingLogger(
-              'warn',
-              `Path is empty but not at destination for wpt ${targetWaypoint.id}. Awaiting new path.`,
-            );
-            return 'EVALUATING_WAYPOINT'; // Re-evaluate next tick
-          }
-
-        case PATH_STATUS_WAYPOINT_REACHED:
-          // The pathfinder says we've arrived, but our position check above failed.
-          // This indicates a sync issue. Trust our position check and advance to avoid getting stuck.
-          pathingLogger(
-            'warn',
-            `Pathfinder reported WAYPOINT_REACHED for wpt ${targetWaypoint.id}, but position mismatch. Advancing.`,
-          );
-          return await handleAdvance(
-            'WARN: Advancing due to state mismatch (REACHED)',
-          );
-
+          if (path.length > 0) return 'WALKING';
+          // If path is empty and we are on the tile (cheb=0), the exact coordinate check at the top will handle it.
+          // If we are here, it's a waiting state.
+          return 'EVALUATING_WAYPOINT';
         case PATH_STATUS_NO_PATH_FOUND:
         case PATH_STATUS_NO_VALID_START_OR_END:
         case PATH_STATUS_ERROR:
         case PATH_STATUS_DIFFERENT_FLOOR:
-          // The waypoint is unreachable. Log it and advance.
-          return await handleAdvance(
-            `WARN: Waypoint unreachable (Code: ${status})`,
+          pathingLogger(
+            'warn',
+            `Waypoint ${targetWaypoint.id} unreachable (status ${status}); advancing.`,
           );
-
+          await advanceToNextWaypoint();
+          return 'IDLE';
         case PATH_STATUS_IDLE:
         default:
-          // No path information yet. Keep waiting.
           return 'EVALUATING_WAYPOINT';
       }
     },
@@ -567,8 +581,8 @@ const fsm = {
 
   WALKING: {
     enter: () => postStoreUpdate('cavebot/setActionPaused', false),
-    execute: async () => {
-      await handleWalkAction();
+    execute: async (context) => {
+      await handleWalkAction(context.targetWaypoint);
       return 'EVALUATING_WAYPOINT';
     },
   },
@@ -592,14 +606,14 @@ const fsm = {
       if (actionSucceeded) {
         pathingLogger(
           'info',
-          `SUCCESS: Action ${targetWaypoint.type} succeeded. Advancing.`,
+          `Action ${targetWaypoint.type} succeeded; advancing.`,
         );
-        const advanced = await advanceToNextWaypoint();
-        return advanced ? 'IDLE' : 'EVALUATING_WAYPOINT';
+        await advanceToNextWaypoint();
+        return 'IDLE';
       } else {
         pathingLogger(
           'error',
-          `Action ${targetWaypoint.type} failed. Re-evaluating.`,
+          `Action ${targetWaypoint.type} failed; re-evaluating.`,
         );
         await delay(250);
         return 'EVALUATING_WAYPOINT';
@@ -617,7 +631,6 @@ const fsm = {
 };
 
 // --- Data Update and Contextual Logic ---
-
 const updateSABData = () => {
   if (playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
@@ -634,25 +647,16 @@ const updateSABData = () => {
     }
   }
 
-  // --- This is the new, safe read logic for the path data ---
   if (pathDataArray) {
     let consistentRead = false;
     let attempts = 0;
-
-    // We might need to loop if a write happens while we're reading.
-    // A simple attempt limit prevents any infinite loops in weird edge cases.
     do {
       const counterBeforeRead = Atomics.load(
         pathDataArray,
         PATH_UPDATE_COUNTER_INDEX,
       );
+      if (counterBeforeRead === lastPathDataCounter) return;
 
-      // Only proceed if there's new data to read.
-      if (counterBeforeRead === lastPathDataCounter) {
-        return; // No new data, exit.
-      }
-
-      // --- Read the entire data block ---
       const pathStartX = Atomics.load(pathDataArray, PATH_START_X_INDEX);
       const pathStartY = Atomics.load(pathDataArray, PATH_START_Y_INDEX);
       const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
@@ -666,8 +670,6 @@ const updateSABData = () => {
       );
       const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
       const tempPath = [];
-
-      // Boundary check to prevent reading out of bounds if pathLength is corrupt
       const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);
       for (let i = 0; i < safePathLength; i++) {
         const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
@@ -678,39 +680,27 @@ const updateSABData = () => {
         });
       }
 
-      // --- Read the counter again ---
       const counterAfterRead = Atomics.load(
         pathDataArray,
         PATH_UPDATE_COUNTER_INDEX,
       );
 
-      // --- The Consistency Check ---
       if (counterBeforeRead === counterAfterRead) {
-        // SUCCESS! The data is consistent.
         consistentRead = true;
-
-        // Now, perform the validation against our current player position.
         if (
           !playerMinimapPosition ||
           playerMinimapPosition.x !== pathStartX ||
           playerMinimapPosition.y !== pathStartY ||
           playerMinimapPosition.z !== pathStartZ
         ) {
-          // The data is consistent, but stale. We ignore it.
-          // This isn't an error, just the pathfinder lagging behind.
+          // stale path for current player pos -> ignore
         } else {
-          // The data is consistent AND valid for our current position.
-          // Commit the read data to our worker's state.
           path = tempPath;
           pathfindingStatus = tempPathfindingStatus;
           pathChebyshevDistance = tempPathChebyshevDistance;
         }
-
-        // Mark this update counter as processed, so we don't try to read it again.
         lastPathDataCounter = counterAfterRead;
       } else {
-        // A "torn read" occurred. The writer updated the buffer while we were reading.
-        // We will loop and try again.
         attempts++;
       }
     } while (!consistentRead && attempts < 3);
@@ -770,7 +760,22 @@ async function performOperation() {
       return;
     }
 
-    // --- Pre-emptive "Seek" Loop ---
+    // If the target waypoint has been changed externally (e.g., by the user),
+    // reset our state and skip one cycle to allow the pathfinder to catch up.
+    if (lastProcessedWptId && targetWaypoint.id !== lastProcessedWptId) {
+      pathingLogger(
+        'info',
+        `Target waypoint changed externally to ${targetWaypoint.id}. Resetting and waiting for new path.`,
+      );
+      fsmState = 'IDLE';
+      path = [];
+      pathfindingStatus = PATH_STATUS_IDLE;
+      lastPathDataCounter = -1; // Invalidate our knowledge of the SAB
+      lastProcessedWptId = targetWaypoint.id; // Update to the new ID
+      return; // Skip the rest of this tick
+    }
+
+    // Skip waypoints on different floors
     while (targetWaypoint.z !== playerMinimapPosition.z) {
       pathingLogger(
         'info',
@@ -791,17 +796,24 @@ async function performOperation() {
       }
     }
 
-    // --- Interruption Check Logic ---
-    if (lastProcessedWptId && targetWaypoint.id !== lastProcessedWptId) {
+    // If we are exactly on the waypoint coordinates, advance immediately
+    if (
+      playerMinimapPosition.x === targetWaypoint.x &&
+      playerMinimapPosition.y === targetWaypoint.y &&
+      playerMinimapPosition.z === targetWaypoint.z
+    ) {
       pathingLogger(
         'info',
-        `Target waypoint changed externally to ${targetWaypoint.id}. Resetting state.`,
+        `Player already at waypoint ${targetWaypoint.id}; advancing.`,
       );
-      fsmState = 'IDLE';
-      path = [];
-      pathfindingStatus = PATH_STATUS_IDLE;
+      await advanceToNextWaypoint();
+      return;
     }
-    lastProcessedWptId = targetWaypoint.id;
+
+    // This ensures the first waypoint is processed correctly
+    if (!lastProcessedWptId) {
+      lastProcessedWptId = targetWaypoint.id;
+    }
 
     const context = {
       playerPos: playerMinimapPosition,

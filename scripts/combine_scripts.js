@@ -2,23 +2,20 @@ const fs = require('fs');
 const path = require('path');
 
 // --- Configuration ---
-// The folder you want to search for .js files.
-// Use '.' for the current directory.
-const targetFolder = '../electron';
-
-// The name of the output text file.
+const targetFolder = '../frontend/redux';
 const outputFile = 'combined_scripts.txt';
 // -------------------
 
 const outputFilePath = path.join(__dirname, outputFile);
 
-// Clear the output file if it already exists to start fresh
+// Clear the output file if it already exists
 if (fs.existsSync(outputFilePath)) {
   fs.unlinkSync(outputFilePath);
 }
 
 /**
- * Recursively finds all .js files in a directory and its subdirectories.
+ * Recursively finds all relevant source files in a directory and its subdirectories,
+ * skipping `build` and `node_modules` directories.
  * @param {string} dir - The directory to search in.
  */
 const findJsFiles = (dir) => {
@@ -30,10 +27,12 @@ const findJsFiles = (dir) => {
       const stat = fs.statSync(fullPath);
 
       if (stat.isDirectory()) {
-        // If it's a directory, recurse into it
+        // Skip build and node_modules directories
+        if (file === 'build' || file === 'node_modules') {
+          return;
+        }
         findJsFiles(fullPath);
-      } else if (path.extname(file) === '.js') {
-        // If it's a .js file, process it
+      } else if (['.js', '.jsx', '.cc', '.h'].includes(path.extname(file))) {
         processFile(fullPath);
       }
     });
@@ -43,25 +42,17 @@ const findJsFiles = (dir) => {
 };
 
 /**
- * Reads the content of a file and appends it to the output file
- * with the specified structure.
- * @param {string} filePath - The full path to the .js file.
+ * Reads the content of a file and appends it to the output file.
+ * @param {string} filePath - The full path to the source file.
  */
 const processFile = (filePath) => {
   try {
-    // Get the absolute path for the comment
     const fullFilePath = path.resolve(filePath);
-
-    // Read the content of the file
     const fileContent = fs.readFileSync(filePath, 'utf8');
-    [6];
 
-    // Construct the content to be appended
     const contentToAppend = `// ${fullFilePath}\n//start file\n${fileContent}\n//endFile\n\n`;
 
-    // Append the content to the output file
     fs.appendFileSync(outputFilePath, contentToAppend);
-    [5];
 
     console.log(`Added: ${fullFilePath}`);
   } catch (error) {
@@ -70,13 +61,11 @@ const processFile = (filePath) => {
 };
 
 // --- Main Execution ---
-console.log(`Starting to search for .js files in: ${targetFolder}`);
+console.log(`Starting to search in: ${targetFolder}`);
 
-// Create the target directory if it doesn't exist for demonstration
 if (!fs.existsSync(targetFolder)) {
   console.log(`Creating target directory: ${targetFolder}`);
   fs.mkdirSync(targetFolder, { recursive: true });
-  // Create some dummy files for testing
   fs.writeFileSync(
     path.join(targetFolder, 'test1.js'),
     'console.log("hello from test1");',
@@ -91,6 +80,4 @@ if (!fs.existsSync(targetFolder)) {
 
 findJsFiles(targetFolder);
 
-console.log(
-  `\nScript finished. All .js file contents have been combined into: ${outputFile}`,
-);
+console.log(`\nScript finished. Output written to: ${outputFile}`);

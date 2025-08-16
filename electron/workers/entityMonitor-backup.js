@@ -271,9 +271,9 @@ async function mainLoop() {
               gameWorld,
             );
 
-            let entitiesWithCoords = [];
+            let creaturesWithCoords = [];
             if (results && results.length > 0) {
-              entitiesWithCoords = results
+              creaturesWithCoords = results
                 .map((r) => {
                   // The physical location of the health bar on screen this frame
                   const screenX = r.x;
@@ -329,15 +329,15 @@ async function mainLoop() {
                 })
                 .filter(Boolean);
 
-              entitiesWithCoords.sort((a, b) =>
+              creaturesWithCoords.sort((a, b) =>
                 a.absoluteCoords.x !== b.absoluteCoords.x
                   ? a.absoluteCoords.x - b.absoluteCoords.x
                   : a.absoluteCoords.y - b.absoluteCoords.y,
               );
             }
 
-            if (!deepCompareEntities(entitiesWithCoords, lastSentEntities)) {
-              lastSentEntities = entitiesWithCoords;
+            if (!deepCompareEntities(creaturesWithCoords, lastSentEntities)) {
+              lastSentEntities = creaturesWithCoords;
               parentPort.postMessage({
                 type: 'batch-update',
                 payload: [
@@ -347,7 +347,7 @@ async function mainLoop() {
                   },
                   {
                     type: 'targeting/setEntities',
-                    payload: entitiesWithCoords,
+                    payload: creaturesWithCoords,
                   },
                 ],
               });

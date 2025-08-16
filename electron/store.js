@@ -10,6 +10,7 @@ import regionCoordinatesSlice from '../frontend/redux/slices/regionCoordinatesSl
 import ocrSlice from '../frontend/redux/slices/ocrSlice.js';
 import uiValuesSlice from '../frontend/redux/slices/uiValuesSlice.js';
 import battleListSlice from '../frontend/redux/slices/battleListSlice.js';
+import pathfinderSlice from '../frontend/redux/slices/pathfinderSlice.js';
 
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
@@ -23,6 +24,7 @@ const rootReducer = combineReducers({
   ocr: ocrSlice.reducer,
   uiValues: uiValuesSlice.reducer,
   battleList: battleListSlice.reducer,
+  pathfinder: pathfinderSlice.reducer,
 });
 
 const store = configureStore({

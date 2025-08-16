@@ -216,7 +216,7 @@ const Minimap = () => {
     wptId,
     allPathWaypoints,
     specialAreas,
-    entities,
+    creatures,
   } = useSelector((state) => {
     const currentSection = state.cavebot.currentSection;
     return {
@@ -228,7 +228,7 @@ const Minimap = () => {
       wptId: state.cavebot.wptId,
       allPathWaypoints: state.cavebot.pathWaypoints,
       specialAreas: state.cavebot.specialAreas,
-      entities: state.targeting.entities,
+      creatures: state.targeting.creatures,
     };
   });
 
@@ -361,8 +361,8 @@ const Minimap = () => {
     [specialAreas, zLevel],
   );
   const visibleEntities = useMemo(
-    () => entities.filter((e) => e.gameCoords.z === zLevel),
-    [entities, zLevel],
+    () => creatures.filter((e) => e.gameCoords.z === zLevel),
+    [creatures, zLevel],
   );
 
   // --- Centering & Resizing Logic ---

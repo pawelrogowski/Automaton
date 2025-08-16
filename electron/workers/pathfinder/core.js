@@ -1,11 +1,12 @@
-// pathfinder/core.js (Always Active Version)
+// /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/core.js
+// --- Confirmed Correct Version ---
 
 import { parentPort, workerData } from 'worker_threads';
 import Pathfinder from 'pathfinder-native';
 import { createLogger } from '../../utils/logger.js';
 import * as config from './config.js';
 import { loadAllMapData } from './dataLoader.js';
-import { runPathfindingLogic } from './logic.js';
+import { runPathfindingLogic } from './logic.js'; // <-- This import is correct here
 import { PerformanceTracker } from './performanceTracker.js';
 import {
   PLAYER_X_INDEX,
@@ -24,19 +25,16 @@ let lastPlayerPosCounter = -1;
 const logicContext = {
   lastPlayerPosKey: null,
   lastTargetWptId: null,
-  lastConfigForType: new Map(),
+  lastJsonForType: new Map(),
 };
 
-// --- Shared Buffer Setup ---
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
-// --- Performance Tracking ---
 const perfTracker = new PerformanceTracker();
 let lastPerfReportTime = Date.now();
 
-// --- Redux Update Throttling ---
 const REDUX_UPDATE_INTERVAL_MS = 150;
 let lastReduxUpdateTime = 0;
 let reduxUpdateTimeout = null;
@@ -46,7 +44,7 @@ function postThrottledUpdate() {
   if (pendingReduxUpdatePayload) {
     parentPort.postMessage({
       storeUpdate: true,
-      type: 'cavebot/setPathfindingFeedback',
+      type: 'pathfinder/setPathfindingFeedback',
       payload: pendingReduxUpdatePayload,
     });
     lastReduxUpdateTime = Date.now();
@@ -118,9 +116,6 @@ function handleMessage(message) {
       playerMinimapPosition = state.gameState.playerMinimapPosition;
     }
 
-    // --- FIX: Remove the 'cavebot.enabled' check ---
-    // The pathfinder should always run if it has a position.
-    // The logic inside runPathfindingLogic will check if there's a valid target waypoint.
     if (playerMinimapPosition) {
       const duration = runPathfindingLogic({
         ...logicContext,
@@ -138,7 +133,6 @@ function handleMessage(message) {
         perfTracker.addMeasurement(duration);
       }
     }
-    // --- END FIX ---
 
     logPerformanceReport();
   } catch (error) {

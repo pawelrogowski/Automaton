@@ -1,4 +1,5 @@
-// @workerManager.js (Definitive Freeze Fix)
+// /home/feiron/Dokumenty/Automaton/electron/workerManager.js
+// --- Full Drop-in Replacement with "Always On" Worker Logic ---
 
 import { Worker } from 'worker_threads';
 import path from 'path';
@@ -24,6 +25,7 @@ const DEFAULT_WORKER_CONFIG = {
   minimapMonitor: true,
   ocrWorker: true,
   cavebotWorker: true,
+  targetingWorker: true,
   pathfinderWorker: true,
   entityMonitor: true,
   enableLuaScriptWorkers: true,
@@ -33,6 +35,7 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const WORKER_INIT_DELAY = 50;
+const DEBOUNCE_INTERVAL = 16;
 
 function quickHash(obj) {
   let h = 0x811c9dc5;
@@ -50,8 +53,17 @@ const WORKER_STATE_DEPENDENCIES = {
     'global',
     'regionCoordinates',
     'statusMessages',
+    'targeting',
     'settings',
+    'pathfinder',
   ],
+  targetingWorker: [
+    'targeting',
+    'global',
+    'gameState',
+    'pathfinder',
+    'cavebot',
+  ], // Targeting needs cavebot state to know if it's paused
   regionMonitor: ['global'],
   entityMonitor: ['global', 'regionCoordinates', 'gameState'],
   screenMonitor: [
@@ -64,7 +76,6 @@ const WORKER_STATE_DEPENDENCIES = {
   minimapMonitor: ['global', 'regionCoordinates'],
   ocrWorker: ['global', 'regionCoordinates'],
   captureWorker: ['global'],
-  // Pathfinder is now handled with custom logic below to prevent feedback loops.
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -73,6 +84,7 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'minimapMonitor',
   'ocrWorker',
   'cavebotWorker',
+  'targetingWorker',
   'pathfinderWorker',
   'entityMonitor',
 ]);
@@ -95,6 +107,7 @@ class WorkerManager {
     this.lastPerfReport = Date.now();
     this.reusableChangedSlices = {};
     this.workerStateCache = new Map();
+    this.debounceTimeout = null;
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
@@ -102,6 +115,7 @@ class WorkerManager {
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
   }
 
+  // ... (setupPaths, resetRestartState, clearRestartLockWithTimeout, getWorkerPath, createSharedBuffers are unchanged) ...
   setupPaths(app, cwd) {
     if (app.isPackaged) {
       this.paths.utils = path.join(
@@ -308,11 +322,14 @@ class WorkerManager {
         'minimapMonitor',
         'pathfinderWorker',
         'cavebotWorker',
+        'targetingWorker',
         'entityMonitor',
       ].includes(name);
-      const needsPathDataSAB = ['pathfinderWorker', 'cavebotWorker'].includes(
-        name,
-      );
+      const needsPathDataSAB = [
+        'pathfinderWorker',
+        'cavebotWorker',
+        'targetingWorker',
+      ].includes(name);
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedData : null,
@@ -329,17 +346,16 @@ class WorkerManager {
       worker.on('error', (error) => this.handleWorkerError(name, error));
       worker.on('exit', (code) => this.handleWorkerExit(name, code));
       log('info', `[Worker Manager] Worker ${name} started successfully.`);
+
       setTimeout(() => {
         if (scriptConfig) {
           worker.postMessage({ type: 'init', script: scriptConfig });
         }
-        if (
-          name !== 'captureWorker' &&
-          !(/^[0-9a-fA-F]{8}-/.test(name) && scriptConfig?.type === 'oneshot')
-        ) {
+        if (name !== 'captureWorker') {
           worker.postMessage(store.getState());
         }
       }, WORKER_INIT_DELAY);
+
       return worker;
     } catch (error) {
       log('error', `[Worker Manager] Failed to start worker: ${name}`, error);
@@ -417,7 +433,7 @@ class WorkerManager {
 
   broadcastStateUpdate(changedSlices) {
     const changedKeys = Object.keys(changedSlices);
-    const currentState = store.getState(); // Get the full current state for comparison
+    const currentState = store.getState();
 
     for (const [name, workerEntry] of this.workers) {
       if (
@@ -428,41 +444,35 @@ class WorkerManager {
       )
         continue;
 
-      // --- FIX: Custom, precise dependency check for pathfinderWorker ---
       if (name === 'pathfinderWorker') {
         const relevantPayload = {};
         let needsUpdate = false;
-
         if (changedKeys.includes('gameState')) {
           needsUpdate = true;
           relevantPayload.gameState = changedSlices.gameState;
         }
-
         if (changedKeys.includes('cavebot')) {
           const oldCavebot = this.previousState.cavebot;
           const newCavebot = currentState.cavebot;
-          // Only trigger an update if the *inputs* to the pathfinder have changed.
-          // This prevents an update caused by its own `pathfindingFeedback` output.
           if (
             oldCavebot.wptId !== newCavebot.wptId ||
             oldCavebot.currentSection !== newCavebot.currentSection ||
             oldCavebot.waypointSections !== newCavebot.waypointSections ||
-            oldCavebot.specialAreas !== newCavebot.specialAreas
+            oldCavebot.specialAreas !== newCavebot.specialAreas ||
+            oldCavebot.dynamicTarget !== newCavebot.dynamicTarget
           ) {
             needsUpdate = true;
             relevantPayload.cavebot = newCavebot;
           }
         }
-
         if (needsUpdate) {
           workerEntry.worker.postMessage({
             type: 'state_diff',
             payload: relevantPayload,
           });
         }
-        continue; // Move to the next worker
+        continue;
       }
-      // --- END FIX ---
 
       const workerDeps = WORKER_STATE_DEPENDENCIES[name];
       const relevant = {};
@@ -508,7 +518,12 @@ class WorkerManager {
   }
 
   debouncedStoreUpdate() {
-    this.handleStoreUpdate();
+    if (this.debounceTimeout) {
+      clearTimeout(this.debounceTimeout);
+    }
+    this.debounceTimeout = setTimeout(() => {
+      this.handleStoreUpdate();
+    }, DEBOUNCE_INTERVAL);
   }
 
   async handleStoreUpdate() {
@@ -517,7 +532,49 @@ class WorkerManager {
     try {
       const currentState = store.getState();
       const { windowId, display } = currentState.global;
-      const { enabled: luaEnabled } = currentState.lua;
+
+      // --- FIX: Authoritative Bridge Logic ---
+      const { targeting, cavebot } = currentState;
+      const previous = this.previousState || {};
+
+      const bridgeInputsChanged =
+        previous.targeting?.enabled !== targeting.enabled ||
+        previous.targeting?.creatures?.length > 0 !==
+          targeting.creatures.length > 0 || // Check for presence, not exact length
+        previous.targeting?.stance !== targeting.stance ||
+        previous.cavebot?.enabled !== cavebot.enabled;
+
+      if (bridgeInputsChanged) {
+        const shouldTarget =
+          targeting.enabled &&
+          targeting.creatures.length > 0 &&
+          targeting.stance !== 'Ignore' &&
+          targeting.stance !== 'Stand';
+
+        if (shouldTarget) {
+          // Activate Targeting, Pause Cavebot
+          if (cavebot.pathfinderMode !== 'targeting') {
+            log('info', `[Worker Bridge] Activating Targeting Mode.`);
+            setGlobalState('cavebot/setPathfinderMode', 'targeting');
+          }
+          if (!cavebot.isActionPaused) {
+            setGlobalState('cavebot/setActionPaused', true);
+          }
+        } else {
+          // Activate Cavebot, clear Targeting goal
+          if (cavebot.pathfinderMode !== 'cavebot') {
+            log('info', `[Worker Bridge] Activating Cavebot Mode.`);
+            setGlobalState('cavebot/setPathfinderMode', 'cavebot');
+            if (cavebot.dynamicTarget) {
+              setGlobalState('cavebot/setDynamicTarget', null);
+            }
+          }
+          if (cavebot.isActionPaused) {
+            setGlobalState('cavebot/setActionPaused', false);
+          }
+        }
+      }
+      // --- END FIX ---
 
       if (windowId && display) {
         if (!this.sharedData) this.createSharedBuffers();
@@ -529,6 +586,7 @@ class WorkerManager {
           Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
         }
 
+        // --- FIX: Start ALL workers at once and keep them alive ---
         if (
           this.workerConfig.captureWorker &&
           !this.workers.has('captureWorker')
@@ -557,35 +615,29 @@ class WorkerManager {
         if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
           this.startWorker('ocrWorker');
         if (
+          this.workerConfig.pathfinderWorker &&
+          !this.workers.has('pathfinderWorker')
+        )
+          this.startWorker('pathfinderWorker');
+        if (
           this.workerConfig.cavebotWorker &&
           !this.workers.has('cavebotWorker')
         )
           this.startWorker('cavebotWorker');
         if (
-          this.workerConfig.pathfinderWorker &&
-          !this.workers.has('pathfinderWorker')
+          this.workerConfig.targetingWorker &&
+          !this.workers.has('targetingWorker')
         )
-          this.startWorker('pathfinderWorker');
+          this.startWorker('targetingWorker');
+        // --- END FIX ---
       } else {
-        const persistentWorkers = [
-          'captureWorker',
-          'regionMonitor',
-          'screenMonitor',
-          'minimapMonitor',
-          'ocrWorker',
-          'cavebotWorker',
-          'pathfinderWorker',
-          'entityMonitor',
-        ];
-        const workersToStop = Array.from(this.workers.keys()).filter((name) =>
-          persistentWorkers.includes(name),
-        );
-        if (workersToStop.length > 0) {
+        // Stop all workers if window is lost
+        if (this.workers.size > 0) {
           log(
             'info',
-            '[Worker Manager] Window not detected, stopping persistent workers...',
+            '[Worker Manager] Window not detected, stopping all workers...',
           );
-          await Promise.all(workersToStop.map((w) => this.stopWorker(w)));
+          await this.stopAllWorkers();
         }
         if (this.sharedData) {
           log('info', '[Worker Manager] Clearing SharedArrayBuffers.');
@@ -593,7 +645,7 @@ class WorkerManager {
         }
       }
 
-      await this.manageLuaWorkers(currentState, luaEnabled);
+      await this.manageLuaWorkers(currentState, currentState.lua.enabled);
 
       if (this.previousState) {
         const changed = this.getStateChanges(currentState, this.previousState);

@@ -10,6 +10,7 @@ import regionCoordinatesSlice from './slices/regionCoordinatesSlice.js';
 import ocrSlice from './slices/ocrSlice.js';
 import uiValuesSlice from './slices/uiValuesSlice.js';
 import battleListSlice from './slices/battleListSlice.js';
+import pathfinderSlice from './slices/pathfinderSlice.js';
 
 const ipcMiddleware = () => (next) => (action) => {
   // If the action comes from the backend, let it pass through to the reducer.
@@ -35,6 +36,7 @@ const store = configureStore({
     ocr: ocrSlice.reducer,
     uiValues: uiValuesSlice.reducer,
     battleList: battleListSlice.reducer,
+    pathfinder: pathfinderSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(ipcMiddleware),

@@ -1,6 +1,7 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/logic.js
+
 import { WAYPOINT_AVOIDANCE_MAP } from './config.js';
 import {
-  // Import all existing constants
   PATH_LENGTH_INDEX,
   PATH_UPDATE_COUNTER_INDEX,
   PATH_WAYPOINTS_START_INDEX,
@@ -10,8 +11,6 @@ import {
   PATH_START_X_INDEX,
   PATH_START_Y_INDEX,
   PATH_START_Z_INDEX,
-
-  // Import the new constants from the updated sharedConstants.js
   PATHFINDING_STATUS_INDEX,
   PATH_STATUS_IDLE,
   PATH_STATUS_PATH_FOUND,
@@ -29,19 +28,21 @@ export function runPathfindingLogic(context) {
   const {
     state,
     pathfinderInstance,
-    lastConfigForType,
+    lastJsonForType,
     logger,
     pathDataArray,
     throttleReduxUpdate,
   } = context;
 
   try {
-    if (!state?.cavebot?.wptId || !state?.gameState?.playerMinimapPosition) {
+    const { cavebot, gameState } = state;
+    const { playerMinimapPosition } = gameState;
+
+    if (!playerMinimapPosition) {
       return null;
     }
 
-    const { x, y, z } = state.gameState.playerMinimapPosition;
-
+    const { x, y, z } = playerMinimapPosition;
     if (
       typeof x !== 'number' ||
       typeof y !== 'number' ||
@@ -54,83 +55,126 @@ export function runPathfindingLogic(context) {
       return null;
     }
 
-    const { waypointSections, currentSection, wptId } = state.cavebot;
-    const currentWaypoints = waypointSections[currentSection]?.waypoints || [];
-    const targetWaypoint = currentWaypoints.find((wp) => wp.id === wptId);
-    if (!targetWaypoint) return null;
+    const pathfinderMode = cavebot.pathfinderMode;
+    let result = null;
+    let targetIdentifier = null; // Used to check if the target has changed
 
-    // --- Handle Special Areas (Unchanged) ---
-    const requiredAvoidanceType = WAYPOINT_AVOIDANCE_MAP[targetWaypoint.type];
-    if (requiredAvoidanceType) {
-      const permanentAreas = (state.cavebot?.specialAreas || []).filter(
-        (area) => area.enabled && area.type === requiredAvoidanceType,
+    // --- Filter Special Areas based on the current mode ---
+    const allSpecialAreas = state.cavebot?.specialAreas || [];
+    const activeSpecialAreas = allSpecialAreas.filter((area) => {
+      if (!area.enabled) return false;
+      return area.type === 'all' || area.type === pathfinderMode;
+    });
+
+    const currentJson = JSON.stringify(activeSpecialAreas);
+    if (currentJson !== lastJsonForType.get(pathfinderMode)) {
+      const areasForNative = activeSpecialAreas.map((area) => ({
+        x: area.x,
+        y: area.y,
+        z: area.z,
+        avoidance: area.avoidance,
+        width: area.sizeX,
+        height: area.sizeY,
+      }));
+      pathfinderInstance.updateSpecialAreas(areasForNative, z);
+      lastJsonForType.set(pathfinderMode, currentJson);
+    }
+
+    // --- Determine which pathfinding logic to run ---
+    if (pathfinderMode === 'targeting' && cavebot.dynamicTarget) {
+      targetIdentifier = JSON.stringify(cavebot.dynamicTarget);
+      result = pathfinderInstance.findPathToGoal(
+        playerMinimapPosition,
+        cavebot.dynamicTarget,
+      );
+    } else if (pathfinderMode === 'cavebot' && cavebot.wptId) {
+      const { waypointSections, currentSection, wptId } = cavebot;
+      const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
+        (wp) => wp.id === wptId,
       );
 
-      // Create a cheap-to-compute string signature instead of JSON.stringify
-      const currentKey = permanentAreas
-        .map((a) => `${a.x},${a.y},${a.z},${a.avoidance},${a.sizeX},${a.sizeY}`)
-        .join('|');
-
-      if (currentKey !== lastConfigForType.get(requiredAvoidanceType)) {
-        const areasForNative = permanentAreas.map((area) => ({
-          x: area.x,
-          y: area.y,
-          z: area.z,
-          avoidance: area.avoidance,
-          width: area.sizeX,
-          height: area.sizeY,
-        }));
-        pathfinderInstance.updateSpecialAreas(areasForNative, z);
-        lastConfigForType.set(requiredAvoidanceType, currentKey);
+      if (targetWaypoint) {
+        targetIdentifier = targetWaypoint.id;
+        if (z !== targetWaypoint.z) {
+          if (context.lastTargetWptId !== targetIdentifier) {
+            throttleReduxUpdate({
+              pathWaypoints: [],
+              wptDistance: null,
+              pathfindingStatus: 'DIFFERENT_FLOOR',
+            });
+            if (pathDataArray) {
+              Atomics.store(
+                pathDataArray,
+                PATHFINDING_STATUS_INDEX,
+                PATH_STATUS_DIFFERENT_FLOOR,
+              );
+              Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
+              Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
+            }
+            context.lastTargetWptId = targetIdentifier;
+          }
+          return null;
+        }
+        result = pathfinderInstance.findPathSync(
+          playerMinimapPosition,
+          { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
+          { waypointType: targetWaypoint.type },
+        );
       }
     }
 
-    // --- Handle Different Floor Case ---
-    if (z !== targetWaypoint.z) {
-      // Only update if this is a new target, to avoid spamming updates.
-      if (context.lastTargetWptId !== targetWaypoint.id) {
-        throttleReduxUpdate({
-          pathWaypoints: [],
-          wptDistance: null,
-          pathfindingStatus: 'DIFFERENT_FLOOR',
-        });
-        // Write the definitive status to the SAB
-        if (pathDataArray) {
-          Atomics.store(
-            pathDataArray,
-            PATHFINDING_STATUS_INDEX,
-            PATH_STATUS_DIFFERENT_FLOOR,
-          );
-          Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0); // Ensure path is empty
-          Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1); // Notify worker
-        }
-        context.lastTargetWptId = targetWaypoint.id;
+    // *** START: MODIFIED LOGIC ***
+    // If we had a target but 'result' is still null (e.g., pathfinding call failed),
+    // explicitly treat it as NO_PATH_FOUND. This prevents the ambiguous 'IDLE' status
+    // from being sent to the cavebot worker when it has an active target.
+    if (targetIdentifier && !result) {
+      result = {
+        path: [],
+        reason: 'NO_PATH_FOUND',
+        performance: { totalTimeMs: 0 },
+      };
+    }
+    // *** END: MODIFIED LOGIC ***
+
+    if (!result) {
+      // This block now only handles the "truly idle" case where there was no target.
+      if (pathDataArray) {
+        Atomics.store(
+          pathDataArray,
+          PATHFINDING_STATUS_INDEX,
+          PATH_STATUS_IDLE,
+        );
+        Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
+        Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
       }
       return null;
     }
 
-    // --- Prevent Recalculation if Nothing Changed (Unchanged) ---
     const currentPosKey = `${x},${y},${z}`;
     if (
       context.lastPlayerPosKey === currentPosKey &&
-      context.lastTargetWptId === targetWaypoint.id
+      context.lastTargetWptId === targetIdentifier
     ) {
       return null;
     }
     context.lastPlayerPosKey = currentPosKey;
-    context.lastTargetWptId = targetWaypoint.id;
+    context.lastTargetWptId = targetIdentifier;
 
-    // --- Perform Pathfinding ---
-    const result = pathfinderInstance.findPathSync(
-      { x, y, z },
-      { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
-      { waypointType: targetWaypoint.type },
-    );
-
-    const path = result.path || [];
+    // raw path from pathfinder
+    const rawPath = result.path || [];
     const statusString = result.reason;
 
-    // --- Convert Status String to Integer Code ---
+    // --- Normalize path: drop initial step if it equals the player's current tile ---
+    const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
+    if (normalizedPath.length > 0) {
+      const first = normalizedPath[0];
+      if (first.x === x && first.y === y && first.z === z) {
+        // drop the start tile so worker sees only steps to perform
+        normalizedPath.shift();
+      }
+    }
+
+    // Map status string to internal code
     let statusCode = PATH_STATUS_IDLE;
     switch (statusString) {
       case 'PATH_FOUND':
@@ -147,59 +191,65 @@ export function runPathfindingLogic(context) {
         statusCode = PATH_STATUS_NO_VALID_START_OR_END;
         break;
       default:
-        statusCode = PATH_STATUS_ERROR; // Should not happen
+        statusCode = PATH_STATUS_ERROR;
     }
 
-    // --- Write Results to Shared Array Buffer ---
-    const pathSignature = `${statusCode}:${path.map((p) => `${p.x},${p.y}`).join(';')}`;
-    if (pathSignature === lastWrittenPathSignature) return;
+    // Compose signature from normalized path so we avoid redundant SAB writes
+    const pathSignature = `${statusCode}:${normalizedPath.map((p) => `${p.x},${p.y}`).join(';')}`;
+    if (pathSignature !== lastWrittenPathSignature) {
+      if (pathDataArray) {
+        const pathLength = Math.min(normalizedPath.length, MAX_PATH_WAYPOINTS);
+        const targetX =
+          normalizedPath.length > 0
+            ? normalizedPath[normalizedPath.length - 1].x
+            : result.path && result.path.length > 0
+              ? result.path[result.path.length - 1].x
+              : x;
+        const targetY =
+          normalizedPath.length > 0
+            ? normalizedPath[normalizedPath.length - 1].y
+            : result.path && result.path.length > 0
+              ? result.path[result.path.length - 1].y
+              : y;
+        const chebyshevDistance = Math.max(
+          Math.abs(x - targetX),
+          Math.abs(y - targetY),
+        );
 
-    if (pathDataArray) {
-      const pathLength = Math.min(path.length, MAX_PATH_WAYPOINTS);
-      const chebyshevDistance = Math.max(
-        Math.abs(x - targetWaypoint.x),
-        Math.abs(y - targetWaypoint.y),
-      );
+        Atomics.store(pathDataArray, PATH_LENGTH_INDEX, pathLength);
+        Atomics.store(
+          pathDataArray,
+          PATH_CHEBYSHEV_DISTANCE_INDEX,
+          chebyshevDistance,
+        );
+        Atomics.store(pathDataArray, PATH_START_X_INDEX, x);
+        Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
+        Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
+        Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
 
-      // Store all path metadata in the SAB
-      Atomics.store(pathDataArray, PATH_LENGTH_INDEX, pathLength);
-      Atomics.store(
-        pathDataArray,
-        PATH_CHEBYSHEV_DISTANCE_INDEX,
-        chebyshevDistance,
-      );
-      Atomics.store(pathDataArray, PATH_START_X_INDEX, x);
-      Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
-      Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
+        for (let i = 0; i < pathLength; i++) {
+          const waypoint = normalizedPath[i];
+          const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
+          Atomics.store(pathDataArray, offset + 0, waypoint.x);
+          Atomics.store(pathDataArray, offset + 1, waypoint.y);
+          Atomics.store(pathDataArray, offset + 2, waypoint.z);
+        }
 
-      // ** THE CRUCIAL CHANGE: Store the definitive status code **
-      Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
-
-      // Store the waypoints
-      for (let i = 0; i < pathLength; i++) {
-        const waypoint = path[i];
-        const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-        Atomics.store(pathDataArray, offset + 0, waypoint.x);
-        Atomics.store(pathDataArray, offset + 1, waypoint.y);
-        Atomics.store(pathDataArray, offset + 2, waypoint.z);
+        Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
       }
-
-      // Increment update counter to notify consumers
-      Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
+      lastWrittenPathSignature = pathSignature;
     }
-    lastWrittenPathSignature = pathSignature;
 
-    // --- Throttle Redux Update for UI (Unchanged) ---
+    // wptDistance should reflect number of remaining steps (normalized path length)
     const distance =
       statusString === 'NO_PATH_FOUND'
         ? null
-        : path.length > 0
-          ? path.length
-          : statusString === 'WAYPOINT_REACHED'
-            ? 0
-            : null;
+        : normalizedPath.length >= 0
+          ? normalizedPath.length
+          : null;
+
     throttleReduxUpdate({
-      pathWaypoints: path,
+      pathWaypoints: normalizedPath,
       wptDistance: distance,
       routeSearchMs: result.performance.totalTimeMs,
       pathfindingStatus: statusString,
@@ -213,7 +263,6 @@ export function runPathfindingLogic(context) {
       wptDistance: null,
       pathfindingStatus: 'ERROR',
     });
-    // On error, notify the worker so it can handle it gracefully
     if (pathDataArray) {
       Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, PATH_STATUS_ERROR);
       Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);

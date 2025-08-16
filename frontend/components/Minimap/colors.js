@@ -25,7 +25,7 @@ export const MINIMAP_COLORS = {
   // Color for the player's marker on the map.
   PLAYER: '#e74c3c', // Alizarin Red
 
-  // Color for hostile entities.
+  // Color for hostile creatures.
   ENTITY: '#FF0000', // Bright Red
 
   // Fill and stroke colors for special areas.

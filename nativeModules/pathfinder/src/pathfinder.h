@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <functional> // For std::hash
 
-// Data Structures - Kept from original
+// Data Structures
 struct Node {
     int x, y;
     int g, h;
@@ -16,11 +16,9 @@ struct Node {
     int z;
 
     int f() const { return g + h; }
-    // This operator is correct. It ensures uniqueness is based on position only.
     bool operator==(const Node& other) const { return x == other.x && y == other.y; }
 };
 
-// This hash function is correct. It corresponds to the operator==.
 struct NodeHash {
     std::size_t operator()(const Node& node) const {
         return std::hash<int>()(node.x) ^ (std::hash<int>()(node.y) << 1);
@@ -41,18 +39,19 @@ public:
 private:
     static Napi::FunctionReference constructor;
 
-    // Methods exposed to Node.js
+    // --- Private C++ Helper ---
+    Napi::Value _findPathInternal(Napi::Env env, const Node& start, const Node& end);
+
+    // --- Methods exposed to Node.js ---
     Napi::Value LoadMapData(const Napi::CallbackInfo& info);
     Napi::Value FindPathSync(const Napi::CallbackInfo& info);
     Napi::Value IsLoadedGetter(const Napi::CallbackInfo& info);
-    // New method to update the cache from JS
     Napi::Value UpdateSpecialAreas(const Napi::CallbackInfo& info);
+    Napi::Value FindPathToGoal(const Napi::CallbackInfo& info);
 
     // Internal State
     std::unordered_map<int, MapData> allMapData;
     std::atomic<bool> isLoaded{false};
-
-    // The Cache: Stores a pre-calculated cost grid for each Z-level
     std::unordered_map<int, std::vector<int>> cost_grid_cache;
 };
 

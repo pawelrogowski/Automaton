@@ -40,6 +40,8 @@ const GameState = () => {
         return state.uiValues; // Return uiValues state slice
       case '#battleListState':
         return state.battleList; // Return battleList state slice
+      case '#pathfinderState':
+        return state.pathfinder;
     }
   });
 
@@ -69,6 +71,8 @@ const GameState = () => {
         return 'UI Values (Skills Widget)';
       case '#battleListState':
         return 'Battle List State';
+      case '#pathfinderState':
+        return 'Pathfinder State';
     }
   };
 

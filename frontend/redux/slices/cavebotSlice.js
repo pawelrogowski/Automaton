@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/frontend/redux/slices/cavebotSlice.js
+// --- SIMPLIFIED VERSION ---
+
 import { createSlice } from '@reduxjs/toolkit';
 
 const parseLegacyCoordinates = (payload) => {
@@ -21,10 +24,7 @@ const initialState = {
   wptId: 'null',
   wptSelection: null,
   currentSection: 'default',
-  wptDistance: 0,
-  routeSearchMs: 0,
   standTime: 0,
-  pathfindingStatus: 'IDLE',
   isActionPaused: false,
   scriptFeedback: null,
   waypointSections: {
@@ -33,8 +33,9 @@ const initialState = {
       waypoints: [],
     },
   },
-  pathWaypoints: [],
   specialAreas: [],
+  pathfinderMode: 'cavebot', // 'cavebot' or 'targeting'
+  dynamicTarget: null, // Holds {stance, distance, targetCreaturePos} for targeting mode
 };
 
 const cavebotSlice = createSlice({
@@ -51,10 +52,7 @@ const cavebotSlice = createSlice({
       const newWptId = action.payload;
       if (state.wptId !== newWptId) {
         state.wptId = newWptId;
-        state.pathWaypoints = [];
-        state.wptDistance = null;
-        state.routeSearchMs = 0;
-        state.pathfindingStatus = 'IDLE';
+        // Note: Path feedback is no longer cleared here, as it lives in a different slice.
       }
     },
     setwptSelection: (state, action) => {
@@ -62,16 +60,6 @@ const cavebotSlice = createSlice({
     },
     setState: (state, action) => {
       return { ...initialState, ...(action.payload || {}) };
-    },
-    setPathfindingFeedback: (state, action) => {
-      const { pathWaypoints, wptDistance, routeSearchMs, pathfindingStatus } =
-        action.payload;
-      state.pathWaypoints = pathWaypoints;
-      state.wptDistance = wptDistance;
-      state.routeSearchMs = routeSearchMs;
-      if (pathfindingStatus) {
-        state.pathfindingStatus = pathfindingStatus;
-      }
     },
     setStandTime: (state, action) => {
       state.standTime = action.payload;
@@ -89,7 +77,7 @@ const cavebotSlice = createSlice({
         z: 0,
         range: 5,
         script: '',
-        log: [], // --- MODIFICATION: Ensure log array is initialized ---
+        log: [],
         ...parsedPayload,
         id: action.payload.id,
       };
@@ -110,7 +98,6 @@ const cavebotSlice = createSlice({
         state.wptSelection = currentWaypoints[newWaypointIndex].id;
       }
     },
-    // --- NEW REDUCER START ---
     addWaypointLogEntry: (state, action) => {
       const { id, message } = action.payload;
       const section = state.waypointSections[state.currentSection];
@@ -122,7 +109,7 @@ const cavebotSlice = createSlice({
           waypoint.log = [];
         }
         const now = new Date();
-        const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`;
+        const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(3, '0')}`;
         waypoint.log.push(`[${timestamp}] ${message}`);
 
         const MAX_LOG_SIZE = 100;
@@ -131,7 +118,6 @@ const cavebotSlice = createSlice({
         }
       }
     },
-    // --- NEW REDUCER END ---
     removeWaypoint: (state, action) => {
       const idToRemove = action.payload;
       const currentWaypoints =
@@ -141,16 +127,14 @@ const cavebotSlice = createSlice({
       );
       if (indexToRemove === -1) return;
       const isRemovingSelected = state.wptSelection === idToRemove;
-      currentWaypoints.splice(indexToRemove, 1); // Remove the waypoint first
+      currentWaypoints.splice(indexToRemove, 1);
 
       if (isRemovingSelected) {
         if (currentWaypoints.length === 0) {
           state.wptSelection = null;
         } else if (indexToRemove > 0) {
-          // Select the previous waypoint if it exists
           state.wptSelection = currentWaypoints[indexToRemove - 1].id;
         } else {
-          // If the first waypoint was removed, select the new first waypoint
           state.wptSelection = currentWaypoints[0].id;
         }
       }
@@ -249,6 +233,12 @@ const cavebotSlice = createSlice({
         Object.assign(existingArea, updates);
       }
     },
+    setPathfinderMode: (state, action) => {
+      state.pathfinderMode = action.payload;
+    },
+    setDynamicTarget: (state, action) => {
+      state.dynamicTarget = action.payload;
+    },
   },
 });
 
@@ -257,11 +247,10 @@ export const {
   setState,
   setwptId,
   setwptSelection,
-  setPathfindingFeedback,
   setStandTime,
   setScriptFeedback,
   addWaypoint,
-  addWaypointLogEntry, // --- EXPORT THE NEW ACTION ---
+  addWaypointLogEntry,
   removeWaypoint,
   reorderWaypoints,
   updateWaypoint,
@@ -273,6 +262,8 @@ export const {
   removeSpecialArea,
   updateSpecialArea,
   setActionPaused,
+  setPathfinderMode,
+  setDynamicTarget,
 } = cavebotSlice.actions;
 
 export default cavebotSlice;

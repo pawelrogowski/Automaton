@@ -145,9 +145,9 @@ async function mainLoop() {
               z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
             };
 
-            let entitiesWithCoords = [];
+            let creaturesWithCoords = [];
             if (results && results.length > 0) {
-              entitiesWithCoords = results
+              creaturesWithCoords = results
                 .map((r) => {
                   const screenX = r.x;
                   const screenY = r.y;
@@ -190,17 +190,23 @@ async function mainLoop() {
                     gameCoords: gameCoords,
                   };
                 })
-                .filter(Boolean);
+                .filter(Boolean)
+                // Exclude player's own health bar from creatures
+                .filter(
+                  (entity) =>
+                    entity.gameCoords.x !== playerMinimapPosition.x ||
+                    entity.gameCoords.y !== playerMinimapPosition.y,
+                );
 
-              entitiesWithCoords.sort((a, b) =>
+              creaturesWithCoords.sort((a, b) =>
                 a.absoluteCoords.x !== b.absoluteCoords.x
                   ? a.absoluteCoords.x - b.absoluteCoords.x
                   : a.absoluteCoords.y - b.absoluteCoords.y,
               );
             }
 
-            if (!deepCompareEntities(entitiesWithCoords, lastSentEntities)) {
-              lastSentEntities = entitiesWithCoords;
+            if (!deepCompareEntities(creaturesWithCoords, lastSentEntities)) {
+              lastSentEntities = creaturesWithCoords;
               // --- FIX START: Removed player position update from this worker ---
               // The minimapMonitor is now responsible for this update.
               parentPort.postMessage({
@@ -208,7 +214,7 @@ async function mainLoop() {
                 payload: [
                   {
                     type: 'targeting/setEntities',
-                    payload: entitiesWithCoords,
+                    payload: creaturesWithCoords,
                   },
                 ],
               });

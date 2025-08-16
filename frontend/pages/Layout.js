@@ -9,6 +9,7 @@ import hotkey from '../assets/hotkey.png';
 import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
 import ActionBarIcon from '../assets/action_bar.png';
+import battleSign from '../assets/battleSign.gif';
 import mageHat from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
 import {
@@ -31,6 +32,7 @@ import SidebarButton from '../components/SidebarButton.js/SidebarButton.js';
 import { v4 as uuidv4 } from 'uuid';
 import GameState from './GameState.js';
 import Cavebot from './Cavebot.js';
+import Targeting from './Targeting.js';
 import tibia from '../assets/tibia.svg';
 import LuaScripts from './LuaScripts.js';
 import luaIcon from '../assets/Anatomy_Book.gif';
@@ -275,6 +277,18 @@ const Layout = () => {
               </>
             )}
 
+            {location.pathname.includes('/targeting') && (
+              <>
+                <SideBarNavButton
+                  to="/targeting#settings"
+                  img={battleSign}
+                  text={'Settings'}
+                  imageWidth="32px"
+                  tooltip="Manage targeting settings"
+                ></SideBarNavButton>
+              </>
+            )}
+
             {location.pathname.includes('/luascripts') && (
               <>
                 <SideBarNavButton
@@ -372,6 +386,13 @@ const Layout = () => {
                   text={'Battle List'}
                   imageWidth="32px"
                   tooltip="View the current battle list slice"
+                ></SideBarNavButton>
+                <SideBarNavButton
+                  to="/gameState#pathfinderState"
+                  img={tibia}
+                  text={'Pathfinder State'}
+                  imageWidth="32px"
+                  tooltip="View the current pathfinder state slice"
                 ></SideBarNavButton>
               </>
             )}
@@ -511,6 +532,7 @@ const Layout = () => {
           <div className="routes-wrapper">
             <Routes>
               <Route path="/healing" element={<Healing />} />
+              <Route path="/targeting" element={<Targeting />} />
               <Route path="/luascripts" element={<LuaScripts />} />
               <Route path="/gameState" element={<GameState />} />
               <Route path="/cavebot" element={<Cavebot />} />
