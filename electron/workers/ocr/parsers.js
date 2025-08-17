@@ -7,6 +7,33 @@
 
 // Note: Most of these functions are moved directly from the original uiValuesSlice.js
 
+/**
+ * Converts a time string in hh:mm or hh.mm format to total minutes.
+ * @param {string} timeStr - The time string, e.g., "42:00" or "42.00".
+ * @returns {number|null} Total minutes or null if invalid.
+ */
+function timeStringToMinutes(timeStr) {
+  if (typeof timeStr !== 'string') {
+    return null;
+  }
+  // Normalize separator to ':'
+  const normalizedTime = timeStr.replace('.', ':');
+  const parts = normalizedTime.split(':');
+
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+
+  if (isNaN(hours) || isNaN(minutes)) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
 function parseSkillsWidget(ocrData) {
   if (!Array.isArray(ocrData) || ocrData.length === 0) return null;
   const result = {};
@@ -60,10 +87,10 @@ function parseSkillsWidget(ocrData) {
           result.speed = parseInt(value) || null;
           break;
         case 'food':
-          result.food = value;
+          result.food = timeStringToMinutes(value);
           break;
         case 'stamina':
-          result.stamina = value;
+          result.stamina = timeStringToMinutes(value);
           break;
         case 'offline training':
           result.offlineTraining = value;
@@ -209,6 +236,11 @@ function parseVipWidget(ocrData) {
   return { online, offline };
 }
 
+function parseGameWorldOcr(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) return [];
+  return ocrData.filter((item) => item && typeof item === 'object');
+}
+
 export const regionParsers = {
   skillsWidget: parseSkillsWidget,
   chatboxMain: parseChatData,
@@ -216,4 +248,5 @@ export const regionParsers = {
   chatBoxTabRow: parseChatBoxTabRow,
   selectCharacterModal: parseSelectCharacterModal,
   vipWidget: parseVipWidget,
+  gameWorld: parseGameWorldOcr,
 };

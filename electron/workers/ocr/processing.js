@@ -1,13 +1,16 @@
 import { parentPort } from 'worker_threads';
 import pkg from 'font-ocr';
-import { OCR_REGION_CONFIGS } from './config.js';
+import { OCR_REGION_CONFIGS, CHAR_PRESETS } from './config.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
 
-const { recognizeText } = pkg;
+// Import both functions from the native module
+const { recognizeText, findText } = pkg;
+
+// Track last posted results to avoid redundant updates
+const lastPostedResults = new Map();
 
 /**
  * Checks if two rectangle objects intersect.
- * @returns {boolean} True if the rectangles overlap.
  */
 export function rectsIntersect(rectA, rectB) {
   if (
@@ -17,9 +20,9 @@ export function rectsIntersect(rectA, rectB) {
     rectA.height <= 0 ||
     rectB.width <= 0 ||
     rectB.height <= 0
-  ) {
+  )
     return false;
-  }
+
   return (
     rectA.x < rectB.x + rectB.width &&
     rectA.x + rectA.width > rectB.x &&
@@ -29,19 +32,30 @@ export function rectsIntersect(rectA, rectB) {
 }
 
 /**
- * Processes the battle list, which has special logic for handling many small sub-regions.
- * It performs OCR and dispatches the final array of monster names.
- * @param {Buffer} buffer - The shared screen buffer.
- * @param {object} regions - The map of all known UI regions.
+ * Posts a message to the parent only if the payload has changed since last time.
+ */
+function postUpdateOnce(type, payload) {
+  const key = type;
+  const prev = lastPostedResults.get(key);
+  const payloadString = JSON.stringify(payload);
+
+  if (prev === payloadString) return; // skip redundant update
+
+  lastPostedResults.set(key, payloadString);
+  parentPort.postMessage({
+    storeUpdate: true,
+    type,
+    payload,
+  });
+}
+
+/**
+ * Processes the battle list, using OCR and mapping results to entries.
  */
 export async function processBattleList(buffer, regions) {
   const battleListEntries = regions.battleList?.children?.entries?.list;
   if (!Array.isArray(battleListEntries) || battleListEntries.length === 0) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'uiValues/setBattleListEntries',
-      payload: [],
-    });
+    postUpdateOnce('uiValues/setBattleListEntries', []);
     return;
   }
 
@@ -50,15 +64,10 @@ export async function processBattleList(buffer, regions) {
       .filter((e) => e?.name && typeof e.name.x === 'number')
       .map((e) => e.name);
     if (validNameRegions.length === 0) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/setBattleListEntries',
-        payload: [],
-      });
+      postUpdateOnce('uiValues/setBattleListEntries', []);
       return;
     }
 
-    // Create a "super region" that encompasses all monster names for a single, efficient OCR call.
     let minX = Infinity,
       minY = Infinity,
       maxX = -Infinity,
@@ -75,28 +84,27 @@ export async function processBattleList(buffer, regions) {
       width: maxX - minX,
       height: maxY - minY,
     };
-    const monsterNameColors = regionDefinitions.battleList?.ocrColors || [
-      [240, 240, 240],
-    ];
 
+    const monsterNameColors = regionDefinitions.battleList?.ocrColors || [];
+
+    const allowedCharsForBattleList = CHAR_PRESETS.ALPHA + ' ';
     const ocrResults =
-      recognizeText(buffer, superRegion, monsterNameColors) || [];
+      recognizeText(
+        buffer,
+        superRegion,
+        monsterNameColors,
+        allowedCharsForBattleList,
+      ) || [];
 
-    // Map the OCR results back to the original battle list entries by their y-coordinate.
     const monsterNames = battleListEntries.map((entry) => {
       if (!entry?.name) return '';
-      // Find the OCR line that is vertically closest to the entry's name region.
       const foundText = ocrResults.find(
         (ocrLine) => Math.abs(ocrLine.y - entry.name.y) <= 3,
       );
       return foundText ? foundText.text.trim() : '';
     });
 
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'uiValues/setBattleListEntries',
-      payload: monsterNames,
-    });
+    postUpdateOnce('uiValues/setBattleListEntries', monsterNames);
   } catch (ocrError) {
     console.error(
       '[OcrProcessing] OCR failed for battleList entries:',
@@ -106,10 +114,7 @@ export async function processBattleList(buffer, regions) {
 }
 
 /**
- * Processes a set of standard OCR regions, running them through their specific parsers.
- * @param {Buffer} buffer - The shared screen buffer.
- * @param {object} regions - The map of all known UI regions.
- * @param {Set<string>} regionKeys - A set of region names to process.
+ * Processes standard OCR regions using their parser and configuration.
  */
 export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
@@ -122,38 +127,33 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
 
     const processRegion = async () => {
       try {
-        // 1. Get raw OCR text data from the native library.
-        const rawData = recognizeText(buffer, region, config.colors) || [];
-        ocrRawUpdates[regionKey] = rawData; // Keep raw data for debugging if needed.
+        let rawData = [];
+        const colors = config.colors || [];
 
-        // 2. If a parser exists, use it to transform the raw data.
+        if (config.dictionary && Array.isArray(config.dictionary)) {
+          rawData = findText(buffer, region, colors, config.dictionary) || [];
+        } else {
+          rawData =
+            recognizeText(buffer, region, colors, config.allowedChars) || [];
+        }
+
+        ocrRawUpdates[regionKey] = rawData;
+
         if (config.parser) {
           const parsedData = config.parser(rawData);
-
-          // 3. If the parser returns a valid result, dispatch the specific, clean action.
-          if (parsedData) {
-            parentPort.postMessage({
-              storeUpdate: true,
-              type: config.storeAction,
-              payload: parsedData,
-            });
-          }
+          if (parsedData) postUpdateOnce(config.storeAction, parsedData);
         }
       } catch (ocrError) {
         console.error(`[OcrProcessing] OCR failed for ${regionKey}:`, ocrError);
       }
     };
+
     processingPromises.push(processRegion());
   }
 
   await Promise.all(processingPromises);
 
-  // This can still be useful for a generic "raw ocr" view in a debug tool.
   if (Object.keys(ocrRawUpdates).length > 0) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'ocr/setOcrRegionsText',
-      payload: ocrRawUpdates,
-    });
+    postUpdateOnce('ocr/setOcrRegionsText', ocrRawUpdates);
   }
 }

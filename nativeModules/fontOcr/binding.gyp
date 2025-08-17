@@ -22,7 +22,8 @@
             "-mtune=native",    # Tune instruction scheduling for the specific CPU
             "-flto",            # Enable Link-Time Optimization
             "-fno-exceptions",   # Disable C++ exceptions for smaller, faster code
-            "-mavx2"
+            "-mavx2",
+            "-fno-rtti"
           ],
           "ldflags": [ "-fopenmp" ]
         }]

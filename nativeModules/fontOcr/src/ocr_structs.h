@@ -1,21 +1,34 @@
-#pragma once // Prevents the file from being included multiple times
+#pragma once
 
 #include <vector>
 #include <string>
 #include <cstdint>
 #include <utility>
 
-// This file is the single source of truth for our data structures.
+// A clean struct for coordinates, with a comparison operator for use in maps.
+struct Point {
+    uint8_t first;  // x
+    uint8_t second; // y
 
+    bool operator<(const Point& other) const {
+        if (first != other.first) {
+            return first < other.first;
+        }
+        return second < other.second;
+    }
+};
+
+// Template for a single character.
 struct CharTemplate {
     char character;
     uint32_t width;
     uint32_t height;
     uint32_t offset;
-    std::vector<std::pair<uint8_t, uint8_t>> font_pixel_offsets;
-    std::vector<std::pair<uint8_t, uint8_t>> bg_pixel_offsets;
+    std::vector<Point> font_pixel_offsets;
+    std::vector<Point> bg_pixel_offsets;
 };
 
+// Represents a character found on screen by recognizeText.
 struct FoundChar {
     char character;
     uint32_t x;

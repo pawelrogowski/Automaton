@@ -1,7 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import * as config from './config.js';
-import { PerformanceTracker } from './performanceTracker.js';
 import {
   rectsIntersect,
   processBattleList,
@@ -11,10 +10,10 @@ import {
 let currentState = null;
 let isShuttingDown = false;
 let lastProcessedFrameCounter = -1;
-let initializedRegions = new Set();
+let lastRegionHash = null;
 
-const perfTracker = new PerformanceTracker();
-let lastPerfReportTime = Date.now();
+let oneTimeInitializedRegions = new Set();
+const pendingThrottledRegions = new Map();
 
 const { sharedData } = workerData;
 const { imageSAB, syncSAB } = sharedData;
@@ -23,22 +22,50 @@ const sharedBufferView = Buffer.from(imageSAB);
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function logPerformanceReport() {
-  if (!config.PERFORMANCE_LOGGING_ENABLED) return;
+function hashRegionCoordinates(regionCoordinates) {
+  if (!regionCoordinates || typeof regionCoordinates !== 'object') {
+    return JSON.stringify(regionCoordinates);
+  }
+  const replacer = (key, value) =>
+    value instanceof Object && !(value instanceof Array)
+      ? Object.keys(value)
+          .sort()
+          .reduce((sorted, key) => {
+            sorted[key] = value[key];
+            return sorted;
+          }, {})
+      : value;
+  return JSON.stringify(regionCoordinates, replacer);
+}
+
+async function processPendingRegions() {
+  if (pendingThrottledRegions.size === 0) return;
+
   const now = Date.now();
-  if (now - lastPerfReportTime >= config.PERFORMANCE_LOG_INTERVAL_MS) {
-    console.log(perfTracker.getReport());
-    perfTracker.reset();
-    lastPerfReportTime = now;
+  const regionsToProcessNow = new Set();
+
+  for (const [regionKey, startTime] of pendingThrottledRegions.entries()) {
+    const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
+    if (now - startTime >= regionConfig.throttle) {
+      regionsToProcessNow.add(regionKey);
+    }
+  }
+
+  if (regionsToProcessNow.size > 0) {
+    await processOcrRegions(
+      sharedBufferView,
+      currentState.regionCoordinates.regions,
+      regionsToProcessNow,
+    );
+    for (const regionKey of regionsToProcessNow) {
+      pendingThrottledRegions.delete(regionKey);
+    }
   }
 }
 
 async function performOperation() {
-  const opStart = performance.now();
-  let processedRegionCount = 0;
-
   try {
-    if (!currentState) return;
+    if (!currentState || !currentState.regionCoordinates) return;
 
     const newFrameCounter = Atomics.load(syncArray, config.FRAME_COUNTER_INDEX);
     if (
@@ -70,49 +97,50 @@ async function performOperation() {
       });
     }
 
-    const shouldProcessRegion = (regionName) => {
-      if (!regions[regionName]) return false;
-      if (!initializedRegions.has(regionName)) return true;
-      for (const dirtyRect of dirtyRects) {
-        if (rectsIntersect(regions[regionName], dirtyRect)) return true;
-      }
-      return false;
-    };
-
     const processingTasks = [];
-    const regionsToProcess = new Set();
+    const immediateRegionsToProcess = new Set();
 
-    if (shouldProcessRegion('battleList')) {
+    // --- CORRECTED BATTLE LIST LOGIC ---
+    // The battle list is critical and not throttled.
+    // The rule is simple: if it exists, process it on every frame.
+    // This ensures we never miss an entry appearing or disappearing.
+    if (regions.battleList) {
       processingTasks.push(processBattleList(sharedBufferView, regions));
-      initializedRegions.add('battleList');
     }
 
+    // Handle all other configured regions
     for (const regionKey of Object.keys(config.OCR_REGION_CONFIGS)) {
-      if (shouldProcessRegion(regionKey)) {
-        regionsToProcess.add(regionKey);
-        initializedRegions.add(regionKey);
+      if (!regions[regionKey]) continue;
+
+      const isDirty = dirtyRects.some((dirtyRect) =>
+        rectsIntersect(regions[regionKey], dirtyRect),
+      );
+      const isInitialized = oneTimeInitializedRegions.has(regionKey);
+      const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
+
+      if (isDirty || !isInitialized) {
+        if (regionConfig.throttle) {
+          if (!pendingThrottledRegions.has(regionKey)) {
+            pendingThrottledRegions.set(regionKey, Date.now());
+          }
+        } else {
+          immediateRegionsToProcess.add(regionKey);
+          oneTimeInitializedRegions.add(regionKey);
+        }
       }
     }
 
-    if (regionsToProcess.size > 0) {
+    if (immediateRegionsToProcess.size > 0) {
       processingTasks.push(
-        processOcrRegions(sharedBufferView, regions, regionsToProcess),
+        processOcrRegions(sharedBufferView, regions, immediateRegionsToProcess),
       );
     }
 
     if (processingTasks.length > 0) {
       await Promise.all(processingTasks);
-      processedRegionCount =
-        regionsToProcess.size +
-        (processingTasks.length > regionsToProcess.size ? 1 : 0);
     }
   } catch (error) {
     console.error('[OcrCore] Error in operation:', error);
-  } finally {
-    if (processedRegionCount > 0) {
-      const opDuration = performance.now() - opStart;
-      perfTracker.addMeasurement(opDuration, processedRegionCount);
-    }
   }
 }
 
@@ -122,7 +150,7 @@ async function mainLoop() {
     const loopStart = performance.now();
     try {
       await performOperation();
-      logPerformanceReport();
+      await processPendingRegions();
     } catch (error) {
       console.error('[OcrCore] Error in main loop:', error);
     }
@@ -137,23 +165,31 @@ function handleMessage(message) {
   try {
     if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
-      const regionsChanged =
-        message.payload.regionCoordinates &&
-        currentState.regionCoordinates !== message.payload.regionCoordinates;
-      Object.assign(currentState, message.payload);
-      if (regionsChanged) {
-        console.log(
-          '[OcrCore] Region definitions changed, forcing re-initialization.',
+
+      if (message.payload.regionCoordinates) {
+        const newHash = hashRegionCoordinates(
+          message.payload.regionCoordinates,
         );
-        initializedRegions.clear();
+        if (newHash !== lastRegionHash) {
+          lastRegionHash = newHash;
+          console.log(
+            '[OcrCore] Region definitions changed. New regions will be initialized on next frame.',
+          );
+        } else {
+          delete message.payload.regionCoordinates;
+        }
       }
+
+      Object.assign(currentState, message.payload);
     } else if (message.type === 'shutdown') {
       console.log('[OcrCore] Received shutdown command.');
       isShuttingDown = true;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
+      lastRegionHash = hashRegionCoordinates(message.regionCoordinates || {});
       console.log('[OcrCore] Received initial state update.');
-      initializedRegions.clear();
+      oneTimeInitializedRegions.clear();
+      pendingThrottledRegions.clear();
     }
   } catch (error) {
     console.error('[OcrCore] Error handling message:', error);

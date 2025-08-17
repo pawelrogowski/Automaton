@@ -788,6 +788,15 @@ const regionDefinitions = {
     maxDown: 1080,
   },
   gameWorld: {
+    ocrColors: [
+      [192, 192, 192],
+      [0, 192, 0],
+      [96, 192, 96],
+      [192, 192, 0],
+      [192, 48, 48],
+      [192, 0, 0],
+      [96, 0, 0],
+    ],
     type: 'boundingBox',
     start: {
       direction: 'horizontal',

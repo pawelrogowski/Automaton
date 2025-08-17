@@ -56,6 +56,10 @@ const initialState = {
     offline: [],
     lastUpdate: null,
   },
+  gameWorld: {
+    ocrData: [],
+    lastUpdate: null,
+  },
   battleListEntries: [],
 };
 
@@ -122,6 +126,14 @@ const uiValuesSlice = createSlice({
       state.vipWidget = { ...action.payload, lastUpdate: Date.now() };
     },
 
+    /**
+     * Sets the game world OCR data from a parsed array.
+     */
+    setGameWorldOcr: (state, action) => {
+      state.gameWorld.ocrData = action.payload;
+      state.gameWorld.lastUpdate = Date.now();
+    },
+
     // --- Utility Reducers (Unchanged) ---
 
     /**
@@ -157,6 +169,7 @@ export const {
   setChatTabs,
   setSelectCharacterModal,
   setVipWidget,
+  setGameWorldOcr,
   resetUiValues,
   resetRegion,
   setState,
@@ -187,5 +200,6 @@ export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
 export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
 export const selectBattleListEntries = (state) =>
   state.uiValues.battleListEntries;
+export const selectGameWorldOcr = (state) => state.uiValues.gameWorld.ocrData;
 
 export default uiValuesSlice;
