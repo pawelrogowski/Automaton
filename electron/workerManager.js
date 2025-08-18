@@ -1,6 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workerManager.js
-// --- Full Drop-in Replacement with "Always On" Worker Logic ---
-
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -115,7 +112,6 @@ class WorkerManager {
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
   }
 
-  // ... (setupPaths, resetRestartState, clearRestartLockWithTimeout, getWorkerPath, createSharedBuffers are unchanged) ...
   setupPaths(app, cwd) {
     if (app.isPackaged) {
       this.paths.utils = path.join(
@@ -239,6 +235,17 @@ class WorkerManager {
   }
 
   handleWorkerMessage(message) {
+    // NEW: Handle frame updates from the capture worker
+    if (message.type === 'frame-update') {
+      // Broadcast to all other workers
+      for (const [name, workerEntry] of this.workers.entries()) {
+        if (name !== 'captureWorker' && workerEntry.worker) {
+          workerEntry.worker.postMessage(message);
+        }
+      }
+      return; // End handling for this message type
+    }
+
     if (message.notification) {
       showNotification(message.notification.title, message.notification.body);
     } else if (message.storeUpdate) {
@@ -533,14 +540,13 @@ class WorkerManager {
       const currentState = store.getState();
       const { windowId, display } = currentState.global;
 
-      // --- FIX: Authoritative Bridge Logic ---
       const { targeting, cavebot } = currentState;
       const previous = this.previousState || {};
 
       const bridgeInputsChanged =
         previous.targeting?.enabled !== targeting.enabled ||
         previous.targeting?.creatures?.length > 0 !==
-          targeting.creatures.length > 0 || // Check for presence, not exact length
+          targeting.creatures.length > 0 ||
         previous.targeting?.stance !== targeting.stance ||
         previous.cavebot?.enabled !== cavebot.enabled;
 
@@ -552,7 +558,6 @@ class WorkerManager {
           targeting.stance !== 'Stand';
 
         if (shouldTarget) {
-          // Activate Targeting, Pause Cavebot
           if (cavebot.pathfinderMode !== 'targeting') {
             log('info', `[Worker Bridge] Activating Targeting Mode.`);
             setGlobalState('cavebot/setPathfinderMode', 'targeting');
@@ -561,7 +566,6 @@ class WorkerManager {
             setGlobalState('cavebot/setActionPaused', true);
           }
         } else {
-          // Activate Cavebot, clear Targeting goal
           if (cavebot.pathfinderMode !== 'cavebot') {
             log('info', `[Worker Bridge] Activating Cavebot Mode.`);
             setGlobalState('cavebot/setPathfinderMode', 'cavebot');
@@ -574,7 +578,6 @@ class WorkerManager {
           }
         }
       }
-      // --- END FIX ---
 
       if (windowId && display) {
         if (!this.sharedData) this.createSharedBuffers();
@@ -586,7 +589,6 @@ class WorkerManager {
           Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
         }
 
-        // --- FIX: Start ALL workers at once and keep them alive ---
         if (
           this.workerConfig.captureWorker &&
           !this.workers.has('captureWorker')
@@ -629,9 +631,7 @@ class WorkerManager {
           !this.workers.has('targetingWorker')
         )
           this.startWorker('targetingWorker');
-        // --- END FIX ---
       } else {
-        // Stop all workers if window is lost
         if (this.workers.size > 0) {
           log(
             'info',

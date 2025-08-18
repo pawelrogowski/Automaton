@@ -1,5 +1,3 @@
-// capture/core.js (Corrected)
-
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import X11RegionCapture from 'x11-region-capture-native';
@@ -76,9 +74,6 @@ async function captureLoop() {
       const frameResult = captureInstance.getLatestFrame(imageBuffer);
 
       if (frameResult) {
-        // --- Write ALL data for the new frame FIRST ---
-        // A static frame is still a new frame, just one with 0 dirty regions.
-
         const regionsToWrite = frameResult.changedRegions
           ? Math.min(
               frameResult.changedRegions.length,
@@ -86,14 +81,12 @@ async function captureLoop() {
             )
           : 0;
 
-        // Write dirty regions count. This will be 0 for a static frame.
         Atomics.store(
           syncArray,
           config.DIRTY_REGION_COUNT_INDEX,
           regionsToWrite,
         );
 
-        // Write dirty regions themselves (this loop will not run if regionsToWrite is 0)
         if (frameResult.changedRegions) {
           for (let i = 0; i < regionsToWrite; i++) {
             const rect = frameResult.changedRegions[i];
@@ -105,16 +98,30 @@ async function captureLoop() {
           }
         }
 
-        // Write width and height, even for static frames, in case of resize.
         Atomics.store(syncArray, config.WIDTH_INDEX, frameResult.width);
         Atomics.store(syncArray, config.HEIGHT_INDEX, frameResult.height);
 
-        // --- Now, as the FINAL step, announce the new frame ---
-        // This is the heartbeat. It MUST be incremented on every cycle.
-        Atomics.add(syncArray, config.FRAME_COUNTER_INDEX, 1);
+        const newFrameCounter = Atomics.add(
+          syncArray,
+          config.FRAME_COUNTER_INDEX,
+          1,
+        );
         Atomics.notify(syncArray, config.FRAME_COUNTER_INDEX);
 
-        // Performance tracking can happen after the commit
+        // NEW: Broadcast the dirty rects to the main thread for distribution
+        if (
+          frameResult.changedRegions &&
+          frameResult.changedRegions.length > 0
+        ) {
+          parentPort.postMessage({
+            type: 'frame-update',
+            payload: {
+              frameCounter: newFrameCounter,
+              dirtyRects: frameResult.changedRegions,
+            },
+          });
+        }
+
         const loopDuration = performance.now() - loopStartTime;
         perfTracker.addFrameMeasurement(loopDuration, regionsToWrite);
       }

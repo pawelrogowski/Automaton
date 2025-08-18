@@ -1,10 +1,3 @@
-/**
- * @file ocrWorker.js
- * @summary A dedicated worker for OCR text recognition on UI regions.
- * @description This file is the entry point for the OCR worker. It delegates
- * all logic to the modules in the /ocr sub-directory for maintainability.
- */
-
 import { workerData } from 'worker_threads';
 import { start } from './ocr/core.js';
 import { IS_RUNNING_INDEX } from './ocr/config.js';

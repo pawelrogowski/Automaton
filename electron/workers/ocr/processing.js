@@ -3,6 +3,7 @@ import pkg from 'font-ocr';
 import { OCR_REGION_CONFIGS, CHAR_PRESETS } from './config.js';
 import { getGameCoordinatesFromScreen } from '../../utils/gameWorldClickTranslator.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
+import { chebyshevDistance } from '../../utils/distance.js';
 
 // Import both functions from the native module
 const { recognizeText, findText } = pkg;
@@ -27,7 +28,8 @@ export function deepCompareEntities(a, b) {
       entityA.gameCoords.x !== entityB.gameCoords.x ||
       entityA.gameCoords.y !== entityB.gameCoords.y ||
       entityA.gameCoords.z !== entityB.gameCoords.z ||
-      entityA.name !== entityB.name
+      entityA.name !== entityB.name ||
+      entityA.distance !== entityB.distance
     ) {
       return false;
     }
@@ -35,6 +37,7 @@ export function deepCompareEntities(a, b) {
 
   return true;
 }
+
 export function rectsIntersect(rectA, rectB) {
   if (
     !rectA ||
@@ -43,8 +46,9 @@ export function rectsIntersect(rectA, rectB) {
     rectA.height <= 0 ||
     rectB.width <= 0 ||
     rectB.height <= 0
-  )
+  ) {
     return false;
+  }
 
   return (
     rectA.x < rectB.x + rectB.width &&
@@ -230,10 +234,15 @@ export async function processGameWorldEntities(
       gameCoords.y = Math.round(gameCoords.y);
       gameCoords.z = playerMinimapPosition.z;
 
+      const distance = Math.round(
+        chebyshevDistance(gameCoords, playerMinimapPosition),
+      );
+
       return {
         name: r.text,
         absoluteCoords: { x: screenX, y: screenY },
         gameCoords: gameCoords,
+        distance: distance,
       };
     })
     .filter(Boolean)
@@ -243,11 +252,11 @@ export async function processGameWorldEntities(
         entity.gameCoords.y !== playerMinimapPosition.y,
     );
 
-  entities.sort((a, b) =>
-    a.absoluteCoords.x !== b.absoluteCoords.x
-      ? a.absoluteCoords.x - b.absoluteCoords.x
-      : a.absoluteCoords.y - b.absoluteCoords.y,
-  );
+  entities.sort((a, b) => {
+    const distA = chebyshevDistance(a.gameCoords, playerMinimapPosition);
+    const distB = chebyshevDistance(b.gameCoords, playerMinimapPosition);
+    return distA - distB;
+  });
 
   postUpdateOnce('targeting/setEntities', entities);
 }
