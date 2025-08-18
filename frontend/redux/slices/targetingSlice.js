@@ -5,6 +5,7 @@ const initialState = {
   stance: 'Ignore', // 'keepAway', 'waitAndKeepAway', 'Reach', 'Stand', 'Ignore'
   distance: 2, // Integer distance for stances
   creatures: [], // List of creatures on screen with their coordinates
+  target: null, // { name: string, distance: number, gameCoordinates: {x,y,z}, absoluteCoordinates: {x,y} }
 };
 
 const targetingSlice = createSlice({
@@ -26,13 +27,22 @@ const targetingSlice = createSlice({
       state.distance = action.payload;
     },
     setEntities: (state, action) => {
-      // This will be dispatched by the entityMonitor worker
+      // This will be dispatched by the targetMonitor worker
       state.creatures = action.payload;
+    },
+    setTarget: (state, action) => {
+      state.target = action.payload;
     },
   },
 });
 
-export const { setState, setenabled, setStance, setDistance, setEntities } =
-  targetingSlice.actions;
+export const {
+  setState,
+  setenabled,
+  setStance,
+  setDistance,
+  setEntities,
+  setTarget,
+} = targetingSlice.actions;
 
 export default targetingSlice;

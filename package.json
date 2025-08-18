@@ -2,7 +2,6 @@
   "name": "vscodium",
   "version": "1.3.8",
   "description": "automation tool for Tibia",
-  "type": "module",
   "main": "electron/main.js",
   "extraResources": [
     "frontend/preload.js"
@@ -76,7 +75,7 @@
     "compression-webpack-plugin": "^11.1.0",
     "copy-webpack-plugin": "^11.0.0",
     "find-sequences-native": "file:./nativeModules/findSequences",
-    "find-health-bars-native": "file:./nativeModules/findHealthBars",
+    "find-target-native": "file:./nativeModules/findTarget",
     "font-ocr": "file:./nativeModules/fontOcr",
     "keypress-native": "file:./nativeModules/keypress",
     "konva": "^9.3.20",

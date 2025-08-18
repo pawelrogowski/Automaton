@@ -1,6 +1,7 @@
 import { parentPort } from 'worker_threads';
 import pkg from 'font-ocr';
 import { OCR_REGION_CONFIGS, CHAR_PRESETS } from './config.js';
+import { getGameCoordinatesFromScreen } from '../../utils/gameWorldClickTranslator.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
 
 // Import both functions from the native module
@@ -12,6 +13,28 @@ const lastPostedResults = new Map();
 /**
  * Checks if two rectangle objects intersect.
  */
+export function deepCompareEntities(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+
+  for (let i = 0; i < a.length; i++) {
+    const entityA = a[i];
+    const entityB = b[i];
+
+    if (
+      entityA.absoluteCoords.x !== entityB.absoluteCoords.x ||
+      entityA.absoluteCoords.y !== entityB.absoluteCoords.y ||
+      entityA.gameCoords.x !== entityB.gameCoords.x ||
+      entityA.gameCoords.y !== entityB.gameCoords.y ||
+      entityA.gameCoords.z !== entityB.gameCoords.z ||
+      entityA.name !== entityB.name
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
 export function rectsIntersect(rectA, rectB) {
   if (
     !rectA ||
@@ -156,4 +179,75 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
   if (Object.keys(ocrRawUpdates).length > 0) {
     postUpdateOnce('ocr/setOcrRegionsText', ocrRawUpdates);
   }
+  return ocrRawUpdates;
+}
+
+export async function processGameWorldEntities(
+  ocrData,
+  playerMinimapPosition,
+  gameWorld,
+  tileSize,
+) {
+  if (
+    !gameWorld ||
+    !tileSize ||
+    !playerMinimapPosition ||
+    !Array.isArray(ocrData)
+  ) {
+    return;
+  }
+
+  const entities = ocrData
+    .map((r) => {
+      const screenX = r.click.x;
+      const screenY = r.y + 14;
+
+      const gameCoords = getGameCoordinatesFromScreen(
+        screenX,
+        screenY,
+        playerMinimapPosition,
+        gameWorld,
+        tileSize,
+      );
+
+      if (!gameCoords) {
+        return null;
+      }
+
+      const isOnTopRow =
+        screenY >= gameWorld.y && screenY < gameWorld.y + tileSize.height;
+
+      if (isOnTopRow) {
+        const topRowThresholdY = gameWorld.y + tileSize.height * 0.6;
+        if (screenY >= topRowThresholdY) {
+          gameCoords.y += 1;
+        }
+      } else {
+        gameCoords.y += 1;
+      }
+
+      gameCoords.x = Math.round(gameCoords.x);
+      gameCoords.y = Math.round(gameCoords.y);
+      gameCoords.z = playerMinimapPosition.z;
+
+      return {
+        name: r.text,
+        absoluteCoords: { x: screenX, y: screenY },
+        gameCoords: gameCoords,
+      };
+    })
+    .filter(Boolean)
+    .filter(
+      (entity) =>
+        entity.gameCoords.x !== playerMinimapPosition.x ||
+        entity.gameCoords.y !== playerMinimapPosition.y,
+    );
+
+  entities.sort((a, b) =>
+    a.absoluteCoords.x !== b.absoluteCoords.x
+      ? a.absoluteCoords.x - b.absoluteCoords.x
+      : a.absoluteCoords.y - b.absoluteCoords.y,
+  );
+
+  postUpdateOnce('targeting/setEntities', entities);
 }

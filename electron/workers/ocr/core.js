@@ -5,7 +5,14 @@ import {
   rectsIntersect,
   processBattleList,
   processOcrRegions,
+  deepCompareEntities,
+  processGameWorldEntities,
 } from './processing.js';
+import {
+  PLAYER_X_INDEX,
+  PLAYER_Y_INDEX,
+  PLAYER_Z_INDEX,
+} from '../sharedConstants.js';
 
 let currentState = null;
 let isShuttingDown = false;
@@ -16,8 +23,9 @@ let oneTimeInitializedRegions = new Set();
 const pendingThrottledRegions = new Map();
 
 const { sharedData } = workerData;
-const { imageSAB, syncSAB } = sharedData;
+const { imageSAB, syncSAB, playerPosSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
+const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const sharedBufferView = Buffer.from(imageSAB);
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -131,8 +139,27 @@ async function performOperation() {
     }
 
     if (immediateRegionsToProcess.size > 0) {
+      const ocrResultsPromise = processOcrRegions(
+        sharedBufferView,
+        regions,
+        immediateRegionsToProcess,
+      );
       processingTasks.push(
-        processOcrRegions(sharedBufferView, regions, immediateRegionsToProcess),
+        ocrResultsPromise.then((ocrRawUpdates) => {
+          if (ocrRawUpdates?.gameWorld) {
+            const playerMinimapPosition = {
+              x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+              y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+              z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+            };
+            return processGameWorldEntities(
+              ocrRawUpdates.gameWorld,
+              playerMinimapPosition,
+              regions.gameWorld,
+              regions.tileSize,
+            );
+          }
+        }),
       );
     }
 

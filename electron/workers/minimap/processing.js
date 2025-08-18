@@ -106,7 +106,7 @@ export async function processMinimapData(
         });
         // --- FIX END ---
 
-        // Update SharedArrayBuffer for other workers (like entityMonitor) to consume.
+        // Update SharedArrayBuffer for other workers (like targetMonitor) to consume.
         if (playerPosArray) {
           Atomics.store(playerPosArray, PLAYER_X_INDEX, newPos.x);
           Atomics.store(playerPosArray, PLAYER_Y_INDEX, newPos.y);

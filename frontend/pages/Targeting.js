@@ -7,7 +7,7 @@ import CustomSelect from '../components/CustomSelect/CustomSelect.js';
 
 const Targeting = () => {
   const dispatch = useDispatch();
-  const { stance, distance, creatures } = useSelector(
+  const { stance, distance, creatures, target } = useSelector(
     (state) => state.targeting,
   );
 
@@ -51,6 +51,28 @@ const Targeting = () => {
             />
           </div>
         </div>
+      </HighWrapper>
+      <HighWrapper title="Target Information">
+        {target ? (
+          <div className="target-info">
+            <p>
+              <strong>Name:</strong> {target.name}
+            </p>
+            <p>
+              <strong>Distance:</strong> {target.distance}
+            </p>
+            <p>
+              <strong>Game Coords:</strong> {target.gameCoordinates.x},{' '}
+              {target.gameCoordinates.y}, {target.gameCoordinates.z}
+            </p>
+            <p>
+              <strong>Absolute Coords:</strong> {target.absoluteCoordinates.x},{' '}
+              {target.absoluteCoordinates.y}
+            </p>
+          </div>
+        ) : (
+          <p>No target selected</p>
+        )}
       </HighWrapper>
       <HighWrapper title="Creatures on Screen">
         <div className="creatures-list">

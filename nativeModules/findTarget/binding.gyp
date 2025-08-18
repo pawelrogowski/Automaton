@@ -1,8 +1,8 @@
 {
   "targets": [
     {
-      "target_name": "findHealthBars",
-      "sources": [ "./src/findHealthBars.cc" ],
+      "target_name": "findTarget",
+      "sources": [ "./src/findTarget.cc" ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
         "node_modules/node-addon-api"

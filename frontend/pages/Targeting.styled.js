@@ -38,6 +38,13 @@ const StyledTargeting = styled.div`
     color: #fafafa;
   }
 
+  .target-info {
+    padding: 10px;
+    p {
+      margin: 5px 0;
+    }
+  }
+
   .creatures-list {
     padding: 10px;
     ul {

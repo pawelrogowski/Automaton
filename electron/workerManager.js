@@ -27,7 +27,7 @@ const DEFAULT_WORKER_CONFIG = {
   cavebotWorker: true,
   targetingWorker: true,
   pathfinderWorker: true,
-  entityMonitor: true,
+  targetMonitor: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -65,7 +65,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'cavebot',
   ], // Targeting needs cavebot state to know if it's paused
   regionMonitor: ['global'],
-  entityMonitor: ['global', 'regionCoordinates', 'gameState'],
+  targetMonitor: ['global', 'regionCoordinates', 'gameState', 'targeting'],
   screenMonitor: [
     'global',
     'regionCoordinates',
@@ -74,7 +74,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'uiValues',
   ],
   minimapMonitor: ['global', 'regionCoordinates'],
-  ocrWorker: ['global', 'regionCoordinates'],
+  ocrWorker: ['global', 'regionCoordinates', 'gameState'],
   captureWorker: ['global'],
 };
 
@@ -86,7 +86,7 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'cavebotWorker',
   'targetingWorker',
   'pathfinderWorker',
-  'entityMonitor',
+  'targetMonitor',
 ]);
 
 class WorkerManager {
@@ -316,14 +316,14 @@ class WorkerManager {
         'minimapMonitor',
         'regionMonitor',
         'ocrWorker',
-        'entityMonitor',
+        'targetMonitor',
       ].includes(name);
       const needsPlayerPosSAB = [
         'minimapMonitor',
         'pathfinderWorker',
         'cavebotWorker',
         'targetingWorker',
-        'entityMonitor',
+        'targetMonitor',
       ].includes(name);
       const needsPathDataSAB = [
         'pathfinderWorker',
@@ -598,10 +598,10 @@ class WorkerManager {
         )
           this.startWorker('regionMonitor');
         if (
-          this.workerConfig.entityMonitor &&
-          !this.workers.has('entityMonitor')
+          this.workerConfig.targetMonitor &&
+          !this.workers.has('targetMonitor')
         )
-          this.startWorker('entityMonitor');
+          this.startWorker('targetMonitor');
         if (
           this.workerConfig.screenMonitor &&
           !this.workers.has('screenMonitor')

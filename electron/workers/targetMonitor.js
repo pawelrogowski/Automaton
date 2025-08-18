@@ -1,8 +1,9 @@
-// entityMonitor.js (Updated)
+// targetMonitor.js (Repurposed to find the current target)
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import findHealthBars from 'find-health-bars-native';
+// 1. IMPORT THE NEW NATIVE MODULE
+import findTarget from 'find-target-native';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
 import { rectsIntersect } from './minimap/helpers.js';
 import {
@@ -13,7 +14,7 @@ import {
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 32;
+const SCAN_INTERVAL_MS = 100; // Scanning for a single target can be less frequent
 
 if (!sharedData) {
   throw new Error('[EntityMonitor] Shared data not provided.');
@@ -34,56 +35,41 @@ const DIRTY_REGIONS_START_INDEX = 6;
 
 // --- State ---
 let lastProcessedFrameCounter = -1;
-let lastSentEntities = null;
 let isShuttingDown = false;
 let isScanning = false;
 let gameWorld = null; // To store the gameWorld region
 let tileSize = null;
 let hasScannedOnce = false;
+let creatures = [];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function deepCompareEntities(a, b) {
-  if (!a && !b) return true;
-  if (!a || !b || a.length !== b.length) return false;
-
-  for (let i = 0; i < a.length; i++) {
-    const entityA = a[i];
-    const entityB = b[i];
-
-    if (
-      entityA.absoluteCoords.x !== entityB.absoluteCoords.x ||
-      entityA.absoluteCoords.y !== entityB.absoluteCoords.y ||
-      entityA.gameCoords.x !== entityB.gameCoords.x ||
-      entityA.gameCoords.y !== entityB.gameCoords.y ||
-      entityA.gameCoords.z !== entityB.gameCoords.z
-    ) {
-      return false;
-    }
-  }
-
-  return true;
+function calculateDistance(pos1, pos2) {
+  if (!pos1 || !pos2) return Infinity;
+  const dx = pos1.x - pos2.x;
+  const dy = pos1.y - pos2.y;
+  const dz = pos1.z - pos2.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 async function mainLoop() {
-  console.log('[EntityMonitor] Starting main loop...');
+  console.log('[EntityMonitor] Starting target monitor loop...');
 
   while (!isShuttingDown) {
     const loopStartTime = performance.now();
 
     try {
       if (isScanning) {
-        await delay(32);
+        await delay(32); // Prevent re-entry if a scan is slow
         continue;
       }
 
+      // Wait until we have all necessary info from the main thread
       if (
         !gameWorld ||
         gameWorld.width <= 0 ||
-        gameWorld.height <= 0 ||
         !playerPosArray ||
-        !tileSize ||
-        !tileSize.height
+        !tileSize?.height
       ) {
         await delay(SCAN_INTERVAL_MS);
         continue;
@@ -133,92 +119,81 @@ async function mainLoop() {
 
           isScanning = true;
           try {
-            const results = await findHealthBars.findHealthBars(
+            // 2. CALL THE NEW NATIVE FUNCTION
+            const targetRect = await findTarget.findTarget(
               sharedBufferView,
               gameWorld,
             );
-            hasScannedOnce = true; // Mark that we've scanned at least once
+            hasScannedOnce = true;
 
-            const playerMinimapPosition = {
-              x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-              y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-              z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-            };
+            if (targetRect) {
+              const playerMinimapPosition = {
+                x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+                y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+                z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+              };
 
-            let creaturesWithCoords = [];
-            if (results && results.length > 0) {
-              creaturesWithCoords = results
-                .map((r) => {
-                  const screenX = r.x;
-                  const screenY = r.y;
+              // 3. CALCULATE THE MIDDLE OF THE TARGET BOX
+              const screenX = targetRect.x + targetRect.width / 2;
+              const screenY = targetRect.y + targetRect.height / 2;
 
-                  const gameCoords = getGameCoordinatesFromScreen(
-                    screenX,
-                    screenY,
-                    playerMinimapPosition,
-                    gameWorld,
-                    tileSize,
-                  );
-
-                  if (!gameCoords) {
-                    return null;
-                  }
-
-                  const isOnTopRow =
-                    screenY >= gameWorld.y &&
-                    screenY < gameWorld.y + tileSize.height;
-
-                  if (isOnTopRow) {
-                    const topRowThresholdY =
-                      gameWorld.y + tileSize.height * 0.6;
-
-                    if (screenY < topRowThresholdY) {
-                      // Entity is on the same tile
-                    } else {
-                      gameCoords.y += 1; // Entity is on the tile below
-                    }
-                  } else {
-                    gameCoords.y += 1; // Entity is on the tile below
-                  }
-
-                  gameCoords.x = Math.round(gameCoords.x);
-                  gameCoords.y = Math.round(gameCoords.y);
-                  gameCoords.z = playerMinimapPosition.z;
-
-                  return {
-                    absoluteCoords: { x: screenX, y: screenY },
-                    gameCoords: gameCoords,
-                  };
-                })
-                .filter(Boolean)
-                // Exclude player's own health bar from creatures
-                .filter(
-                  (entity) =>
-                    entity.gameCoords.x !== playerMinimapPosition.x ||
-                    entity.gameCoords.y !== playerMinimapPosition.y,
-                );
-
-              creaturesWithCoords.sort((a, b) =>
-                a.absoluteCoords.x !== b.absoluteCoords.x
-                  ? a.absoluteCoords.x - b.absoluteCoords.x
-                  : a.absoluteCoords.y - b.absoluteCoords.y,
+              // 4. TRANSLATE SCREEN COORDS TO GAME COORDS
+              const targetGameCoords = getGameCoordinatesFromScreen(
+                screenX,
+                screenY,
+                playerMinimapPosition,
+                gameWorld,
+                tileSize,
               );
-            }
 
-            if (!deepCompareEntities(creaturesWithCoords, lastSentEntities)) {
-              lastSentEntities = creaturesWithCoords;
-              // --- FIX START: Removed player position update from this worker ---
-              // The minimapMonitor is now responsible for this update.
+              if (targetGameCoords) {
+                let closestCreature = null;
+                let minDistance = Infinity;
+
+                for (const entity of creatures) {
+                  if (entity.gameCoords) {
+                    const distance = calculateDistance(
+                      targetGameCoords,
+                      entity.gameCoords,
+                    );
+                    if (distance < minDistance) {
+                      minDistance = distance;
+                      closestCreature = entity;
+                    }
+                  }
+                }
+
+                if (closestCreature) {
+                  const distanceFromPlayer = calculateDistance(
+                    playerMinimapPosition,
+                    closestCreature.gameCoords,
+                  );
+                  const targetData = {
+                    name: closestCreature.name,
+                    distance: parseFloat(distanceFromPlayer.toFixed(1)),
+                    gameCoordinates: closestCreature.gameCoords,
+                    absoluteCoordinates: closestCreature.absoluteCoords,
+                  };
+                  parentPort.postMessage({
+                    storeUpdate: true,
+                    type: 'targeting/setTarget',
+                    payload: targetData,
+                  });
+                } else {
+                  parentPort.postMessage({
+                    storeUpdate: true,
+                    type: 'targeting/setTarget',
+                    payload: null,
+                  });
+                }
+              }
+            } else {
+              // No target found, dispatch null
               parentPort.postMessage({
-                type: 'batch-update',
-                payload: [
-                  {
-                    type: 'targeting/setEntities',
-                    payload: creaturesWithCoords,
-                  },
-                ],
+                storeUpdate: true,
+                type: 'targeting/setTarget',
+                payload: null,
               });
-              // --- FIX END ---
             }
           } finally {
             isScanning = false;
@@ -237,7 +212,7 @@ async function mainLoop() {
       await delay(delayTime);
     }
   }
-  console.log('[EntityMonitor] Main loop stopped.');
+  console.log('[EntityMonitor] Target monitor loop stopped.');
 }
 
 parentPort.on('message', (message) => {
@@ -249,10 +224,16 @@ parentPort.on('message', (message) => {
       gameWorld = message.payload.regionCoordinates.regions?.gameWorld;
       tileSize = message.payload.regionCoordinates.regions?.tileSize;
     }
+    if (message.payload.targeting) {
+      creatures = message.payload.targeting.creatures;
+    }
   } else if (typeof message === 'object' && !message.type && !message.command) {
     if (message.regionCoordinates) {
       gameWorld = message.regionCoordinates.regions?.gameWorld;
       tileSize = message.regionCoordinates.regions?.tileSize;
+    }
+    if (message.targeting) {
+      creatures = message.targeting.creatures;
     }
   }
 });
