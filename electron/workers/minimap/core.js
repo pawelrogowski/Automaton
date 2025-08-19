@@ -1,4 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/minimap/core.js
 import { parentPort, workerData } from 'worker_threads';
 import {
   MinimapMatcher,
@@ -8,15 +7,14 @@ import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
 import { PerformanceTracker } from './performanceTracker.js';
-import { FrameUpdateManager } from '../../utils/frameUpdateManager.js';
+import { FrameUpdateManager } from '../../utils/frameUpdateManager.js'; // NEW: Import helper
 
 // --- Worker State ---
 let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
 let minimapMatcher = null;
-let hasScannedInitially = false; // NEW: Flag for the initial scan
-const frameUpdateManager = new FrameUpdateManager();
+const frameUpdateManager = new FrameUpdateManager(); // NEW: Instantiate manager
 
 // --- Performance Tracking State ---
 const perfTracker = new PerformanceTracker();
@@ -45,8 +43,8 @@ async function performOperation() {
     return;
   }
 
-  // MODIFIED: The check now includes the initial scan flag.
-  if (!hasScannedInitially && !frameUpdateManager.shouldProcess()) {
+  // MODIFIED: Use the manager to decide if we should process
+  if (!frameUpdateManager.shouldProcess()) {
     return;
   }
 
@@ -71,7 +69,6 @@ async function performOperation() {
     );
     if (typeof duration === 'number') {
       perfTracker.addMeasurement(duration);
-      hasScannedInitially = true; // NEW: Set the flag after the first successful scan
     }
   }
 }
@@ -103,6 +100,7 @@ async function mainLoop() {
 }
 
 function handleMessage(message) {
+  // NEW: Delegate rect accumulation to the manager
   if (message.type === 'frame-update') {
     frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
     return;
@@ -115,16 +113,17 @@ function handleMessage(message) {
     if (!currentState) currentState = {};
     Object.assign(currentState, message.payload);
     if (message.payload.regionCoordinates) {
+      // NEW: Update the manager with the latest regions of interest
       const { regions } = currentState.regionCoordinates;
       frameUpdateManager.setRegionsOfInterest([
         regions.minimapFull,
         regions.minimapFloorIndicatorColumn,
       ]);
-      hasScannedInitially = false; // NEW: Reset flag if regions change
     }
   } else if (typeof message === 'object' && !message.type) {
     currentState = message;
     if (message.regionCoordinates) {
+      // NEW: Set initial regions for the manager
       const { regions } = currentState.regionCoordinates;
       frameUpdateManager.setRegionsOfInterest([
         regions.minimapFull,

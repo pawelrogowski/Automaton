@@ -186,11 +186,18 @@ async function performTargeting() {
 
   if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
     const nextStep = path[0];
+    const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
     // The guard clause at the top ensures globalState.global.display is valid here.
-    keypress.sendKey(
-      getDirectionKey(playerMinimapPosition, nextStep),
+    console.log(
+      playerMinimapPosition,
+      nextStep,
       globalState.global.display,
+      dirKey,
     );
+
+    if (dirKey) {
+      keypress.sendKey(dirKey, globalState.global.display);
+    }
     await delay(50);
   }
 }
