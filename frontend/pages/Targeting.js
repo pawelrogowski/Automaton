@@ -77,12 +77,14 @@ const Targeting = () => {
       <HighWrapper title="Creatures on Screen">
         <div className="creatures-list">
           <ul>
-            {creatures.map((creature, index) => (
-              <li key={index}>
-                X: {creature.gameCoords.x}, Y: {creature.gameCoords.y}, Z:{' '}
-                {creature.gameCoords.z}
-              </li>
-            ))}
+            {creatures &&
+              creatures.map((creature, index) => (
+                <li key={index}>
+                  <strong>Name:</strong> {creature.name} | X:{' '}
+                  {creature.gameCoords.x}, Y: {creature.gameCoords.y}, Z:{' '}
+                  {creature.gameCoords.z}
+                </li>
+              ))}
           </ul>
         </div>
       </HighWrapper>
