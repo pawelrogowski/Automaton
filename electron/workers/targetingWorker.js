@@ -1,5 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
-// --- Final Version with Initialization Guard ---
+// --- Final Version with Movement Cooldown to Prevent Oscillation ---
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
@@ -25,6 +25,9 @@ import {
 const MAIN_LOOP_INTERVAL = 50;
 const logger = createLogger({ info: true, error: true });
 
+// --- NEW: Configuration for movement smoothing ---
+const MOVE_COOLDOWN_MS = 175; // Cooldown in ms after a move command. Tune this value if movement feels sluggish or still oscillates.
+
 let isInitialized = false;
 let globalState = null;
 let isShuttingDown = false;
@@ -33,6 +36,9 @@ let path = [];
 let pathfindingStatus = 0;
 let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
+
+// --- NEW: State variable to manage movement cooldown ---
+let isMoving = false;
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
@@ -125,15 +131,12 @@ const updateSABData = () => {
 };
 
 async function performTargeting() {
-  // *** THE FIX ***
-  // Add a robust guard clause to ensure the worker is fully initialized and
-  // has all necessary state before attempting any action.
   if (
     isShuttingDown ||
     !isInitialized ||
     !globalState?.targeting?.enabled ||
     !globalState?.cavebot?.isActionPaused ||
-    !globalState?.global?.display // Crucially, check for the display variable
+    !globalState?.global?.display
   ) {
     return;
   }
@@ -143,6 +146,8 @@ async function performTargeting() {
 
   const { targeting } = globalState;
 
+  // This logic for setting the dynamic target remains the same.
+  // It continuously tells the pathfinder what our goal is.
   let dynamicGoal = null;
   if (
     targeting.creatures.length > 0 &&
@@ -163,18 +168,11 @@ async function performTargeting() {
     });
 
     if (closestCreature) {
-      if (
-        !(
-          targeting.stance === 'waitAndKeepAway' &&
-          minDistance > targeting.distance
-        )
-      ) {
-        dynamicGoal = {
-          stance: targeting.stance,
-          distance: targeting.distance,
-          targetCreaturePos: closestCreature.gameCoords,
-        };
-      }
+      dynamicGoal = {
+        stance: targeting.stance,
+        distance: targeting.distance,
+        targetCreaturePos: closestCreature.gameCoords,
+      };
     }
   }
 
@@ -184,21 +182,39 @@ async function performTargeting() {
     payload: dynamicGoal,
   });
 
+  // --- MODIFIED MOVEMENT LOGIC ---
+  // If we are already in the middle of a move, do not issue another command.
+  // This prevents the hyper-reactive loop and stops oscillation.
+  if (isMoving) {
+    return;
+  }
+
   if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
     const nextStep = path[0];
+
+    // Final check to prevent moving onto our own tile.
+    if (
+      nextStep.x === playerMinimapPosition.x &&
+      nextStep.y === playerMinimapPosition.y
+    ) {
+      return;
+    }
+
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
-    // The guard clause at the top ensures globalState.global.display is valid here.
-    console.log(
-      playerMinimapPosition,
-      nextStep,
-      globalState.global.display,
-      dirKey,
-    );
 
     if (dirKey) {
+      // 1. Set the flag to indicate we are starting a move.
+      isMoving = true;
+
+      // 2. Send the keypress to perform the move.
       keypress.sendKey(dirKey, globalState.global.display);
+
+      // 3. Set a timer. After the cooldown, reset the flag to allow the next move.
+      // This gives the character time to complete the step.
+      setTimeout(() => {
+        isMoving = false;
+      }, MOVE_COOLDOWN_MS);
     }
-    await delay(50);
   }
 }
 

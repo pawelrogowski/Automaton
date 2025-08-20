@@ -1,5 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/pathfinder.cc
-// --- Drop-in Replacement File with "Stand Still" Fix ---
+// --- Definitive Version with Unified "Stand Still" Logic for All Stances ---
 
 #include "pathfinder.h"
 #include <napi.h>
@@ -24,7 +24,6 @@ struct SpecialArea {
 };
 
 namespace AStar {
-    // ... (The entire AStar namespace with all its functions remains exactly the same as the previous version) ...
     // Configuration: costs tuned for Tibia as discussed
     static constexpr int BASE_MOVE_COST = 10;
     static constexpr int DIAGONAL_MOVE_COST = 25;
@@ -187,21 +186,30 @@ namespace AStar {
     }
 
     Node findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid) {
+        Node best_node = {-1, -1, 0, 0, nullptr, 0};
+        Node playerLocal = {player.x - mapData.minX, player.y - mapData.minY, 0, 0, nullptr, player.z};
+        Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
+
+        // --- UNIFIED "STAND STILL" CHECK ---
+        // This is the most critical fix. It checks if the player is ALREADY in an optimal position
+        // for either stance before doing any expensive calculations. This prevents all orbiting/pacing.
+        int current_chebyshev_dist = std::max(std::abs(playerLocal.x - monsterLocal.x), std::abs(playerLocal.y - monsterLocal.y));
+        if ((stance == "keepAway" && current_chebyshev_dist == distance) ||
+            (stance == "Reach" && current_chebyshev_dist == 1)) {
+            return best_node; // Return {-1, -1, ...} to signal "no path needed"
+        }
+
+        // If we are not in an optimal position, proceed to find one.
         std::queue<std::pair<Node, int>> q;
         std::unordered_set<int> visited;
         auto indexOf = [&](int x, int y) { return y * mapData.width + x; };
 
-        Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
-        if (!AStar::inBounds(monsterLocal.x, monsterLocal.y, mapData)) return {-1, -1, 0, 0, nullptr, 0};
+        if (!AStar::inBounds(monsterLocal.x, monsterLocal.y, mapData)) return best_node;
 
         q.push({monsterLocal, 0});
         visited.insert(indexOf(monsterLocal.x, monsterLocal.y));
 
         std::vector<Node> candidates;
-        int max_dist_from_player = -1;
-        int min_dist_from_player = INT_MAX;
-        Node best_node = {-1, -1, 0, 0, nullptr, 0};
-
         while (!q.empty()) {
             auto [current, dist] = q.front();
             q.pop();
@@ -210,7 +218,8 @@ namespace AStar {
                 candidates.push_back(current);
             }
 
-            if (dist >= distance && stance != "Reach") {
+            // Optimization: stop searching once we've passed the desired distance for either stance.
+            if ((stance == "Reach" && dist >= 1) || (stance == "keepAway" && dist >= distance)) {
                 continue;
             }
 
@@ -234,21 +243,8 @@ namespace AStar {
 
         if (candidates.empty()) return best_node;
 
-        Node playerLocal = {player.x - mapData.minX, player.y - mapData.minY, 0, 0, nullptr, player.z};
-
-        // --- FIX: EXCLUDE THE PLAYER'S CURRENT TILE FROM CANDIDATES ---
-        // This prevents the pathfinder from generating a path to its own location when trying to run away.
-        candidates.erase(
-            std::remove_if(candidates.begin(), candidates.end(),
-                           [&](const Node& cand) {
-                               return cand.x == playerLocal.x && cand.y == playerLocal.y;
-                           }),
-            candidates.end());
-        // If removing the player's tile empties the list, we will correctly return no path.
-        if (candidates.empty()) return best_node;
-        // --- END FIX ---
-
         if (stance == "Reach") {
+            int min_dist_from_player = INT_MAX;
             for (const auto& cand : candidates) {
                 int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
                 if (dist_from_player < min_dist_from_player) {
@@ -257,10 +253,19 @@ namespace AStar {
                 }
             }
         } else if (stance == "keepAway") {
+            // Use the directional heuristic to find the best escape tile.
+            int max_dot_product = -INT_MAX;
+            int escape_vec_x = playerLocal.x - monsterLocal.x;
+            int escape_vec_y = playerLocal.y - monsterLocal.y;
+
             for (const auto& cand : candidates) {
-                int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
-                if (dist_from_player > max_dist_from_player) {
-                    max_dist_from_player = dist_from_player;
+                int cand_vec_x = cand.x - monsterLocal.x;
+                int cand_vec_y = cand.y - monsterLocal.y;
+
+                int dot_product = (escape_vec_x * cand_vec_x) + (escape_vec_y * cand_vec_y);
+
+                if (dot_product > max_dot_product) {
+                    max_dot_product = dot_product;
                     best_node = cand;
                 }
             }
@@ -270,7 +275,7 @@ namespace AStar {
     }
 }
 
-// --- N-API Section ---
+// --- N-API Section (No changes below this line) ---
 Napi::FunctionReference Pathfinder::constructor;
 
 Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {

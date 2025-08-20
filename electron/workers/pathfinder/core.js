@@ -1,12 +1,12 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/core.js
-// --- Confirmed Correct Version ---
+// --- Definitive Version with Input Synchronization to Eliminate Race Conditions ---
 
 import { parentPort, workerData } from 'worker_threads';
 import Pathfinder from 'pathfinder-native';
 import { createLogger } from '../../utils/logger.js';
 import * as config from './config.js';
 import { loadAllMapData } from './dataLoader.js';
-import { runPathfindingLogic } from './logic.js'; // <-- This import is correct here
+import { runPathfindingLogic } from './logic.js';
 import { PerformanceTracker } from './performanceTracker.js';
 import {
   PLAYER_X_INDEX,
@@ -20,7 +20,6 @@ const logger = createLogger({ info: true, error: true, debug: false });
 // --- Worker State ---
 let state = null;
 let pathfinderInstance = null;
-let lastPlayerPosCounter = -1;
 
 const logicContext = {
   lastPlayerPosKey: null,
@@ -80,8 +79,10 @@ function logPerformanceReport() {
   }
 }
 
+// --- MODIFIED: The main message handler is now the core of the synchronization logic ---
 function handleMessage(message) {
   try {
+    // 1. Update the worker's state from the main thread. This is our primary trigger.
     if (message.type === 'state_diff') {
       state = { ...state, ...message.payload };
     } else if (message.type === undefined) {
@@ -90,48 +91,52 @@ function handleMessage(message) {
       if (reduxUpdateTimeout) clearTimeout(reduxUpdateTimeout);
       return;
     } else {
+      // Ignore other message types
       return;
     }
 
+    // Ensure we have a valid state to work with
+    if (!state || !state.gameState) {
+      return;
+    }
+
+    // 2. SYNCHRONIZATION POINT: As soon as we get a state update,
+    //    perform a fresh, blocking read of the player's position from the SAB.
+    //    This creates a consistent "snapshot" of the game state.
     let playerMinimapPosition = null;
     if (playerPosArray) {
-      const newPlayerPosCounter = Atomics.load(
-        playerPosArray,
-        PLAYER_POS_UPDATE_COUNTER_INDEX,
-      );
-      if (newPlayerPosCounter > lastPlayerPosCounter) {
-        playerMinimapPosition = {
-          x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-          y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-          z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-        };
-        lastPlayerPosCounter = newPlayerPosCounter;
-        if (!state) state = {};
-        if (!state.gameState) state.gameState = {};
-        state.gameState.playerMinimapPosition = playerMinimapPosition;
-      } else if (state?.gameState?.playerMinimapPosition) {
-        playerMinimapPosition = state.gameState.playerMinimapPosition;
-      }
-    } else if (state?.gameState?.playerMinimapPosition) {
+      playerMinimapPosition = {
+        x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+        y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+        z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+      };
+    } else {
+      // Fallback for safety, though SAB should always be present
       playerMinimapPosition = state.gameState.playerMinimapPosition;
     }
 
-    if (playerMinimapPosition) {
-      const duration = runPathfindingLogic({
-        ...logicContext,
-        state: {
-          ...state,
-          gameState: { ...state.gameState, playerMinimapPosition },
-        },
-        pathfinderInstance,
-        logger,
-        pathDataArray,
-        throttleReduxUpdate,
-      });
+    // If we don't have a valid position, we can't do anything.
+    if (!playerMinimapPosition || typeof playerMinimapPosition.x !== 'number') {
+      return;
+    }
 
-      if (typeof duration === 'number') {
-        perfTracker.addMeasurement(duration);
-      }
+    // 3. EXECUTION: Run the pathfinding logic with the synchronized snapshot.
+    const synchronizedState = {
+      ...state,
+      gameState: { ...state.gameState, playerMinimapPosition },
+    };
+
+    const duration = runPathfindingLogic({
+      ...logicContext,
+      state: synchronizedState,
+      pathfinderInstance,
+      logger,
+      pathDataArray,
+      throttleReduxUpdate,
+    });
+
+    if (typeof duration === 'number') {
+      perfTracker.addMeasurement(duration);
     }
 
     logPerformanceReport();

@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/ocr/core.js
+// --- Definitive Version with Enforced Settle Delay ---
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import * as config from './config.js';
@@ -5,8 +8,8 @@ import {
   rectsIntersect,
   processBattleList,
   processOcrRegions,
-  deepCompareEntities,
   processGameWorldEntities,
+  deepCompareEntities,
 } from './processing.js';
 import {
   PLAYER_X_INDEX,
@@ -14,10 +17,26 @@ import {
   PLAYER_Z_INDEX,
 } from '../sharedConstants.js';
 
+// --- CONFIGURABLE DELAY ---
+// The number of milliseconds to wait after a player move completes before
+// trusting the screen again. This gives the game engine time to "settle".
+const SETTLE_DELAY_MS = 75; // Tune this value if needed.
+
+const POSITION_CONFIRMATION_THRESHOLD = 3;
+const CREATURE_TTL_MS = 300;
+const SCROLL_DETECTION_THRESHOLD = 0.95;
+
 let currentState = null;
 let isShuttingDown = false;
 let lastProcessedFrameCounter = -1;
 let lastRegionHash = null;
+
+const creatureConfidence = new Map();
+let lastSentCreatures = [];
+
+// --- Simplified State ---
+let lastPlayerMinimapPosition = null;
+let isWaitingForSettle = false;
 
 let oneTimeInitializedRegions = new Set();
 const pendingThrottledRegions = new Map();
@@ -46,6 +65,57 @@ function hashRegionCoordinates(regionCoordinates) {
   return JSON.stringify(regionCoordinates, replacer);
 }
 
+function applyConfidenceFilter(detectedEntities) {
+  const now = Date.now();
+  const confirmedEntities = [];
+  const seenThisFrame = new Set();
+
+  for (const entity of detectedEntities) {
+    const key = entity.name;
+    seenThisFrame.add(key);
+
+    const existing = creatureConfidence.get(key);
+
+    if (!existing) {
+      creatureConfidence.set(key, {
+        ...entity,
+        confirmations: 1,
+        lastSeen: now,
+        isConfirmed: false,
+      });
+    } else {
+      const sameTile =
+        existing.gameCoords.x === entity.gameCoords.x &&
+        existing.gameCoords.y === entity.gameCoords.y;
+
+      if (!existing.isConfirmed && sameTile) {
+        existing.confirmations++;
+      } else if (!sameTile) {
+        existing.confirmations = 1;
+      }
+
+      existing.gameCoords = entity.gameCoords;
+      existing.absoluteCoords = entity.absoluteCoords;
+      existing.distance = entity.distance;
+      existing.lastSeen = now;
+
+      if (existing.confirmations >= POSITION_CONFIRMATION_THRESHOLD) {
+        existing.isConfirmed = true;
+      }
+    }
+  }
+
+  for (const [key, entity] of creatureConfidence.entries()) {
+    if (now - entity.lastSeen > CREATURE_TTL_MS) {
+      creatureConfidence.delete(key);
+    } else if (entity.isConfirmed) {
+      confirmedEntities.push(entity);
+    }
+  }
+
+  return confirmedEntities;
+}
+
 async function processPendingRegions() {
   if (pendingThrottledRegions.size === 0) return;
 
@@ -71,6 +141,18 @@ async function processPendingRegions() {
   }
 }
 
+function getIntersection(rect1, rect2) {
+  const x = Math.max(rect1.x, rect2.x);
+  const y = Math.max(rect1.y, rect2.y);
+  const width = Math.min(rect1.x + rect1.width, rect2.x + rect2.width) - x;
+  const height = Math.min(rect1.y + rect1.height, rect2.y + rect2.height) - y;
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+  return { x, y, width, height };
+}
+
 async function performOperation() {
   try {
     if (!currentState || !currentState.regionCoordinates) return;
@@ -90,6 +172,28 @@ async function performOperation() {
 
     lastProcessedFrameCounter = newFrameCounter;
 
+    const currentPlayerMinimapPosition = {
+      x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+      y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+      z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+    };
+
+    // --- ENFORCED SETTLE DELAY LOGIC ---
+    if (lastPlayerMinimapPosition) {
+      if (
+        currentPlayerMinimapPosition.x !== lastPlayerMinimapPosition.x ||
+        currentPlayerMinimapPosition.y !== lastPlayerMinimapPosition.y ||
+        currentPlayerMinimapPosition.z !== lastPlayerMinimapPosition.z
+      ) {
+        isWaitingForSettle = true;
+        setTimeout(() => {
+          isWaitingForSettle = false;
+        }, SETTLE_DELAY_MS);
+      }
+    }
+    lastPlayerMinimapPosition = currentPlayerMinimapPosition;
+    // --- END OF LOGIC ---
+
     const dirtyRegionCount = Atomics.load(
       syncArray,
       config.DIRTY_REGION_COUNT_INDEX,
@@ -105,37 +209,40 @@ async function performOperation() {
       });
     }
 
+    let isScreenScrolling = false;
+    if (regions.gameWorld) {
+      let dirtyAreaInGameWorld = 0;
+      const gameWorldArea = regions.gameWorld.width * regions.gameWorld.height;
+      for (const dirtyRect of dirtyRects) {
+        const intersection = getIntersection(dirtyRect, regions.gameWorld);
+        if (intersection) {
+          dirtyAreaInGameWorld += intersection.width * intersection.height;
+        }
+      }
+      if (
+        gameWorldArea > 0 &&
+        dirtyAreaInGameWorld / gameWorldArea > SCROLL_DETECTION_THRESHOLD
+      ) {
+        isScreenScrolling = true;
+      }
+    }
+
     const processingTasks = [];
     const immediateRegionsToProcess = new Set();
 
-    // --- CORRECTED BATTLE LIST LOGIC ---
-    // The battle list is critical and not throttled.
-    // The rule is simple: if it exists, process it on every frame.
-    // This ensures we never miss an entry appearing or disappearing.
     if (regions.battleList) {
-      processingTasks.push(processBattleList(sharedBufferView, regions));
+      const isDirty = dirtyRects.some((dirtyRect) =>
+        rectsIntersect(regions.battleList, dirtyRect),
+      );
+      if (isDirty || !oneTimeInitializedRegions.has('battleList')) {
+        immediateRegionsToProcess.add('battleList');
+        oneTimeInitializedRegions.add('battleList');
+      }
     }
 
-    // Handle all other configured regions
-    for (const regionKey of Object.keys(config.OCR_REGION_CONFIGS)) {
-      if (!regions[regionKey]) continue;
-
-      const isDirty = dirtyRects.some((dirtyRect) =>
-        rectsIntersect(regions[regionKey], dirtyRect),
-      );
-      const isInitialized = oneTimeInitializedRegions.has(regionKey);
-      const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
-
-      if (isDirty || !isInitialized) {
-        if (regionConfig.throttle) {
-          if (!pendingThrottledRegions.has(regionKey)) {
-            pendingThrottledRegions.set(regionKey, Date.now());
-          }
-        } else {
-          immediateRegionsToProcess.add(regionKey);
-          oneTimeInitializedRegions.add(regionKey);
-        }
-      }
+    // The final, simple rule: Scan the game world if it's not scrolling AND we are not waiting for a settle.
+    if (regions.gameWorld && !isScreenScrolling && !isWaitingForSettle) {
+      immediateRegionsToProcess.add('gameWorld');
     }
 
     if (immediateRegionsToProcess.size > 0) {
@@ -145,22 +252,41 @@ async function performOperation() {
         immediateRegionsToProcess,
       );
       processingTasks.push(
-        ocrResultsPromise.then((ocrRawUpdates) => {
+        ocrResultsPromise.then(async (ocrRawUpdates) => {
           if (ocrRawUpdates?.gameWorld) {
-            const playerMinimapPosition = {
-              x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-              y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-              z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-            };
-            return processGameWorldEntities(
-              ocrRawUpdates.gameWorld,
-              playerMinimapPosition,
-              regions.gameWorld,
-              regions.tileSize,
-            );
+            const detectedEntities =
+              (await processGameWorldEntities(
+                ocrRawUpdates.gameWorld,
+                currentPlayerMinimapPosition,
+                regions,
+                regions.tileSize,
+              )) || [];
+
+            const confirmedEntities = applyConfidenceFilter(detectedEntities);
+
+            if (!deepCompareEntities(confirmedEntities, lastSentCreatures)) {
+              parentPort.postMessage({
+                storeUpdate: true,
+                type: 'targeting/setEntities',
+                payload: confirmedEntities,
+              });
+              lastSentCreatures = confirmedEntities;
+            }
           }
         }),
       );
+    } else {
+      // If we are scrolling or waiting, we can still run the filter with an empty
+      // list to process TTLs and remove expired creatures.
+      const confirmedEntities = applyConfidenceFilter([]);
+      if (!deepCompareEntities(confirmedEntities, lastSentCreatures)) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'targeting/setEntities',
+          payload: confirmedEntities,
+        });
+        lastSentCreatures = confirmedEntities;
+      }
     }
 
     if (processingTasks.length > 0) {
@@ -192,31 +318,24 @@ function handleMessage(message) {
   try {
     if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
-
-      if (message.payload.regionCoordinates) {
-        const newHash = hashRegionCoordinates(
-          message.payload.regionCoordinates,
-        );
-        if (newHash !== lastRegionHash) {
-          lastRegionHash = newHash;
-          console.log(
-            '[OcrCore] Region definitions changed. New regions will be initialized on next frame.',
-          );
+      const payload = message.payload;
+      if (payload.regionCoordinates) {
+        const newHash = hashRegionCoordinates(payload.regionCoordinates);
+        if (newHash === lastRegionHash) {
+          delete payload.regionCoordinates;
         } else {
-          delete message.payload.regionCoordinates;
+          lastRegionHash = newHash;
         }
       }
-
-      Object.assign(currentState, message.payload);
+      Object.assign(currentState, payload);
     } else if (message.type === 'shutdown') {
-      console.log('[OcrCore] Received shutdown command.');
       isShuttingDown = true;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
       lastRegionHash = hashRegionCoordinates(message.regionCoordinates || {});
-      console.log('[OcrCore] Received initial state update.');
-      oneTimeInitializedRegions.clear();
-      pendingThrottledRegions.clear();
+      lastSentCreatures = [];
+      lastPlayerMinimapPosition = null;
+      isWaitingForSettle = false;
     }
   } catch (error) {
     console.error('[OcrCore] Error handling message:', error);
@@ -229,7 +348,6 @@ export async function start() {
     throw new Error('[OcrCore] Shared data not provided');
   }
   parentPort.on('message', handleMessage);
-
   mainLoop().catch((error) => {
     console.error('[OcrCore] Fatal error in main loop:', error);
     process.exit(1);

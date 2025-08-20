@@ -1,19 +1,16 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/ocr/processing.js
+// --- Definitive Version as a Pure Calculation Module ---
+
 import { parentPort } from 'worker_threads';
 import pkg from 'font-ocr';
 import { OCR_REGION_CONFIGS, CHAR_PRESETS } from './config.js';
-import { getGameCoordinatesFromScreen } from '../../utils/gameWorldClickTranslator.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
 import { chebyshevDistance } from '../../utils/distance.js';
+import { getGameCoordinatesFromScreen } from '../../utils/gameWorldClickTranslator.js';
 
-// Import both functions from the native module
 const { recognizeText, findText } = pkg;
-
-// Track last posted results to avoid redundant updates
 const lastPostedResults = new Map();
 
-/**
- * Checks if two rectangle objects intersect.
- */
 export function deepCompareEntities(a, b) {
   if (!a && !b) return true;
   if (!a || !b || a.length !== b.length) return false;
@@ -58,15 +55,12 @@ export function rectsIntersect(rectA, rectB) {
   );
 }
 
-/**
- * Posts a message to the parent only if the payload has changed since last time.
- */
 function postUpdateOnce(type, payload) {
   const key = type;
   const prev = lastPostedResults.get(key);
   const payloadString = JSON.stringify(payload);
 
-  if (prev === payloadString) return; // skip redundant update
+  if (prev === payloadString) return;
 
   lastPostedResults.set(key, payloadString);
   parentPort.postMessage({
@@ -76,9 +70,6 @@ function postUpdateOnce(type, payload) {
   });
 }
 
-/**
- * Processes the battle list, using OCR and mapping results to entries.
- */
 export async function processBattleList(buffer, regions) {
   const battleListEntries = regions.battleList?.children?.entries?.list;
   if (!Array.isArray(battleListEntries) || battleListEntries.length === 0) {
@@ -140,9 +131,6 @@ export async function processBattleList(buffer, regions) {
   }
 }
 
-/**
- * Processes standard OCR regions using their parser and configuration.
- */
 export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
   const processingPromises = [];
@@ -166,6 +154,7 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
 
         ocrRawUpdates[regionKey] = rawData;
 
+        // This is for simple UI elements, not the game world.
         if (config.parser) {
           const parsedData = config.parser(rawData);
           if (parsedData) postUpdateOnce(config.storeAction, parsedData);
@@ -189,28 +178,31 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
 export async function processGameWorldEntities(
   ocrData,
   playerMinimapPosition,
-  gameWorld,
+  regions,
   tileSize,
 ) {
   if (
-    !gameWorld ||
+    !regions?.gameWorld ||
     !tileSize ||
     !playerMinimapPosition ||
     !Array.isArray(ocrData)
   ) {
-    return;
+    return [];
   }
 
   const entities = ocrData
     .map((r) => {
-      const screenX = r.click.x;
-      const screenY = r.y + 14;
+      const creatureScreenX = r.click.x;
+      const NAMEPLATE_TEXT_HEIGHT = 10;
+      const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
+      const nameplateCenterY = r.y + textHeight / 2;
+      const creatureScreenY = nameplateCenterY + tileSize.height / 2;
 
       const gameCoords = getGameCoordinatesFromScreen(
-        screenX,
-        screenY,
+        creatureScreenX,
+        creatureScreenY,
         playerMinimapPosition,
-        gameWorld,
+        regions.gameWorld,
         tileSize,
       );
 
@@ -218,29 +210,15 @@ export async function processGameWorldEntities(
         return null;
       }
 
-      const isOnTopRow =
-        screenY >= gameWorld.y && screenY < gameWorld.y + tileSize.height;
-
-      if (isOnTopRow) {
-        const topRowThresholdY = gameWorld.y + tileSize.height * 0.6;
-        if (screenY >= topRowThresholdY) {
-          gameCoords.y += 1;
-        }
-      } else {
-        gameCoords.y += 1;
-      }
-
       gameCoords.x = Math.round(gameCoords.x);
       gameCoords.y = Math.round(gameCoords.y);
       gameCoords.z = playerMinimapPosition.z;
 
-      const distance = Math.round(
-        chebyshevDistance(gameCoords, playerMinimapPosition),
-      );
+      const distance = chebyshevDistance(gameCoords, playerMinimapPosition);
 
       return {
         name: r.text,
-        absoluteCoords: { x: screenX, y: screenY },
+        absoluteCoords: { x: creatureScreenX, y: creatureScreenY },
         gameCoords: gameCoords,
         distance: distance,
       };
@@ -258,5 +236,6 @@ export async function processGameWorldEntities(
     return distA - distB;
   });
 
-  postUpdateOnce('targeting/setEntities', entities);
+  // This function correctly returns the data to core.js for filtering and posting.
+  return entities;
 }
