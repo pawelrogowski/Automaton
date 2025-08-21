@@ -193,11 +193,9 @@ namespace AStar {
         // --- UNIFIED "STAND STILL" CHECK ---
         // This is the most critical fix. It checks if the player is ALREADY in an optimal position
         // for either stance before doing any expensive calculations. This prevents all orbiting/pacing.
-        int current_chebyshev_dist = std::max(std::abs(playerLocal.x - monsterLocal.x), std::abs(playerLocal.y - monsterLocal.y));
-        if ((stance == "keepAway" && current_chebyshev_dist == distance) ||
-            (stance == "Reach" && current_chebyshev_dist == 1)) {
-            return best_node; // Return {-1, -1, ...} to signal "no path needed"
-        }
+        // The decision to "stand still" should be made by the caller (JS side)
+        // after evaluating the path to the best target tile.
+        // This function should always find the best possible target tile.
 
         // If we are not in an optimal position, proceed to find one.
         std::queue<std::pair<Node, int>> q;
@@ -244,28 +242,24 @@ namespace AStar {
         if (candidates.empty()) return best_node;
 
         if (stance == "Reach") {
-            int min_dist_from_player = INT_MAX;
+            // Prioritize tiles that are diagonally furthest from the monster
+            // by maximizing the Manhattan distance from the monster, among adjacent tiles.
+            int max_manhattan_dist = -1;
             for (const auto& cand : candidates) {
-                int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
-                if (dist_from_player < min_dist_from_player) {
-                    min_dist_from_player = dist_from_player;
+                int manhattan_dist = std::abs(cand.x - monsterLocal.x) + std::abs(cand.y - monsterLocal.y);
+                if (manhattan_dist > max_manhattan_dist) {
+                    max_manhattan_dist = manhattan_dist;
                     best_node = cand;
                 }
             }
         } else if (stance == "keepAway") {
-            // Use the directional heuristic to find the best escape tile.
-            int max_dot_product = -INT_MAX;
-            int escape_vec_x = playerLocal.x - monsterLocal.x;
-            int escape_vec_y = playerLocal.y - monsterLocal.y;
-
+            // Prioritize tiles that are diagonally furthest from the monster
+            // by maximizing the Manhattan distance from the monster.
+            int max_manhattan_dist = -1;
             for (const auto& cand : candidates) {
-                int cand_vec_x = cand.x - monsterLocal.x;
-                int cand_vec_y = cand.y - monsterLocal.y;
-
-                int dot_product = (escape_vec_x * cand_vec_x) + (escape_vec_y * cand_vec_y);
-
-                if (dot_product > max_dot_product) {
-                    max_dot_product = dot_product;
+                int manhattan_dist = std::abs(cand.x - monsterLocal.x) + std::abs(cand.y - monsterLocal.y);
+                if (manhattan_dist > max_manhattan_dist) {
+                    max_manhattan_dist = manhattan_dist;
                     best_node = cand;
                 }
             }

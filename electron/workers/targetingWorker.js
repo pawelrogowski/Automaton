@@ -22,11 +22,12 @@ import {
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
-const MAIN_LOOP_INTERVAL = 50;
+const MAIN_LOOP_INTERVAL = 25;
+const STATE_CHANGE_POLL_INTERVAL = 5; // Copied from cavebotWorker.js
 const logger = createLogger({ info: true, error: true });
 
-// --- NEW: Configuration for movement smoothing ---
-const MOVE_COOLDOWN_MS = 175; // Cooldown in ms after a move command. Tune this value if movement feels sluggish or still oscillates.
+// --- Configuration for movement smoothing ---
+const MOVE_COOLDOWN_MS = 300; // Cooldown in ms after a move command. Tune this value if movement feels sluggish or still oscillates.
 
 let isInitialized = false;
 let globalState = null;
@@ -123,6 +124,12 @@ const updateSABData = () => {
         path = tempPath;
         lastPathDataCounter = counterBeforeRead;
         consistentRead = true;
+        if (path.length > 0) {
+          logger(
+            'info',
+            `[TargetingWorker] New path generated: ${JSON.stringify(path)}`,
+          );
+        }
       } else {
         attempts++;
       }
@@ -168,11 +175,20 @@ async function performTargeting() {
     });
 
     if (closestCreature) {
-      dynamicGoal = {
-        stance: targeting.stance,
-        distance: targeting.distance,
-        targetCreaturePos: closestCreature.gameCoords,
-      };
+      // For 'keepAway' stance, only set a dynamic goal if the creature is closer than or at the desired distance.
+      // If the creature is further away, wait for it to approach.
+      if (targeting.stance === 'keepAway' && minDistance > targeting.distance) {
+        dynamicGoal = null; // Creature is too far, do not set a target for running away
+      } else {
+        dynamicGoal = {
+          stance: targeting.stance,
+          distance: targeting.distance,
+          targetCreaturePos: closestCreature.gameCoords,
+        };
+      }
+    } else {
+      // If no closest creature, ensure dynamicGoal is null to stop pathfinding
+      dynamicGoal = null;
     }
   }
 
@@ -209,14 +225,51 @@ async function performTargeting() {
       // 2. Send the keypress to perform the move.
       keypress.sendKey(dirKey, globalState.global.display);
 
-      // 3. Set a timer. After the cooldown, reset the flag to allow the next move.
-      // This gives the character time to complete the step.
-      setTimeout(() => {
+      // 3. Wait for walk confirmation instead of a fixed timeout.
+      try {
+        await awaitWalkConfirmation(
+          lastPlayerPosCounter,
+          lastPathDataCounter,
+          MOVE_COOLDOWN_MS, // Use MOVE_COOLDOWN_MS as the timeout for confirmation
+        );
+      } catch (error) {
+        logger('error', `[TargetingWorker] Walk step failed: ${error.message}`);
+      } finally {
         isMoving = false;
-      }, MOVE_COOLDOWN_MS);
+      }
     }
   }
 }
+
+// --- Confirmation Utilities (Copied from cavebotWorker.js) ---
+const awaitWalkConfirmation = (
+  posCounterBeforeMove,
+  pathCounterBeforeMove,
+  timeoutMs,
+) => {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+      reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const intervalId = setInterval(() => {
+      const posChanged = playerPosArray
+        ? Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
+          posCounterBeforeMove
+        : false;
+      const pathChanged = pathDataArray
+        ? Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
+          pathCounterBeforeMove
+        : false;
+      // Accept either we moved OR pathfinder updated the path — both are valid signals.
+      if (posChanged || pathChanged) {
+        clearTimeout(timeoutId);
+        clearInterval(intervalId);
+        resolve(true);
+      }
+    }, STATE_CHANGE_POLL_INTERVAL);
+  });
+};
 
 async function mainLoop() {
   logger('info', '[TargetingWorker] Starting main loop...');

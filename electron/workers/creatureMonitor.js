@@ -84,10 +84,10 @@ function processGameWorldEntities(
       const creatureScreenX = r.click.x;
       const NAMEPLATE_TEXT_HEIGHT = 10;
       const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
-      const nameplateCenterY = r.y + textHeight / 2;
+      const nameplateCenterY = r.y + textHeight / 2 + tileSize.height / 10;
 
       // map nameplate center down by half a tile to reach approximate creature center
-      const creatureScreenY = nameplateCenterY + tileSize.height / 2;
+      const creatureScreenY = nameplateCenterY + tileSize.height / 1.4;
 
       const gameCoords = getGameCoordinatesFromScreen(
         creatureScreenX,
