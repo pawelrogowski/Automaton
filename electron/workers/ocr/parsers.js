@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/ocr/parsers.js
+// --- MODIFIED ---
+
 /**
  * @file parsers.js
  * @summary The single source of truth for parsing all OCR data.
@@ -5,32 +8,16 @@
  * into the final, structured objects ready for the Redux state.
  */
 
-// Note: Most of these functions are moved directly from the original uiValuesSlice.js
-
-/**
- * Converts a time string in hh:mm or hh.mm format to total minutes.
- * @param {string} timeStr - The time string, e.g., "42:00" or "42.00".
- * @returns {number|null} Total minutes or null if invalid.
- */
 function timeStringToMinutes(timeStr) {
   if (typeof timeStr !== 'string') {
     return null;
   }
-  // Normalize separator to ':'
   const normalizedTime = timeStr.replace('.', ':');
   const parts = normalizedTime.split(':');
-
-  if (parts.length !== 2) {
-    return null;
-  }
-
+  if (parts.length !== 2) return null;
   const hours = parseInt(parts[0], 10);
   const minutes = parseInt(parts[1], 10);
-
-  if (isNaN(hours) || isNaN(minutes)) {
-    return null;
-  }
-
+  if (isNaN(hours) || isNaN(minutes)) return null;
   return hours * 60 + minutes;
 }
 
@@ -249,4 +236,5 @@ export const regionParsers = {
   selectCharacterModal: parseSelectCharacterModal,
   vipWidget: parseVipWidget,
   gameWorld: parseGameWorldOcr,
+  // REMOVED battleList parser
 };

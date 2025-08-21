@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/frontend/redux/slices/uiValuesSlice.js
+// --- MODIFIED ---
+
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
@@ -56,10 +59,7 @@ const initialState = {
     offline: [],
     lastUpdate: null,
   },
-  gameWorld: {
-    ocrData: [],
-    lastUpdate: null,
-  },
+  // REMOVED gameWorld state
   battleListEntries: [],
 };
 
@@ -67,94 +67,42 @@ const uiValuesSlice = createSlice({
   name: 'uiValues',
   initialState,
   reducers: {
-    // --- All reducers are now simple, direct state assignments ---
-
-    /**
-     * Sets the entire skills widget state from a fully parsed object.
-     */
     setSkillsWidget: (state, action) => {
-      // The payload is the final, structured object from the worker's parser.
       if (action.payload) {
         state.skillsWidget = action.payload;
       }
     },
-
-    /**
-     * Sets the battle list with a final array of monster names.
-     */
     setBattleListEntries: (state, action) => {
       state.battleListEntries = action.payload;
     },
-
-    /**
-     * Sets the main chatbox messages from a parsed array.
-     */
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;
       state.chatboxMain.lastUpdate = Date.now();
     },
-
-    /**
-     * Sets the secondary chatbox messages from a parsed array.
-     */
     setChatboxSecondary: (state, action) => {
       state.chatboxSecondary.messages = action.payload;
       state.chatboxSecondary.lastUpdate = Date.now();
     },
-
-    /**
-     * Sets the chat tabs state from a parsed object.
-     */
     setChatTabs: (state, action) => {
       state.chatboxTabs = { ...action.payload, lastUpdate: Date.now() };
     },
-
-    /**
-     * Sets the character selection modal state from a parsed object.
-     */
     setSelectCharacterModal: (state, action) => {
       state.selectCharacterModal = {
         ...action.payload,
         lastUpdate: Date.now(),
       };
     },
-
-    /**
-     * Sets the VIP widget state from a parsed object.
-     */
     setVipWidget: (state, action) => {
       state.vipWidget = { ...action.payload, lastUpdate: Date.now() };
     },
-
-    /**
-     * Sets the game world OCR data from a parsed array.
-     */
-    setGameWorldOcr: (state, action) => {
-      state.gameWorld.ocrData = action.payload;
-      state.gameWorld.lastUpdate = Date.now();
-    },
-
-    // --- Utility Reducers (Unchanged) ---
-
-    /**
-     * Resets the entire uiValues state to its initial state.
-     */
+    // REMOVED setGameWorldOcr reducer
     resetUiValues: () => initialState,
-
-    /**
-     * Resets a specific region to its initial state.
-     * @param {string} action.payload - The region name to reset (e.g., 'skillsWidget').
-     */
     resetRegion: (state, action) => {
       const region = action.payload;
       if (initialState[region]) {
         state[region] = initialState[region];
       }
     },
-
-    /**
-     * Replaces the entire slice state. Use with caution.
-     */
     setState: (state, action) => {
       return action.payload;
     },
@@ -169,13 +117,11 @@ export const {
   setChatTabs,
   setSelectCharacterModal,
   setVipWidget,
-  setGameWorldOcr,
   resetUiValues,
   resetRegion,
   setState,
 } = uiValuesSlice.actions;
 
-// --- Selectors (Unchanged) ---
 export const selectSkillsWidget = (state) => state.uiValues.skillsWidget;
 export const selectSkillsData = (state) => state.uiValues.skillsWidget.skills;
 export const selectCombatData = (state) => state.uiValues.skillsWidget.combat;
@@ -200,6 +146,6 @@ export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
 export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
 export const selectBattleListEntries = (state) =>
   state.uiValues.battleListEntries;
-export const selectGameWorldOcr = (state) => state.uiValues.gameWorld.ocrData;
+// REMOVED selectGameWorldOcr selector
 
 export default uiValuesSlice;

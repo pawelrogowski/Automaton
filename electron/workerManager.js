@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/electron/workerManager.js
+// --- REFACTORED ---
+
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,6 +24,7 @@ const DEFAULT_WORKER_CONFIG = {
   screenMonitor: true,
   minimapMonitor: true,
   ocrWorker: true,
+  creatureMonitor: true,
   cavebotWorker: true,
   targetingWorker: true,
   pathfinderWorker: true,
@@ -31,7 +35,6 @@ const DEFAULT_WORKER_CONFIG = {
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
-const WORKER_INIT_DELAY = 50;
 const DEBOUNCE_INTERVAL = 16;
 
 function quickHash(obj) {
@@ -60,7 +63,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'gameState',
     'pathfinder',
     'cavebot',
-  ], // Targeting needs cavebot state to know if it's paused
+  ],
   regionMonitor: ['global'],
   targetMonitor: ['global', 'regionCoordinates', 'gameState', 'targeting'],
   screenMonitor: [
@@ -71,7 +74,8 @@ const WORKER_STATE_DEPENDENCIES = {
     'uiValues',
   ],
   minimapMonitor: ['global', 'regionCoordinates'],
-  ocrWorker: ['global', 'regionCoordinates', 'gameState'],
+  ocrWorker: ['global', 'regionCoordinates', 'gameState', 'ocr'], // Added ocr dependency for itself
+  creatureMonitor: ['global', 'regionCoordinates', 'gameState', 'ocr'],
   captureWorker: ['global'],
 };
 
@@ -80,6 +84,7 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'screenMonitor',
   'minimapMonitor',
   'ocrWorker',
+  'creatureMonitor',
   'cavebotWorker',
   'targetingWorker',
   'pathfinderWorker',
@@ -91,6 +96,7 @@ class WorkerManager {
     const filename = fileURLToPath(import.meta.url);
     this.electronDir = dirname(filename);
     this.workers = new Map();
+    this.workerInitialized = new Map(); // --- NEW: Tracks if a worker has received its first state
     this.workerPaths = new Map();
     this.restartLocks = new Map();
     this.restartAttempts = new Map();
@@ -206,6 +212,7 @@ class WorkerManager {
     log('info', `[Worker Manager] Worker exited: ${name}, code ${code}`);
     this.workers.delete(name);
     this.workerPaths.delete(name);
+    this.workerInitialized.delete(name); // --- NEW ---
     const isUUID = /^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$/.test(
       name,
     );
@@ -235,15 +242,13 @@ class WorkerManager {
   }
 
   handleWorkerMessage(message) {
-    // NEW: Handle frame updates from the capture worker
     if (message.type === 'frame-update') {
-      // Broadcast to all other workers
       for (const [name, workerEntry] of this.workers.entries()) {
         if (name !== 'captureWorker' && workerEntry.worker) {
           workerEntry.worker.postMessage(message);
         }
       }
-      return; // End handling for this message type
+      return;
     }
 
     if (message.notification) {
@@ -323,6 +328,7 @@ class WorkerManager {
         'minimapMonitor',
         'regionMonitor',
         'ocrWorker',
+        'creatureMonitor',
         'targetMonitor',
       ].includes(name);
       const needsPlayerPosSAB = [
@@ -331,6 +337,7 @@ class WorkerManager {
         'cavebotWorker',
         'targetingWorker',
         'targetMonitor',
+        'creatureMonitor',
       ].includes(name);
       const needsPathDataSAB = [
         'pathfinderWorker',
@@ -349,19 +356,18 @@ class WorkerManager {
       }
       const worker = new Worker(workerPath, { name, workerData });
       this.workers.set(name, { worker, config: scriptConfig });
+      this.workerInitialized.set(name, false); // --- NEW ---
       worker.on('message', (msg) => this.handleWorkerMessage(msg));
       worker.on('error', (error) => this.handleWorkerError(name, error));
       worker.on('exit', (code) => this.handleWorkerExit(name, code));
       log('info', `[Worker Manager] Worker ${name} started successfully.`);
 
-      setTimeout(() => {
-        if (scriptConfig) {
+      // --- MODIFIED: No longer sends initial state immediately ---
+      if (scriptConfig) {
+        setTimeout(() => {
           worker.postMessage({ type: 'init', script: scriptConfig });
-        }
-        if (name !== 'captureWorker') {
-          worker.postMessage(store.getState());
-        }
-      }, WORKER_INIT_DELAY);
+        }, DEBOUNCE_INTERVAL);
+      }
 
       return worker;
     } catch (error) {
@@ -438,9 +444,9 @@ class WorkerManager {
     return hasChanges ? changedSlices : null;
   }
 
-  broadcastStateUpdate(changedSlices) {
+  // --- MODIFIED: This function now handles the initial full state send ---
+  broadcastStateUpdate(changedSlices, currentState) {
     const changedKeys = Object.keys(changedSlices);
-    const currentState = store.getState();
 
     for (const [name, workerEntry] of this.workers) {
       if (
@@ -450,6 +456,16 @@ class WorkerManager {
           workerEntry.config?.type === 'oneshot')
       )
         continue;
+
+      // --- THIS IS THE KEY FIX ---
+      // If the worker hasn't received its first state, send the whole thing.
+      if (!this.workerInitialized.get(name)) {
+        workerEntry.worker.postMessage(currentState);
+        this.workerInitialized.set(name, true);
+        log('info', `[Worker Manager] Sent initial full state to ${name}.`);
+        continue; // Move to the next worker
+      }
+      // --- END FIX ---
 
       if (name === 'pathfinderWorker') {
         const relevantPayload = {};
@@ -617,6 +633,11 @@ class WorkerManager {
         if (this.workerConfig.ocrWorker && !this.workers.has('ocrWorker'))
           this.startWorker('ocrWorker');
         if (
+          this.workerConfig.creatureMonitor &&
+          !this.workers.has('creatureMonitor')
+        )
+          this.startWorker('creatureMonitor');
+        if (
           this.workerConfig.pathfinderWorker &&
           !this.workers.has('pathfinderWorker')
         )
@@ -649,7 +670,7 @@ class WorkerManager {
 
       if (this.previousState) {
         const changed = this.getStateChanges(currentState, this.previousState);
-        if (changed) this.broadcastStateUpdate(changed);
+        if (changed) this.broadcastStateUpdate(changed, currentState); // --- MODIFIED ---
       }
       this.previousState = currentState;
       this.logPerformanceStats();

@@ -1,7 +1,10 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/ocr/config.js
+// --- MODIFIED ---
+
 import { regionParsers } from './parsers.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
 
-export const MAIN_LOOP_INTERVAL = 100;
+export const MAIN_LOOP_INTERVAL = 5;
 
 export const FRAME_COUNTER_INDEX = 0;
 export const WIDTH_INDEX = 1;
@@ -14,7 +17,7 @@ export const CHAR_PRESETS = {
   LOWERCASE: 'abcdefghijklmnopqrstuvwxyz',
   UPPERCASE: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
   NUMERIC: '0123456789',
-  SPECIAL: `~!@#$%^&*()_+{}|":?><-=[];'\./ `,
+  SPECIAL: `~!@#$%^&*()_+{}|":?><-=[];'./ `,
 };
 CHAR_PRESETS.ALL =
   CHAR_PRESETS.LOWERCASE +
@@ -31,18 +34,6 @@ export const OCR_REGION_CONFIGS = {
     storeAction: 'uiValues/setSkillsWidget',
     allowedChars: CHAR_PRESETS.ALPHANUMERIC + ' .:',
   },
-  // chatboxMain: {
-  //   colors: regionDefinitions.chatboxMain?.ocrColors,
-  //   parser: regionParsers.chatboxMain,
-  //   storeAction: 'uiValues/setChatboxMain',
-  //   allowedChars: CHAR_PRESETS.ALL,
-  // },
-  // chatboxSecondary: {
-  //   colors: regionDefinitions.chatboxSecondary?.ocrColors,
-  //   parser: regionParsers.chatboxSecondary,
-  //   storeAction: 'uiValues/setChatboxSecondary',
-  //   allowedChars: CHAR_PRESETS.ALL,
-  // },
   chatBoxTabRow: {
     colors: regionDefinitions.chatBoxTabRow?.ocrColors,
     parser: regionParsers.chatBoxTabRow,
@@ -61,11 +52,11 @@ export const OCR_REGION_CONFIGS = {
     storeAction: 'uiValues/setVipWidget',
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
   },
+  // REMOVED BATTLE LIST FROM GENERIC CONFIG
   gameWorld: {
     colors: regionDefinitions.gameWorld?.ocrColors,
     parser: regionParsers.gameWorld,
-    storeAction: 'uiValues/setGameWorldOcr',
-    // dictionary: ['Phant', 'Rat', 'Spider', 'Dog'],
+    storeAction: 'ocr/setOcrRegionsText',
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
   },
 };

@@ -1,39 +1,15 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/ocr/processing.js
-// --- Definitive Version as a Pure Calculation Module ---
+// --- REFACTORED ---
 
 import { parentPort } from 'worker_threads';
 import pkg from 'font-ocr';
 import { OCR_REGION_CONFIGS, CHAR_PRESETS } from './config.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
-import { chebyshevDistance } from '../../utils/distance.js';
-import { getGameCoordinatesFromScreen } from '../../utils/gameWorldClickTranslator.js';
 
 const { recognizeText, findText } = pkg;
 const lastPostedResults = new Map();
 
-export function deepCompareEntities(a, b) {
-  if (!a && !b) return true;
-  if (!a || !b || a.length !== b.length) return false;
-
-  for (let i = 0; i < a.length; i++) {
-    const entityA = a[i];
-    const entityB = b[i];
-
-    if (
-      entityA.absoluteCoords.x !== entityB.absoluteCoords.x ||
-      entityA.absoluteCoords.y !== entityB.absoluteCoords.y ||
-      entityA.gameCoords.x !== entityB.gameCoords.x ||
-      entityA.gameCoords.y !== entityB.gameCoords.y ||
-      entityA.gameCoords.z !== entityB.gameCoords.z ||
-      entityA.name !== entityB.name ||
-      entityA.distance !== entityB.distance
-    ) {
-      return false;
-    }
-  }
-
-  return true;
-}
+// --- UTILITIES ---
 
 export function rectsIntersect(rectA, rectB) {
   if (
@@ -46,7 +22,6 @@ export function rectsIntersect(rectA, rectB) {
   ) {
     return false;
   }
-
   return (
     rectA.x < rectB.x + rectB.width &&
     rectA.x + rectA.width > rectB.x &&
@@ -70,6 +45,8 @@ function postUpdateOnce(type, payload) {
   });
 }
 
+// --- BATTLE LIST PROCESSING (RESTORED DEDICATED LOGIC) ---
+
 export async function processBattleList(buffer, regions) {
   const battleListEntries = regions.battleList?.children?.entries?.list;
   if (!Array.isArray(battleListEntries) || battleListEntries.length === 0) {
@@ -81,11 +58,13 @@ export async function processBattleList(buffer, regions) {
     const validNameRegions = battleListEntries
       .filter((e) => e?.name && typeof e.name.x === 'number')
       .map((e) => e.name);
+
     if (validNameRegions.length === 0) {
       postUpdateOnce('uiValues/setBattleListEntries', []);
       return;
     }
 
+    // Create a "super region" that contains all nameplates to optimize the native call
     let minX = Infinity,
       minY = Infinity,
       maxX = -Infinity,
@@ -104,8 +83,8 @@ export async function processBattleList(buffer, regions) {
     };
 
     const monsterNameColors = regionDefinitions.battleList?.ocrColors || [];
-
     const allowedCharsForBattleList = CHAR_PRESETS.ALPHA + ' ';
+
     const ocrResults =
       recognizeText(
         buffer,
@@ -114,8 +93,10 @@ export async function processBattleList(buffer, regions) {
         allowedCharsForBattleList,
       ) || [];
 
+    // Map the OCR results back to the individual entries based on vertical position
     const monsterNames = battleListEntries.map((entry) => {
       if (!entry?.name) return '';
+      // Find the OCR line that is vertically aligned with the entry's nameplate
       const foundText = ocrResults.find(
         (ocrLine) => Math.abs(ocrLine.y - entry.name.y) <= 3,
       );
@@ -131,33 +112,38 @@ export async function processBattleList(buffer, regions) {
   }
 }
 
+// --- GENERIC OCR REGION PROCESSING ---
+
 export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
   const processingPromises = [];
 
   for (const regionKey of regionKeys) {
-    const config = OCR_REGION_CONFIGS[regionKey];
+    const cfg = OCR_REGION_CONFIGS[regionKey];
     const region = regions[regionKey];
-    if (!region || !config) continue;
+    if (!region || !cfg) continue;
 
     const processRegion = async () => {
       try {
         let rawData = [];
-        const colors = config.colors || [];
+        const colors = cfg.colors || [];
 
-        if (config.dictionary && Array.isArray(config.dictionary)) {
-          rawData = findText(buffer, region, colors, config.dictionary) || [];
+        if (cfg.dictionary && Array.isArray(cfg.dictionary)) {
+          rawData = findText(buffer, region, colors, cfg.dictionary) || [];
         } else {
           rawData =
-            recognizeText(buffer, region, colors, config.allowedChars) || [];
+            recognizeText(buffer, region, colors, cfg.allowedChars) || [];
         }
 
-        ocrRawUpdates[regionKey] = rawData;
+        if (regionKey === 'gameWorld') {
+          ocrRawUpdates[regionKey] = rawData;
+        }
 
-        // This is for simple UI elements, not the game world.
-        if (config.parser) {
-          const parsedData = config.parser(rawData);
-          if (parsedData) postUpdateOnce(config.storeAction, parsedData);
+        if (cfg.parser && cfg.storeAction.startsWith('uiValues/')) {
+          const parsedData = cfg.parser(rawData);
+          if (parsedData) {
+            postUpdateOnce(cfg.storeAction, parsedData);
+          }
         }
       } catch (ocrError) {
         console.error(`[OcrProcessing] OCR failed for ${regionKey}:`, ocrError);
@@ -172,70 +158,4 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
   if (Object.keys(ocrRawUpdates).length > 0) {
     postUpdateOnce('ocr/setOcrRegionsText', ocrRawUpdates);
   }
-  return ocrRawUpdates;
-}
-
-export async function processGameWorldEntities(
-  ocrData,
-  playerMinimapPosition,
-  regions,
-  tileSize,
-) {
-  if (
-    !regions?.gameWorld ||
-    !tileSize ||
-    !playerMinimapPosition ||
-    !Array.isArray(ocrData)
-  ) {
-    return [];
-  }
-
-  const entities = ocrData
-    .map((r) => {
-      const creatureScreenX = r.click.x;
-      const NAMEPLATE_TEXT_HEIGHT = 10;
-      const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
-      const nameplateCenterY = r.y + textHeight / 2;
-      const creatureScreenY = nameplateCenterY + tileSize.height / 2;
-
-      const gameCoords = getGameCoordinatesFromScreen(
-        creatureScreenX,
-        creatureScreenY,
-        playerMinimapPosition,
-        regions.gameWorld,
-        tileSize,
-      );
-
-      if (!gameCoords) {
-        return null;
-      }
-
-      gameCoords.x = Math.round(gameCoords.x);
-      gameCoords.y = Math.round(gameCoords.y);
-      gameCoords.z = playerMinimapPosition.z;
-
-      const distance = chebyshevDistance(gameCoords, playerMinimapPosition);
-
-      return {
-        name: r.text,
-        absoluteCoords: { x: creatureScreenX, y: creatureScreenY },
-        gameCoords: gameCoords,
-        distance: distance,
-      };
-    })
-    .filter(Boolean)
-    .filter(
-      (entity) =>
-        entity.gameCoords.x !== playerMinimapPosition.x ||
-        entity.gameCoords.y !== playerMinimapPosition.y,
-    );
-
-  entities.sort((a, b) => {
-    const distA = chebyshevDistance(a.gameCoords, playerMinimapPosition);
-    const distB = chebyshevDistance(b.gameCoords, playerMinimapPosition);
-    return distA - distB;
-  });
-
-  // This function correctly returns the data to core.js for filtering and posting.
-  return entities;
 }

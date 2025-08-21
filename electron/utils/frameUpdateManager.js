@@ -24,6 +24,46 @@ function rectsIntersect(rectA, rectB) {
 }
 
 /**
+ * Compute area of a rectangle safely.
+ */
+function rectArea(r) {
+  if (!r) return 0;
+  const w = Math.max(0, r.width | 0);
+  const h = Math.max(0, r.height | 0);
+  return w * h;
+}
+
+/**
+ * Get the intersection rectangle of two rects.
+ */
+function getIntersection(a, b) {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+
+  if (x2 > x1 && y2 > y1) {
+    return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+  }
+  return null;
+}
+
+/**
+ * Compute coverage ratio of mergedRects against a region.
+ */
+function computeCoverageFromMerged(mergedRects, region) {
+  if (!region || !mergedRects || mergedRects.length === 0) return 0;
+  let sum = 0;
+  for (const r of mergedRects) {
+    const inter = getIntersection(region, r);
+    if (inter) sum += rectArea(inter);
+  }
+  const total = rectArea(region);
+  if (total <= 0) return 0;
+  return Math.min(1, sum / total);
+}
+
+/**
  * Manages the accumulation and processing of dirty rectangles for a worker.
  * This class encapsulates the logic of collecting, merging, and checking dirty regions
  * to decide if a worker needs to perform its main processing task.
@@ -123,12 +163,13 @@ export class FrameUpdateManager {
 
     const mergedRects = this._mergeRects(rectsToProcess);
 
-    // Check for intersection
-    for (const dirtyRect of mergedRects) {
-      for (const region of this.regionsOfInterest) {
-        if (rectsIntersect(dirtyRect, region)) {
-          return true; // Found an intersection, process is needed
-        }
+    // Coverage threshold (default: 95%)
+    const MOVING_COVERAGE_THRESHOLD = 0.95;
+
+    for (const region of this.regionsOfInterest) {
+      const coverage = computeCoverageFromMerged(mergedRects, region);
+      if (coverage >= MOVING_COVERAGE_THRESHOLD) {
+        return true; // Region sufficiently covered by updates
       }
     }
 

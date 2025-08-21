@@ -1,3 +1,6 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/ocrWorker.js
+// --- UNCHANGED ---
+
 import { workerData } from 'worker_threads';
 import { start } from './ocr/core.js';
 import { IS_RUNNING_INDEX } from './ocr/config.js';

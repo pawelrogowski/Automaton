@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // --- Configuration ---
-const targetFolder = '../electron';
+const targetFolder = '../frontend/redux';
 const outputFile = 'combined_scripts.txt';
 // -------------------
 
