@@ -22,12 +22,9 @@ import {
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
-const MAIN_LOOP_INTERVAL = 25;
+const MAIN_LOOP_INTERVAL = 50;
 const STATE_CHANGE_POLL_INTERVAL = 5; // Copied from cavebotWorker.js
 const logger = createLogger({ info: true, error: true });
-
-// --- Configuration for movement smoothing ---
-const MOVE_COOLDOWN_MS = 300; // Cooldown in ms after a move command. Tune this value if movement feels sluggish or still oscillates.
 
 let isInitialized = false;
 let globalState = null;
@@ -37,9 +34,6 @@ let path = [];
 let pathfindingStatus = 0;
 let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
-
-// --- NEW: State variable to manage movement cooldown ---
-let isMoving = false;
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
@@ -198,13 +192,6 @@ async function performTargeting() {
     payload: dynamicGoal,
   });
 
-  // --- MODIFIED MOVEMENT LOGIC ---
-  // If we are already in the middle of a move, do not issue another command.
-  // This prevents the hyper-reactive loop and stops oscillation.
-  if (isMoving) {
-    return;
-  }
-
   if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
     const nextStep = path[0];
 
@@ -219,23 +206,18 @@ async function performTargeting() {
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
 
     if (dirKey) {
-      // 1. Set the flag to indicate we are starting a move.
-      isMoving = true;
-
-      // 2. Send the keypress to perform the move.
+      // Send the keypress to perform the move.
       keypress.sendKey(dirKey, globalState.global.display);
 
-      // 3. Wait for walk confirmation instead of a fixed timeout.
+      // Wait for walk confirmation.
       try {
         await awaitWalkConfirmation(
           lastPlayerPosCounter,
           lastPathDataCounter,
-          MOVE_COOLDOWN_MS, // Use MOVE_COOLDOWN_MS as the timeout for confirmation
+          400, // Use a reasonable timeout for confirmation, e.g., 300ms
         );
       } catch (error) {
         logger('error', `[TargetingWorker] Walk step failed: ${error.message}`);
-      } finally {
-        isMoving = false;
       }
     }
   }

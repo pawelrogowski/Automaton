@@ -1,7 +1,7 @@
 // Player's fixed position on the screen within the game world window (0-indexed).
 // This is a design constant representing the center of the viewport.
-const PLAYER_SCREEN_TILE_X = 7; // 8th tile from the left
-const PLAYER_SCREEN_TILE_Y = 5; // 6th tile from the top
+export const PLAYER_SCREEN_TILE_X = 7; // 8th tile from the left
+export const PLAYER_SCREEN_TILE_Y = 5; // 6th tile from the top
 
 /**
  * Translates absolute in-game world coordinates to absolute screen coordinates for clicking.

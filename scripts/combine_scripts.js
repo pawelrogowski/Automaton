@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // --- Configuration ---
-const targetFolder = '../frontend/redux';
+const targetFolder = '../nativeModules';
 const outputFile = 'combined_scripts.txt';
 // -------------------
 

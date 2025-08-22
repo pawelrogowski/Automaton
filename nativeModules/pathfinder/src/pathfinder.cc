@@ -239,32 +239,63 @@ namespace AStar {
             }
         }
 
-        if (candidates.empty()) return best_node;
+        if (candidates.empty()) return best_node; // No candidates found at desired distance
 
-        if (stance == "Reach") {
-            // Prioritize tiles that are diagonally furthest from the monster
-            // by maximizing the Manhattan distance from the monster, among adjacent tiles.
-            int max_manhattan_dist = -1;
-            for (const auto& cand : candidates) {
-                int manhattan_dist = std::abs(cand.x - monsterLocal.x) + std::abs(cand.y - monsterLocal.y);
-                if (manhattan_dist > max_manhattan_dist) {
-                    max_manhattan_dist = manhattan_dist;
-                    best_node = cand;
-                }
-            }
-        } else if (stance == "keepAway") {
-            // Prioritize tiles that are diagonally furthest from the monster
-            // by maximizing the Manhattan distance from the monster.
-            int max_manhattan_dist = -1;
-            for (const auto& cand : candidates) {
-                int manhattan_dist = std::abs(cand.x - monsterLocal.x) + std::abs(cand.y - monsterLocal.y);
-                if (manhattan_dist > max_manhattan_dist) {
-                    max_manhattan_dist = manhattan_dist;
-                    best_node = cand;
+        std::vector<Node> optimal_candidates;
+        int min_dist_from_player = INT_MAX;
+        int max_manhattan_dist_tiebreaker = -1;
+
+        for (const auto& cand : candidates) {
+            // Ensure candidate is walkable
+            int candIdx = indexOf(cand.x, cand.y);
+            int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[candIdx];
+            bool isWalkableNode = (tileAvoidance != 255) && ((tileAvoidance == -1) || isWalkable(cand.x, cand.y, mapData));
+            if (!isWalkableNode) continue; // Skip non-walkable candidates
+
+            int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
+            int manhattan_dist_from_monster = std::abs(cand.x - monsterLocal.x) + std::abs(cand.y - monsterLocal.y);
+
+            if (dist_from_player < min_dist_from_player) {
+                min_dist_from_player = dist_from_player;
+                max_manhattan_dist_tiebreaker = manhattan_dist_from_monster;
+                optimal_candidates.clear();
+                optimal_candidates.push_back(cand);
+            } else if (dist_from_player == min_dist_from_player) {
+                if (manhattan_dist_from_monster > max_manhattan_dist_tiebreaker) {
+                    max_manhattan_dist_tiebreaker = manhattan_dist_from_monster;
+                    optimal_candidates.clear();
+                    optimal_candidates.push_back(cand);
+                } else if (manhattan_dist_from_monster == max_manhattan_dist_tiebreaker) {
+                    optimal_candidates.push_back(cand);
                 }
             }
         }
 
+        if (optimal_candidates.empty()) return best_node; // No walkable candidates found
+
+        // Now, from the optimal_candidates, pick one.
+        // If playerLocal is among them, and there are other non-playerLocal candidates,
+        // prefer a non-playerLocal one.
+        Node final_best_node = optimal_candidates[0]; // Default to the first one
+
+        bool player_is_optimal_candidate = false;
+        for (const auto& cand : optimal_candidates) {
+            if (cand.x == playerLocal.x && cand.y == playerLocal.y && cand.z == playerLocal.z) {
+                player_is_optimal_candidate = true;
+                break;
+            }
+        }
+
+        if (player_is_optimal_candidate) {
+            // If player is an optimal candidate, try to find another optimal candidate that is not playerLocal
+            for (const auto& cand : optimal_candidates) {
+                if (!(cand.x == playerLocal.x && cand.y == playerLocal.y && cand.z == playerLocal.z)) {
+                    final_best_node = cand;
+                    break; // Found a non-playerLocal optimal candidate, pick it
+                }
+            }
+        }
+        best_node = final_best_node;
         return best_node;
     }
 }
