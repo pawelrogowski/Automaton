@@ -18,7 +18,7 @@
     - when chosing a path all visible creatures should be considered:
         - this means chosing path that would simultainously attempt to keep set distance from current target creature
         as well as avoiding running towards any other existing creatures, essentially avoiding all creatures at once.
-    - reduce the 'bounce effect' where targeting changes targets too often and it produces unpredictable paths that are unproductive. 
+    - reduce the 'bounce effect' where targeting changes targets too often and it produces unpredictable paths that are unproductive.
 
 
 4. Change the Targeting page controlls and targetingWorker logic to allow for more granural controlls.

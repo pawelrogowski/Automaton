@@ -29,6 +29,7 @@ import {
   addSpecialArea,
   removeSpecialArea,
 } from '../../redux/slices/cavebotSlice.js';
+import { MAX_WAYPOINTS_PER_SECTION } from '../../redux/slices/cavebotSlice.js';
 import { MINIMAP_COLORS } from './colors.js';
 
 // --- Constants ---
@@ -219,14 +220,16 @@ const Minimap = () => {
     creatures,
   } = useSelector((state) => {
     const currentSection = state.cavebot.currentSection;
+    const currentWaypoints =
+      state.cavebot.waypointSections[currentSection]?.waypoints || [];
     return {
       playerPosition: state.gameState.playerMinimapPosition,
       currentSection,
-      allWaypoints:
-        state.cavebot.waypointSections[currentSection]?.waypoints || [],
+      allWaypoints: currentWaypoints,
+      waypointCount: currentWaypoints.length, // Add waypointCount to state
       wptSelection: state.cavebot.wptSelection,
       wptId: state.cavebot.wptId,
-      allPathWaypoints: state.cavebot.pathWaypoints,
+      allPathWaypoints: state.pathfinder.pathWaypoints, // Corrected slice
       specialAreas: state.cavebot.specialAreas,
       creatures: state.targeting.creatures,
     };
@@ -994,26 +997,40 @@ const Minimap = () => {
 
             {rightClickMenu.stage === 1 && (
               <>
-                {WAYPOINT_TYPE_OPTIONS.map((option) => (
+                {waypointCount < MAX_WAYPOINTS_PER_SECTION ? (
+                  WAYPOINT_TYPE_OPTIONS.map((option) => (
+                    <div
+                      key={option.value}
+                      onClick={() => handleMenuItemClick(option.value)}
+                      onMouseEnter={() => handleMenuItemHover(option.value)}
+                      onMouseLeave={() => handleMenuItemHover(null)}
+                      style={{
+                        padding: '6px 15px',
+                        color: 'white',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        backgroundColor:
+                          rightClickMenu.hoveredItem === option.value
+                            ? '#007ACC'
+                            : 'transparent',
+                      }}
+                    >
+                      {`Add ${option.label}`}
+                    </div>
+                  ))
+                ) : (
                   <div
-                    key={option.value}
-                    onClick={() => handleMenuItemClick(option.value)}
-                    onMouseEnter={() => handleMenuItemHover(option.value)}
-                    onMouseLeave={() => handleMenuItemHover(null)}
                     style={{
                       padding: '6px 15px',
-                      color: 'white',
+                      color: '#FF5555',
                       fontSize: '13px',
-                      cursor: 'pointer',
-                      backgroundColor:
-                        rightClickMenu.hoveredItem === option.value
-                          ? '#007ACC'
-                          : 'transparent',
+                      fontWeight: 'bold',
+                      cursor: 'not-allowed',
                     }}
                   >
-                    {`Add ${option.label}`}
+                    Limit Reached ({MAX_WAYPOINTS_PER_SECTION})
                   </div>
-                ))}
+                )}
                 {rightClickMenu.targetWaypointId && (
                   <div
                     onClick={() => handleMenuItemClick('RemoveWaypoint')}

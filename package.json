@@ -1,5 +1,5 @@
 {
-  "name": "vscodium",
+  "name": "notion",
   "version": "1.3.8",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.vscodium",
-    "productName": "Vscodium",
+    "appId": "com.electron.notion",
+    "productName": "Notion",
     "directories": {
       "output": "dist",
       "buildResources": "build"

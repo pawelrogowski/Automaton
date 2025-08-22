@@ -3,6 +3,8 @@
 
 import { createSlice } from '@reduxjs/toolkit';
 
+const MAX_WAYPOINTS_PER_SECTION = 1000;
+
 const parseLegacyCoordinates = (payload) => {
   if (typeof payload.coordinates === 'string') {
     const newPayload = { ...payload };
@@ -68,6 +70,13 @@ const cavebotSlice = createSlice({
       state.scriptFeedback = action.payload;
     },
     addWaypoint: (state, action) => {
+      const currentWaypoints =
+        state.waypointSections[state.currentSection].waypoints;
+      if (currentWaypoints.length >= MAX_WAYPOINTS_PER_SECTION) {
+        console.warn('Waypoint limit reached for this section.');
+        return;
+      }
+
       const parsedPayload = parseLegacyCoordinates(action.payload);
       const newWaypoint = {
         type: 'Node',
@@ -81,8 +90,7 @@ const cavebotSlice = createSlice({
         ...parsedPayload,
         id: action.payload.id,
       };
-      const currentWaypoints =
-        state.waypointSections[state.currentSection].waypoints;
+
       const selectedIndex = currentWaypoints.findIndex(
         (waypoint) => waypoint.id === state.wptSelection,
       );
@@ -265,5 +273,7 @@ export const {
   setPathfinderMode,
   setDynamicTarget,
 } = cavebotSlice.actions;
+
+export { MAX_WAYPOINTS_PER_SECTION };
 
 export default cavebotSlice;

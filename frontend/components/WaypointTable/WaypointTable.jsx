@@ -22,6 +22,7 @@ import {
   updateSpecialArea,
   removeWaypoint,
 } from '../../redux/slices/cavebotSlice.js';
+import { MAX_WAYPOINTS_PER_SECTION } from '../../redux/slices/cavebotSlice.js';
 import { useTable, useBlockLayout, useResizeColumns } from 'react-table';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -361,24 +362,26 @@ const WaypointTable = () => {
     waypointSections,
     currentSectionId,
     waypoints,
+    waypointCount, // Add waypointCount to state
     wptSelection,
     wptId,
     specialAreas,
     playerPosition,
-  } = useSelector(
-    (state) => ({
+  } = useSelector((state) => {
+    const currentWaypoints =
+      state.cavebot.waypointSections[state.cavebot.currentSection]?.waypoints ||
+      [];
+    return {
       waypointSections: state.cavebot.waypointSections,
       currentSectionId: state.cavebot.currentSection,
-      waypoints:
-        state.cavebot.waypointSections[state.cavebot.currentSection]
-          ?.waypoints || [],
+      waypoints: currentWaypoints,
+      waypointCount: currentWaypoints.length, // Get waypoint count
       wptSelection: state.cavebot.wptSelection,
       wptId: state.cavebot.wptId,
       specialAreas: state.cavebot.specialAreas,
       playerPosition: state.gameState.playerMinimapPosition,
-    }),
-    shallowEqual,
-  );
+    };
+  }, shallowEqual);
 
   const sectionInputRef = useRef(null);
   const rowRefs = useRef(new Map());
@@ -757,6 +760,10 @@ const WaypointTable = () => {
                 viewMode === 'waypoints'
                   ? handleAddSectionClick
                   : handleAddSpecialAreaRow
+              }
+              disabled={
+                viewMode === 'waypoints' &&
+                waypointCount >= MAX_WAYPOINTS_PER_SECTION
               }
             >
               <Plus size={16} />
