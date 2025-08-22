@@ -213,6 +213,7 @@ const Minimap = () => {
     playerPosition,
     currentSection,
     allWaypoints,
+    waypointCount, // Ensure waypointCount is destructured here
     wptSelection,
     wptId,
     allPathWaypoints,

@@ -40,7 +40,7 @@ private:
     static Napi::FunctionReference constructor;
 
     // --- Private C++ Helper ---
-    Napi::Value _findPathInternal(Napi::Env env, const Node& start, const Node& end);
+    Napi::Value _findPathInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions);
 
     // --- Methods exposed to Node.js ---
     Napi::Value LoadMapData(const Napi::CallbackInfo& info);

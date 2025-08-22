@@ -211,7 +211,7 @@ const cavebotSlice = createSlice({
         z: 0,
         sizeX: 1,
         sizeY: 1,
-        avoidance: 10000,
+        avoidance: 100, // Standardized default avoidance cost
         type: 'cavebot',
         enabled: true,
         ...action.payload,

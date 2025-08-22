@@ -86,6 +86,7 @@ export function runPathfindingLogic(context) {
       result = pathfinderInstance.findPathToGoal(
         playerMinimapPosition,
         cavebot.dynamicTarget,
+        context.creaturePositions, // Pass creature positions
       );
     } else if (pathfinderMode === 'cavebot' && cavebot.wptId) {
       const { waypointSections, currentSection, wptId } = cavebot;
@@ -118,7 +119,7 @@ export function runPathfindingLogic(context) {
         result = pathfinderInstance.findPathSync(
           playerMinimapPosition,
           { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
-          { waypointType: targetWaypoint.type },
+          context.creaturePositions, // Pass creature positions
         );
       }
     }
