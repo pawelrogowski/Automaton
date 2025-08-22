@@ -225,7 +225,30 @@ function parseVipWidget(ocrData) {
 
 function parseGameWorldOcr(ocrData) {
   if (!Array.isArray(ocrData) || ocrData.length === 0) return [];
-  return ocrData.filter((item) => item && typeof item === 'object');
+  return ocrData.filter((item) => {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      !item.text ||
+      typeof item.text !== 'string'
+    ) {
+      return false;
+    }
+    const text = item.text.trim();
+    // Exclude entries that start with lowercase letters
+    if (
+      text.length > 0 &&
+      text[0] === text[0].toLowerCase() &&
+      text[0].match(/[a-z]/i)
+    ) {
+      return false;
+    }
+    // Exclude entries that length is shorter than 3 letters
+    if (text.length < 3) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export const regionParsers = {

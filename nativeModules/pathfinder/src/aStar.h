@@ -30,11 +30,23 @@ struct NodeHash {
 };
 
 namespace AStar {
-    std::vector<Node> findPath(
+    std::vector<Node> findPathWithCosts( // MODIFIED: Renamed and added creaturePositions
         const Node& start,
         const Node& end,
         const MapData& mapData,
+        const std::vector<int>& cost_grid,
+        const std::vector<Node>& creaturePositions, // NEW
         std::function<void()> onCancelled
+    );
+
+    Node findBestTargetTile( // NEW: Declare findBestTargetTile
+        const Node& player,
+        const Node& monster,
+        const std::string& stance,
+        int distance,
+        const MapData& mapData,
+        const std::vector<int>& cost_grid,
+        const std::vector<Node>& creaturePositions // NEW
     );
 }
 

@@ -30,6 +30,19 @@ export const PATH_WAYPOINT_SIZE = 3; // Each waypoint is x, y, z
 export const PATH_DATA_SAB_SIZE =
   PATH_WAYPOINTS_START_INDEX + MAX_PATH_WAYPOINTS * PATH_WAYPOINT_SIZE;
 
+// --- SharedArrayBuffer (SAB) Indices for Creature Positions ---
+export const CREATURE_COUNT_INDEX = 0;
+export const CREATURE_POS_UPDATE_COUNTER_INDEX = 1;
+export const CREATURE_WAYPOINTS_START_INDEX = 2;
+
+// --- Creature Data Configuration ---
+export const MAX_CREATURES = 50; // Max number of creatures to track
+export const CREATURE_WAYPOINT_SIZE = 3; // Each creature is x, y, z
+
+// The size calculation for creature positions
+export const CREATURE_POS_SAB_SIZE =
+  CREATURE_WAYPOINTS_START_INDEX + MAX_CREATURES * CREATURE_WAYPOINT_SIZE;
+
 // --- NEW: Definitive Status Codes for Pathfinder Communication ---
 // These codes are written by the pathfinder and read by the cavebot worker.
 export const PATH_STATUS_IDLE = 0; // Initial state, no calculation done yet.

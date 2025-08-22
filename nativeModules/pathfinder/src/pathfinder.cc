@@ -28,6 +28,7 @@ namespace AStar {
     static constexpr int BASE_MOVE_COST = 10;
     static constexpr int DIAGONAL_MOVE_COST = 25;
     static constexpr int DIAGONAL_TIE_PENALTY = 1;
+    static constexpr int CREATURE_AVOIDANCE_COST = 1000; // NEW: High cost for creature tiles
 
     bool isWalkable(int x, int y, const MapData& mapData) {
         if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
@@ -80,7 +81,7 @@ namespace AStar {
         }
     }
 
-    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, std::function<void()> onCancelled) {
+    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) { // MODIFIED
         std::vector<Node> path;
 
         int W = mapData.width;
@@ -169,7 +170,16 @@ namespace AStar {
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost;
+
+                // NEW: Add creature avoidance cost
+                int creatureCost = 0;
+                for (const auto& creature : creaturePositions) {
+                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
+                        creatureCost = CREATURE_AVOIDANCE_COST;
+                        break;
+                    }
+                }
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost; // MODIFIED
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
@@ -185,7 +195,7 @@ namespace AStar {
         return path;
     }
 
-    Node findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid) {
+    Node findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions) { // MODIFIED
         Node best_node = {-1, -1, 0, 0, nullptr, 0};
         Node playerLocal = {player.x - mapData.minX, player.y - mapData.minY, 0, 0, nullptr, player.z};
         Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
@@ -409,7 +419,7 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
     return env.Undefined();
 }
 
-Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, const Node& end) {
+Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions) { // MODIFIED
     auto startTime = std::chrono::high_resolution_clock::now();
     Napi::Object result = Napi::Object::New(env);
     std::string searchStatus = "UNKNOWN";
@@ -430,10 +440,10 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
     } else {
         auto it_cache = this->cost_grid_cache.find(start.z);
         if (it_cache != this->cost_grid_cache.end()) {
-            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, it_cache->second, [](){});
+            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, it_cache->second, creaturePositions, [](){}); // MODIFIED
         } else {
             std::vector<int> empty_costs;
-            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, empty_costs, [](){});
+            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, empty_costs, creaturePositions, [](){}); // MODIFIED
         }
 
         if (!pathResult.empty()) {
@@ -472,8 +482,8 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
 
 Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsObject()) {
-        Napi::TypeError::New(env, "Expected start and end objects as arguments").ThrowAsJavaScriptException();
+    if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsObject() || !info[2].IsArray()) { // MODIFIED
+        Napi::TypeError::New(env, "Expected start and end objects, and creature positions array as arguments").ThrowAsJavaScriptException(); // MODIFIED
         return env.Undefined();
     }
     Napi::Object startObj = info[0].As<Napi::Object>();
@@ -481,13 +491,25 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
     Napi::Object endObj = info[1].As<Napi::Object>();
     Node end = {endObj.Get("x").As<Napi::Number>().Int32Value(), endObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, endObj.Get("z").As<Napi::Number>().Int32Value()};
 
-    return _findPathInternal(env, start, end);
+    Napi::Array creaturePositionsArray = info[2].As<Napi::Array>(); // NEW
+    std::vector<Node> creaturePositions; // NEW
+    for (uint32_t i = 0; i < creaturePositionsArray.Length(); ++i) { // NEW
+        Napi::Object creatureObj = creaturePositionsArray.Get(i).As<Napi::Object>(); // NEW
+        creaturePositions.push_back({ // NEW
+            creatureObj.Get("x").As<Napi::Number>().Int32Value(), // NEW
+            creatureObj.Get("y").As<Napi::Number>().Int32Value(), // NEW
+            0, 0, nullptr, // NEW
+            creatureObj.Get("z").As<Napi::Number>().Int32Value() // NEW
+        }); // NEW
+    } // NEW
+
+    return _findPathInternal(env, start, end, creaturePositions); // MODIFIED
 }
 
 Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 2 || !info[0].IsObject() || !info[1].IsObject()) {
-        Napi::TypeError::New(env, "Expected start node and goal object").ThrowAsJavaScriptException();
+    if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsObject() || !info[2].IsArray()) { // MODIFIED
+        Napi::TypeError::New(env, "Expected start node, goal object, and creature positions array").ThrowAsJavaScriptException(); // MODIFIED
         return env.Undefined();
     }
 
@@ -500,6 +522,18 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     Napi::Object monsterPosObj = goalObj.Get("targetCreaturePos").As<Napi::Object>();
     Node monster = {monsterPosObj.Get("x").As<Napi::Number>().Int32Value(), monsterPosObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, monsterPosObj.Get("z").As<Napi::Number>().Int32Value()};
 
+    Napi::Array creaturePositionsArray = info[2].As<Napi::Array>(); // NEW
+    std::vector<Node> creaturePositions; // NEW
+    for (uint32_t i = 0; i < creaturePositionsArray.Length(); ++i) { // NEW
+        Napi::Object creatureObj = creaturePositionsArray.Get(i).As<Napi::Object>(); // NEW
+        creaturePositions.push_back({ // NEW
+            creatureObj.Get("x").As<Napi::Number>().Int32Value(), // NEW
+            creatureObj.Get("y").As<Napi::Number>().Int32Value(), // NEW
+            0, 0, nullptr, // NEW
+            creatureObj.Get("z").As<Napi::Number>().Int32Value() // NEW
+        }); // NEW
+    } // NEW
+
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         Napi::Error::New(env, "Map data for this Z-level is not loaded.").ThrowAsJavaScriptException();
@@ -510,7 +544,7 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     auto it_cache = this->cost_grid_cache.find(start.z);
     const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
 
-    Node best_target_tile = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid);
+    Node best_target_tile = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid, creaturePositions); // MODIFIED
 
     if (best_target_tile.x == -1) {
         Napi::Object result = Napi::Object::New(env);
@@ -523,7 +557,7 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     }
 
     Node final_end_node = {best_target_tile.x + mapData.minX, best_target_tile.y + mapData.minY, 0, 0, nullptr, best_target_tile.z};
-    return _findPathInternal(env, start, final_end_node);
+    return _findPathInternal(env, start, final_end_node, creaturePositions); // MODIFIED
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {

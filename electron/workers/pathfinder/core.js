@@ -13,6 +13,11 @@ import {
   PLAYER_Y_INDEX,
   PLAYER_Z_INDEX,
   PLAYER_POS_UPDATE_COUNTER_INDEX,
+  CREATURE_COUNT_INDEX, // NEW
+  CREATURE_POS_UPDATE_COUNTER_INDEX, // NEW
+  CREATURE_WAYPOINTS_START_INDEX, // NEW
+  MAX_CREATURES, // NEW
+  CREATURE_WAYPOINT_SIZE, // NEW
 } from '../sharedConstants.js';
 
 const logger = createLogger({ info: true, error: true, debug: false });
@@ -25,11 +30,13 @@ const logicContext = {
   lastPlayerPosKey: null,
   lastTargetWptId: null,
   lastJsonForType: new Map(),
+  lastCreaturePosCounter: -1, // NEW
 };
 
-const { playerPosSAB, pathDataSAB } = workerData;
+const { playerPosSAB, pathDataSAB, creaturePosSAB } = workerData; // MODIFIED
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
+const creaturePosArray = creaturePosSAB ? new Int32Array(creaturePosSAB) : null; // NEW
 
 const perfTracker = new PerformanceTracker();
 let lastPerfReportTime = Date.now();
@@ -120,7 +127,50 @@ function handleMessage(message) {
       return;
     }
 
-    // 3. EXECUTION: Run the pathfinding logic with the synchronized snapshot.
+    // 3. Read creature positions from SAB
+    let creaturePositions = [];
+    if (creaturePosArray) {
+      const newCreaturePosCounter = Atomics.load(
+        creaturePosArray,
+        CREATURE_POS_UPDATE_COUNTER_INDEX,
+      );
+      if (newCreaturePosCounter !== logicContext.lastCreaturePosCounter) {
+        const creatureCount = Atomics.load(
+          creaturePosArray,
+          CREATURE_COUNT_INDEX,
+        );
+        for (let i = 0; i < creatureCount; i++) {
+          const offset =
+            CREATURE_WAYPOINTS_START_INDEX + i * CREATURE_WAYPOINT_SIZE;
+          creaturePositions.push({
+            x: Atomics.load(creaturePosArray, offset + 0),
+            y: Atomics.load(creaturePosArray, offset + 1),
+            z: Atomics.load(creaturePosArray, offset + 2),
+          });
+        }
+        logicContext.lastCreaturePosCounter = newCreaturePosCounter;
+      } else {
+        // If counter hasn't changed, use the last known creature positions
+        // (assuming logicContext could store them, but for now, re-read if needed or pass empty)
+        // For simplicity, we'll just pass an empty array if no update, or re-read if we want to be sure.
+        // For this implementation, we'll re-read if the counter hasn't changed, but this could be optimized.
+        const creatureCount = Atomics.load(
+          creaturePosArray,
+          CREATURE_COUNT_INDEX,
+        );
+        for (let i = 0; i < creatureCount; i++) {
+          const offset =
+            CREATURE_WAYPOINTS_START_INDEX + i * CREATURE_WAYPOINT_SIZE;
+          creaturePositions.push({
+            x: Atomics.load(creaturePosArray, offset + 0),
+            y: Atomics.load(creaturePosArray, offset + 1),
+            z: Atomics.load(creaturePosArray, offset + 2),
+          });
+        }
+      }
+    }
+
+    // 4. EXECUTION: Run the pathfinding logic with the synchronized snapshot.
     const synchronizedState = {
       ...state,
       gameState: { ...state.gameState, playerMinimapPosition },
@@ -132,6 +182,7 @@ function handleMessage(message) {
       pathfinderInstance,
       logger,
       pathDataArray,
+      creaturePositions, // NEW: Pass creature positions
       throttleReduxUpdate,
     });
 

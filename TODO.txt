@@ -1,0 +1,42 @@
+1.limit number of possible waypoints in a section to 1000:
+    - relevant parts are redux state, react components(minimap, waypoint table)
+    - handle the buttons in minimap if number is already 1000 so they display limit reached
+      instead of allowing for creation of more waypoint
+
+2. standarize special areas:
+    - special area avoidance parameter should reflect number of moves required to avoid it.
+        - for example:
+            - special area avoidance 0 would mean no avoidance, we can omit even passing it to pathfinder.
+            - avoidance of 1 would mean stepping on it would cost  additional 1 move for the sake of pathfinder algorithm.
+            - avoidance of 100 would mean stepping on it would cost additional 100 moves
+            - to allow for total avoidance passing 255 would tottaly make tile unwalkable
+            - all creature positions passed to pathfinder should be treated as special special areas:
+                - it should allow for walking through creature tiles only if no other path is available.
+
+3. Improve pathfinder and targetingWorker as well as pathfinder native module for finding best route to avoid creatures while running away:
+    - the distance param we use to keep away, fe. 4 should mean that we want to keep 4 tiles chebyshev distance between us and the creature.
+    - when chosing a path all visible creatures should be considered:
+        - this means chosing path that would simultainously attempt to keep set distance from current target creature
+        as well as avoiding running towards any other existing creatures, essentially avoiding all creatures at once.
+    - reduce the 'bounce effect' where targeting changes targets too often and it produces unpredictable paths that are unproductive. 
+
+
+4. Change the Targeting page controlls and targetingWorker logic to allow for more granural controlls.
+    - implement targeting list where user would input names of creatures to consider as targets:
+        - each creature should have it own stance: "Reach","Keep Away","Ignore" and possible more in the future.
+        - each creature should have it's own distance parameter.
+        - the targeting worker should now mark the targeted creature with rightClick in the gameWorld using its absolute coordinates window:
+            - to avoid misclicks it should rightClick only immidiately after creature absolute coordinate update.
+            - the mouse controll module is used in luaApi, we just need to adapt it to targetingWorker.
+
+5. limit the total distance in pathfinder native module to 255 moves.
+
+6. Improve the special area controlls:
+    - allow for new mode parameter for special areas "mode" it would be "fill","border" with "fill" being default and just the way it works now:
+        - if special area has width or height of 1 or 2 then it would not matter.
+        - if special area has width or height bigger than 2 and it's to "border" then only border tiles of special area should be considered for avoidance
+        while the center should not have any avoidance - this would allow for creating "box" special areas .
+        - update the waypointTable and minimap components:
+            - to have additional mode field in waypointTable.
+            - to have additional resize option in special area menu:
+                - when clicked it should allow for resizing the special area with cursor on the minimap - left click should finilize the resize.

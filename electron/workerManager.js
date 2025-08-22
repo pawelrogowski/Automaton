@@ -14,6 +14,7 @@ import { playSound } from './globalShortcuts.js';
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
+  CREATURE_POS_SAB_SIZE, // NEW
 } from './workers/sharedConstants.js';
 
 const log = createLogger();
@@ -182,7 +183,16 @@ class WorkerManager {
     const pathDataSAB = new SharedArrayBuffer(
       PATH_DATA_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
-    this.sharedData = { imageSAB, syncSAB, playerPosSAB, pathDataSAB };
+    const creaturePosSAB = new SharedArrayBuffer( // NEW
+      CREATURE_POS_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
+    this.sharedData = {
+      imageSAB,
+      syncSAB,
+      playerPosSAB,
+      pathDataSAB,
+      creaturePosSAB,
+    }; // MODIFIED
     log('info', '[Worker Manager] Created SharedArrayBuffers.');
   }
 
@@ -339,11 +349,19 @@ class WorkerManager {
         'cavebotWorker',
         'targetingWorker',
       ].includes(name);
+      const needsCreaturePosSAB = [
+        // NEW
+        'creatureMonitor',
+        'pathfinderWorker',
+      ].includes(name);
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedData : null,
         playerPosSAB: needsPlayerPosSAB ? this.sharedData.playerPosSAB : null,
         pathDataSAB: needsPathDataSAB ? this.sharedData.pathDataSAB : null,
+        creaturePosSAB: needsCreaturePosSAB
+          ? this.sharedData.creaturePosSAB
+          : null, // NEW
         enableMemoryLogging: true,
       };
       if (needsSharedScreen) {
