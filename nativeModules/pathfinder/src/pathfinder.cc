@@ -28,7 +28,12 @@ namespace AStar {
     static constexpr int BASE_MOVE_COST = 10;
     static constexpr int DIAGONAL_MOVE_COST = 25;
     static constexpr int DIAGONAL_TIE_PENALTY = 1;
-    static constexpr int CREATURE_AVOIDANCE_COST = 1000; // NEW: High cost for creature tiles
+    static const int INF_COST = 0x3f3f3f3f; // Moved declaration to here
+
+    // Cost for a non-target creature tile. Making it extremely high but not INF_COST
+    // ensures it's a last resort but doesn't break the algorithm.
+    static constexpr int CREATURE_BLOCK_COST = 1000000;
+
 
     bool isWalkable(int x, int y, const MapData& mapData) {
         if (x < 0 || x >= mapData.width || y < 0 || y >= mapData.height) return false;
@@ -49,8 +54,6 @@ namespace AStar {
         int mn = std::min(dx, dy);
         return D * (dx + dy) + (D2 - 2 * D) * mn;
     }
-
-    static const int INF_COST = 0x3f3f3f3f;
 
     struct ScratchBuffers {
         std::vector<int> gScore;
@@ -161,28 +164,34 @@ namespace AStar {
                 }
 
                 bool isWalkableByMap = isWalkable(nx, ny, mapData);
-                // If tileAvoidance is 255, it means totally unwalkable, so we skip it.
-                // If tileAvoidance is 0 (no special area cost) AND the tile is not walkable by map data,
-                // AND it's not the end tile (which we might need to step on to reach), then we skip it.
-                // This allows for walking through "soft" special areas (avoidance < 255) even if they are technically unwalkable by map data,
-                // but still respects hard unwalkable areas (avoidance = 255) and the map's base unwalkability for non-special areas.
-                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance == 0 && !(nx == end.x && ny == end.y))) {
+
+                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(nx == end.x && ny == end.y))) {
                     continue;
                 }
+
+                // *** START REVISED CREATURE LOGIC ***
+                bool isCreatureTile = false;
+                for (const auto& creature : creaturePositions) {
+                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
+                        isCreatureTile = true;
+                        break;
+                    }
+                }
+
+                int creatureCost = 0;
+                // If the tile has a creature and it's NOT our final destination, add a massive penalty.
+                // This makes the tile effectively unwalkable unless there's no other choice.
+                if (isCreatureTile && !(nx == end.x && ny == end.y)) {
+                    creatureCost = CREATURE_BLOCK_COST;
+                }
+                // *** END REVISED CREATURE LOGIC ***
+
 
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
-                // NEW: Add creature avoidance cost
-                int creatureCost = 0;
-                for (const auto& creature : creaturePositions) {
-                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
-                        creatureCost = CREATURE_AVOIDANCE_COST;
-                        break;
-                    }
-                }
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost; // MODIFIED
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
@@ -203,14 +212,6 @@ namespace AStar {
         Node playerLocal = {player.x - mapData.minX, player.y - mapData.minY, 0, 0, nullptr, player.z};
         Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
 
-        // --- UNIFIED "STAND STILL" CHECK ---
-        // This is the most critical fix. It checks if the player is ALREADY in an optimal position
-        // for either stance before doing any expensive calculations. This prevents all orbiting/pacing.
-        // The decision to "stand still" should be made by the caller (JS side)
-        // after evaluating the path to the best target tile.
-        // This function should always find the best possible target tile.
-
-        // If we are not in an optimal position, proceed to find one.
         std::queue<std::pair<Node, int>> q;
         std::unordered_set<int> visited;
         auto indexOf = [&](int x, int y) { return y * mapData.width + x; };
@@ -229,7 +230,6 @@ namespace AStar {
                 candidates.push_back(current);
             }
 
-            // Optimization: stop searching once we've passed the desired distance for either stance.
             if ((stance == "Reach" && dist >= 1) || (stance == "keepAway" && dist >= distance)) {
                 continue;
             }
@@ -241,11 +241,7 @@ namespace AStar {
                     if (AStar::inBounds(neighbor.x, neighbor.y, mapData)) {
                         int neighborIdx = indexOf(neighbor.x, neighbor.y);
                         int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[neighborIdx];
-                        // A tile is walkable if its avoidance is not 255 (totally unwalkable)
-                        // AND (it's a normal walkable tile OR it's a special area with avoidance < 255).
-                        // A tile is walkable if its avoidance is not 255 (totally unwalkable)
-                        // AND (it's a normal walkable tile OR it's a special area with avoidance < 255).
-                        // Also, check if it's a creature position.
+
                         bool isCreatureTile = false;
                         for (const auto& creature : creaturePositions) {
                             if (creature.x - mapData.minX == neighbor.x && creature.y - mapData.minY == neighbor.y && creature.z == player.z) {
@@ -253,7 +249,7 @@ namespace AStar {
                                 break;
                             }
                         }
-                        bool isWalkableNode = (tileAvoidance != 255) && (isWalkable(neighbor.x, neighbor.y, mapData) || (tileAvoidance > 0 && tileAvoidance < 255)) && !isCreatureTile;
+                        bool isWalkableNode = (tileAvoidance != 255) && isWalkable(neighbor.x, neighbor.y, mapData) && !isCreatureTile;
 
                         if (isWalkableNode && visited.find(neighborIdx) == visited.end()) {
                             visited.insert(neighborIdx);
@@ -271,7 +267,7 @@ namespace AStar {
         int max_manhattan_dist_tiebreaker = -1;
 
         for (const auto& cand : candidates) {
-            // Ensure candidate is walkable and not a creature tile
+            // Ensure candidate is walkable for target finding and not a creature tile
             int candIdx = indexOf(cand.x, cand.y);
             int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[candIdx];
             bool isCreatureTile = false;
@@ -281,7 +277,7 @@ namespace AStar {
                     break;
                 }
             }
-            bool isWalkableNode = (tileAvoidance != 255) && (isWalkable(cand.x, cand.y, mapData) || (tileAvoidance > 0 && tileAvoidance < 255)) && !isCreatureTile;
+            bool isWalkableNode = (tileAvoidance != 255) && isWalkable(cand.x, cand.y, mapData) && !isCreatureTile;
             if (!isWalkableNode) continue; // Skip non-walkable or creature candidates
 
             int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
@@ -305,9 +301,6 @@ namespace AStar {
 
         if (optimal_candidates.empty()) return best_node; // No walkable candidates found
 
-        // Now, from the optimal_candidates, pick one.
-        // If playerLocal is among them, and there are other non-playerLocal candidates,
-        // prefer a non-playerLocal one.
         Node final_best_node = optimal_candidates[0]; // Default to the first one
 
         bool player_is_optimal_candidate = false;
@@ -318,9 +311,6 @@ namespace AStar {
             }
         }
 
-        // If player is an optimal candidate, and there are other non-playerLocal candidates,
-        // prefer a non-playerLocal one. This prevents the bot from trying to move to its own tile
-        // if it's already on an optimal tile but there are other equally optimal tiles available.
         if (player_is_optimal_candidate) {
             for (const auto& cand : optimal_candidates) {
                 if (!(cand.x == playerLocal.x && cand.y == playerLocal.y && cand.z == playerLocal.z)) {

@@ -1,5 +1,4 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/core.js
-// --- Definitive Version with Input Synchronization to Eliminate Race Conditions ---
 
 import { parentPort, workerData } from 'worker_threads';
 import Pathfinder from 'pathfinder-native';
@@ -12,17 +11,10 @@ import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
   PLAYER_Z_INDEX,
-  PLAYER_POS_UPDATE_COUNTER_INDEX,
-  CREATURE_COUNT_INDEX, // NEW
-  CREATURE_POS_UPDATE_COUNTER_INDEX, // NEW
-  CREATURE_WAYPOINTS_START_INDEX, // NEW
-  MAX_CREATURES, // NEW
-  CREATURE_WAYPOINT_SIZE, // NEW
 } from '../sharedConstants.js';
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
-// --- Worker State ---
 let state = null;
 let pathfinderInstance = null;
 
@@ -30,13 +22,12 @@ const logicContext = {
   lastPlayerPosKey: null,
   lastTargetWptId: null,
   lastJsonForType: new Map(),
-  lastCreaturePosCounter: -1, // NEW
+  lastCreatureDataHash: null, // NEW: Cache based on creature data hash
 };
 
-const { playerPosSAB, pathDataSAB, creaturePosSAB } = workerData; // MODIFIED
+const { playerPosSAB, pathDataSAB } = workerData; // creaturePosSAB is removed
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
-const creaturePosArray = creaturePosSAB ? new Int32Array(creaturePosSAB) : null; // NEW
 
 const perfTracker = new PerformanceTracker();
 let lastPerfReportTime = Date.now();
@@ -86,10 +77,8 @@ function logPerformanceReport() {
   }
 }
 
-// --- MODIFIED: The main message handler is now the core of the synchronization logic ---
 function handleMessage(message) {
   try {
-    // 1. Update the worker's state from the main thread. This is our primary trigger.
     if (message.type === 'state_diff') {
       state = { ...state, ...message.payload };
     } else if (message.type === undefined) {
@@ -98,18 +87,14 @@ function handleMessage(message) {
       if (reduxUpdateTimeout) clearTimeout(reduxUpdateTimeout);
       return;
     } else {
-      // Ignore other message types
       return;
     }
 
-    // Ensure we have a valid state to work with
-    if (!state || !state.gameState) {
+    if (!state || !state.gameState || !state.targeting) {
+      // Ensure targeting slice exists
       return;
     }
 
-    // 2. SYNCHRONIZATION POINT: As soon as we get a state update,
-    //    perform a fresh, blocking read of the player's position from the SAB.
-    //    This creates a consistent "snapshot" of the game state.
     let playerMinimapPosition = null;
     if (playerPosArray) {
       playerMinimapPosition = {
@@ -118,71 +103,26 @@ function handleMessage(message) {
         z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
       };
     } else {
-      // Fallback for safety, though SAB should always be present
       playerMinimapPosition = state.gameState.playerMinimapPosition;
     }
 
-    // If we don't have a valid position, we can't do anything.
     if (!playerMinimapPosition || typeof playerMinimapPosition.x !== 'number') {
       return;
     }
 
-    // 3. Read creature positions from SAB
-    let creaturePositions = [];
-    if (creaturePosArray) {
-      const newCreaturePosCounter = Atomics.load(
-        creaturePosArray,
-        CREATURE_POS_UPDATE_COUNTER_INDEX,
-      );
-      if (newCreaturePosCounter !== logicContext.lastCreaturePosCounter) {
-        const creatureCount = Atomics.load(
-          creaturePosArray,
-          CREATURE_COUNT_INDEX,
-        );
-        for (let i = 0; i < creatureCount; i++) {
-          const offset =
-            CREATURE_WAYPOINTS_START_INDEX + i * CREATURE_WAYPOINT_SIZE;
-          creaturePositions.push({
-            x: Atomics.load(creaturePosArray, offset + 0),
-            y: Atomics.load(creaturePosArray, offset + 1),
-            z: Atomics.load(creaturePosArray, offset + 2),
-          });
-        }
-        logicContext.lastCreaturePosCounter = newCreaturePosCounter;
-      } else {
-        // If counter hasn't changed, use the last known creature positions
-        // (assuming logicContext could store them, but for now, re-read if needed or pass empty)
-        // For simplicity, we'll just pass an empty array if no update, or re-read if we want to be sure.
-        // For this implementation, we'll re-read if the counter hasn't changed, but this could be optimized.
-        const creatureCount = Atomics.load(
-          creaturePosArray,
-          CREATURE_COUNT_INDEX,
-        );
-        for (let i = 0; i < creatureCount; i++) {
-          const offset =
-            CREATURE_WAYPOINTS_START_INDEX + i * CREATURE_WAYPOINT_SIZE;
-          creaturePositions.push({
-            x: Atomics.load(creaturePosArray, offset + 0),
-            y: Atomics.load(creaturePosArray, offset + 1),
-            z: Atomics.load(creaturePosArray, offset + 2),
-          });
-        }
-      }
-    }
+    // REMOVED: All logic reading from creaturePosSAB is gone.
 
-    // 4. EXECUTION: Run the pathfinding logic with the synchronized snapshot.
     const synchronizedState = {
       ...state,
       gameState: { ...state.gameState, playerMinimapPosition },
     };
 
     const duration = runPathfindingLogic({
-      ...logicContext,
+      logicContext: logicContext,
       state: synchronizedState,
       pathfinderInstance,
       logger,
       pathDataArray,
-      creaturePositions, // NEW: Pass creature positions
       throttleReduxUpdate,
     });
 

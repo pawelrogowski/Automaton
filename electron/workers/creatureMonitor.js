@@ -1,69 +1,55 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/creatureMonitor.js
-//start file
-// creatureMonitor.dropin.js
-// Event-driven worker for creature detection: processes only on state updates, no polling, no visual offset tracking, no dirty rects, no logs.
 
 import { parentPort, workerData } from 'worker_threads';
-import findTarget from 'find-target-native'; // Import findTarget
-import { calculateDistance } from '../utils/distance.js'; // Import calculateDistance
+import findTarget from 'find-target-native';
+import { calculateDistance } from '../utils/distance.js';
 import {
   getGameCoordinatesFromScreen,
   PLAYER_SCREEN_TILE_X,
   PLAYER_SCREEN_TILE_Y,
 } from '../utils/gameWorldClickTranslator.js';
+// REMOVED: SAB constants for creatures are no longer needed here
 
 // --- Shared data & SAB views ---
 const { sharedData } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
-const { imageSAB, syncSAB, playerPosSAB } = sharedData;
+const { imageSAB, syncSAB, playerPosSAB } = sharedData; // creaturePosSAB is removed
 const syncArray = new Int32Array(syncSAB);
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
-const sharedBufferView = Buffer.from(imageSAB); // Used for findTarget
+const sharedBufferView = Buffer.from(imageSAB);
 
-// shared array indices - keep in sync with your main process
 const IS_RUNNING_INDEX = 3;
 const PLAYER_X_INDEX = 0;
 const PLAYER_Y_INDEX = 1;
 const PLAYER_Z_INDEX = 2;
 
-// --- Configuration Constants for Mitigation ---
-const PLAYER_ANIMATION_FREEZE_MS = 150; // Duration of strict freezing after playerMinimapPosition changes
-const PLAYER_SETTLING_GRACE_PERIOD_MS = 500; // Duration *after* the animation freeze, where we still prioritize stability.
-const STICKY_SNAP_THRESHOLD_TILES = 0.4; // How close a fractional coordinate must be to the last reported integer tile to stick to it
-const JITTER_FILTER_TIME_MS = 100; // Time window for detecting rapid back-and-forth flickers
-const JITTER_HISTORY_LENGTH = 3; // Number of history entries to keep for jitter filtering
+// --- Config, State, and Helpers (largely unchanged, but SAB logic is gone) ---
+const PLAYER_ANIMATION_FREEZE_MS = 150;
+const PLAYER_SETTLING_GRACE_PERIOD_MS = 500;
+const STICKY_SNAP_THRESHOLD_TILES = 0.4;
+const JITTER_FILTER_TIME_MS = 100;
+const JITTER_HISTORY_LENGTH = 3;
 
-// --- State ---
 let currentState = null;
 let isInitialized = false;
 let isShuttingDown = false;
 let lastSentCreatures = [];
 let lastSentTarget = null;
 
-// --- NEW: State for Positional Change-Triggered Cooldown ---
-let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 }; // Player position from previous cycle
-let playerAnimationFreezeEndTime = 0; // Timestamp when the strict animation freeze ends
-let playerSettlingGracePeriodEndTime = 0; // Timestamp when the longer settling period ends
-let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 }; // Player position used as reference during freeze/cooldown
+let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
+let playerAnimationFreezeEndTime = 0;
+let playerSettlingGracePeriodEndTime = 0;
+let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 
-// Map to store the last *reported stable integer tile* for each creature.
-const creatureLastReportedGameCoords = new Map(); // Map<creatureName, {x, y, z}>
+const creatureLastReportedGameCoords = new Map();
+const creatureLastCalculatedFloatCoords = new Map();
+const creatureReportHistory = new Map();
 
-// Map to store the last *calculated fractional coordinates* for each creature.
-const creatureLastCalculatedFloatCoords = new Map(); // Map<creatureName, {x_float, y_float}>
-
-// Map to store a short history of reported coordinates for jitter filtering.
-const creatureReportHistory = new Map(); // Map<creatureName, Array<{coords: {x,y,z}, timestamp: number}>>
-
-// --- Helper to check if two positions are identical ---
 function arePositionsEqual(pos1, pos2) {
+  if (!pos1 || !pos2) return false;
   return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
 }
 
-/**
- * Deep comparison for entity arrays/lists to detect meaningful changes.
- * Only compares gameCoords for stability.
- */
 function deepCompareEntities(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -73,7 +59,6 @@ function deepCompareEntities(a, b) {
     for (let i = 0; i < a.length; i++) {
       const entityA = a[i];
       const entityB = b[i];
-      // Only compare gameCoords for stability, ignore absoluteCoords and distance for this check
       if (
         !entityA.gameCoords ||
         !entityB.gameCoords ||
@@ -81,13 +66,11 @@ function deepCompareEntities(a, b) {
       ) {
         return false;
       }
-      // Optionally compare name if it's part of identity
       if (entityA.name !== entityB.name) return false;
     }
     return true;
   }
 
-  // For single target comparison
   if (typeof a === 'object' && typeof b === 'object') {
     if (
       !a.gameCoordinates ||
@@ -97,22 +80,18 @@ function deepCompareEntities(a, b) {
       return false;
     }
     if (a.name !== b.name) return false;
-    // Other fields like distance, absoluteCoords might fluctuate, focus on gameCoordinates
     return true;
   }
-
   return a === b;
 }
 
-// --- process OCR -> game coords with mitigation logic ---
 function processGameWorldEntities(
   ocrData,
   currentPlayerMinimapPosition,
   regions,
   tileSize,
   now,
-  isPlayerInAnimationFreeze, // NEW: Pass animation freeze state
-  isPlayerInSettlingGracePeriod, // NEW: Pass settling grace period state
+  isPlayerInAnimationFreeze,
 ) {
   if (
     !regions?.gameWorld ||
@@ -122,7 +101,6 @@ function processGameWorldEntities(
   )
     return [];
 
-  // Dynamically calculate player's fixed screen center for distance calculation.
   const playerFixedScreenCenterX =
     regions.gameWorld.x + (PLAYER_SCREEN_TILE_X + 0.5) * tileSize.width;
   const playerFixedScreenCenterY =
@@ -131,7 +109,6 @@ function processGameWorldEntities(
   const entities = ocrData
     .map((r) => {
       const creatureName = r.text;
-
       const creatureScreenX = r.click.x;
       const NAMEPLATE_TEXT_HEIGHT = 10;
       const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
@@ -142,31 +119,22 @@ function processGameWorldEntities(
         finalGameY,
         finalGameZ = currentPlayerMinimapPosition.z;
 
-      // --- Determine which player position to use for coordinate translation ---
-      // During animation freeze, use the last stable player position as reference.
-      // Otherwise, use the current player position.
       const playerPosForCreatureCalc = isPlayerInAnimationFreeze
         ? lastStablePlayerMinimapPosition
         : currentPlayerMinimapPosition;
 
-      // Calculate raw fractional game coordinates (best estimate, still oscillates)
       const rawGameCoordsFloat = getGameCoordinatesFromScreen(
         creatureScreenX,
         creatureScreenY,
-        playerPosForCreatureCalc, // Use the chosen player position
+        playerPosForCreatureCalc,
         regions.gameWorld,
         tileSize,
       );
 
       if (!rawGameCoordsFloat) return null;
+      const currentCreatureZ = currentPlayerMinimapPosition.z;
 
-      const currentCreatureZ = currentPlayerMinimapPosition.z; // Creatures are on the same Z as player
-
-      // --- FREEZING LOGIC during animation freeze ---
       if (isPlayerInAnimationFreeze) {
-        // If in animation freeze, report the last known stable position.
-        // If this is a new creature detected during freeze, calculate its initial integer tile
-        // based on the `lastStablePlayerMinimapPosition` and store it.
         let lastReported = creatureLastReportedGameCoords.get(creatureName);
         if (!lastReported) {
           lastReported = {
@@ -182,9 +150,8 @@ function processGameWorldEntities(
         }
         finalGameX = lastReported.x;
         finalGameY = lastReported.y;
-        finalGameZ = lastReported.z; // Ensure Z is also consistent
+        finalGameZ = lastReported.z;
       } else {
-        // --- STICKY SNAPPING LOGIC (when not in animation freeze) ---
         const lastReportedGameCoords =
           creatureLastReportedGameCoords.get(creatureName);
         const lastCalculatedFloatCoords =
@@ -197,7 +164,6 @@ function processGameWorldEntities(
         finalGameY = newGameY_int;
 
         if (lastReportedGameCoords && lastCalculatedFloatCoords) {
-          // Check if the new fractional position is "close enough" to the last reported integer tile.
           const distX_to_last_int = Math.abs(
             rawGameCoordsFloat.x - lastReportedGameCoords.x,
           );
@@ -209,24 +175,16 @@ function processGameWorldEntities(
             distX_to_last_int < STICKY_SNAP_THRESHOLD_TILES &&
             distY_to_last_int < STICKY_SNAP_THRESHOLD_TILES
           ) {
-            // Stick to the last reported integer tile if close.
             finalGameX = lastReportedGameCoords.x;
             finalGameY = lastReportedGameCoords.y;
-          } else {
-            // If not sticking, update to the new floored integer tile.
-            finalGameX = newGameX_int;
-            finalGameY = newGameY_int;
           }
         }
-        // If no last reported coords, this is the first detection or after a reset, so just use the new floored integer.
 
-        // --- TEMPORAL DEBOUNCING / JITTER FILTER (after sticky snapping) ---
         const history = creatureReportHistory.get(creatureName) || [];
         if (history.length >= 2) {
           const lastEntry = history[history.length - 1];
           const secondLastEntry = history[history.length - 2];
 
-          // Check for rapid X -> Y -> X flicker
           if (
             now - lastEntry.timestamp < JITTER_FILTER_TIME_MS &&
             arePositionsEqual(
@@ -236,72 +194,64 @@ function processGameWorldEntities(
             !arePositionsEqual(
               { x: finalGameX, y: finalGameY, z: currentCreatureZ },
               lastEntry.coords,
-            ) // Ensure it's a flicker back
+            )
           ) {
-            // Discard the flicker and stick to the second-last (stable) position
             finalGameX = secondLastEntry.coords.x;
             finalGameY = secondLastEntry.coords.y;
             finalGameZ = secondLastEntry.coords.z;
           }
         }
 
-        // Update stored stable and float coordinates for next cycle
-        creatureLastReportedGameCoords.set(creatureName, {
-          x: finalGameX,
-          y: finalGameY,
-          z: currentCreatureZ,
+        history.push({
+          coords: { x: finalGameX, y: finalGameY, z: finalGameZ },
+          timestamp: now,
         });
-        creatureLastCalculatedFloatCoords.set(creatureName, {
-          x: rawGameCoordsFloat.x,
-          y: rawGameCoordsFloat.y,
-        });
+        if (history.length > JITTER_HISTORY_LENGTH) {
+          history.shift();
+        }
+        creatureReportHistory.set(creatureName, history);
       }
 
-      // Update creature report history
-      let history = creatureReportHistory.get(creatureName) || [];
-      history.push({
-        coords: { x: finalGameX, y: finalGameY, z: finalGameZ },
-        timestamp: now,
+      creatureLastReportedGameCoords.set(creatureName, {
+        x: finalGameX,
+        y: finalGameY,
+        z: finalGameZ,
       });
-      if (history.length > JITTER_HISTORY_LENGTH) {
-        history.shift(); // Keep history buffer size limited
-      }
-      creatureReportHistory.set(creatureName, history);
+      creatureLastCalculatedFloatCoords.set(creatureName, {
+        x: rawGameCoordsFloat.x,
+        y: rawGameCoordsFloat.y,
+      });
 
-      // Calculate distance based on dynamically derived player screen center
       const dx_pixels = creatureScreenX - playerFixedScreenCenterX;
       const dy_pixels = creatureScreenY - playerFixedScreenCenterY;
-
       const dx_tiles = dx_pixels / tileSize.width;
       const dy_tiles = dy_pixels / tileSize.height;
-
       const distance = Math.sqrt(dx_tiles * dx_tiles + dy_tiles * dy_tiles);
 
       return {
         name: creatureName,
         absoluteCoords: {
-          x: Math.round(creatureScreenX), // Keep absolute screen coords for UI/debugging
+          x: Math.round(creatureScreenX),
           y: Math.round(creatureScreenY),
         },
         gameCoords: { x: finalGameX, y: finalGameY, z: finalGameZ },
-        distance: parseFloat(distance.toFixed(1)), // Format distance to 1 decimal place
+        distance: parseFloat(distance.toFixed(1)),
       };
     })
     .filter(Boolean)
     .filter(
       (e) =>
-        e.gameCoords.x !== currentPlayerMinimapPosition.x || // Filter out player's own tile
+        e.gameCoords.x !== currentPlayerMinimapPosition.x ||
         e.gameCoords.y !== currentPlayerMinimapPosition.y ||
         e.gameCoords.z !== currentPlayerMinimapPosition.z,
     );
 
-  // Remove creatures that are no longer detected from our tracking maps
   const detectedNames = new Set(entities.map((e) => e.name));
   for (const name of creatureLastReportedGameCoords.keys()) {
     if (!detectedNames.has(name)) {
       creatureLastReportedGameCoords.delete(name);
       creatureLastCalculatedFloatCoords.delete(name);
-      creatureReportHistory.delete(name); // Also clear history
+      creatureReportHistory.delete(name);
     }
   }
 
@@ -313,7 +263,6 @@ function processGameWorldEntities(
   return entities;
 }
 
-// --- main operation ---
 async function performOperation() {
   try {
     if (
@@ -333,7 +282,6 @@ async function performOperation() {
     )
       return;
 
-    // Player position from SAB (this is the one that updates mid-animation)
     const currentPlayerMinimapPosition = {
       x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
       y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
@@ -341,27 +289,22 @@ async function performOperation() {
     };
 
     const now = Date.now();
-
-    // Detect if player's absolute position has changed
     const playerPositionChanged = !arePositionsEqual(
       currentPlayerMinimapPosition,
       previousPlayerMinimapPosition,
     );
 
-    // Update animation freeze and settling grace period states
     if (playerPositionChanged) {
       playerAnimationFreezeEndTime = now + PLAYER_ANIMATION_FREEZE_MS;
       playerSettlingGracePeriodEndTime =
         playerAnimationFreezeEndTime + PLAYER_SETTLING_GRACE_PERIOD_MS;
-      // When player position changes, update lastStablePlayerMinimapPosition to the *new* position.
       lastStablePlayerMinimapPosition = { ...currentPlayerMinimapPosition };
     }
-    previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition }; // Update for next cycle's comparison
+    previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
 
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
     const isPlayerInSettlingGracePeriod =
-      now < playerSettlingGracePeriodEndTime; // This includes the animation freeze period
-
+      now < playerSettlingGracePeriodEndTime;
     const ocrData = currentState.ocr.regions.gameWorld || [];
 
     const detectedEntities = processGameWorldEntities(
@@ -370,9 +313,11 @@ async function performOperation() {
       regions,
       tileSize,
       now,
-      isPlayerInAnimationFreeze, // Pass animation freeze state
-      isPlayerInSettlingGracePeriod, // Pass settling grace period state
+      isPlayerInAnimationFreeze,
+      isPlayerInSettlingGracePeriod,
     );
+
+    // REMOVED: All logic writing to creaturePosSAB is gone.
 
     if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
       parentPort.postMessage({
@@ -383,7 +328,6 @@ async function performOperation() {
       lastSentCreatures = detectedEntities;
     }
 
-    // --- Target Detection Logic ---
     let currentTarget = null;
     try {
       const targetRect = await findTarget.findTarget(
@@ -394,12 +338,9 @@ async function performOperation() {
       if (targetRect) {
         const screenX = targetRect.x + targetRect.width / 2;
         const screenY = targetRect.y + targetRect.height / 2;
-
-        // Use the appropriate player position for target game coordinate translation
         const playerPosForTargetCalc = isPlayerInAnimationFreeze
           ? lastStablePlayerMinimapPosition
           : currentPlayerMinimapPosition;
-
         const targetGameCoordsRaw = getGameCoordinatesFromScreen(
           screenX,
           screenY,
@@ -409,15 +350,13 @@ async function performOperation() {
         );
 
         if (targetGameCoordsRaw) {
-          // Find the closest *reported* creature to the raw target coordinates
           let closestCreature = null;
           let minDistance = Infinity;
-
           for (const entity of detectedEntities) {
             if (entity.gameCoords) {
               const distance = calculateDistance(
-                targetGameCoordsRaw, // Compare to raw target coords
-                entity.gameCoords, // Compare to creature's *reported stable* game coords
+                targetGameCoordsRaw,
+                entity.gameCoords,
               );
               if (distance < minDistance) {
                 minDistance = distance;
@@ -428,8 +367,8 @@ async function performOperation() {
 
           if (closestCreature) {
             const distanceFromPlayer = calculateDistance(
-              currentPlayerMinimapPosition, // Distance from *actual* player position
-              closestCreature.gameCoords, // to creature's *reported stable* game coords
+              currentPlayerMinimapPosition,
+              closestCreature.gameCoords,
             );
             currentTarget = {
               name: closestCreature.name,
@@ -457,12 +396,11 @@ async function performOperation() {
   }
 }
 
-// --- message handler ---
+// --- (message handler remains the same) ---
 parentPort.on('message', (message) => {
   if (isShuttingDown) {
     return;
   }
-
   try {
     if (message.type === 'shutdown') {
       isShuttingDown = true;
@@ -472,7 +410,6 @@ parentPort.on('message', (message) => {
       Object.assign(currentState, message.payload);
       if (!isInitialized) {
         isInitialized = true;
-        // Initialize previousPlayerMinimapPosition and lastStablePlayerMinimapPosition on first state
         if (currentState.gameState?.playerMinimapPosition) {
           previousPlayerMinimapPosition = {
             ...currentState.gameState.playerMinimapPosition,
@@ -485,13 +422,12 @@ parentPort.on('message', (message) => {
       performOperation();
       return;
     } else if (typeof message === 'object' && !message.type) {
-      // Full state replace (initial state message without a 'type')
       currentState = message;
       lastSentCreatures = [];
       lastSentTarget = null;
       creatureLastReportedGameCoords.clear();
       creatureLastCalculatedFloatCoords.clear();
-      creatureReportHistory.clear(); // Clear history on full state reset
+      creatureReportHistory.clear();
       if (!isInitialized) {
         isInitialized = true;
         if (currentState.gameState?.playerMinimapPosition) {
@@ -510,4 +446,3 @@ parentPort.on('message', (message) => {
     console.error('[CreatureMonitor] Error handling message:', e);
   }
 });
-//endFile

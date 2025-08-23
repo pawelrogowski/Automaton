@@ -1,5 +1,4 @@
 // /home/feiron/Dokumenty/Automaton/electron/workerManager.js
-// --- REFACTORED ---
 
 import { Worker } from 'worker_threads';
 import path from 'path';
@@ -14,11 +13,11 @@ import { playSound } from './globalShortcuts.js';
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
-  CREATURE_POS_SAB_SIZE, // NEW
 } from './workers/sharedConstants.js';
 
 const log = createLogger();
 
+// **** START: MISSING CONSTANTS ADDED BACK ****
 const DEFAULT_WORKER_CONFIG = {
   captureWorker: true,
   regionMonitor: true,
@@ -36,6 +35,7 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const DEBOUNCE_INTERVAL = 16;
+// **** END: MISSING CONSTANTS ADDED BACK ****
 
 function quickHash(obj) {
   let h = 0x811c9dc5;
@@ -73,9 +73,15 @@ const WORKER_STATE_DEPENDENCIES = {
     'uiValues',
   ],
   minimapMonitor: ['global', 'regionCoordinates'],
-  ocrWorker: ['global', 'regionCoordinates', 'gameState', 'ocr'], // Added ocr dependency for itself
+  ocrWorker: ['global', 'regionCoordinates', 'gameState', 'ocr'],
   creatureMonitor: ['global', 'regionCoordinates', 'gameState', 'ocr'],
   captureWorker: ['global'],
+  pathfinderWorker: [
+    // Pathfinder now explicitly depends on targeting state for creatures
+    'targeting',
+    'cavebot',
+    'gameState',
+  ],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -94,7 +100,7 @@ class WorkerManager {
     const filename = fileURLToPath(import.meta.url);
     this.electronDir = dirname(filename);
     this.workers = new Map();
-    this.workerInitialized = new Map(); // --- NEW: Tracks if a worker has received its first state
+    this.workerInitialized = new Map();
     this.workerPaths = new Map();
     this.restartLocks = new Map();
     this.restartAttempts = new Map();
@@ -183,16 +189,13 @@ class WorkerManager {
     const pathDataSAB = new SharedArrayBuffer(
       PATH_DATA_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
-    const creaturePosSAB = new SharedArrayBuffer( // NEW
-      CREATURE_POS_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
+
     this.sharedData = {
       imageSAB,
       syncSAB,
       playerPosSAB,
       pathDataSAB,
-      creaturePosSAB,
-    }; // MODIFIED
+    };
     log('info', '[Worker Manager] Created SharedArrayBuffers.');
   }
 
@@ -219,7 +222,7 @@ class WorkerManager {
     log('info', `[Worker Manager] Worker exited: ${name}, code ${code}`);
     this.workers.delete(name);
     this.workerPaths.delete(name);
-    this.workerInitialized.delete(name); // --- NEW ---
+    this.workerInitialized.delete(name);
     const isUUID = /^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$/.test(
       name,
     );
@@ -349,19 +352,12 @@ class WorkerManager {
         'cavebotWorker',
         'targetingWorker',
       ].includes(name);
-      const needsCreaturePosSAB = [
-        // NEW
-        'creatureMonitor',
-        'pathfinderWorker',
-      ].includes(name);
+
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedData : null,
         playerPosSAB: needsPlayerPosSAB ? this.sharedData.playerPosSAB : null,
         pathDataSAB: needsPathDataSAB ? this.sharedData.pathDataSAB : null,
-        creaturePosSAB: needsCreaturePosSAB
-          ? this.sharedData.creaturePosSAB
-          : null, // NEW
         enableMemoryLogging: true,
       };
       if (needsSharedScreen) {
@@ -369,17 +365,16 @@ class WorkerManager {
       }
       const worker = new Worker(workerPath, { name, workerData });
       this.workers.set(name, { worker, config: scriptConfig });
-      this.workerInitialized.set(name, false); // --- NEW ---
+      this.workerInitialized.set(name, false);
       worker.on('message', (msg) => this.handleWorkerMessage(msg));
       worker.on('error', (error) => this.handleWorkerError(name, error));
       worker.on('exit', (code) => this.handleWorkerExit(name, code));
       log('info', `[Worker Manager] Worker ${name} started successfully.`);
 
-      // --- MODIFIED: No longer sends initial state immediately ---
       if (scriptConfig) {
         setTimeout(() => {
           worker.postMessage({ type: 'init', script: scriptConfig });
-        }, DEBOUNCE_INTERVAL);
+        }, 16);
       }
 
       return worker;
@@ -457,7 +452,6 @@ class WorkerManager {
     return hasChanges ? changedSlices : null;
   }
 
-  // --- MODIFIED: This function now handles the initial full state send ---
   broadcastStateUpdate(changedSlices, currentState) {
     const changedKeys = Object.keys(changedSlices);
 
@@ -470,43 +464,10 @@ class WorkerManager {
       )
         continue;
 
-      // --- THIS IS THE KEY FIX ---
-      // If the worker hasn't received its first state, send the whole thing.
       if (!this.workerInitialized.get(name)) {
         workerEntry.worker.postMessage(currentState);
         this.workerInitialized.set(name, true);
         log('info', `[Worker Manager] Sent initial full state to ${name}.`);
-        continue; // Move to the next worker
-      }
-      // --- END FIX ---
-
-      if (name === 'pathfinderWorker') {
-        const relevantPayload = {};
-        let needsUpdate = false;
-        if (changedKeys.includes('gameState')) {
-          needsUpdate = true;
-          relevantPayload.gameState = changedSlices.gameState;
-        }
-        if (changedKeys.includes('cavebot')) {
-          const oldCavebot = this.previousState.cavebot;
-          const newCavebot = currentState.cavebot;
-          if (
-            oldCavebot.wptId !== newCavebot.wptId ||
-            oldCavebot.currentSection !== newCavebot.currentSection ||
-            oldCavebot.waypointSections !== newCavebot.waypointSections ||
-            oldCavebot.specialAreas !== newCavebot.specialAreas ||
-            oldCavebot.dynamicTarget !== newCavebot.dynamicTarget
-          ) {
-            needsUpdate = true;
-            relevantPayload.cavebot = newCavebot;
-          }
-        }
-        if (needsUpdate) {
-          workerEntry.worker.postMessage({
-            type: 'state_diff',
-            payload: relevantPayload,
-          });
-        }
         continue;
       }
 
@@ -678,7 +639,7 @@ class WorkerManager {
 
       if (this.previousState) {
         const changed = this.getStateChanges(currentState, this.previousState);
-        if (changed) this.broadcastStateUpdate(changed, currentState); // --- MODIFIED ---
+        if (changed) this.broadcastStateUpdate(changed, currentState);
       }
       this.previousState = currentState;
       this.logPerformanceStats();
