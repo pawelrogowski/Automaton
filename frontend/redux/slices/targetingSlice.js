@@ -1,10 +1,13 @@
+// /home/feiron/Dokumenty/Automaton/frontend/redux/slices/targetingSlice.js
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   enabled: false,
-  creatures: [], // List of creatures on screen with their coordinates
-  target: null, // { name: string, distance: number, gameCoordinates: {x,y,z}, absoluteCoordinates: {x,y} }
-  targetingList: [], // [{ id: string, name: string, stance: string, distance: number }]
+  stickiness: 0,
+  // MODIFIED: The shape of a creature object will now include isReachable
+  creatures: [], // [{ name, healthTag, absoluteCoords, gameCoords, distance, isReachable }]
+  target: null,
+  targetingList: [],
 };
 
 const targetingSlice = createSlice({
@@ -12,23 +15,54 @@ const targetingSlice = createSlice({
   initialState,
   reducers: {
     setState: (state, action) => {
-      // This allows loading a saved state, merging it with the initial state
-      // to ensure all keys are present even if the saved file is from an older version.
-      return { ...initialState, ...action.payload };
+      const loadedState = action.payload;
+      if (loadedState && loadedState.targetingList) {
+        loadedState.targetingList = loadedState.targetingList.map(
+          (creature) => ({
+            priority: 0,
+            action: 'Attack',
+            healthRange: 'Any',
+            stickiness: 0,
+            ...creature,
+          }),
+        );
+      }
+      delete loadedState.stickiness;
+      return { ...initialState, ...loadedState };
     },
     setenabled: (state, action) => {
       state.enabled = action.payload;
     },
+    setStickiness: (state, action) => {
+      const value = parseInt(action.payload, 10);
+      if (!isNaN(value)) {
+        state.stickiness = Math.max(0, Math.min(10, value));
+      }
+    },
     setEntities: (state, action) => {
-      // This will be dispatched by the targetMonitor worker
-      state.creatures = action.payload;
+      // MODIFIED: Ensure every creature object has the isReachable flag.
+      // This makes the state shape consistent and prevents errors if the
+      // creatureMonitor ever fails to provide the flag.
+      state.creatures = action.payload.map((creature) => ({
+        ...creature,
+        isReachable: creature.isReachable || false,
+      }));
     },
     setTarget: (state, action) => {
       state.target = action.payload;
     },
     addCreatureToTargetingList: (state, action) => {
       const { id, name, stance, distance } = action.payload;
-      state.targetingList.push({ id, name, stance, distance });
+      state.targetingList.push({
+        id,
+        name,
+        stance,
+        distance,
+        priority: 0,
+        action: 'Attack',
+        healthRange: 'Any',
+        stickiness: 2,
+      });
     },
     removeCreatureFromTargetingList: (state, action) => {
       state.targetingList = state.targetingList.filter(
@@ -41,6 +75,15 @@ const targetingSlice = createSlice({
         (creature) => creature.id === id,
       );
       if (creatureIndex !== -1) {
+        if (updates.priority !== undefined) {
+          updates.priority = parseInt(updates.priority, 10) || 0;
+        }
+        if (updates.distance !== undefined) {
+          updates.distance = parseInt(updates.distance, 10) || 0;
+        }
+        if (updates.stickiness !== undefined) {
+          updates.stickiness = parseInt(updates.stickiness, 10) || 0;
+        }
         state.targetingList[creatureIndex] = {
           ...state.targetingList[creatureIndex],
           ...updates,
@@ -53,6 +96,7 @@ const targetingSlice = createSlice({
 export const {
   setState,
   setenabled,
+  setStickiness,
   setEntities,
   setTarget,
   addCreatureToTargetingList,

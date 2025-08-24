@@ -1,11 +1,11 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
-// --- Final Version with Movement Cooldown to Prevent Oscillation ---
+// --- Drop-in Replacement with Fix for 'initialize is not defined' ---
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
 import { createLogger } from '../utils/logger.js';
-import mouseController from '../../nativeModules/mouseController/wrapper.js';
+import mouseController from 'mouse-controller';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -23,9 +23,12 @@ import {
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
-const MAIN_LOOP_INTERVAL = 50;
-const STATE_CHANGE_POLL_INTERVAL = 5; // Copied from cavebotWorker.js
-const logger = createLogger({ info: true, error: true });
+const MAIN_LOOP_INTERVAL = 100;
+const MOVEMENT_COOLDOWN_MS = 250;
+const CLICK_CONFIRMATION_TIMEOUT_MS = 250;
+const CLICK_POLL_INTERVAL_MS = 20;
+
+const logger = createLogger({ info: true, error: true, debug: false });
 
 let isInitialized = false;
 let globalState = null;
@@ -35,8 +38,7 @@ let path = [];
 let pathfindingStatus = 0;
 let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
-let lastCreatureAbsoluteCoordsUpdate = 0;
-let lastTargetedCreatureId = null;
+let lastMovementTime = 0;
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
@@ -121,12 +123,6 @@ const updateSABData = () => {
         path = tempPath;
         lastPathDataCounter = counterBeforeRead;
         consistentRead = true;
-        if (path.length > 0) {
-          logger(
-            'info',
-            `[TargetingWorker] New path generated: ${JSON.stringify(path)}`,
-          );
-        }
       } else {
         attempts++;
       }
@@ -134,12 +130,139 @@ const updateSABData = () => {
   }
 };
 
+function selectBestTarget() {
+  const {
+    creatures,
+    targetingList,
+    target: currentGameTarget,
+  } = globalState.targeting;
+  if (
+    !creatures ||
+    creatures.length === 0 ||
+    !targetingList ||
+    targetingList.length === 0
+  ) {
+    return null;
+  }
+
+  const reachableCreatures = creatures.filter((c) => c.isReachable);
+
+  let stickinessBonus = 0;
+  if (currentGameTarget) {
+    const currentTargetOnScreen = reachableCreatures.find(
+      (c) => c.name === currentGameTarget.name,
+    );
+    if (currentTargetOnScreen) {
+      let activeRuleForCurrentTarget = targetingList.find(
+        (t) =>
+          t.name === currentTargetOnScreen.name &&
+          t.action === 'Attack' &&
+          t.healthRange === currentTargetOnScreen.healthTag,
+      );
+      if (!activeRuleForCurrentTarget) {
+        activeRuleForCurrentTarget = targetingList.find(
+          (t) =>
+            t.name === currentTargetOnScreen.name &&
+            t.action === 'Attack' &&
+            t.healthRange === 'Any',
+        );
+      }
+      if (activeRuleForCurrentTarget) {
+        stickinessBonus = activeRuleForCurrentTarget.stickiness || 0;
+      }
+    }
+  }
+
+  const targetableCreatures = reachableCreatures
+    .map((creature) => {
+      let targetingInfo = targetingList.find(
+        (t) =>
+          t.name === creature.name &&
+          t.action === 'Attack' &&
+          t.healthRange === creature.healthTag,
+      );
+
+      if (!targetingInfo) {
+        targetingInfo = targetingList.find(
+          (t) =>
+            t.name === creature.name &&
+            t.action === 'Attack' &&
+            t.healthRange === 'Any',
+        );
+      }
+
+      if (!targetingInfo) return null;
+
+      let effectivePriority = targetingInfo.priority;
+      if (currentGameTarget && creature.name === currentGameTarget.name) {
+        effectivePriority += stickinessBonus;
+      }
+
+      return { ...creature, ...targetingInfo, effectivePriority };
+    })
+    .filter(Boolean);
+
+  if (targetableCreatures.length === 0) {
+    return null;
+  }
+
+  targetableCreatures.sort((a, b) => {
+    if (a.effectivePriority !== b.effectivePriority) {
+      return b.effectivePriority - a.effectivePriority;
+    }
+    return a.distance - b.distance;
+  });
+
+  return targetableCreatures[0];
+}
+
+async function clickAndConfirmTarget(targetToClick) {
+  if (!targetToClick.absoluteCoords) {
+    logger(
+      'warn',
+      `[Targeting] Cannot click ${targetToClick.name}, missing absolute coordinates.`,
+    );
+    return false;
+  }
+
+  try {
+    mouseController.rightClick(
+      parseInt(globalState.global.windowId),
+      targetToClick.absoluteCoords.x,
+      targetToClick.absoluteCoords.y,
+      globalState.global.display,
+    );
+    logger('info', `[Targeting] Attempting to target: ${targetToClick.name}`);
+  } catch (error) {
+    logger(
+      'error',
+      `[Targeting] Failed to send click command: ${error.message}`,
+    );
+    return false;
+  }
+
+  const startTime = Date.now();
+  while (Date.now() - startTime < CLICK_CONFIRMATION_TIMEOUT_MS) {
+    const latestGameTarget = globalState.targeting.target;
+    if (latestGameTarget && latestGameTarget.name === targetToClick.name) {
+      logger('info', `[Targeting] Confirmed target: ${targetToClick.name}`);
+      return true;
+    }
+    await delay(CLICK_POLL_INTERVAL_MS);
+  }
+
+  logger(
+    'warn',
+    `[Targeting] Target not confirmed for ${targetToClick.name} within ${CLICK_CONFIRMATION_TIMEOUT_MS}ms.`,
+  );
+  return false;
+}
+
 async function performTargeting() {
   if (
     isShuttingDown ||
     !isInitialized ||
     !globalState?.targeting?.enabled ||
-    !globalState?.cavebot?.isActionPaused ||
     !globalState?.global?.display
   ) {
     return;
@@ -148,150 +271,73 @@ async function performTargeting() {
   updateSABData();
   if (!playerMinimapPosition) return;
 
-  const { targeting } = globalState;
-  let dynamicGoal = null;
-  let currentTarget = null;
-  let minDistance = Infinity; // Initialize minDistance here
+  const bestTarget = selectBestTarget();
+  const currentGameTarget = globalState.targeting.target;
 
-  const findTargetedCreature = (
-    creaturesOnScreen,
-    targetingList,
-    playerPos,
-  ) => {
-    if (
-      !creaturesOnScreen ||
-      creaturesOnScreen.length === 0 ||
-      !targetingList ||
-      targetingList.length === 0
-    ) {
-      return null;
+  if (!bestTarget) {
+    if (globalState.cavebot.isActionPaused) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setActionPaused',
+        payload: false,
+      });
     }
-
-    let bestTarget = null;
-    let currentMinDistance = Infinity; // Use a local minDistance for this function
-
-    for (const targetEntry of targetingList) {
-      const {
-        name: targetName,
-        stance: targetStance,
-        distance: targetDistance,
-      } = targetEntry;
-
-      if (targetStance === 'Ignore') continue;
-
-      const matchingCreatures = creaturesOnScreen.filter(
-        (creature) => creature.name === targetName,
-      );
-
-      if (matchingCreatures.length === 0) continue;
-
-      for (const creature of matchingCreatures) {
-        const dist = Math.max(
-          Math.abs(playerPos.x - creature.gameCoords.x),
-          Math.abs(playerPos.y - creature.gameCoords.y),
-        );
-
-        // Prioritize based on targeting list order (implicit by iterating targetingList)
-        // and then by proximity for creatures with the same name.
-        if (dist < currentMinDistance) {
-          currentMinDistance = dist;
-          bestTarget = {
-            ...creature,
-            configuredStance: targetStance,
-            configuredDistance: targetDistance,
-          };
-        }
-      }
+    if (globalState.cavebot.pathfinderMode !== 'cavebot') {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setPathfinderMode',
+        payload: 'cavebot',
+      });
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
     }
-    minDistance = currentMinDistance; // Assign to outer scope minDistance
-    return bestTarget;
-  };
-
-  currentTarget = findTargetedCreature(
-    targeting.creatures,
-    targeting.targetingList,
-    playerMinimapPosition,
-  );
-
-  if (currentTarget) {
-    const { configuredStance, configuredDistance, gameCoords } = currentTarget;
-
-    if (configuredStance === 'Stand') {
-      dynamicGoal = null; // Do not move if stance is 'Stand'
-    } else if (
-      configuredStance === 'Keep Away' &&
-      minDistance > configuredDistance
-    ) {
-      dynamicGoal = null; // Creature is too far, do not set a target for running away
-    } else if (configuredStance !== 'Ignore') {
-      // For 'Reach' and 'Keep Away' (when close)
-      dynamicGoal = {
-        stance: configuredStance,
-        distance: configuredDistance,
-        targetCreaturePos: gameCoords,
-      };
-    }
+    return;
   }
 
+  if (!globalState.cavebot.isActionPaused) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setActionPaused',
+      payload: true,
+    });
+  }
+  if (globalState.cavebot.pathfinderMode !== 'targeting') {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setPathfinderMode',
+      payload: 'targeting',
+    });
+  }
+
+  if (bestTarget.name !== currentGameTarget?.name) {
+    await clickAndConfirmTarget(bestTarget);
+  }
+
+  const dynamicGoal = {
+    stance: bestTarget.stance,
+    distance: bestTarget.distance,
+    targetCreaturePos: bestTarget.gameCoords,
+  };
   parentPort.postMessage({
     storeUpdate: true,
     type: 'cavebot/setDynamicTarget',
     payload: dynamicGoal,
   });
 
-  // Update the target in the Redux store
-  parentPort.postMessage({
-    storeUpdate: true,
-    type: 'targeting/setTarget',
-    payload: currentTarget
-      ? {
-          name: currentTarget.name,
-          distance: minDistance, // Use the calculated distance
-          gameCoordinates: currentTarget.gameCoords || { x: 0, y: 0, z: 0 },
-          absoluteCoordinates: currentTarget.absoluteCoordinates || {
-            x: 0,
-            y: 0,
-          },
-        }
-      : null,
-  });
+  const now = Date.now();
+  if (now - lastMovementTime < MOVEMENT_COOLDOWN_MS) {
+    return;
+  }
 
-  // Right-click targeting logic
-  if (
-    currentTarget &&
-    currentTarget.absoluteCoordinates &&
-    currentTarget.id !== lastTargetedCreatureId &&
-    currentTarget.absoluteCoordinates.lastUpdate >
-      lastCreatureAbsoluteCoordsUpdate
-  ) {
-    try {
-      mouseController.leftClick(
-        currentTarget.absoluteCoordinates.x,
-        currentTarget.absoluteCoordinates.y,
-        globalState.global.display,
-      );
-      logger(
-        'info',
-        `[TargetingWorker] Left-clicked on ${currentTarget.name} at ${currentTarget.absoluteCoordinates.x}, ${currentTarget.absoluteCoordinates.y}`,
-      );
-      lastTargetedCreatureId = currentTarget.id;
-      lastCreatureAbsoluteCoordsUpdate =
-        currentTarget.absoluteCoordinates.lastUpdate;
-    } catch (error) {
-      logger(
-        'error',
-        `[TargetingWorker] Error right-clicking: ${error.message}`,
-      );
-    }
-  } else if (!currentTarget) {
-    lastTargetedCreatureId = null;
-    lastCreatureAbsoluteCoordsUpdate = 0; // Reset timestamp when no target
+  if (bestTarget.stance === 'Stand') {
+    return;
   }
 
   if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
     const nextStep = path[0];
-
-    // Final check to prevent moving onto our own tile.
     if (
       nextStep.x === playerMinimapPosition.x &&
       nextStep.y === playerMinimapPosition.y
@@ -300,54 +346,12 @@ async function performTargeting() {
     }
 
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
-
     if (dirKey) {
-      // Send the keypress to perform the move.
       keypress.sendKey(dirKey, globalState.global.display);
-
-      // Wait for walk confirmation.
-      try {
-        await awaitWalkConfirmation(
-          lastPlayerPosCounter,
-          lastPathDataCounter,
-          400, // Use a reasonable timeout for confirmation, e.g., 300ms
-        );
-      } catch (error) {
-        logger('error', `[TargetingWorker] Walk step failed: ${error.message}`);
-      }
+      lastMovementTime = now;
     }
   }
 }
-
-// --- Confirmation Utilities (Copied from cavebotWorker.js) ---
-const awaitWalkConfirmation = (
-  posCounterBeforeMove,
-  pathCounterBeforeMove,
-  timeoutMs,
-) => {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      clearInterval(intervalId);
-      reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    const intervalId = setInterval(() => {
-      const posChanged = playerPosArray
-        ? Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
-          posCounterBeforeMove
-        : false;
-      const pathChanged = pathDataArray
-        ? Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
-          pathCounterBeforeMove
-        : false;
-      // Accept either we moved OR pathfinder updated the path — both are valid signals.
-      if (posChanged || pathChanged) {
-        clearTimeout(timeoutId);
-        clearInterval(intervalId);
-        resolve(true);
-      }
-    }, STATE_CHANGE_POLL_INTERVAL);
-  });
-};
 
 async function mainLoop() {
   logger('info', '[TargetingWorker] Starting main loop...');
@@ -364,6 +368,7 @@ async function mainLoop() {
   }
 }
 
+// --- CORRECTED MESSAGE HANDLER ---
 parentPort.on('message', (message) => {
   if (message.type === 'shutdown') {
     isShuttingDown = true;

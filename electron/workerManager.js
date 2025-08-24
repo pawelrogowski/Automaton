@@ -1,4 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/electron/workerManager.js
+// --- Drop-in Replacement ---
 
 import { Worker } from 'worker_threads';
 import path from 'path';
@@ -17,7 +18,6 @@ import {
 
 const log = createLogger();
 
-// **** START: MISSING CONSTANTS ADDED BACK ****
 const DEFAULT_WORKER_CONFIG = {
   captureWorker: true,
   regionMonitor: true,
@@ -35,7 +35,6 @@ const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const DEBOUNCE_INTERVAL = 16;
-// **** END: MISSING CONSTANTS ADDED BACK ****
 
 function quickHash(obj) {
   let h = 0x811c9dc5;
@@ -74,14 +73,16 @@ const WORKER_STATE_DEPENDENCIES = {
   ],
   minimapMonitor: ['global', 'regionCoordinates'],
   ocrWorker: ['global', 'regionCoordinates', 'gameState', 'ocr'],
-  creatureMonitor: ['global', 'regionCoordinates', 'gameState', 'ocr'],
-  captureWorker: ['global'],
-  pathfinderWorker: [
-    // Pathfinder now explicitly depends on targeting state for creatures
-    'targeting',
-    'cavebot',
+  creatureMonitor: [
+    'global',
+    'regionCoordinates',
     'gameState',
+    'ocr',
+    'cavebot',
+    'targeting',
   ],
+  captureWorker: ['global'],
+  pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -530,44 +531,11 @@ class WorkerManager {
       const currentState = store.getState();
       const { windowId, display } = currentState.global;
 
-      const { targeting, cavebot } = currentState;
-      const previous = this.previousState || {};
-
-      const bridgeInputsChanged =
-        previous.targeting?.enabled !== targeting.enabled ||
-        previous.targeting?.creatures?.length > 0 !==
-          targeting.creatures.length > 0 ||
-        previous.targeting?.stance !== targeting.stance ||
-        previous.cavebot?.enabled !== cavebot.enabled;
-
-      if (bridgeInputsChanged) {
-        const shouldTarget =
-          targeting.enabled &&
-          targeting.creatures.length > 0 &&
-          targeting.stance !== 'Ignore' &&
-          targeting.stance !== 'Stand';
-
-        if (shouldTarget) {
-          if (cavebot.pathfinderMode !== 'targeting') {
-            log('info', `[Worker Bridge] Activating Targeting Mode.`);
-            setGlobalState('cavebot/setPathfinderMode', 'targeting');
-          }
-          if (!cavebot.isActionPaused) {
-            setGlobalState('cavebot/setActionPaused', true);
-          }
-        } else {
-          if (cavebot.pathfinderMode !== 'cavebot') {
-            log('info', `[Worker Bridge] Activating Cavebot Mode.`);
-            setGlobalState('cavebot/setPathfinderMode', 'cavebot');
-            if (cavebot.dynamicTarget) {
-              setGlobalState('cavebot/setDynamicTarget', null);
-            }
-          }
-          if (cavebot.isActionPaused) {
-            setGlobalState('cavebot/setActionPaused', false);
-          }
-        }
-      }
+      // --- REMOVED BRIDGE LOGIC ---
+      // The logic to switch between cavebot and targeting modes is now
+      // handled directly by the targetingWorker for better separation of concerns.
+      // The targetingWorker will set `isActionPaused` and `pathfinderMode`
+      // based on whether a valid target is found.
 
       if (windowId && display) {
         if (!this.sharedData) this.createSharedBuffers();

@@ -1,3 +1,4 @@
+// /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.h
 #ifndef PATHFINDER_H
 #define PATHFINDER_H
 
@@ -8,7 +9,7 @@
 #include <unordered_map>
 #include <functional> // For std::hash
 
-// Data Structures
+// --- Data Structures ---
 struct Node {
     int x, y;
     int g, h;
@@ -31,6 +32,7 @@ struct MapData {
     std::vector<uint8_t> grid;
 };
 
+// --- Pathfinder Class Definition ---
 class Pathfinder : public Napi::ObjectWrap<Pathfinder> {
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
@@ -39,8 +41,11 @@ public:
 private:
     static Napi::FunctionReference constructor;
 
-    // --- Private C++ Helper ---
+    // --- Private C++ Helpers ---
     Napi::Value _findPathInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions);
+    bool _isReachableInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions);
+    // NEW: Internal helper for path length
+    int _getPathLengthInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions);
 
     // --- Methods exposed to Node.js ---
     Napi::Value LoadMapData(const Napi::CallbackInfo& info);
@@ -48,6 +53,9 @@ private:
     Napi::Value IsLoadedGetter(const Napi::CallbackInfo& info);
     Napi::Value UpdateSpecialAreas(const Napi::CallbackInfo& info);
     Napi::Value FindPathToGoal(const Napi::CallbackInfo& info);
+    Napi::Value IsReachable(const Napi::CallbackInfo& info);
+    // NEW: N-API wrapper for path length
+    Napi::Value GetPathLength(const Napi::CallbackInfo& info);
 
     // Internal State
     std::unordered_map<int, MapData> allMapData;

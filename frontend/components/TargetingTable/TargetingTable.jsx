@@ -1,3 +1,4 @@
+// /home/feiron/Dokumenty/Automaton/frontend/components/TargetingTable/TargetingTable.jsx
 import React, {
   useState,
   useEffect,
@@ -19,11 +20,12 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { useDrag, useDrop } from 'react-dnd';
 import { throttle } from 'lodash';
 import {
-  StyledWaypointTable, // Reusing WaypointTable styles for now
+  StyledWaypointTable,
   SectionManagementRow,
   AddSectionButton,
-  RemoveSectionButton,
-} from '../WaypointTable/WaypointTable.styled.js'; // Reusing WaypointTable styles for now
+} from '../WaypointTable/WaypointTable.styled.js';
+
+// --- Reusable Cell Components ---
 
 const DraggableRow = React.memo(
   ({ index, row, children, onSelect, onMoveRow, setRef, onContextMenu }) => {
@@ -48,17 +50,12 @@ const DraggableRow = React.memo(
       if (onMoveRow) drag(drop(node));
     };
 
-    const classNames = ['tr'];
-    // No 'selected' or 'active-bot-wp' for targeting table initially
-    // if (isSelected) classNames.push('selected');
-    // if (isActive) classNames.push('active-bot-wp');
-
     return (
       <div
         ref={combinedRef}
         style={{ opacity: isDragging ? 0.5 : 1 }}
         {...row.getRowProps()}
-        className={classNames.join(' ')}
+        className="tr"
         onClick={() => onSelect(row.original.id)}
         onContextMenu={(e) => {
           if (onContextMenu) {
@@ -156,17 +153,20 @@ const EditableNumberCell = React.memo(
   ({
     value: initialValue,
     row: { original },
-    column: { id },
+    column: { id, min = 0, max = 100 },
     updateMyData,
   }) => {
     const [value, setValue] = useState(initialValue);
     const [isEditing, setIsEditing] = useState(false);
     const onBlur = () => {
       setIsEditing(false);
-      const p = parseInt(value, 10);
-      if (!isNaN(p) && p !== initialValue)
+      let p = parseInt(value, 10);
+      if (isNaN(p)) p = min;
+      p = Math.max(min, Math.min(max, p)); // Clamp value
+      if (p !== initialValue) {
         updateMyData(original.id, { [id]: p });
-      else setValue(initialValue);
+      }
+      setValue(p); // Update local state to clamped value
     };
     useEffect(() => {
       setValue(initialValue);
@@ -176,6 +176,8 @@ const EditableNumberCell = React.memo(
         <input
           type="number"
           value={value || 0}
+          min={min}
+          max={max}
           onChange={(e) => setValue(e.target.value)}
           onBlur={onBlur}
           onKeyDown={(e) => {
@@ -216,6 +218,8 @@ const ActionCell = React.memo(({ row: { original }, onRemove }) => (
   </div>
 ));
 
+// --- Main Table Component ---
+
 const TargetingTable = () => {
   const dispatch = useDispatch();
   const { targetingList } = useSelector(
@@ -227,18 +231,7 @@ const TargetingTable = () => {
   const rowRefs = useRef(new Map());
 
   const throttledReorder = useMemo(
-    () =>
-      throttle(
-        (dragIndex, hoverIndex) => {
-          // Reordering logic for targetingList if needed in the future
-          // For now, we don't have a reorder action for targetingList
-        },
-        100,
-        {
-          leading: true,
-          trailing: false,
-        },
-      ),
+    () => throttle(() => {}, 100, { leading: true, trailing: false }),
     [],
   );
 
@@ -263,8 +256,12 @@ const TargetingTable = () => {
         addCreatureToTargetingList({
           id: uuidv4(),
           name: newCreatureName.trim(),
-          stance: 'Reach', // Default stance
-          distance: 2, // Default distance
+          stance: 'Reach',
+          distance: 0,
+          priority: 0,
+          action: 'Attack',
+          healthRange: 'Any',
+          stickiness: 2, // Default stickiness
         }),
       );
       setNewCreatureName('');
@@ -278,8 +275,22 @@ const TargetingTable = () => {
       {
         Header: 'Name',
         accessor: 'name',
-        width: 120,
+        width: 200,
         Cell: EditableStringCell,
+      },
+      {
+        Header: 'HP Range',
+        accessor: 'healthRange',
+        width: 100,
+        Cell: EditableSelectCell,
+        options: ['Any', 'Full', 'High', 'Medium', 'Low', 'Critical'],
+      },
+      {
+        Header: 'Action',
+        accessor: 'action',
+        width: 100,
+        Cell: EditableSelectCell,
+        options: ['Attack', 'None'],
       },
       {
         Header: 'Stance',
@@ -289,15 +300,29 @@ const TargetingTable = () => {
         options: ['Reach', 'Stand', 'Keep Away', 'Ignore'],
       },
       {
-        Header: 'Dist',
+        Header: 'Distance',
         accessor: 'distance',
-        width: 60,
-        Cell: EditableNumberCell,
+        width: 100,
+        Cell: (props) => <EditableNumberCell {...props} min={0} max={7} />,
       },
+      {
+        Header: 'Priority',
+        accessor: 'priority',
+        width: 100,
+        Cell: (props) => <EditableNumberCell {...props} min={0} max={20} />,
+      },
+      // --- NEW COLUMN: Stickiness ---
+      {
+        Header: 'Stick Strength',
+        accessor: 'stickiness',
+        width: 150,
+        Cell: (props) => <EditableNumberCell {...props} min={0} max={10} />,
+      },
+
       {
         Header: '',
         id: 'actions',
-        width: 40,
+        width: 30,
         Cell: ({ row }) => (
           <ActionCell row={row} onRemove={handleRemoveCreature} />
         ),
@@ -361,7 +386,7 @@ const TargetingTable = () => {
                   key={row.original.id}
                   index={i}
                   row={row}
-                  onSelect={() => {}} // No selection for now
+                  onSelect={() => {}}
                   onMoveRow={handleMoveRow}
                   setRef={(node) => {
                     const map = rowRefs.current;

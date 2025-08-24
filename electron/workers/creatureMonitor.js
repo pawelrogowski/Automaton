@@ -1,19 +1,20 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/creatureMonitor.js
+// --- Drop-in Replacement with Full Pathfinder Context ---
 
 import { parentPort, workerData } from 'worker_threads';
 import findTarget from 'find-target-native';
+import Pathfinder from 'pathfinder-native';
 import { calculateDistance } from '../utils/distance.js';
 import {
   getGameCoordinatesFromScreen,
   PLAYER_SCREEN_TILE_X,
   PLAYER_SCREEN_TILE_Y,
 } from '../utils/gameWorldClickTranslator.js';
-// REMOVED: SAB constants for creatures are no longer needed here
 
-// --- Shared data & SAB views ---
-const { sharedData } = workerData;
+let pathfinderInstance = null;
+const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
-const { imageSAB, syncSAB, playerPosSAB } = sharedData; // creaturePosSAB is removed
+const { imageSAB, syncSAB, playerPosSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const sharedBufferView = Buffer.from(imageSAB);
@@ -23,7 +24,6 @@ const PLAYER_X_INDEX = 0;
 const PLAYER_Y_INDEX = 1;
 const PLAYER_Z_INDEX = 2;
 
-// --- Config, State, and Helpers (largely unchanged, but SAB logic is gone) ---
 const PLAYER_ANIMATION_FREEZE_MS = 150;
 const PLAYER_SETTLING_GRACE_PERIOD_MS = 500;
 const STICKY_SNAP_THRESHOLD_TILES = 0.4;
@@ -35,6 +35,7 @@ let isInitialized = false;
 let isShuttingDown = false;
 let lastSentCreatures = [];
 let lastSentTarget = null;
+let lastSpecialAreasJson = ''; // NEW: To track changes in special areas
 
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
@@ -45,9 +46,25 @@ const creatureLastReportedGameCoords = new Map();
 const creatureLastCalculatedFloatCoords = new Map();
 const creatureReportHistory = new Map();
 
+function getHealthTagFromColor(color) {
+  if (!color) return 'Full';
+  const { r, g, b } = color;
+  if (r === 96 && g === 0 && b === 0) return 'Critical';
+  if (r === 192 && g === 0 && b === 0) return 'Low';
+  if (r === 192 && g === 192 && b === 0) return 'Medium';
+  if (r === 96 && g === 192 && b === 96) return 'High';
+  if (r === 0 && g === 192 && b === 0) return 'Full';
+  return 'Full';
+}
+
 function arePositionsEqual(pos1, pos2) {
-  if (!pos1 || !pos2) return false;
+  if (!pos1 || !pos2) return pos1 === pos2;
   return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
+}
+
+function areAbsoluteCoordsEqual(coords1, coords2) {
+  if (!coords1 || !coords2) return coords1 === coords2;
+  return coords1.x === coords2.x && coords1.y === coords2.y;
 }
 
 function deepCompareEntities(a, b) {
@@ -60,27 +77,24 @@ function deepCompareEntities(a, b) {
       const entityA = a[i];
       const entityB = b[i];
       if (
-        !entityA.gameCoords ||
-        !entityB.gameCoords ||
-        !arePositionsEqual(entityA.gameCoords, entityB.gameCoords)
+        entityA.name !== entityB.name ||
+        entityA.healthTag !== entityB.healthTag ||
+        entityA.isReachable !== entityB.isReachable ||
+        !arePositionsEqual(entityA.gameCoords, entityB.gameCoords) ||
+        !areAbsoluteCoordsEqual(entityA.absoluteCoords, entityB.absoluteCoords)
       ) {
         return false;
       }
-      if (entityA.name !== entityB.name) return false;
     }
     return true;
   }
 
   if (typeof a === 'object' && typeof b === 'object') {
-    if (
-      !a.gameCoordinates ||
-      !b.gameCoordinates ||
-      !arePositionsEqual(a.gameCoordinates, b.gameCoordinates)
-    ) {
-      return false;
-    }
-    if (a.name !== b.name) return false;
-    return true;
+    return (
+      a.name === b.name &&
+      arePositionsEqual(a.gameCoordinates, b.gameCoordinates) &&
+      areAbsoluteCoordsEqual(a.absoluteCoordinates, b.absoluteCoordinates)
+    );
   }
   return a === b;
 }
@@ -230,9 +244,11 @@ function processGameWorldEntities(
 
       return {
         name: creatureName,
+        healthTag: getHealthTagFromColor(r.color),
         absoluteCoords: {
           x: Math.round(creatureScreenX),
           y: Math.round(creatureScreenY),
+          lastUpdate: now,
         },
         gameCoords: { x: finalGameX, y: finalGameY, z: finalGameZ },
         distance: parseFloat(distance.toFixed(1)),
@@ -266,11 +282,34 @@ function processGameWorldEntities(
 async function performOperation() {
   try {
     if (
+      !isInitialized ||
       !currentState?.regionCoordinates?.regions ||
       !currentState?.ocr?.regions ||
-      !currentState?.gameState
+      !currentState?.gameState ||
+      !pathfinderInstance ||
+      !pathfinderInstance.isLoaded
     )
       return;
+
+    // --- NEW: Update special areas if they have changed ---
+    const specialAreas = currentState.cavebot?.specialAreas || [];
+    const currentSpecialAreasJson = JSON.stringify(specialAreas);
+    if (currentSpecialAreasJson !== lastSpecialAreasJson) {
+      const areasForNative = specialAreas.map((area) => ({
+        x: area.x,
+        y: area.y,
+        z: area.z,
+        avoidance: area.avoidance,
+        width: area.sizeX,
+        height: area.sizeY,
+      }));
+      pathfinderInstance.updateSpecialAreas(
+        areasForNative,
+        currentState.gameState.playerMinimapPosition.z,
+      );
+      lastSpecialAreasJson = currentSpecialAreasJson;
+    }
+    // --- END NEW ---
 
     const { regions } = currentState.regionCoordinates;
     const { gameWorld, tileSize } = regions;
@@ -303,21 +342,38 @@ async function performOperation() {
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
 
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
-    const isPlayerInSettlingGracePeriod =
-      now < playerSettlingGracePeriodEndTime;
     const ocrData = currentState.ocr.regions.gameWorld || [];
 
-    const detectedEntities = processGameWorldEntities(
+    let detectedEntities = processGameWorldEntities(
       ocrData,
       currentPlayerMinimapPosition,
       regions,
       tileSize,
       now,
       isPlayerInAnimationFreeze,
-      isPlayerInSettlingGracePeriod,
     );
 
-    // REMOVED: All logic writing to creaturePosSAB is gone.
+    if (detectedEntities.length > 0) {
+      // Use the full, up-to-date creature list from the *targeting* slice as obstacles
+      const allCreaturePositions = (
+        currentState.targeting?.creatures || []
+      ).map((c) => c.gameCoords);
+
+      detectedEntities = detectedEntities.map((entity) => {
+        const otherCreatures = allCreaturePositions.filter(
+          (p) => p !== entity.gameCoords,
+        );
+        const pathLength = pathfinderInstance.getPathLength(
+          currentPlayerMinimapPosition,
+          entity.gameCoords,
+          otherCreatures,
+        );
+        return {
+          ...entity,
+          isReachable: pathLength !== -1 && pathLength <= 10,
+        };
+      });
+    }
 
     if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
       parentPort.postMessage({
@@ -396,7 +452,53 @@ async function performOperation() {
   }
 }
 
-// --- (message handler remains the same) ---
+async function initialize() {
+  console.log('[CreatureMonitor] Initializing Pathfinder instance...');
+  try {
+    pathfinderInstance = new Pathfinder.Pathfinder();
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    const mapDataForAddon = {};
+    const baseDir = paths.minimapResources;
+    const zLevelDirs = (await fs.readdir(baseDir, { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && d.name.startsWith('z'))
+      .map((d) => d.name);
+
+    for (const zDir of zLevelDirs) {
+      const zLevel = parseInt(zDir.substring(1), 10);
+      const zLevelPath = path.join(baseDir, zDir);
+      try {
+        const metadata = JSON.parse(
+          await fs.readFile(path.join(zLevelPath, 'walkable.json'), 'utf8'),
+        );
+        const grid = await fs.readFile(path.join(zLevelPath, 'walkable.bin'));
+        mapDataForAddon[zLevel] = { ...metadata, grid };
+      } catch (e) {
+        if (e.code !== 'ENOENT') {
+          console.warn(
+            `[CreatureMonitor] Could not load path data for Z=${zLevel}: ${e.message}`,
+          );
+        }
+      }
+    }
+    pathfinderInstance.loadMapData(mapDataForAddon);
+    if (pathfinderInstance.isLoaded) {
+      console.log(
+        '[CreatureMonitor] Pathfinder instance loaded map data successfully.',
+      );
+    } else {
+      throw new Error('Pathfinder failed to load map data.');
+    }
+  } catch (err) {
+    console.error(
+      '[CreatureMonitor] FATAL: Could not initialize Pathfinder instance:',
+      err,
+    );
+    pathfinderInstance = null;
+  }
+}
+
 parentPort.on('message', (message) => {
   if (isShuttingDown) {
     return;
@@ -408,40 +510,28 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
       Object.assign(currentState, message.payload);
-      if (!isInitialized) {
-        isInitialized = true;
-        if (currentState.gameState?.playerMinimapPosition) {
-          previousPlayerMinimapPosition = {
-            ...currentState.gameState.playerMinimapPosition,
-          };
-          lastStablePlayerMinimapPosition = {
-            ...currentState.gameState.playerMinimapPosition,
-          };
-        }
-      }
-      performOperation();
-      return;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
-      lastSentCreatures = [];
-      lastSentTarget = null;
-      creatureLastReportedGameCoords.clear();
-      creatureLastCalculatedFloatCoords.clear();
-      creatureReportHistory.clear();
-      if (!isInitialized) {
-        isInitialized = true;
-        if (currentState.gameState?.playerMinimapPosition) {
-          previousPlayerMinimapPosition = {
-            ...currentState.gameState.playerMinimapPosition,
-          };
-          lastStablePlayerMinimapPosition = {
-            ...currentState.gameState.playerMinimapPosition,
-          };
-        }
-      }
-      performOperation();
-      return;
     }
+
+    if (currentState && !isInitialized) {
+      isInitialized = true;
+      initialize()
+        .then(() => {
+          if (currentState.gameState?.playerMinimapPosition) {
+            previousPlayerMinimapPosition = {
+              ...currentState.gameState.playerMinimapPosition,
+            };
+            lastStablePlayerMinimapPosition = {
+              ...currentState.gameState.playerMinimapPosition,
+            };
+          }
+        })
+        .catch((err) => {
+          console.error('[CreatureMonitor] Initialization failed:', err);
+        });
+    }
+    performOperation();
   } catch (e) {
     console.error('[CreatureMonitor] Error handling message:', e);
   }
