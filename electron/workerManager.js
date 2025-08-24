@@ -34,7 +34,7 @@ const DEFAULT_WORKER_CONFIG = {
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
-const DEBOUNCE_INTERVAL = 16;
+const DEBOUNCE_INTERVAL = 1;
 
 function quickHash(obj) {
   let h = 0x811c9dc5;

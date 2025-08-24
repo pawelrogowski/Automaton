@@ -7,7 +7,8 @@ import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
 import { PerformanceTracker } from './performanceTracker.js';
-import { FrameUpdateManager } from '../../utils/frameUpdateManager.js'; // NEW: Import helper
+import { FrameUpdateManager } from '../../utils/frameUpdateManager.js';
+import { LANDMARK_SIZE } from './config.js'; // Import LANDMARK_SIZE
 
 // --- Worker State ---
 let currentState = null;
@@ -32,7 +33,14 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function initialize() {
   console.log('[MinimapCore] Initializing...');
   setMinimapResourcesPath(workerData.paths.minimapResources);
-  minimapMatcher = new MinimapMatcher();
+
+  // Calculate PACKED_LANDMARK_PATTERN_BYTES based on LANDMARK_SIZE
+  const LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2);
+
+  minimapMatcher = new MinimapMatcher({
+    LANDMARK_SIZE: LANDMARK_SIZE,
+    LANDMARK_PATTERN_BYTES: LANDMARK_PATTERN_BYTES,
+  });
   await minimapMatcher.loadMapData();
   isInitialized = true;
   console.log('[MinimapCore] Initialized successfully.');

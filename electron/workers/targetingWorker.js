@@ -24,9 +24,11 @@ import {
 } from './sharedConstants.js';
 
 const MAIN_LOOP_INTERVAL = 100;
-const MOVEMENT_COOLDOWN_MS = 250;
-const CLICK_CONFIRMATION_TIMEOUT_MS = 250;
+const MOVEMENT_COOLDOWN_MS = 400;
+const CLICK_CONFIRMATION_TIMEOUT_MS = 350;
 const CLICK_POLL_INTERVAL_MS = 20;
+const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
+const TELEPORT_DISTANCE_THRESHOLD = 5;
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
@@ -45,6 +47,8 @@ const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const getDistance = (p1, p2) =>
+  Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 
 const getDirectionKey = (current, target) => {
   const dx = target.x - current.x;
@@ -62,6 +66,60 @@ const getDirectionKey = (current, target) => {
     if (dx > 0) return 'c';
   }
   return null;
+};
+
+const awaitWalkConfirmation = (
+  posCounterBeforeMove,
+  pathCounterBeforeMove,
+  timeoutMs,
+) => {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      clearInterval(intervalId);
+      reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    const intervalId = setInterval(() => {
+      const posChanged = playerPosArray
+        ? Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
+          posCounterBeforeMove
+        : false;
+      const pathChanged = pathDataArray
+        ? Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
+          pathCounterBeforeMove
+        : false;
+      if (posChanged || pathChanged) {
+        clearTimeout(timeoutId);
+        clearInterval(intervalId);
+        resolve(true);
+      }
+    }, CLICK_POLL_INTERVAL_MS); // Using CLICK_POLL_INTERVAL_MS for consistency
+  });
+};
+
+const awaitStandConfirmation = (initialPos, targetPos, timeoutMs) => {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const intervalId = setInterval(() => {
+      const finalPos = {
+        x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+        y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+        z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+      };
+      const zChanged = finalPos.z !== initialPos.z;
+      const teleported =
+        getDistance(initialPos, finalPos) >= TELEPORT_DISTANCE_THRESHOLD;
+      if (zChanged || teleported) {
+        clearInterval(intervalId);
+        setTimeout(() => resolve({ success: true, finalPos }), 10);
+      }
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(intervalId);
+        reject(
+          new Error(`awaitStandConfirmation timed out after ${timeoutMs}ms`),
+        );
+      }
+    }, CLICK_POLL_INTERVAL_MS); // Using CLICK_POLL_INTERVAL_MS for consistency
+  });
 };
 
 const updateSABData = () => {
@@ -226,6 +284,7 @@ async function clickAndConfirmTarget(targetToClick) {
   }
 
   try {
+    await delay(100); // Add 100ms delay before right click
     mouseController.rightClick(
       parseInt(globalState.global.windowId),
       targetToClick.absoluteCoords.x,
@@ -312,43 +371,68 @@ async function performTargeting() {
     });
   }
 
+  let targetConfirmed = false;
   if (bestTarget.name !== currentGameTarget?.name) {
-    await clickAndConfirmTarget(bestTarget);
+    targetConfirmed = await clickAndConfirmTarget(bestTarget);
+  } else {
+    targetConfirmed = true;
   }
 
-  const dynamicGoal = {
-    stance: bestTarget.stance,
-    distance: bestTarget.distance,
-    targetCreaturePos: bestTarget.gameCoords,
-  };
-  parentPort.postMessage({
-    storeUpdate: true,
-    type: 'cavebot/setDynamicTarget',
-    payload: dynamicGoal,
-  });
+  if (targetConfirmed) {
+    const dynamicGoal = {
+      stance: bestTarget.stance,
+      distance: bestTarget.distance,
+      targetCreaturePos: bestTarget.gameCoords,
+    };
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setDynamicTarget',
+      payload: dynamicGoal,
+    });
 
-  const now = Date.now();
-  if (now - lastMovementTime < MOVEMENT_COOLDOWN_MS) {
-    return;
-  }
-
-  if (bestTarget.stance === 'Stand') {
-    return;
-  }
-
-  if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
-    const nextStep = path[0];
-    if (
-      nextStep.x === playerMinimapPosition.x &&
-      nextStep.y === playerMinimapPosition.y
-    ) {
+    const now = Date.now();
+    if (now - lastMovementTime < MOVEMENT_COOLDOWN_MS) {
       return;
     }
 
-    const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
-    if (dirKey) {
-      keypress.sendKey(dirKey, globalState.global.display);
-      lastMovementTime = now;
+    if (bestTarget.stance === 'Stand') {
+      return;
+    }
+
+    if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
+      const nextStep = path[0];
+      if (
+        playerMinimapPosition.x === nextStep.x &&
+        playerMinimapPosition.y === nextStep.y
+      ) {
+        return;
+      }
+
+      const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
+      if (dirKey) {
+        const posCounterBeforeMove = lastPlayerPosCounter;
+        const pathCounterBeforeMove = lastPathDataCounter;
+
+        keypress.sendKey(dirKey, globalState.global.display);
+        lastMovementTime = now;
+
+        try {
+          await awaitWalkConfirmation(
+            posCounterBeforeMove,
+            pathCounterBeforeMove,
+            MOVEMENT_CONFIRMATION_TIMEOUT_MS,
+          );
+          logger(
+            'info',
+            `[Targeting] Confirmed movement to ${JSON.stringify(nextStep)}`,
+          );
+        } catch (error) {
+          logger(
+            'error',
+            `[Targeting] Movement confirmation failed: ${error.message}`,
+          );
+        }
+      }
     }
   }
 }

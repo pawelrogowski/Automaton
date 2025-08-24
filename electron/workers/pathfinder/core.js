@@ -32,7 +32,7 @@ const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 const perfTracker = new PerformanceTracker();
 let lastPerfReportTime = Date.now();
 
-const REDUX_UPDATE_INTERVAL_MS = 150;
+const REDUX_UPDATE_INTERVAL_MS = 25;
 let lastReduxUpdateTime = 0;
 let reduxUpdateTimeout = null;
 let pendingReduxUpdatePayload = null;

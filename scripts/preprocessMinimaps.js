@@ -16,23 +16,43 @@ const LANDMARK_UNIQUENESS_THRESHOLD = 1;
 // --- Configuration for the robust coverage algorithm ---
 const MINIMAP_WIDTH = 106;
 const MINIMAP_HEIGHT = 109;
-const REQUIRED_COVERAGE_COUNT = 2;
+const DEFAULT_REQUIRED_COVERAGE_COUNT = 2; // Renamed for clarity
 
-const PACKED_LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2);
+const PACKED_LANDMARK_PATTERN_BYTES = Math.ceil(
+  (LANDMARK_SIZE * LANDMARK_SIZE) / 2,
+);
 
 const logger = createLogger({ info: true, error: true, debug: true });
 
 // --- PATH CONFIGURATION ---
 const PROJECT_ROOT = path.join(process.cwd(), '..');
-const TIBIA_MINIMAP_BASE_PATH = path.join(os.homedir(), '.local', 'share', 'CipSoft GmbH', 'Tibia', 'packages', 'Tibia', 'minimap');
+const TIBIA_MINIMAP_BASE_PATH = path.join(
+  os.homedir(),
+  '.local',
+  'share',
+  'CipSoft GmbH',
+  'Tibia',
+  'packages',
+  'Tibia',
+  'minimap',
+);
 
-const RESOURCES_OUTPUT_DIR = path.join(PROJECT_ROOT, 'resources', 'preprocessed_minimaps');
-const PNG_ASSETS_DIR = path.join(PROJECT_ROOT, 'frontend', 'assets', 'minimaps');
-
+const RESOURCES_OUTPUT_DIR = path.join(
+  PROJECT_ROOT,
+  'resources',
+  'preprocessed_minimaps',
+);
+const PNG_ASSETS_DIR = path.join(
+  PROJECT_ROOT,
+  'frontend',
+  'assets',
+  'minimaps',
+);
 
 // --- Helper Functions ---
 function getPaletteIndex(r, g, b, map) {
-  return map.get(`${r},${g},${b}`) ?? 0;
+  const intKey = (r << 16) | (g << 8) | b;
+  return map.get(intKey) ?? 0;
 }
 
 function packLandmarkPattern4bit(pattern) {
@@ -40,7 +60,9 @@ function packLandmarkPattern4bit(pattern) {
   for (let i = 0; i < pattern.length; i++) {
     const paletteIndex = pattern[i];
     if (paletteIndex > 15) {
-      throw new Error(`Palette index ${paletteIndex} is too large for 4-bit packing. The palette must have 16 or fewer colors.`);
+      throw new Error(
+        `Palette index ${paletteIndex} is too large for 4-bit packing. The palette must have 16 or fewer colors.`,
+      );
     }
     const byteIndex = Math.floor(i / 2);
     if (i % 2 === 0) {
@@ -60,23 +82,33 @@ function shuffleArray(array) {
 }
 
 async function preprocessMinimaps() {
-  logger('info', '--- Starting ADVANCED Minimap & 1-BIT Pathfinding Pre-processing ---');
+  logger(
+    'info',
+    '--- Starting ADVANCED Minimap & 1-BIT Pathfinding Pre-processing ---',
+  );
 
   const palette = PALETTE_DATA;
   if (palette.length > 16) {
-    logger('error', `FATAL: Palette has ${palette.length} colors. 4-bit packing requires 16 or fewer colors.`);
+    logger(
+      'error',
+      `FATAL: Palette has ${palette.length} colors. 4-bit packing requires 16 or fewer colors.`,
+    );
     process.exit(1);
   }
   const colorToIndexMap = new Map();
   palette.forEach((color, index) => {
-    colorToIndexMap.set(`${color.r},${color.g},${color.b}`, index);
+    const intKey = (color.r << 16) | (color.g << 8) | color.b;
+    colorToIndexMap.set(intKey, index);
   });
   const noiseIndices = new Set([0, 14]);
 
   await fs.mkdir(RESOURCES_OUTPUT_DIR, { recursive: true });
   await fs.mkdir(PNG_ASSETS_DIR, { recursive: true });
 
-  logger('info', '--- STAGE 1: Scanning PNGs to determine map boundaries for each Z-level ---');
+  logger(
+    'info',
+    '--- STAGE 1: Scanning PNGs to determine map boundaries for each Z-level ---',
+  );
   const allFiles = await fs.readdir(TIBIA_MINIMAP_BASE_PATH);
   const zLevelIndexData = new Map();
 
@@ -88,7 +120,15 @@ async function preprocessMinimaps() {
     if (!match) continue;
     const [_, x, y, z] = match.map(Number);
     if (!zLevelIndexData.has(z)) {
-      zLevelIndexData.set(z, { z, colorTiles: [], waypointTiles: [], minX: x, maxX: x, minY: y, maxY: y });
+      zLevelIndexData.set(z, {
+        z,
+        colorTiles: [],
+        waypointTiles: [],
+        minX: x,
+        maxX: x,
+        minY: y,
+        maxY: y,
+      });
     }
     const indexData = zLevelIndexData.get(z);
     if (file.startsWith('Minimap_Color')) {
@@ -105,7 +145,10 @@ async function preprocessMinimaps() {
 
   const coverageReports = [];
 
-  logger('info', '--- STAGE 2: Assembling full maps, generating landmarks, and saving data ---');
+  logger(
+    'info',
+    '--- STAGE 2: Assembling full maps, generating landmarks, and saving data ---',
+  );
   for (const [z, indexData] of zLevelIndexData.entries()) {
     logger('info', `--- Processing Z-Level ${z} ---`);
 
@@ -122,16 +165,26 @@ async function preprocessMinimaps() {
     if (indexData.colorTiles.length > 0) {
       const fullMapData = new Uint8Array(mapWidth * mapHeight).fill(0);
 
-      logger('info', `Assembling ${mapWidth}x${mapHeight} color map for Z=${z} from ${indexData.colorTiles.length} PNGs...`);
+      logger(
+        'info',
+        `Assembling ${mapWidth}x${mapHeight} color map for Z=${z} from ${indexData.colorTiles.length} PNGs...`,
+      );
       for (const tile of indexData.colorTiles) {
-        const inputFilePath = path.join(TIBIA_MINIMAP_BASE_PATH, `Minimap_Color_${tile.x}_${tile.y}_${z}.png`);
-        const { data, info } = await sharp(inputFilePath).raw().toBuffer({ resolveWithObject: true });
+        const inputFilePath = path.join(
+          TIBIA_MINIMAP_BASE_PATH,
+          `Minimap_Color_${tile.x}_${tile.y}_${z}.png`,
+        );
+        const { data, info } = await sharp(inputFilePath)
+          .raw()
+          .toBuffer({ resolveWithObject: true });
         const relX = tile.x - indexData.minX;
         const relY = tile.y - indexData.minY;
         for (let py = 0; py < info.height; py++) {
           for (let px = 0; px < info.width; px++) {
             const tilePixelIndex = (py * info.width + px) * 3;
-            const r = data[tilePixelIndex], g = data[tilePixelIndex + 1], b = data[tilePixelIndex + 2];
+            const r = data[tilePixelIndex],
+              g = data[tilePixelIndex + 1],
+              b = data[tilePixelIndex + 2];
             const paletteIndex = getPaletteIndex(r, g, b, colorToIndexMap);
             const mapX = relX + px;
             const mapY = relY + py;
@@ -143,7 +196,10 @@ async function preprocessMinimaps() {
           }
         }
       }
-      logger('info', `(Z=${z}) Identified ${specialTransitionPixels.size} special transition pixels (stairs, holes, etc.).`);
+      logger(
+        'info',
+        `(Z=${z}) Identified ${specialTransitionPixels.size} special transition pixels (stairs, holes, etc.).`,
+      );
 
       if (SAVE_DEBUG_FULL_MAP_PNG) {
         logger('info', `Generating debug PNG for Z=${z}...`);
@@ -157,15 +213,71 @@ async function preprocessMinimaps() {
         }
         // MODIFIED: Save directly to the root PNG assets directory
         const debugPngPath = path.join(PNG_ASSETS_DIR, `_map_debug_z${z}.png`);
-        await sharp(rgbBuffer, { raw: { width: mapWidth, height: mapHeight, channels: 3 } }).png().toFile(debugPngPath);
+        await sharp(rgbBuffer, {
+          raw: { width: mapWidth, height: mapHeight, channels: 3 },
+        })
+          .png()
+          .toFile(debugPngPath);
         logger('info', `Saved debug PNG to: ${debugPngPath}`);
       }
 
-      const { finalLandmarks, coverageCountMap, coverableAreaMask } = await generateLandmarks(fullMapData, mapWidth, mapHeight, indexData, z);
+      // Initialize for multi-pass landmark generation
+      let currentFinalLandmarks = [];
+      let currentCoverageCountMap = new Uint8Array(mapWidth * mapHeight).fill(
+        0,
+      );
+      let currentCoverableAreaMask = new Uint8Array(mapWidth * mapHeight).fill(
+        0,
+      );
 
-      if (finalLandmarks.length > 0) {
-        logger('info', `(Z=${z}) Final landmark count after thinning: ${finalLandmarks.length}.`);
-        const landmarkBuffers = finalLandmarks.map((landmark) => {
+      // First pass: Target 2-landmark coverage
+      logger(
+        'info',
+        `(Z=${z}) Starting first pass: Targeting 2-landmark coverage.`,
+      );
+      ({
+        finalLandmarks: currentFinalLandmarks,
+        coverageCountMap: currentCoverageCountMap,
+        coverableAreaMask: currentCoverableAreaMask,
+      } = await generateLandmarks(
+        fullMapData,
+        mapWidth,
+        mapHeight,
+        indexData,
+        z,
+        2, // targetCoverage = 2
+        currentFinalLandmarks,
+        currentCoverageCountMap,
+        currentCoverableAreaMask,
+      ));
+
+      // Second pass: Target 1-landmark coverage for remaining uncovered areas
+      logger(
+        'info',
+        `(Z=${z}) Starting second pass: Targeting 1-landmark coverage for remaining areas.`,
+      );
+      ({
+        finalLandmarks: currentFinalLandmarks,
+        coverageCountMap: currentCoverageCountMap,
+        coverableAreaMask: currentCoverableAreaMask,
+      } = await generateLandmarks(
+        fullMapData,
+        mapWidth,
+        mapHeight,
+        indexData,
+        z,
+        1, // targetCoverage = 1
+        currentFinalLandmarks,
+        currentCoverageCountMap,
+        currentCoverableAreaMask,
+      ));
+
+      if (currentFinalLandmarks.length > 0) {
+        logger(
+          'info',
+          `(Z=${z}) Final landmark count after multi-pass thinning: ${currentFinalLandmarks.length}.`,
+        );
+        const landmarkBuffers = currentFinalLandmarks.map((landmark) => {
           const header = Buffer.alloc(8);
           header.writeUInt32LE(landmark.x, 0);
           header.writeUInt32LE(landmark.y, 4);
@@ -173,26 +285,46 @@ async function preprocessMinimaps() {
           return Buffer.concat([header, packedPattern]);
         });
         const finalBuffer = Buffer.concat(landmarkBuffers);
-        await fs.writeFile(path.join(zLevelResourceDir, 'landmarks.bin'), finalBuffer);
+        await fs.writeFile(
+          path.join(zLevelResourceDir, 'landmarks.bin'),
+          finalBuffer,
+        );
       } else {
-        logger('warn', `No unique landmarks found for Z=${z}. Position finding will be unavailable for this floor.`);
+        logger(
+          'warn',
+          `No unique landmarks found for Z=${z}. Position finding will be unavailable for this floor.`,
+        );
       }
 
       if (PROCESS_WAYPOINT_MAPS && indexData.waypointTiles.length > 0) {
-        logger('info', `(Z=${z}) Assembling walkable grid using 2-step logic...`);
+        logger(
+          'info',
+          `(Z=${z}) Assembling walkable grid using 2-step logic...`,
+        );
         for (const tile of indexData.waypointTiles) {
-          const inputFilePath = path.join(TIBIA_MINIMAP_BASE_PATH, `Minimap_WaypointCost_${tile.x}_${tile.y}_${z}.png`);
-          const { data, info } = await sharp(inputFilePath).raw().toBuffer({ resolveWithObject: true });
+          const inputFilePath = path.join(
+            TIBIA_MINIMAP_BASE_PATH,
+            `Minimap_WaypointCost_${tile.x}_${tile.y}_${z}.png`,
+          );
+          const { data, info } = await sharp(inputFilePath)
+            .raw()
+            .toBuffer({ resolveWithObject: true });
           const relX = tile.x - indexData.minX;
           const relY = tile.y - indexData.minY;
           for (let py = 0; py < info.height; py++) {
             for (let px = 0; px < info.width; px++) {
               const tilePixelIndex = (py * info.width + px) * 3;
-              const r = data[tilePixelIndex], g = data[tilePixelIndex + 1], b = data[tilePixelIndex + 2];
-              const isWaypointObstacle = (r === 255 && g === 255 && b === 0) || (r === 255 && g === 0 && b === 255);
+              const r = data[tilePixelIndex],
+                g = data[tilePixelIndex + 1],
+                b = data[tilePixelIndex + 2];
+              const isWaypointObstacle =
+                (r === 255 && g === 255 && b === 0) ||
+                (r === 255 && g === 0 && b === 255);
               const mapX = relX + px;
               const mapY = relY + py;
-              const isSpecialTransition = specialTransitionPixels.has(`${mapX},${mapY}`);
+              const isSpecialTransition = specialTransitionPixels.has(
+                `${mapX},${mapY}`,
+              );
               if (!isWaypointObstacle && !isSpecialTransition) {
                 walkableGrid[mapY * mapWidth + mapX] = 1;
               }
@@ -200,8 +332,13 @@ async function preprocessMinimaps() {
           }
         }
 
-        logger('debug', `(Z=${z}) Packing and writing walkable.bin and walkable.json...`);
-        const packedWalkableBuffer = Buffer.alloc(Math.ceil((mapWidth * mapHeight) / 8));
+        logger(
+          'debug',
+          `(Z=${z}) Packing and writing walkable.bin and walkable.json...`,
+        );
+        const packedWalkableBuffer = Buffer.alloc(
+          Math.ceil((mapWidth * mapHeight) / 8),
+        );
         for (let i = 0; i < walkableGrid.length; i++) {
           if (walkableGrid[i] === 1) {
             const byteIndex = Math.floor(i / 8);
@@ -209,7 +346,10 @@ async function preprocessMinimaps() {
             packedWalkableBuffer[byteIndex] |= 1 << bitIndex;
           }
         }
-        await fs.writeFile(path.join(zLevelResourceDir, 'walkable.bin'), packedWalkableBuffer);
+        await fs.writeFile(
+          path.join(zLevelResourceDir, 'walkable.bin'),
+          packedWalkableBuffer,
+        );
 
         const walkableMeta = {
           minX: indexData.minX,
@@ -217,7 +357,10 @@ async function preprocessMinimaps() {
           width: mapWidth,
           height: mapHeight,
         };
-        await fs.writeFile(path.join(zLevelResourceDir, 'walkable.json'), JSON.stringify(walkableMeta, null, 2));
+        await fs.writeFile(
+          path.join(zLevelResourceDir, 'walkable.json'),
+          JSON.stringify(walkableMeta, null, 2),
+        );
 
         if (SAVE_DEBUG_WAYPOINT_MAP_PNG) {
           logger('info', `Generating debug PNG for waypoint map Z=${z}...`);
@@ -242,8 +385,13 @@ async function preprocessMinimaps() {
             }
           }
           // MODIFIED: Save directly to the root PNG assets directory
-          const debugPngPath = path.join(PNG_ASSETS_DIR, `_waypoint_debug_z${z}.png`);
-          await sharp(waypointRgbBuffer, { raw: { width: mapWidth, height: mapHeight, channels: 3 } })
+          const debugPngPath = path.join(
+            PNG_ASSETS_DIR,
+            `_waypoint_debug_z${z}.png`,
+          );
+          await sharp(waypointRgbBuffer, {
+            raw: { width: mapWidth, height: mapHeight, channels: 3 },
+          })
             .png()
             .toFile(debugPngPath);
           logger('info', `Saved waypoint debug PNG to: ${debugPngPath}`);
@@ -255,32 +403,43 @@ async function preprocessMinimaps() {
       let totalWalkablePixels = 0;
       let walkablePixelsWithSufficientCoverage = 0;
 
-      for (let i = 0; i < coverableAreaMask.length; i++) {
-        if (coverableAreaMask[i] === 1) {
+      for (let i = 0; i < currentCoverableAreaMask.length; i++) {
+        if (currentCoverableAreaMask[i] === 1) {
           totalCoverablePixels++;
-          if (coverageCountMap[i] >= REQUIRED_COVERAGE_COUNT) {
+          if (currentCoverageCountMap[i] >= 1) {
+            // Count any pixel with at least 1 landmark
             pixelsWithSufficientCoverage++;
           }
         }
         if (walkableGrid[i] === 1) {
           totalWalkablePixels++;
-          if (coverageCountMap[i] >= REQUIRED_COVERAGE_COUNT) {
+          if (currentCoverageCountMap[i] >= 1) {
+            // Count any walkable pixel with at least 1 landmark
             walkablePixelsWithSufficientCoverage++;
           }
         }
       }
 
-      const overallCoveragePercentage = totalCoverablePixels > 0 ? (pixelsWithSufficientCoverage / totalCoverablePixels) * 100 : 0;
-      const walkableCoveragePercentage = totalWalkablePixels > 0 ? (walkablePixelsWithSufficientCoverage / totalWalkablePixels) * 100 : 0;
+      const overallCoveragePercentage =
+        totalCoverablePixels > 0
+          ? (pixelsWithSufficientCoverage / totalCoverablePixels) * 100
+          : 0;
+      const walkableCoveragePercentage =
+        totalWalkablePixels > 0
+          ? (walkablePixelsWithSufficientCoverage / totalWalkablePixels) * 100
+          : 0;
 
       coverageReports.push({
         z,
-        finalLandmarkCount: finalLandmarks.length,
+        finalLandmarkCount: currentFinalLandmarks.length,
         overallCoverage: overallCoveragePercentage.toFixed(2),
         walkableCoverage: walkableCoveragePercentage.toFixed(2),
       });
     } else {
-      logger('warn', `No color map tiles found for Z=${z}. Skipping color map processing.`);
+      logger(
+        'warn',
+        `No color map tiles found for Z=${z}. Skipping color map processing.`,
+      );
     }
   }
 
@@ -296,12 +455,29 @@ async function preprocessMinimaps() {
   logger('info', '----------------------------');
 }
 
-async function generateLandmarks(fullMapData, mapWidth, mapHeight, indexData, z) {
-  logger('info', `Scanning map for Z=${z} with 2-pass coverage strategy (Target Coverage: ${REQUIRED_COVERAGE_COUNT})...`);
+async function generateLandmarks(
+  fullMapData,
+  mapWidth,
+  mapHeight,
+  indexData,
+  z,
+  targetCoverage, // New parameter
+  existingLandmarks = [], // To accumulate landmarks from previous passes
+  existingCoverageMap = null, // To track coverage from previous passes
+  existingCoverableMask = null, // To track coverable areas
+) {
+  logger(
+    'info',
+    `Scanning map for Z=${z} with 2-pass coverage strategy (Target Coverage: ${targetCoverage})...`,
+  );
   const halfLandmark = Math.floor(LANDMARK_SIZE / 2);
   const patternCounts = new Map();
   const allPatterns = new Map();
-  const coverableAreaMask = new Uint8Array(mapWidth * mapHeight).fill(0);
+  const coverableAreaMask =
+    existingCoverableMask || new Uint8Array(mapWidth * mapHeight).fill(0);
+  const coverageCountMap =
+    existingCoverageMap || new Uint8Array(mapWidth * mapHeight).fill(0);
+  const finalLandmarks = [...existingLandmarks]; // Start with existing landmarks
   const noiseIndices = new Set([0, 14]);
 
   for (let y = halfLandmark; y < mapHeight - halfLandmark; y++) {
@@ -310,7 +486,10 @@ async function generateLandmarks(fullMapData, mapWidth, mapHeight, indexData, z)
       let isValid = true;
       for (let my = 0; my < LANDMARK_SIZE; my++) {
         for (let mx = 0; mx < LANDMARK_SIZE; mx++) {
-          const px = fullMapData[(y - halfLandmark + my) * mapWidth + (x - halfLandmark + mx)];
+          const px =
+            fullMapData[
+              (y - halfLandmark + my) * mapWidth + (x - halfLandmark + mx)
+            ];
           if (noiseIndices.has(px)) {
             isValid = false;
             break;
@@ -336,11 +515,12 @@ async function generateLandmarks(fullMapData, mapWidth, mapHeight, indexData, z)
       uniqueLandmarkCandidates.push({ x, y, pattern });
     }
   }
-  logger('info', `(Z=${z}) Found ${uniqueLandmarkCandidates.length} total unique landmark candidates.`);
+  logger(
+    'info',
+    `(Z=${z}) Found ${uniqueLandmarkCandidates.length} total unique landmark candidates.`,
+  );
   shuffleArray(uniqueLandmarkCandidates);
 
-  const finalLandmarks = [];
-  const coverageCountMap = new Uint8Array(mapWidth * mapHeight).fill(0);
   const halfMinimapW = Math.floor(MINIMAP_WIDTH / 2);
   const halfMinimapH = Math.floor(MINIMAP_HEIGHT / 2);
   const visibilityRadiusX = halfMinimapW - halfLandmark;
@@ -355,7 +535,10 @@ async function generateLandmarks(fullMapData, mapWidth, mapHeight, indexData, z)
     const playerEndY = Math.min(mapHeight, y + visibilityRadiusY);
     for (let playerY = playerStartY; playerY < playerEndY; playerY++) {
       for (let playerX = playerStartX; playerX < playerEndX; playerX++) {
-        if (coverageCountMap[playerY * mapWidth + playerX] < REQUIRED_COVERAGE_COUNT) {
+        if (
+          coverableAreaMask[playerY * mapWidth + playerX] === 1 && // Only consider coverable pixels
+          coverageCountMap[playerY * mapWidth + playerX] < targetCoverage // Use targetCoverage
+        ) {
           isNeeded = true;
           break;
         }
@@ -363,10 +546,17 @@ async function generateLandmarks(fullMapData, mapWidth, mapHeight, indexData, z)
       if (isNeeded) break;
     }
     if (isNeeded) {
-      finalLandmarks.push({ x: x + indexData.minX, y: y + indexData.minY, pattern });
+      finalLandmarks.push({
+        x: x + indexData.minX,
+        y: y + indexData.minY,
+        pattern,
+      });
       for (let playerY = playerStartY; playerY < playerEndY; playerY++) {
         for (let playerX = playerStartX; playerX < playerEndX; playerX++) {
-          coverageCountMap[playerY * mapWidth + playerX]++;
+          if (coverableAreaMask[playerY * mapWidth + playerX] === 1) {
+            // Only increment for coverable pixels
+            coverageCountMap[playerY * mapWidth + playerX]++;
+          }
         }
       }
     }

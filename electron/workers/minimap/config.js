@@ -2,7 +2,7 @@ import { PALETTE_DATA } from '../../constants/palette.js';
 
 // --- Worker Timing ---
 export const MAIN_LOOP_INTERVAL = 32;
-export const MAX_FRAME_FALLBEHIND = 15;
+export const MAX_FRAME_FALLBEHIND = 150;
 // --- Performance Logging ---
 export const PERFORMANCE_LOGGING_ENABLED = false; // Set to false to disable logging
 export const PERFORMANCE_LOG_INTERVAL_MS = 10000; // Log stats every 10 seconds
@@ -23,7 +23,7 @@ export const BYTES_PER_PIXEL = 4;
 // --- Minimap Specifics ---
 export const MINIMAP_WIDTH = 106;
 export const MINIMAP_HEIGHT = 109;
-
+export const LANDMARK_SIZE = 3;
 /**
  * A pre-computed map for fast lookups of a color's 8-bit palette index.
  * Key: An integer representing an RGB color (e.g., (r << 16) | (g << 8) | b).

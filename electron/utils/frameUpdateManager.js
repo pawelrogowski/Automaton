@@ -163,13 +163,11 @@ export class FrameUpdateManager {
 
     const mergedRects = this._mergeRects(rectsToProcess);
 
-    // Coverage threshold (default: 95%)
-    const MOVING_COVERAGE_THRESHOLD = 0.95;
-
     for (const region of this.regionsOfInterest) {
       const coverage = computeCoverageFromMerged(mergedRects, region);
-      if (coverage >= MOVING_COVERAGE_THRESHOLD) {
-        return true; // Region sufficiently covered by updates
+      if (coverage > 0) {
+        // Process if any change is detected within the region
+        return true;
       }
     }
 
