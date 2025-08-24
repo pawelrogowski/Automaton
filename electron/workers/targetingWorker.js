@@ -20,6 +20,8 @@ import {
   PATH_START_Z_INDEX,
   PATHFINDING_STATUS_INDEX,
   PATH_STATUS_PATH_FOUND,
+  PATH_STATUS_IDLE,
+  PATH_STATUS_NO_PATH_FOUND,
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
@@ -119,6 +121,31 @@ const awaitStandConfirmation = (initialPos, targetPos, timeoutMs) => {
         );
       }
     }, CLICK_POLL_INTERVAL_MS); // Using CLICK_POLL_INTERVAL_MS for consistency
+  });
+};
+
+const awaitPathfinderUpdate = (timeoutMs) => {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const intervalId = setInterval(() => {
+      // Ensure SAB data is up-to-date before checking status
+      updateSABData();
+
+      if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
+        clearInterval(intervalId);
+        resolve(true);
+      } else if (pathfindingStatus === PATH_STATUS_NO_PATH_FOUND) {
+        clearInterval(intervalId);
+        resolve(false);
+      }
+
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(intervalId);
+        reject(
+          new Error(`awaitPathfinderUpdate timed out after ${timeoutMs}ms`),
+        );
+      }
+    }, CLICK_POLL_INTERVAL_MS);
   });
 };
 
@@ -284,7 +311,6 @@ async function clickAndConfirmTarget(targetToClick) {
   }
 
   try {
-    await delay(100); // Add 100ms delay before right click
     mouseController.rightClick(
       parseInt(globalState.global.windowId),
       targetToClick.absoluteCoords.x,
@@ -371,67 +397,84 @@ async function performTargeting() {
     });
   }
 
-  let targetConfirmed = false;
   if (bestTarget.name !== currentGameTarget?.name) {
-    targetConfirmed = await clickAndConfirmTarget(bestTarget);
-  } else {
-    targetConfirmed = true;
+    const clickedSuccessfully = await clickAndConfirmTarget(bestTarget);
+    if (!clickedSuccessfully) {
+      return; // Block further actions if targeting failed
+    }
   }
 
-  if (targetConfirmed) {
-    const dynamicGoal = {
-      stance: bestTarget.stance,
-      distance: bestTarget.distance,
-      targetCreaturePos: bestTarget.gameCoords,
-    };
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/setDynamicTarget',
-      payload: dynamicGoal,
-    });
+  // If we reach here, either bestTarget is already currentGameTarget, or we successfully clicked a new target.
+  const dynamicGoal = {
+    stance: bestTarget.stance,
+    distance: bestTarget.stance === 'Stand' ? 0 : bestTarget.distance, // If stance is 'Stand', distance should be 0 for pathfinding
+    targetCreaturePos: bestTarget.gameCoords,
+  };
+  parentPort.postMessage({
+    storeUpdate: true,
+    type: 'cavebot/setDynamicTarget',
+    payload: dynamicGoal,
+  });
 
-    const now = Date.now();
-    if (now - lastMovementTime < MOVEMENT_COOLDOWN_MS) {
+  // Wait for pathfinder to update with the new target's path
+  try {
+    const pathFound = await awaitPathfinderUpdate(1000); // 1 second timeout
+    if (!pathFound) {
+      logger(
+        'warn',
+        `[Targeting] No path found for ${bestTarget.name}. Switching target.`,
+      );
+      return; // Switch target by returning
+    }
+  } catch (error) {
+    logger(
+      'error',
+      `[Targeting] Error waiting for pathfinder update: ${error.message}. Switching target.`,
+    );
+    return; // Switch target on error
+  }
+
+  const now = Date.now();
+  if (now - lastMovementTime < MOVEMENT_COOLDOWN_MS) {
+    return;
+  }
+
+  if (bestTarget.stance === 'Stand') {
+    return;
+  }
+
+  if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
+    const nextStep = path[0];
+    if (
+      playerMinimapPosition.x === nextStep.x &&
+      playerMinimapPosition.y === nextStep.y
+    ) {
       return;
     }
 
-    if (bestTarget.stance === 'Stand') {
-      return;
-    }
+    const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
+    if (dirKey) {
+      const posCounterBeforeMove = lastPlayerPosCounter;
+      const pathCounterBeforeMove = lastPathDataCounter;
 
-    if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
-      const nextStep = path[0];
-      if (
-        playerMinimapPosition.x === nextStep.x &&
-        playerMinimapPosition.y === nextStep.y
-      ) {
-        return;
-      }
+      keypress.sendKey(dirKey, globalState.global.display);
+      lastMovementTime = now;
 
-      const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
-      if (dirKey) {
-        const posCounterBeforeMove = lastPlayerPosCounter;
-        const pathCounterBeforeMove = lastPathDataCounter;
-
-        keypress.sendKey(dirKey, globalState.global.display);
-        lastMovementTime = now;
-
-        try {
-          await awaitWalkConfirmation(
-            posCounterBeforeMove,
-            pathCounterBeforeMove,
-            MOVEMENT_CONFIRMATION_TIMEOUT_MS,
-          );
-          logger(
-            'info',
-            `[Targeting] Confirmed movement to ${JSON.stringify(nextStep)}`,
-          );
-        } catch (error) {
-          logger(
-            'error',
-            `[Targeting] Movement confirmation failed: ${error.message}`,
-          );
-        }
+      try {
+        await awaitWalkConfirmation(
+          posCounterBeforeMove,
+          pathCounterBeforeMove,
+          MOVEMENT_CONFIRMATION_TIMEOUT_MS,
+        );
+        logger(
+          'info',
+          `[Targeting] Confirmed movement to ${JSON.stringify(nextStep)}`,
+        );
+      } catch (error) {
+        logger(
+          'error',
+          `[Targeting] Movement confirmation failed: ${error.message}`,
+        );
       }
     }
   }

@@ -1,7 +1,7 @@
 // --- Performance Logging ---
-export const PERFORMANCE_LOGGING_ENABLED = true; // Set to false to disable logging
+export const PERFORMANCE_LOGGING_ENABLED = false; // Set to false to disable logging
 export const PERFORMANCE_LOG_INTERVAL_MS = 10000; // Log stats every 10 seconds
-export const TARGET_FPS = 30;
+export const TARGET_FPS = 10;
 
 // --- SharedArrayBuffer (SAB) Indices ---
 export const FRAME_COUNTER_INDEX = 0;
