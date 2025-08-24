@@ -1,57 +1,14 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setStance, setDistance } from '../redux/slices/targetingSlice.js';
 import StyledTargeting from './Targeting.styled.js';
 import HighWrapper from '../components/HighWrapper/HighWrapper.js';
-import CustomSelect from '../components/CustomSelect/CustomSelect.js';
+import TargetingTable from '../components/TargetingTable/TargetingTable.jsx';
 
 const Targeting = () => {
-  const dispatch = useDispatch();
-  const { stance, distance, creatures, target } = useSelector(
-    (state) => state.targeting,
-  );
-
-  const handleStanceChange = (e) => {
-    dispatch(setStance(e.target.value));
-  };
-
-  const handleDistanceChange = (e) => {
-    dispatch(setDistance(parseInt(e.target.value, 10)));
-  };
-
-  const stanceOptions = [
-    { value: 'Ignore', label: 'Ignore' },
-    { value: 'keepAway', label: 'Keep Away' },
-    { value: 'waitAndKeepAway', label: 'Wait and Keep Away' },
-    { value: 'Reach', label: 'Reach' },
-    { value: 'Stand', label: 'Stand' },
-  ];
+  const { target } = useSelector((state) => state.targeting);
 
   return (
     <StyledTargeting>
-      <HighWrapper title="Targeting Settings">
-        <div className="settings-container">
-          <div className="setting-row">
-            <label htmlFor="stance-select">Stance:</label>
-            <CustomSelect
-              id="stance-select"
-              value={stance}
-              onChange={handleStanceChange}
-              options={stanceOptions}
-            />
-          </div>
-          <div className="setting-row">
-            <label htmlFor="distance-input">Distance:</label>
-            <input
-              id="distance-input"
-              type="number"
-              value={distance}
-              onChange={handleDistanceChange}
-              min="1"
-            />
-          </div>
-        </div>
-      </HighWrapper>
       <HighWrapper title="Target Information">
         {target ? (
           <div className="target-info">
@@ -74,20 +31,7 @@ const Targeting = () => {
           <p>No target selected</p>
         )}
       </HighWrapper>
-      <HighWrapper title="Creatures on Screen">
-        <div className="creatures-list">
-          <ul>
-            {creatures &&
-              creatures.map((creature, index) => (
-                <li key={index}>
-                  <strong>Name:</strong> {creature.name} | X:{' '}
-                  {creature.gameCoords.x}, Y: {creature.gameCoords.y}, Z:{' '}
-                  {creature.gameCoords.z}
-                </li>
-              ))}
-          </ul>
-        </div>
-      </HighWrapper>
+      <TargetingTable />
     </StyledTargeting>
   );
 };

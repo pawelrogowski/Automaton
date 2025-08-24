@@ -5,6 +5,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
 import { createLogger } from '../utils/logger.js';
+import mouseController from '../../nativeModules/mouseController/wrapper.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -34,6 +35,8 @@ let path = [];
 let pathfindingStatus = 0;
 let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
+let lastCreatureAbsoluteCoordsUpdate = 0;
+let lastTargetedCreatureId = null;
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
@@ -146,43 +149,87 @@ async function performTargeting() {
   if (!playerMinimapPosition) return;
 
   const { targeting } = globalState;
-
-  // This logic for setting the dynamic target remains the same.
-  // It continuously tells the pathfinder what our goal is.
   let dynamicGoal = null;
-  if (
-    targeting.creatures.length > 0 &&
-    targeting.stance !== 'Ignore' &&
-    targeting.stance !== 'Stand'
-  ) {
-    let closestCreature = null;
-    let minDistance = Infinity;
-    targeting.creatures.forEach((creature) => {
-      const dist = Math.max(
-        Math.abs(playerMinimapPosition.x - creature.gameCoords.x),
-        Math.abs(playerMinimapPosition.y - creature.gameCoords.y),
-      );
-      if (dist < minDistance) {
-        minDistance = dist;
-        closestCreature = creature;
-      }
-    });
+  let currentTarget = null;
+  let minDistance = Infinity; // Initialize minDistance here
 
-    if (closestCreature) {
-      // For 'keepAway' stance, only set a dynamic goal if the creature is closer than or at the desired distance.
-      // If the creature is further away, wait for it to approach.
-      if (targeting.stance === 'keepAway' && minDistance > targeting.distance) {
-        dynamicGoal = null; // Creature is too far, do not set a target for running away
-      } else {
-        dynamicGoal = {
-          stance: targeting.stance,
-          distance: targeting.distance,
-          targetCreaturePos: closestCreature.gameCoords,
-        };
+  const findTargetedCreature = (
+    creaturesOnScreen,
+    targetingList,
+    playerPos,
+  ) => {
+    if (
+      !creaturesOnScreen ||
+      creaturesOnScreen.length === 0 ||
+      !targetingList ||
+      targetingList.length === 0
+    ) {
+      return null;
+    }
+
+    let bestTarget = null;
+    let currentMinDistance = Infinity; // Use a local minDistance for this function
+
+    for (const targetEntry of targetingList) {
+      const {
+        name: targetName,
+        stance: targetStance,
+        distance: targetDistance,
+      } = targetEntry;
+
+      if (targetStance === 'Ignore') continue;
+
+      const matchingCreatures = creaturesOnScreen.filter(
+        (creature) => creature.name === targetName,
+      );
+
+      if (matchingCreatures.length === 0) continue;
+
+      for (const creature of matchingCreatures) {
+        const dist = Math.max(
+          Math.abs(playerPos.x - creature.gameCoords.x),
+          Math.abs(playerPos.y - creature.gameCoords.y),
+        );
+
+        // Prioritize based on targeting list order (implicit by iterating targetingList)
+        // and then by proximity for creatures with the same name.
+        if (dist < currentMinDistance) {
+          currentMinDistance = dist;
+          bestTarget = {
+            ...creature,
+            configuredStance: targetStance,
+            configuredDistance: targetDistance,
+          };
+        }
       }
-    } else {
-      // If no closest creature, ensure dynamicGoal is null to stop pathfinding
-      dynamicGoal = null;
+    }
+    minDistance = currentMinDistance; // Assign to outer scope minDistance
+    return bestTarget;
+  };
+
+  currentTarget = findTargetedCreature(
+    targeting.creatures,
+    targeting.targetingList,
+    playerMinimapPosition,
+  );
+
+  if (currentTarget) {
+    const { configuredStance, configuredDistance, gameCoords } = currentTarget;
+
+    if (configuredStance === 'Stand') {
+      dynamicGoal = null; // Do not move if stance is 'Stand'
+    } else if (
+      configuredStance === 'Keep Away' &&
+      minDistance > configuredDistance
+    ) {
+      dynamicGoal = null; // Creature is too far, do not set a target for running away
+    } else if (configuredStance !== 'Ignore') {
+      // For 'Reach' and 'Keep Away' (when close)
+      dynamicGoal = {
+        stance: configuredStance,
+        distance: configuredDistance,
+        targetCreaturePos: gameCoords,
+      };
     }
   }
 
@@ -191,6 +238,55 @@ async function performTargeting() {
     type: 'cavebot/setDynamicTarget',
     payload: dynamicGoal,
   });
+
+  // Update the target in the Redux store
+  parentPort.postMessage({
+    storeUpdate: true,
+    type: 'targeting/setTarget',
+    payload: currentTarget
+      ? {
+          name: currentTarget.name,
+          distance: minDistance, // Use the calculated distance
+          gameCoordinates: currentTarget.gameCoords || { x: 0, y: 0, z: 0 },
+          absoluteCoordinates: currentTarget.absoluteCoordinates || {
+            x: 0,
+            y: 0,
+          },
+        }
+      : null,
+  });
+
+  // Right-click targeting logic
+  if (
+    currentTarget &&
+    currentTarget.absoluteCoordinates &&
+    currentTarget.id !== lastTargetedCreatureId &&
+    currentTarget.absoluteCoordinates.lastUpdate >
+      lastCreatureAbsoluteCoordsUpdate
+  ) {
+    try {
+      mouseController.leftClick(
+        currentTarget.absoluteCoordinates.x,
+        currentTarget.absoluteCoordinates.y,
+        globalState.global.display,
+      );
+      logger(
+        'info',
+        `[TargetingWorker] Left-clicked on ${currentTarget.name} at ${currentTarget.absoluteCoordinates.x}, ${currentTarget.absoluteCoordinates.y}`,
+      );
+      lastTargetedCreatureId = currentTarget.id;
+      lastCreatureAbsoluteCoordsUpdate =
+        currentTarget.absoluteCoordinates.lastUpdate;
+    } catch (error) {
+      logger(
+        'error',
+        `[TargetingWorker] Error right-clicking: ${error.message}`,
+      );
+    }
+  } else if (!currentTarget) {
+    lastTargetedCreatureId = null;
+    lastCreatureAbsoluteCoordsUpdate = 0; // Reset timestamp when no target
+  }
 
   if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
     const nextStep = path[0];

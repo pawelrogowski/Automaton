@@ -1,5 +1,5 @@
 {
-  "name": "notion",
+  "name": "miro-github",
   "version": "1.3.8",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.notion",
-    "productName": "Notion",
+    "appId": "com.electron.miro-github",
+    "productName": "Miro Github",
     "directories": {
       "output": "dist",
       "buildResources": "build"

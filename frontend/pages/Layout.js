@@ -215,7 +215,7 @@ const Layout = () => {
         <NavButton to="/hotkeys" text="Settings"></NavButton>
       </Header>
       <div className="side-main">
-        {!isCavebotPage && (
+        {!isCavebotPage && !location.pathname.includes('/targeting') && (
           <SidebarWrapper className="aside">
             {location.pathname.includes('/healing') && (
               <>
@@ -273,18 +273,6 @@ const Layout = () => {
                   text={'Spell Rotations'}
                   imageWidth="32px"
                   tooltip="Show spell rotation rules"
-                ></SideBarNavButton>
-              </>
-            )}
-
-            {location.pathname.includes('/targeting') && (
-              <>
-                <SideBarNavButton
-                  to="/targeting#settings"
-                  img={battleSign}
-                  text={'Settings'}
-                  imageWidth="32px"
-                  tooltip="Manage targeting settings"
                 ></SideBarNavButton>
               </>
             )}

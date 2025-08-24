@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // --- Configuration ---
-const targetFolder = '../nativeModules';
+const targetFolder = '../frontend/redux/slices';
 const outputFile = 'combined_scripts.txt';
 // -------------------
 
