@@ -310,12 +310,37 @@ async function clickAndConfirmTarget(targetToClick) {
     return false;
   }
 
+  const gameWorld = globalState.regionCoordinates?.regions?.gameWorld;
+  const BORDER_THRESHOLD = 64;
+
+  if (gameWorld) {
+    const { x, y, width, height } = gameWorld;
+    const clickX = targetToClick.absoluteCoords.x;
+    const clickY = targetToClick.absoluteCoords.y;
+
+    if (
+      clickX < x + BORDER_THRESHOLD ||
+      clickX > x + width - BORDER_THRESHOLD ||
+      clickY < y + BORDER_THRESHOLD ||
+      clickY > y + height - BORDER_THRESHOLD
+    ) {
+      logger(
+        'warn',
+        `[Targeting] Preventing click on ${targetToClick.name} at x: ${clickX}, y: ${clickY} because it's within ${BORDER_THRESHOLD}px of gameWorld borders.`,
+      );
+      return false;
+    }
+  }
+
   try {
     mouseController.rightClick(
       parseInt(globalState.global.windowId),
       targetToClick.absoluteCoords.x,
       targetToClick.absoluteCoords.y,
       globalState.global.display,
+    );
+    console.log(
+      `[Targeting] Right-clicked at x: ${targetToClick.absoluteCoords.x}, y: ${targetToClick.absoluteCoords.y}`,
     );
     logger('info', `[Targeting] Attempting to target: ${targetToClick.name}`);
   } catch (error) {
@@ -457,6 +482,9 @@ async function performTargeting() {
       const posCounterBeforeMove = lastPlayerPosCounter;
       const pathCounterBeforeMove = lastPathDataCounter;
 
+      console.log(
+        `[Targeting] Movement key: ${dirKey}, Path length: ${path.length}`,
+      );
       keypress.sendKey(dirKey, globalState.global.display);
       lastMovementTime = now;
 

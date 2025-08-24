@@ -486,20 +486,6 @@ const fsm = {
       const { playerPos, targetWaypoint, status, path, chebyshevDist } =
         context;
 
-      // Debug: log path length and wptDistance (if present on context) to help diagnose
-      try {
-        const wptDistance =
-          context.wptDistance !== undefined
-            ? ` wptDistance=${context.wptDistance}`
-            : '';
-        pathingLogger(
-          'info',
-          `Evaluating waypoint ${targetWaypoint.id}: pathLen=${(path || []).length}${wptDistance} cheb=${chebyshevDist}`,
-        );
-      } catch (e) {
-        /* ignore logging errors */
-      }
-
       // If the player's exact position matches the waypoint coordinates, advance immediately.
       if (
         playerPos.x === targetWaypoint.x &&
@@ -741,7 +727,8 @@ async function performOperation() {
     if (
       !isInitialized ||
       !globalState?.cavebot?.enabled ||
-      !globalState.global?.windowId
+      !globalState.global?.windowId ||
+      globalState.cavebot.pathfinderMode === 'targeting'
     ) {
       if (fsmState !== 'IDLE') {
         fsmState = 'IDLE';
@@ -831,10 +818,6 @@ async function performOperation() {
         fsmState = nextState;
         const newStateLogic = fsm[fsmState];
         if (newStateLogic && newStateLogic.enter) newStateLogic.enter(context);
-        pathingLogger(
-          'info',
-          `[FSM] Transition: ${lastFsmState} -> ${fsmState}`,
-        );
       }
     } else {
       logger('error', `Invalid FSM state: ${fsmState}. Resetting to IDLE.`);
