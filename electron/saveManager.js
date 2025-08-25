@@ -5,47 +5,126 @@ import { showNotification } from './notificationHandler.js';
 import store from './store.js';
 import setGlobalState from './setGlobalState.js';
 import throttle from 'lodash/throttle.js';
-// Helper to normalize Lua scripts with a 'type' property if missing
+import omit from 'lodash/omit.js';
+
+// ... (normalizeLuaScripts and STATE_SCHEMA are unchanged)
+// Helper to normalize Lua scripts
 const normalizeLuaScripts = (luaState) => {
   if (!luaState) return luaState;
-
   const normalizedState = { ...luaState };
-
   if (
     normalizedState.persistentScripts &&
     Array.isArray(normalizedState.persistentScripts)
   ) {
     normalizedState.persistentScripts = normalizedState.persistentScripts.map(
-      (script) => ({
-        ...script,
-        type: script.type || 'persistent', // Ensure type is 'persistent'
-      }),
+      (script) => ({ ...script, type: script.type || 'persistent' }),
     );
   }
-
   if (
     normalizedState.hotkeyScripts &&
     Array.isArray(normalizedState.hotkeyScripts)
   ) {
     normalizedState.hotkeyScripts = normalizedState.hotkeyScripts.map(
-      (script) => ({
-        ...script,
-        type: script.type || 'hotkey', // Ensure type is 'hotkey'
-      }),
+      (script) => ({ ...script, type: script.type || 'hotkey' }),
     );
   }
-
   return normalizedState;
 };
 
+// STATE PERSISTENCE SCHEMA
+const STATE_SCHEMA = {
+  global: {
+    transformOnSave: (state) => ({
+      notificationsEnabled: state.notificationsEnabled,
+      isGlobalShortcutsEnabled: state.isGlobalShortcutsEnabled,
+    }),
+  },
+  rules: {},
+  lua: {
+    transformOnSave: (state) => ({
+      enabled: false,
+      persistentScripts:
+        state.persistentScripts?.map((script) => ({
+          ...script,
+          log: [],
+        })) || [],
+    }),
+    transformOnLoad: (state) =>
+      normalizeLuaScripts({ ...state, enabled: false }),
+  },
+  cavebot: {
+    transformOnSave: (state) => ({
+      enabled: false,
+      waypointSections: state.waypointSections,
+      specialAreas: state.specialAreas,
+    }),
+    transformOnLoad: (state) => ({ ...state, enabled: false }),
+  },
+  targeting: {
+    transformOnSave: (state) => ({
+      enabled: false,
+      targetingList: state.targetingList,
+    }),
+    transformOnLoad: (state) => ({ ...state, enabled: false }),
+  },
+};
+
+const PERSISTED_SLICES = Object.keys(STATE_SCHEMA);
 const user_data_path = app.getPath('userData');
 const auto_load_file_path = path.join(user_data_path, 'autoLoadRules.json');
 
-// Save state excluding window-specific data
-export const saveRulesToFile = async (callback) => {
+// ============================================================================
+// Schema-Driven Helper Functions
+// ============================================================================
+
+const prepareStateForSave = (fullState) => {
+  const stateToSave = {};
+  for (const sliceName of PERSISTED_SLICES) {
+    if (fullState[sliceName]) {
+      const sliceConfig = STATE_SCHEMA[sliceName];
+      stateToSave[sliceName] = sliceConfig.transformOnSave
+        ? sliceConfig.transformOnSave(fullState[sliceName])
+        : fullState[sliceName];
+    }
+  }
+  return stateToSave;
+};
+
+const applyLoadedState = (loadedState) => {
+  if (!loadedState || typeof loadedState !== 'object') return;
+  for (const sliceName of PERSISTED_SLICES) {
+    if (loadedState[sliceName]) {
+      let sliceData = loadedState[sliceName];
+      const sliceConfig = STATE_SCHEMA[sliceName];
+      if (sliceConfig.transformOnLoad) {
+        sliceData = sliceConfig.transformOnLoad(sliceData);
+      }
+      setGlobalState(`${sliceName}/setState`, sliceData);
+    }
+  }
+};
+
+// ============================================================================
+// Generic Save Function & Factory
+// ============================================================================
+
+/**
+ * A generic function to handle the logic of saving data to a file.
+ * @param {object} dataToSave - The JavaScript object to be stringified and saved.
+ * @param {string} dialogTitle - The title for the save file dialog window.
+ * @param {string} defaultFilename - The suggested filename in the dialog.
+ * @param {function} [callback] - An optional callback to run after completion.
+ */
+const genericSaveToFile = async (
+  dataToSave,
+  dialogTitle,
+  defaultFilename,
+  callback,
+) => {
   try {
     const dialog_result = await dialog.showSaveDialog({
-      title: 'Save State',
+      title: dialogTitle,
+      defaultPath: defaultFilename,
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
     });
 
@@ -53,23 +132,70 @@ export const saveRulesToFile = async (callback) => {
       const save_file_path = dialog_result.filePath.endsWith('.json')
         ? dialog_result.filePath
         : `${dialog_result.filePath}.json`;
-      const state = store.getState();
 
-      await fs.writeFile(save_file_path, JSON.stringify(state, null, 2));
+      await fs.writeFile(save_file_path, JSON.stringify(dataToSave, null, 2));
       showNotification(`📥 Saved | ${path.basename(save_file_path)}`);
     }
-    callback();
   } catch (err) {
-    console.error('Failed to save state:', err);
-    showNotification('❌ Failed to save state');
-    callback();
+    console.error(`Failed to save file for "${dialogTitle}":`, err);
+    showNotification(`❌ Failed to save ${defaultFilename}`);
+  } finally {
+    if (callback) callback();
   }
 };
 
+/**
+ * Factory function to create a dedicated save function for a specific state slice.
+ * @param {string} sliceName - The key of the state slice (e.g., 'targeting').
+ * @param {string} dialogTitle - The title for the save dialog.
+ * @param {string} defaultFilename - The suggested filename.
+ * @returns {function} An async function that takes an optional callback.
+ */
+const createSliceSaver = (sliceName, dialogTitle, defaultFilename) => {
+  return async (callback) => {
+    const sliceState = store.getState()[sliceName];
+    if (!sliceState) {
+      console.error(`Attempted to save non-existent slice: ${sliceName}`);
+      showNotification(`❌ Cannot save ${sliceName}: state not found`);
+      if (callback) callback();
+      return;
+    }
+
+    // Use the schema to prepare the slice for saving, ensuring consistency.
+    const sliceConfig = STATE_SCHEMA[sliceName];
+    const stateToSave = sliceConfig.transformOnSave
+      ? sliceConfig.transformOnSave(sliceState)
+      : sliceState;
+
+    await genericSaveToFile(
+      stateToSave,
+      dialogTitle,
+      defaultFilename,
+      callback,
+    );
+  };
+};
+
+// ============================================================================
+// Public API (Save/Load Functions)
+// ============================================================================
+
+/** Saves the ENTIRE configured state to a file. */
+export const saveRulesToFile = async (callback) => {
+  const fullStateToSave = prepareStateForSave(store.getState());
+  await genericSaveToFile(
+    fullStateToSave,
+    'Save Full Profile',
+    'full_profile.json',
+    callback,
+  );
+};
+
+/** Loads state from a file. */
 export const loadRulesFromFile = async (callback) => {
   try {
     const dialog_result = await dialog.showOpenDialog({
-      title: 'Load State',
+      title: 'Load Profile',
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
       properties: ['openFile'],
     });
@@ -78,52 +204,54 @@ export const loadRulesFromFile = async (callback) => {
       const file_path = dialog_result.filePaths[0];
       const content = await fs.readFile(file_path, 'utf8');
       const loaded_state = JSON.parse(content);
-
-      // Check for each slice before setting state to avoid errors with old/malformed files
-      if (loaded_state.rules)
-        setGlobalState('rules/setState', loaded_state.rules);
-      if (loaded_state.global) {
-        // Exclude windowId but keep windowName from global state
-        const { windowId, ...globalWithoutWindowId } = loaded_state.global;
-        setGlobalState('global/setState', globalWithoutWindowId);
-      }
-      if (loaded_state.lua)
-        setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      if (loaded_state.cavebot) {
-        const cavebotState = { ...loaded_state.cavebot, enabled: false };
-        setGlobalState('cavebot/setState', cavebotState);
-      }
-      if (loaded_state.targeting) {
-        const targetingState = { ...loaded_state.targeting, enabled: false };
-        setGlobalState('targeting/setState', targetingState);
-      }
-
+      applyLoadedState(loaded_state);
       showNotification(`📤 Loaded | ${path.basename(file_path)}`);
     }
-    callback();
   } catch (err) {
     console.error('Failed to load state:', err);
     showNotification('❌ Failed to load state');
-    callback();
+  } finally {
+    if (callback) callback();
   }
 };
 
-// Auto-save state excluding window-specific data
+// --- NEW SLICE-SPECIFIC SAVE FUNCTIONS ---
+
+export const saveTargeting = createSliceSaver(
+  'targeting',
+  'Save Targeting Profile',
+  'targeting_profile.json',
+);
+
+export const saveCavebot = createSliceSaver(
+  'cavebot',
+  'Save Cavebot Profile',
+  'cavebot_profile.json',
+);
+
+export const saveRules = createSliceSaver(
+  'rules',
+  'Save Rules Profile',
+  'rules_profile.json',
+);
+
+export const saveLua = createSliceSaver(
+  'lua',
+  'Save Lua Scripts Profile',
+  'lua_profile.json',
+);
+
+// ============================================================================
+// Auto Save / Load & Store Subscription (Unchanged)
+// ============================================================================
+
 const perform_auto_save = async () => {
   try {
-    const state = store.getState();
-    if (Object.keys(state).length > 0) {
-      // Create a filtered state that excludes windowId but keeps windowName
-      const filteredState = {
-        ...state,
-        global: {
-          ...state.global,
-          windowId: undefined,
-        },
-      };
+    const stateToSave = prepareStateForSave(store.getState());
+    if (Object.keys(stateToSave).length > 0) {
       await fs.writeFile(
         auto_load_file_path,
-        JSON.stringify(filteredState, null, 2),
+        JSON.stringify(stateToSave, null, 2),
       );
     }
   } catch (error) {
@@ -141,81 +269,38 @@ export const autoLoadRules = async () => {
     await fs.access(auto_load_file_path);
     const content = await fs.readFile(auto_load_file_path, 'utf8');
     const loaded_state = JSON.parse(content);
-
-    if (Object.keys(loaded_state).length > 0) {
-      if (loaded_state.rules)
-        setGlobalState('rules/setState', loaded_state.rules);
-      if (loaded_state.global) {
-        // Exclude windowId but keep windowName from global state
-        const { windowId, ...globalWithoutWindowId } = loaded_state.global;
-        setGlobalState('global/setState', globalWithoutWindowId);
-      }
-      if (loaded_state.lua)
-        setGlobalState('lua/setState', normalizeLuaScripts(loaded_state.lua));
-      if (loaded_state.cavebot) {
-        const cavebotState = { ...loaded_state.cavebot, enabled: false };
-        setGlobalState('cavebot/setState', cavebotState);
-      }
-      if (loaded_state.targeting) {
-        const targetingState = { ...loaded_state.targeting, enabled: false };
-        setGlobalState('targeting/setState', targetingState);
-      }
-    }
+    applyLoadedState(loaded_state);
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      // console.log('No auto-save file found. Starting with default state.');
-    } else {
+    if (error.code !== 'ENOENT') {
       console.error('Failed to auto-load rules:', error);
     }
   }
 };
 
-let previous_rules_state = null;
-let previous_global_state = null;
-let previous_lua_state = null;
-let previous_cavebot_state = null;
-let previous_targeting_state = null;
-
-const has_state_changed = (new_state, prev_state) => {
-  if (prev_state === null) return true;
-  // Use JSON.stringify for a deep comparison, which is more reliable for nested objects.
-  // This is safer for detecting changes in complex state slices.
-  try {
-    return JSON.stringify(new_state) !== JSON.stringify(prev_state);
-  } catch (error) {
-    console.error('Error comparing state for auto-save:', error);
-    // If serialization fails, assume a change to be safe.
+const previousStates = {};
+const hasStateChanged = (newState, prevState) => {
+  if (newState === prevState) return false;
+  if (
+    !prevState ||
+    typeof newState !== 'object' ||
+    typeof prevState !== 'object'
+  )
     return true;
-  }
+  return JSON.stringify(newState) !== JSON.stringify(prevState);
 };
 
 store.subscribe(() => {
-  const { rules, global, lua, cavebot, targeting } = store.getState();
+  const currentState = store.getState();
+  let hasChanged = false;
 
-  const rules_changed = has_state_changed(rules, previous_rules_state);
-  const global_changed = has_state_changed(global, previous_global_state);
-  const lua_changed = has_state_changed(lua, previous_lua_state);
-  const cavebot_changed = has_state_changed(cavebot, previous_cavebot_state);
-  const targeting_changed = has_state_changed(
-    targeting,
-    previous_targeting_state,
-  );
+  for (const sliceName of PERSISTED_SLICES) {
+    if (hasStateChanged(currentState[sliceName], previousStates[sliceName])) {
+      hasChanged = true;
+      previousStates[sliceName] = currentState[sliceName];
+    }
+  }
 
-  if (
-    rules_changed ||
-    global_changed ||
-    lua_changed ||
-    cavebot_changed ||
-    targeting_changed
-  ) {
+  if (hasChanged) {
     auto_save_rules();
-
-    // Update previous state only if it changed.
-    // With immutable state, we can just store a reference to the new state object.
-    if (rules_changed) previous_rules_state = rules;
-    if (global_changed) previous_global_state = global;
-    if (lua_changed) previous_lua_state = lua;
-    if (cavebot_changed) previous_cavebot_state = cavebot;
-    if (targeting_changed) previous_targeting_state = targeting;
   }
 });

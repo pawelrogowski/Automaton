@@ -51,7 +51,7 @@ const cavebotSlice = createSlice({
       if (state.controlState === 'CAVEBOT') {
         state.controlState = 'HANDOVER_TO_TARGETING';
         state.isActionPaused = true;
-        state.waypointIdAtTargetingStart = state.wptId;
+        state.waypointIdAtTargetingStart = state.wptId; // Set the reference waypoint
       }
     },
 
@@ -72,8 +72,8 @@ const cavebotSlice = createSlice({
     releaseTargetingControl: (state) => {
       state.controlState = 'CAVEBOT';
       state.dynamicTarget = null;
-      state.waypointIdAtTargetingStart = null;
-      state.visitedTiles = [];
+      // Do NOT clear visitedTiles or waypointIdAtTargetingStart here.
+      // CavebotWorker needs them to perform the node skip check upon regaining control.
       state.isActionPaused = false;
     },
 
@@ -286,6 +286,13 @@ const cavebotSlice = createSlice({
         state.visitedTiles.push({ x, y, z });
       }
     },
+    /**
+     * New reducer dispatched by cavebotWorker after it has checked for a node skip.
+     * This cleans up the visited tiles for the next targeting session.
+     */
+    clearVisitedTiles: (state) => {
+      state.visitedTiles = [];
+    },
   },
 });
 
@@ -293,7 +300,6 @@ export const {
   requestTargetingControl,
   confirmTargetingControl,
   releaseTargetingControl,
-
   setenabled,
   setState,
   setwptId,
@@ -315,6 +321,7 @@ export const {
   setActionPaused,
   setDynamicTarget,
   addVisitedTile,
+  clearVisitedTiles, // Export the correctly named action
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };

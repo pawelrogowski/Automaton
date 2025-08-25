@@ -301,7 +301,7 @@ async function clickAndConfirmTarget(targetToClick) {
   }
 
   try {
-    mouseController.rightClick(
+    mouseController.leftClick(
       parseInt(globalState.global.windowId),
       targetToClick.absoluteCoords.x,
       targetToClick.absoluteCoords.y,
@@ -309,9 +309,6 @@ async function clickAndConfirmTarget(targetToClick) {
     );
     await delay(50);
     keypress.sendKey('f8', globalState.global.display);
-    console.log(
-      `[Targeting] Right-clicked at x: ${targetToClick.absoluteCoords.x}, y: ${targetToClick.absoluteCoords.y}`,
-    );
     logger('info', `[Targeting] Attempting to target: ${targetToClick.name}`);
   } catch (error) {
     logger(
@@ -455,10 +452,6 @@ async function performTargeting() {
     if (dirKey) {
       const posCounterBeforeMove = lastPlayerPosCounter;
       const pathCounterBeforeMove = lastPathDataCounter;
-
-      console.log(
-        `[Targeting] Movement key: ${dirKey}, Path length: ${path.length}`,
-      );
       keypress.sendKey(dirKey, globalState.global.display);
       lastMovementTime = now;
 

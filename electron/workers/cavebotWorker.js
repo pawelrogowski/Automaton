@@ -88,7 +88,7 @@ const getDirectionKey = (current, target) => {
   return null;
 };
 
-const logger = createLogger({ info: false, error: false, debug: false });
+const logger = createLogger({ info: true, error: true, debug: false });
 
 const updateSABData = () => {
   if (playerPosArray) {
@@ -642,37 +642,55 @@ async function performOperation() {
       return;
     }
 
-    if (lastControlState !== 'CAVEBOT' && waypointIdAtTargetingStart) {
-      let targetWaypoint = findCurrentWaypoint();
-      let shouldSkip = false;
+    // This block executes on the first tick after regaining control from targeting.
+    if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
+      let skippedWaypoint = false;
       if (
-        targetWaypoint &&
-        targetWaypoint.id === waypointIdAtTargetingStart &&
-        targetWaypoint.type === 'Node' &&
+        waypointIdAtTargetingStart &&
         visitedTiles &&
         visitedTiles.length > 0
       ) {
-        const waypointCoords = {
-          x: targetWaypoint.x,
-          y: targetWaypoint.y,
-          z: targetWaypoint.z,
-        };
-        const radius = 4;
-        const wasVisited = visitedTiles.some(
-          (tile) =>
-            tile.z === waypointCoords.z &&
-            Math.max(
-              Math.abs(tile.x - waypointCoords.x),
-              Math.abs(tile.y - waypointCoords.y),
-            ) <= radius,
-        );
-        if (wasVisited) {
-          shouldSkip = true;
+        let currentWaypoint = findCurrentWaypoint();
+
+        if (
+          currentWaypoint &&
+          currentWaypoint.id === waypointIdAtTargetingStart &&
+          currentWaypoint.type === 'Node'
+        ) {
+          const waypointCoords = {
+            x: currentWaypoint.x,
+            y: currentWaypoint.y,
+            z: currentWaypoint.z,
+          };
+          const radius = 4; // Chebyshev distance
+
+          const wasVisited = visitedTiles.some(
+            (tile) =>
+              tile.z === waypointCoords.z &&
+              Math.max(
+                Math.abs(tile.x - waypointCoords.x),
+                Math.abs(tile.y - waypointCoords.y),
+              ) <= radius,
+          );
+
+          if (wasVisited) {
+            logger(
+              'info',
+              `[Cavebot] Node waypoint ${currentWaypoint.id} was visited during targeting. Skipping.`,
+            );
+            await advanceToNextWaypoint();
+            skippedWaypoint = true;
+          }
         }
       }
-      if (shouldSkip) {
-        await advanceToNextWaypoint();
-        lastControlState = controlState;
+
+      // Always clean up visited tiles after the check, regardless of the outcome.
+      postStoreUpdate('cavebot/clearVisitedTiles');
+
+      if (skippedWaypoint) {
+        // If we skipped, update lastControlState immediately and return.
+        // The next loop will start fresh with the new waypoint.
+        lastControlState = globalState.cavebot.controlState;
         return;
       }
     }
