@@ -1,11 +1,9 @@
-/* eslint-disable no-param-reassign */
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   windowName: 'Press Alt+W on focused tibia window to attach bot',
   windowId: null,
-  display: null, // New: Stores the selected X display string (e.g., ":0", ":2")
-  refreshRate: 32,
+  display: null,
   notificationsEnabled: true,
   previousSectionStates: {
     rules: false,
@@ -13,7 +11,7 @@ const initialState = {
     lua: false,
     targeting: false,
   },
-  isGlobalShortcutsEnabled: true, // New: Global shortcuts enabled by default
+  isGlobalShortcutsEnabled: true,
 };
 
 const globalSlice = createSlice({
@@ -30,15 +28,10 @@ const globalSlice = createSlice({
       }
     },
     setDisplay: (state, action) => {
-      // New: Reducer to set the display
       state.display = action.payload;
     },
     setWindowName: (state, action) => {
-      // New: Reducer to set the window title including character name
       state.windowName = action.payload;
-    },
-    setRefreshRate: (state, action) => {
-      state.refreshRate = Math.max(action.payload, 0);
     },
     toggleNotifications: (state) => {
       state.notificationsEnabled = !state.notificationsEnabled;
@@ -51,7 +44,6 @@ const globalSlice = createSlice({
 
       Object.keys(newState).forEach((key) => {
         if (!['windowId', 'actualFps', 'display'].includes(key)) {
-          // Exclude 'display' from being overwritten by setState
           newState[key] = action.payload[key];
         }
       });
@@ -70,11 +62,10 @@ const globalSlice = createSlice({
 export const {
   setwindowName,
   setWindowId,
-  setDisplay, // Export the new action
-  setWindowName, // Export the new action
-  setRefreshRate,
+  setDisplay,
+  setWindowName,
   toggleNotifications,
-  setGlobalShortcutsEnabled, // Export the new action
+  setGlobalShortcutsEnabled,
   setState,
   setPreviousSectionStates,
   resetPreviousSectionStates,

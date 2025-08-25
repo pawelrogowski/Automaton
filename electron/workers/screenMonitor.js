@@ -11,7 +11,6 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 // --- Worker Configuration ---
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
-const PERFORMANCE_LOG_INTERVAL = 10000;
 
 // --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
@@ -33,11 +32,6 @@ let hasScannedInitially = false; // NEW: Flag for the initial scan
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
 const frameUpdateManager = new FrameUpdateManager();
-
-// --- Performance Tracking ---
-let operationCount = 0;
-let totalOperationTime = 0;
-let lastPerfReport = Date.now();
 
 // --- Cached State ---
 let lastCalculatedState = {
@@ -70,24 +64,6 @@ const reusableBattleListUpdate = {
 };
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function logPerformanceStats() {
-  const now = Date.now();
-  if (now - lastPerfReport >= PERFORMANCE_LOG_INTERVAL) {
-    const avgOpTime =
-      operationCount > 0 ? (totalOperationTime / operationCount).toFixed(2) : 0;
-    const opsPerSecond = (
-      (operationCount / (now - lastPerfReport)) *
-      1000
-    ).toFixed(1);
-    console.log(
-      `[ScreenMonitor] Performance: ${opsPerSecond} ops/sec (avg: ${avgOpTime}ms)`,
-    );
-    operationCount = 0;
-    totalOperationTime = 0;
-    lastPerfReport = now;
-  }
-}
 
 function initializeWorker() {
   console.log('[ScreenMonitor] Initializing worker...');
@@ -225,7 +201,6 @@ function calculateWalkingState() {
 async function processGameState() {
   if (!isInitialized || !currentState?.regionCoordinates?.regions) return;
 
-  const opStart = performance.now();
   try {
     // MODIFIED: Use the manager and the initial scan flag to decide if we should process
     if (!hasScannedInitially && !frameUpdateManager.shouldProcess()) {
@@ -310,10 +285,6 @@ async function processGameState() {
     }
   } catch (error) {
     console.error('[ScreenMonitor] Error in processGameState:', error);
-  } finally {
-    const opEnd = performance.now();
-    operationCount++;
-    totalOperationTime += opEnd - opStart;
   }
 }
 
@@ -323,7 +294,6 @@ async function mainLoop() {
     const loopStart = performance.now();
     try {
       await processGameState();
-      logPerformanceStats();
     } catch (error) {
       console.error('[ScreenMonitor] Error in main loop:', error);
       await delay(Math.max(SCAN_INTERVAL_MS * 2, 100));

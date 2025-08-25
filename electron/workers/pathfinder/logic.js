@@ -1,4 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/logic.js
+// --- Full file with fix for controlState logic ---
 
 import {
   PATH_LENGTH_INDEX,
@@ -22,10 +23,8 @@ import {
 
 let lastWrittenPathSignature = '';
 
-// A simple hashing function for the creature array
 function hashCreatureData(creatures) {
   if (!creatures || creatures.length === 0) return 0;
-  // Simple hash: combine length and coords of first/last creature
   const first = creatures[0].gameCoords;
   const last = creatures[creatures.length - 1].gameCoords;
   return (
@@ -48,7 +47,7 @@ export function runPathfindingLogic(context) {
   } = context;
 
   try {
-    const { cavebot, gameState, targeting } = state; // Add targeting
+    const { cavebot, gameState, targeting } = state;
     const { playerMinimapPosition } = gameState;
 
     if (!playerMinimapPosition) {
@@ -65,23 +64,29 @@ export function runPathfindingLogic(context) {
       return null;
     }
 
-    // Get creatures from Redux state
     const creaturePositions = (targeting.creatures || []).map(
       (c) => c.gameCoords,
     );
 
-    const pathfinderMode = cavebot.pathfinderMode;
+    // --- NEW: Implicit Mode Detection ---
+    // Instead of reading a mode flag, we infer the mode from the available data.
+    // If a dynamicTarget exists, we are in 'targeting' mode. Otherwise, 'cavebot' mode.
+    const isTargetingMode = !!cavebot.dynamicTarget;
+    const effectiveMode = isTargetingMode ? 'targeting' : 'cavebot';
+
     let result = null;
     let targetIdentifier = null;
 
     const allSpecialAreas = state.cavebot?.specialAreas || [];
     const activeSpecialAreas = allSpecialAreas.filter((area) => {
       if (!area.enabled) return false;
-      return area.type === 'all' || area.type === pathfinderMode;
+      // 'all' type areas are always active.
+      // Otherwise, the area type must match the current effective mode.
+      return area.type === 'all' || area.type === effectiveMode;
     });
 
     const currentJson = JSON.stringify(activeSpecialAreas);
-    if (currentJson !== logicContext.lastJsonForType.get(pathfinderMode)) {
+    if (currentJson !== logicContext.lastJsonForType.get(effectiveMode)) {
       const areasForNative = activeSpecialAreas.map((area) => ({
         x: area.x,
         y: area.y,
@@ -91,12 +96,13 @@ export function runPathfindingLogic(context) {
         height: area.sizeY,
       }));
       pathfinderInstance.updateSpecialAreas(areasForNative, z);
-      logicContext.lastJsonForType.set(pathfinderMode, currentJson);
+      logicContext.lastJsonForType.set(effectiveMode, currentJson);
     }
 
-    if (pathfinderMode === 'targeting' && cavebot.dynamicTarget) {
+    if (isTargetingMode) {
       targetIdentifier = JSON.stringify(cavebot.dynamicTarget);
-    } else if (pathfinderMode === 'cavebot' && cavebot.wptId) {
+    } else if (cavebot.wptId) {
+      // Cavebot mode
       const { waypointSections, currentSection, wptId } = cavebot;
       const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
         (wp) => wp.id === wptId,
@@ -114,20 +120,21 @@ export function runPathfindingLogic(context) {
       logicContext.lastTargetWptId === targetIdentifier &&
       logicContext.lastCreatureDataHash === currentCreatureDataHash
     ) {
-      return null;
+      return null; // No change in inputs, skip pathfinding.
     }
 
     logicContext.lastPlayerPosKey = currentPosKey;
     logicContext.lastTargetWptId = targetIdentifier;
     logicContext.lastCreatureDataHash = currentCreatureDataHash;
 
-    if (pathfinderMode === 'targeting' && cavebot.dynamicTarget) {
+    if (isTargetingMode) {
       result = pathfinderInstance.findPathToGoal(
         playerMinimapPosition,
         cavebot.dynamicTarget,
-        creaturePositions, // Pass creatures from Redux
+        creaturePositions,
       );
-    } else if (pathfinderMode === 'cavebot' && targetIdentifier) {
+    } else if (targetIdentifier) {
+      // Cavebot mode with a valid waypoint
       const { waypointSections, currentSection, wptId } = cavebot;
       const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
         (wp) => wp.id === wptId,
@@ -153,7 +160,7 @@ export function runPathfindingLogic(context) {
         result = pathfinderInstance.findPathSync(
           playerMinimapPosition,
           { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
-          creaturePositions, // Pass creatures from Redux
+          creaturePositions,
         );
       }
     }

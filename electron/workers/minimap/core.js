@@ -6,7 +6,6 @@ import {
 import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
-import { PerformanceTracker } from './performanceTracker.js';
 import { FrameUpdateManager } from '../../utils/frameUpdateManager.js';
 import { LANDMARK_SIZE } from './config.js'; // Import LANDMARK_SIZE
 
@@ -15,15 +14,8 @@ let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
 let minimapMatcher = null;
-const frameUpdateManager = new FrameUpdateManager(); // NEW: Instantiate manager
+const frameUpdateManager = new FrameUpdateManager();
 
-// --- Performance Tracking State ---
-const perfTracker = new PerformanceTracker();
-let lastPerfReportTime = Date.now();
-
-// --- Shared Buffer Setup ---
-if (!workerData.sharedData)
-  throw new Error('[MinimapCore] Shared data not provided.');
 const { imageSAB, syncSAB } = workerData.sharedData;
 const syncArray = new Int32Array(syncSAB);
 const sharedBufferView = Buffer.from(imageSAB);
@@ -34,7 +26,6 @@ async function initialize() {
   console.log('[MinimapCore] Initializing...');
   setMinimapResourcesPath(workerData.paths.minimapResources);
 
-  // Calculate PACKED_LANDMARK_PATTERN_BYTES based on LANDMARK_SIZE
   const LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2);
 
   minimapMatcher = new MinimapMatcher({
@@ -51,9 +42,10 @@ async function performOperation() {
     return;
   }
 
-  // MODIFIED: Use the manager to decide if we should process
   if (!frameUpdateManager.shouldProcess()) {
-    return;
+    if (currentState.gameState.playerMinimapPosition.x !== 0) {
+      return;
+    }
   }
 
   const { minimapFull, minimapFloorIndicatorColumn } =
@@ -69,25 +61,12 @@ async function performOperation() {
   );
 
   if (minimapData && floorIndicatorData) {
-    const duration = await processMinimapData(
+    await processMinimapData(
       minimapData,
       floorIndicatorData,
       minimapMatcher,
       workerData,
     );
-    if (typeof duration === 'number') {
-      perfTracker.addMeasurement(duration);
-    }
-  }
-}
-
-function logPerformanceReport() {
-  if (!config.PERFORMANCE_LOGGING_ENABLED) return;
-  const now = Date.now();
-  if (now - lastPerfReportTime >= config.PERFORMANCE_LOG_INTERVAL_MS) {
-    console.log(perfTracker.getReport());
-    perfTracker.reset();
-    lastPerfReportTime = now;
   }
 }
 
@@ -96,7 +75,6 @@ async function mainLoop() {
     const loopStart = Date.now();
     try {
       await performOperation();
-      logPerformanceReport();
     } catch (error) {
       console.error('[MinimapCore] Error in main loop:', error);
     }

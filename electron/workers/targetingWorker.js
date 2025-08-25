@@ -1,6 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
-// --- Drop-in Replacement with Fix for 'initialize is not defined' ---
-
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
@@ -25,14 +22,13 @@ import {
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
-const MAIN_LOOP_INTERVAL = 100;
+const MAIN_LOOP_INTERVAL = 25;
 const MOVEMENT_COOLDOWN_MS = 400;
-const CLICK_CONFIRMATION_TIMEOUT_MS = 350;
-const CLICK_POLL_INTERVAL_MS = 50;
+const CLICK_CONFIRMATION_TIMEOUT_MS = 400;
+const CLICK_POLL_INTERVAL_MS = 5;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
-const TELEPORT_DISTANCE_THRESHOLD = 5;
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: false, debug: false });
 
 let isInitialized = false;
 let globalState = null;
@@ -43,14 +39,14 @@ let pathfindingStatus = 0;
 let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
 let lastMovementTime = 0;
+let lastDispatchedVisitedTile = null;
+let lastControlState = 'CAVEBOT';
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const getDistance = (p1, p2) =>
-  Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 
 const getDirectionKey = (current, target) => {
   const dx = target.x - current.x;
@@ -94,33 +90,7 @@ const awaitWalkConfirmation = (
         clearInterval(intervalId);
         resolve(true);
       }
-    }, CLICK_POLL_INTERVAL_MS); // Using CLICK_POLL_INTERVAL_MS for consistency
-  });
-};
-
-const awaitStandConfirmation = (initialPos, targetPos, timeoutMs) => {
-  return new Promise((resolve, reject) => {
-    const startTime = Date.now();
-    const intervalId = setInterval(() => {
-      const finalPos = {
-        x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-        y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-        z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-      };
-      const zChanged = finalPos.z !== initialPos.z;
-      const teleported =
-        getDistance(initialPos, finalPos) >= TELEPORT_DISTANCE_THRESHOLD;
-      if (zChanged || teleported) {
-        clearInterval(intervalId);
-        setTimeout(() => resolve({ success: true, finalPos }), 10);
-      }
-      if (Date.now() - startTime > timeoutMs) {
-        clearInterval(intervalId);
-        reject(
-          new Error(`awaitStandConfirmation timed out after ${timeoutMs}ms`),
-        );
-      }
-    }, CLICK_POLL_INTERVAL_MS); // Using CLICK_POLL_INTERVAL_MS for consistency
+    }, CLICK_POLL_INTERVAL_MS);
   });
 };
 
@@ -128,10 +98,9 @@ const awaitPathfinderUpdate = (timeoutMs) => {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
     const intervalId = setInterval(() => {
-      // Ensure SAB data is up-to-date before checking status
       updateSABData();
 
-      if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
+      if (pathfindingStatus === PATH_STATUS_PATH_FOUND) {
         clearInterval(intervalId);
         resolve(true);
       } else if (pathfindingStatus === PATH_STATUS_NO_PATH_FOUND) {
@@ -311,7 +280,6 @@ async function clickAndConfirmTarget(targetToClick) {
   }
 
   const gameWorld = globalState.regionCoordinates?.regions?.gameWorld;
-  const BORDER_THRESHOLD = 64;
 
   if (gameWorld) {
     const { x, y, width, height } = gameWorld;
@@ -319,10 +287,10 @@ async function clickAndConfirmTarget(targetToClick) {
     const clickY = targetToClick.absoluteCoords.y;
 
     if (
-      clickX < x + BORDER_THRESHOLD ||
-      clickX > x + width - BORDER_THRESHOLD ||
-      clickY < y + BORDER_THRESHOLD ||
-      clickY > y + height - BORDER_THRESHOLD
+      clickX < x || // Too far left
+      clickX >= x + width || // Too far right (or exactly on the edge)
+      clickY < y || // Too far up
+      clickY >= y + height // Too far down (or exactly on the edge)
     ) {
       logger(
         'warn',
@@ -339,6 +307,8 @@ async function clickAndConfirmTarget(targetToClick) {
       targetToClick.absoluteCoords.y,
       globalState.global.display,
     );
+    await delay(50);
+    keypress.sendKey('f8', globalState.global.display);
     console.log(
       `[Targeting] Right-clicked at x: ${targetToClick.absoluteCoords.x}, y: ${targetToClick.absoluteCoords.y}`,
     );
@@ -381,58 +351,63 @@ async function performTargeting() {
   updateSABData();
   if (!playerMinimapPosition) return;
 
+  const { controlState } = globalState.cavebot;
   const bestTarget = selectBestTarget();
   const currentGameTarget = globalState.targeting.target;
 
-  if (!bestTarget) {
-    if (globalState.cavebot.isActionPaused) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setActionPaused',
-        payload: false,
-      });
-    }
-    if (globalState.cavebot.pathfinderMode !== 'cavebot') {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setPathfinderMode',
-        payload: 'cavebot',
-      });
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setDynamicTarget',
-        payload: null,
-      });
-    }
-    return;
+  switch (controlState) {
+    case 'CAVEBOT':
+      if (bestTarget) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'cavebot/requestTargetingControl',
+        });
+      }
+      return;
+
+    case 'HANDOVER_TO_TARGETING':
+      return;
+
+    case 'TARGETING':
+      if (!bestTarget) {
+        keypress.sendKey('f8', globalState.global.display);
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'cavebot/releaseTargetingControl',
+        });
+        lastDispatchedVisitedTile = null;
+        return;
+      }
+      break;
+
+    default:
+      return;
   }
 
-  if (!globalState.cavebot.isActionPaused) {
+  if (
+    !lastDispatchedVisitedTile ||
+    lastDispatchedVisitedTile.x !== playerMinimapPosition.x ||
+    lastDispatchedVisitedTile.y !== playerMinimapPosition.y ||
+    lastDispatchedVisitedTile.z !== playerMinimapPosition.z
+  ) {
     parentPort.postMessage({
       storeUpdate: true,
-      type: 'cavebot/setActionPaused',
-      payload: true,
+      type: 'cavebot/addVisitedTile',
+      payload: playerMinimapPosition,
     });
-  }
-  if (globalState.cavebot.pathfinderMode !== 'targeting') {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/setPathfinderMode',
-      payload: 'targeting',
-    });
+    lastDispatchedVisitedTile = { ...playerMinimapPosition };
   }
 
   if (bestTarget.name !== currentGameTarget?.name) {
     const clickedSuccessfully = await clickAndConfirmTarget(bestTarget);
     if (!clickedSuccessfully) {
-      return; // Block further actions if targeting failed
+      return;
     }
   }
 
-  // If we reach here, either bestTarget is already currentGameTarget, or we successfully clicked a new target.
   const dynamicGoal = {
     stance: bestTarget.stance,
-    distance: bestTarget.stance === 'Stand' ? 0 : bestTarget.distance, // If stance is 'Stand', distance should be 0 for pathfinding
+    distance: bestTarget.stance === 'Stand' ? 0 : bestTarget.distance,
     targetCreaturePos: bestTarget.gameCoords,
   };
   parentPort.postMessage({
@@ -441,22 +416,21 @@ async function performTargeting() {
     payload: dynamicGoal,
   });
 
-  // Wait for pathfinder to update with the new target's path
   try {
-    const pathFound = await awaitPathfinderUpdate(1000); // 1 second timeout
+    const pathFound = await awaitPathfinderUpdate(1000);
     if (!pathFound) {
       logger(
         'warn',
         `[Targeting] No path found for ${bestTarget.name}. Switching target.`,
       );
-      return; // Switch target by returning
+      return;
     }
   } catch (error) {
     logger(
       'error',
       `[Targeting] Error waiting for pathfinder update: ${error.message}. Switching target.`,
     );
-    return; // Switch target on error
+    return;
   }
 
   const now = Date.now();
@@ -516,6 +490,10 @@ async function mainLoop() {
       await performTargeting();
     } catch (error) {
       logger('error', '[TargetingWorker] Error in main loop:', error);
+    } finally {
+      if (globalState?.cavebot) {
+        lastControlState = globalState.cavebot.controlState;
+      }
     }
     const elapsedTime = performance.now() - loopStart;
     const delayTime = Math.max(0, MAIN_LOOP_INTERVAL - elapsedTime);
@@ -523,7 +501,6 @@ async function mainLoop() {
   }
 }
 
-// --- CORRECTED MESSAGE HANDLER ---
 parentPort.on('message', (message) => {
   if (message.type === 'shutdown') {
     isShuttingDown = true;

@@ -1,6 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/frontend/redux/slices/cavebotSlice.js
-// --- SIMPLIFIED VERSION ---
-
 import { createSlice } from '@reduxjs/toolkit';
 
 const MAX_WAYPOINTS_PER_SECTION = 1000;
@@ -36,14 +33,50 @@ const initialState = {
     },
   },
   specialAreas: [],
-  pathfinderMode: 'cavebot', // 'cavebot' or 'targeting'
-  dynamicTarget: null, // Holds {stance, distance, targetCreaturePos} for targeting mode
+  controlState: 'CAVEBOT',
+  dynamicTarget: null,
+  visitedTiles: [],
+  waypointIdAtTargetingStart: null,
 };
 
 const cavebotSlice = createSlice({
   name: 'cavebot',
   initialState,
   reducers: {
+    /**
+     * Dispatched by targetingWorker when it finds a target and wants to take control.
+     * This initiates the handoff process.
+     */
+    requestTargetingControl: (state) => {
+      if (state.controlState === 'CAVEBOT') {
+        state.controlState = 'HANDOVER_TO_TARGETING';
+        state.isActionPaused = true;
+        state.waypointIdAtTargetingStart = state.wptId;
+      }
+    },
+
+    /**
+     * Dispatched by cavebotWorker after it has safely finished its current action
+     * and cleaned up its internal state in response to the handover request.
+     */
+    confirmTargetingControl: (state) => {
+      if (state.controlState === 'HANDOVER_TO_TARGETING') {
+        state.controlState = 'TARGETING';
+      }
+    },
+
+    /**
+     * Dispatched by targetingWorker when it has no more targets and is relinquishing control.
+     * This resets the state back to cavebot operation.
+     */
+    releaseTargetingControl: (state) => {
+      state.controlState = 'CAVEBOT';
+      state.dynamicTarget = null;
+      state.waypointIdAtTargetingStart = null;
+      state.visitedTiles = [];
+      state.isActionPaused = false;
+    },
+
     setenabled: (state, action) => {
       state.enabled = action.payload;
     },
@@ -54,7 +87,6 @@ const cavebotSlice = createSlice({
       const newWptId = action.payload;
       if (state.wptId !== newWptId) {
         state.wptId = newWptId;
-        // Note: Path feedback is no longer cleared here, as it lives in a different slice.
       }
     },
     setwptSelection: (state, action) => {
@@ -211,7 +243,7 @@ const cavebotSlice = createSlice({
         z: 0,
         sizeX: 1,
         sizeY: 1,
-        avoidance: 100, // Standardized default avoidance cost
+        avoidance: 100,
         type: 'cavebot',
         enabled: true,
         ...action.payload,
@@ -241,16 +273,27 @@ const cavebotSlice = createSlice({
         Object.assign(existingArea, updates);
       }
     },
-    setPathfinderMode: (state, action) => {
-      state.pathfinderMode = action.payload;
-    },
     setDynamicTarget: (state, action) => {
       state.dynamicTarget = action.payload;
+    },
+    addVisitedTile: (state, action) => {
+      const { x, y, z } = action.payload;
+      if (
+        !state.visitedTiles.some(
+          (tile) => tile.x === x && tile.y === y && tile.z === z,
+        )
+      ) {
+        state.visitedTiles.push({ x, y, z });
+      }
     },
   },
 });
 
 export const {
+  requestTargetingControl,
+  confirmTargetingControl,
+  releaseTargetingControl,
+
   setenabled,
   setState,
   setwptId,
@@ -270,8 +313,8 @@ export const {
   removeSpecialArea,
   updateSpecialArea,
   setActionPaused,
-  setPathfinderMode,
   setDynamicTarget,
+  addVisitedTile,
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };

@@ -12,7 +12,7 @@
 
 const uint32_t TARGET_BORDER_COLOR = 0xFF0000;
 // Minimum number of pixels a cluster must have to be considered part of the border
-const size_t MIN_CLUSTER_SIZE = 5;
+const size_t MIN_CLUSTER_SIZE = 10;
 
 struct Point {
     uint32_t x, y;

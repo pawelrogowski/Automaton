@@ -1,5 +1,5 @@
 {
-  "name": "visual-twitch",
+  "name": "discord",
   "version": "1.3.8",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.visual-twitch",
-    "productName": "Visual Twitch",
+    "appId": "com.electron.discord",
+    "productName": "Discord",
     "directories": {
       "output": "dist",
       "buildResources": "build"

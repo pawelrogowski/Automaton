@@ -51,7 +51,6 @@ const WORKER_STATE_DEPENDENCIES = {
     'cavebot',
     'global',
     'regionCoordinates',
-    'statusMessages',
     'targeting',
     'settings',
     'pathfinder',
@@ -62,6 +61,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'gameState',
     'pathfinder',
     'cavebot',
+    'regionCoordinates',
   ],
   regionMonitor: ['global'],
   screenMonitor: [
@@ -71,7 +71,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'rules',
     'uiValues',
   ],
-  minimapMonitor: ['global', 'regionCoordinates'],
+  minimapMonitor: ['gameState', 'regionCoordinates'],
   ocrWorker: ['global', 'regionCoordinates', 'gameState', 'ocr'],
   creatureMonitor: [
     'global',

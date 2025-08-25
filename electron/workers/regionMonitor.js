@@ -7,7 +7,7 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js'; // NEW: Imp
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
-const FULL_SCAN_INTERVAL_MS = 250;
+const FULL_SCAN_INTERVAL_MS = 500;
 const MIN_LOOP_DELAY_MS = 200;
 const PERFORMANCE_LOG_INTERVAL = 10000;
 
