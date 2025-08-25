@@ -1,4 +1,4 @@
-e// /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.cc
+// /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.cc
 // --- Fix applied to FindPathToGoal ---
 
 #include "pathfinder.h"
@@ -390,10 +390,13 @@ namespace AStar {
                 }
             }
         }
-        if (candidates.empty()) return best_node;
-        std::vector<Node> optimal_candidates;
-        int min_dist_from_player = INT_MAX;
-        int max_manhattan_dist_tiebreaker = -1;
+        if (candidates.empty()) {
+            return best_node;
+        }
+
+        int min_path_length = INT_MAX;
+        Node best_candidate_node = {-1, -1, 0, 0, nullptr, 0};
+
         for (const auto& cand : candidates) {
             int candIdx = indexOf(cand.x, cand.y);
             int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[candIdx];
@@ -405,42 +408,20 @@ namespace AStar {
                 }
             }
             bool isWalkableNode = (tileAvoidance != 255) && isWalkable(cand.x, cand.y, mapData) && !isCreatureTile;
-            if (!isWalkableNode) continue;
-            int dist_from_player = std::max(std::abs(cand.x - playerLocal.x), std::abs(cand.y - playerLocal.y));
-            int manhattan_dist_from_monster = std::abs(cand.x - monsterLocal.x) + std::abs(cand.y - monsterLocal.y);
-            if (dist_from_player < min_dist_from_player) {
-                min_dist_from_player = dist_from_player;
-                max_manhattan_dist_tiebreaker = manhattan_dist_from_monster;
-                optimal_candidates.clear();
-                optimal_candidates.push_back(cand);
-            } else if (dist_from_player == min_dist_from_player) {
-                if (manhattan_dist_from_monster > max_manhattan_dist_tiebreaker) {
-                    max_manhattan_dist_tiebreaker = manhattan_dist_from_monster;
-                    optimal_candidates.clear();
-                    optimal_candidates.push_back(cand);
-                } else if (manhattan_dist_from_monster == max_manhattan_dist_tiebreaker) {
-                    optimal_candidates.push_back(cand);
-                }
+            if (!isWalkableNode) {
+                continue;
+            }
+
+            // Calculate actual path length from player to candidate tile
+            int path_length = AStar::getPathLength(playerLocal, cand, mapData, cost_grid, creaturePositions, [](){});
+
+            if (path_length != -1 && path_length < min_path_length) {
+                min_path_length = path_length;
+                best_candidate_node = cand;
             }
         }
-        if (optimal_candidates.empty()) return best_node;
-        Node final_best_node = optimal_candidates[0];
-        bool player_is_optimal_candidate = false;
-        for (const auto& cand : optimal_candidates) {
-            if (cand.x == playerLocal.x && cand.y == playerLocal.y && cand.z == playerLocal.z) {
-                player_is_optimal_candidate = true;
-                break;
-            }
-        }
-        if (player_is_optimal_candidate) {
-            for (const auto& cand : optimal_candidates) {
-                if (!(cand.x == playerLocal.x && cand.y == playerLocal.y && cand.z == playerLocal.z)) {
-                    final_best_node = cand;
-                    break;
-                }
-            }
-        }
-        best_node = final_best_node;
+
+        best_node = best_candidate_node;
         return best_node;
     }
 }
