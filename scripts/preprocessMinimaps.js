@@ -306,25 +306,68 @@ async function preprocessMinimaps() {
             TIBIA_MINIMAP_BASE_PATH,
             `Minimap_WaypointCost_${tile.x}_${tile.y}_${z}.png`,
           );
+
+          // Log specific waypoint cost map files
+          const targetX = 32814;
+          const targetY = 32110;
+          const targetZ = 10;
+
           const { data, info } = await sharp(inputFilePath)
             .raw()
             .toBuffer({ resolveWithObject: true });
           const relX = tile.x - indexData.minX;
           const relY = tile.y - indexData.minY;
+
+          // determine whether this tile contains the global debug target (use tile size)
+          const tileOriginX = tile.x;
+          const tileOriginY = tile.y;
+          const tileWidth = info.width;
+          const tileHeight = info.height;
+
+          const isTargetTile =
+            z === targetZ &&
+            targetX >= tileOriginX &&
+            targetX < tileOriginX + tileWidth &&
+            targetY >= tileOriginY &&
+            targetY < tileOriginY + tileHeight;
+
+          if (isTargetTile) {
+            logger(
+              'debug',
+              `Processing problematic tile: x=${tile.x}, y=${tile.y}, z=${z}`,
+            );
+            logger('debug', `Waypoint Cost Map File: ${inputFilePath}`);
+          }
+
           for (let py = 0; py < info.height; py++) {
             for (let px = 0; px < info.width; px++) {
               const tilePixelIndex = (py * info.width + px) * 3;
               const r = data[tilePixelIndex],
                 g = data[tilePixelIndex + 1],
                 b = data[tilePixelIndex + 2];
+
               const isWaypointObstacle =
                 (r === 255 && g === 255 && b === 0) ||
-                (r === 255 && g === 0 && b === 255);
+                (r === 255 && g === 0 && b === 255) ||
+                (r === 250 && g === 250 && b === 250);
               const mapX = relX + px;
               const mapY = relY + py;
               const isSpecialTransition = specialTransitionPixels.has(
                 `${mapX},${mapY}`,
               );
+
+              // compute global absolute coords for clarity in logs
+              const globalX = tile.x + px;
+              const globalY = tile.y + py;
+
+              // ONLY log the one exact global pixel (no per-tile flood)
+              if (isTargetTile && globalX === targetX && globalY === targetY) {
+                logger(
+                  'debug',
+                  `EXACT PIXEL: global (${globalX},${globalY},${z}) -> local (px=${px},py=${py}) RGB(${r},${g},${b}) specialTransition=${isSpecialTransition}`,
+                );
+              }
+
               if (!isWaypointObstacle && !isSpecialTransition) {
                 walkableGrid[mapY * mapWidth + mapX] = 1;
               }

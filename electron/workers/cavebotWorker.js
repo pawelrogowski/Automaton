@@ -2,6 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
 import mouseController from 'mouse-controller';
+import useItemOnCoordinates from '../mouseControll/useItemOnCoordinates.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { createLogger } from '../utils/logger.js';
@@ -37,10 +38,15 @@ const PRUNE_DISTANCE_THRESHOLD = 8;
 const config = {
   actionStateChangeTimeoutMs: 200,
   preClickDelayMs: 250,
-  toolHotkeyWaitMs: 150,
+  toolHotkeyWaitMs: 250,
   teleportDistanceThreshold: 5,
   postTeleportGraceMs: 1250,
   moveConfirmTimeoutMs: 400,
+  toolHotkeys: {
+    rope: 'b',
+    machete: 'n',
+    shovel: 'v',
+  },
 };
 
 let globalState = null;
@@ -88,7 +94,7 @@ const getDirectionKey = (current, target) => {
   return null;
 };
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: true });
 
 const updateSABData = () => {
   if (playerPosArray) {
@@ -257,8 +263,6 @@ const goToLabel = async (label) => {
   );
   if (targetWaypoint) {
     postStoreUpdate('cavebot/setwptId', targetWaypoint.id);
-  } else {
-    await advanceToNextWaypoint();
   }
 };
 
@@ -350,6 +354,10 @@ const handleLadderAction = async (targetCoords) => {
   if (!initialPos) return false;
   await delay(config.preClickDelayMs);
   const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
+  logger('debug', '[handleLadderAction] initialPos:', initialPos);
+  logger('debug', '[handleLadderAction] targetCoords:', targetCoords);
+  logger('debug', '[handleLadderAction] gameWorld:', gameWorld);
+  logger('debug', '[handleLadderAction] tileSize:', tileSize);
   if (!gameWorld || !tileSize) {
     logger(
       'error',
@@ -365,6 +373,7 @@ const handleLadderAction = async (targetCoords) => {
     tileSize,
     'bottomRight',
   );
+  logger('info', 'Ladder:', clickCoords);
   if (!clickCoords) {
     logger(
       'error',
@@ -372,7 +381,7 @@ const handleLadderAction = async (targetCoords) => {
     );
     return false;
   }
-  mouseController.rightClick(
+  mouseController.leftClick(
     parseInt(globalState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
@@ -386,14 +395,68 @@ const handleLadderAction = async (targetCoords) => {
   return false;
 };
 
-const handleZLevelToolAction = async (toolType, targetCoords) => {
-  const hotkey = globalState.settings.hotkeys[toolType.toLowerCase()];
-  if (!hotkey) return false;
-  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
-  if (!gameWorld || !tileSize) return false;
+const handleRopeAction = async (targetCoords) => {
   const initialPos = { ...playerMinimapPosition };
-  keypress.sendKey(hotkey, globalState.global.display || ':0');
-  await delay(config.toolHotkeyWaitMs + config.preClickDelayMs);
+  if (!initialPos) return false;
+  await delay(config.preClickDelayMs);
+  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
+  logger('debug', '[handleRopeAction] initialPos:', initialPos);
+  logger('debug', '[handleRopeAction] targetCoords:', targetCoords);
+  logger('debug', '[handleRopeAction] gameWorld:', gameWorld);
+  logger('debug', '[handleRopeAction] tileSize:', tileSize);
+  if (!gameWorld || !tileSize) {
+    logger('error', '[handleRopeAction] Missing region coordinates for click.');
+    return false;
+  }
+  const clickCoords = getAbsoluteGameWorldClickCoordinates(
+    targetCoords.x,
+    targetCoords.y,
+    initialPos,
+    gameWorld,
+    tileSize,
+    'bottomRight',
+  );
+  logger('info', 'Rope:', clickCoords);
+  if (!clickCoords) {
+    logger(
+      'error',
+      '[handleLadderAction] Could not calculate click coordinates.',
+    );
+    return false;
+  }
+  keypress.sendKey(config.toolHotkeys.rope, globalState.global.display);
+  await delay(50);
+  mouseController.leftClick(
+    parseInt(globalState.global.windowId, 10),
+    clickCoords.x,
+    clickCoords.y,
+    globalState.global.display || ':0',
+  );
+  const zChanged = await awaitZLevelChange(initialPos.z, 500);
+  if (zChanged) {
+    floorChangeGraceUntil = Date.now() + 500;
+    return true;
+  }
+  return false;
+};
+
+const handleShovelAction = async (targetCoords) => {
+  const hotkey = config.toolHotkeys.shovel;
+  if (!hotkey) {
+    logger('error', '[handleShovelAction] Shovel hotkey not configured.');
+    return false;
+  }
+  const initialPos = { ...playerMinimapPosition };
+  if (!initialPos) return false;
+  await delay(config.preClickDelayMs);
+  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
+  if (!gameWorld || !tileSize) {
+    logger(
+      'error',
+      '[handleShovelAction] Missing region coordinates for click.',
+    );
+    return false;
+  }
   const clickCoords = getAbsoluteGameWorldClickCoordinates(
     targetCoords.x,
     targetCoords.y,
@@ -402,26 +465,182 @@ const handleZLevelToolAction = async (toolType, targetCoords) => {
     tileSize,
     'center',
   );
-  if (!clickCoords) return false;
+  if (!clickCoords) {
+    logger(
+      'error',
+      '[handleShovelAction] Could not calculate click coordinates.',
+    );
+    return false;
+  }
+  useItemOnCoordinates(
+    parseInt(globalState.global.windowId, 10),
+    globalState.global.display || ':0',
+    clickCoords.x,
+    clickCoords.y,
+    hotkey,
+  );
+  const zChanged = await awaitZLevelChange(initialPos.z, 500);
+  if (zChanged) {
+    floorChangeGraceUntil = Date.now() + 500;
+    return true;
+  }
+  return false;
+};
+
+const handleMacheteAction = async (targetWaypoint) => {
+  const hotkey = config.toolHotkeys.machete;
+  if (!hotkey) {
+    logger('error', '[handleMacheteAction] Machete hotkey not configured.');
+    return false;
+  }
+  const initialPos = { ...playerMinimapPosition };
+  if (!initialPos) return false;
+  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
+  if (!gameWorld || !tileSize) {
+    logger(
+      'error',
+      '[handleMacheteAction] Missing region coordinates for click.',
+    );
+    return false;
+  }
+  const clickCoords = getAbsoluteGameWorldClickCoordinates(
+    targetWaypoint.x,
+    targetWaypoint.y,
+    initialPos,
+    gameWorld,
+    tileSize,
+    'center',
+  );
+  if (!clickCoords) {
+    logger(
+      'error',
+      '[handleMacheteAction] Could not calculate click coordinates.',
+    );
+    return false;
+  }
+
+  let actionSucceeded = false;
+  for (let i = 0; i < 3; i++) {
+    // Try to walk onto the tile
+    const posCounterBeforeMove = lastPlayerPosCounter;
+    const pathCounterBeforeMove = lastPathDataCounter;
+    const dirKey = getDirectionKey(playerMinimapPosition, targetWaypoint);
+    if (dirKey) {
+      keypress.sendKey(dirKey, globalState.global.display);
+      try {
+        await awaitWalkConfirmation(
+          posCounterBeforeMove,
+          pathCounterBeforeMove,
+          config.moveConfirmTimeoutMs,
+        );
+        // If walk succeeded, we are done
+        actionSucceeded = true;
+        break;
+      } catch (error) {
+        logger(
+          'debug',
+          '[handleMacheteAction] Walk failed, attempting to use machete.',
+        );
+      }
+    }
+
+    // If walk failed, use machete and try to walk again
+    useItemOnCoordinates(
+      parseInt(globalState.global.windowId, 10),
+      globalState.global.display || ':0',
+      clickCoords.x,
+      clickCoords.y,
+      hotkey,
+    );
+    await delay(config.toolHotkeyWaitMs + config.preClickDelayMs);
+
+    // Try walking again after using machete
+    const posCounterBeforeMoveAfterTool = lastPlayerPosCounter;
+    const pathCounterBeforeMoveAfterTool = lastPathDataCounter;
+    if (dirKey) {
+      keypress.sendKey(dirKey, globalState.global.display);
+      try {
+        await awaitWalkConfirmation(
+          posCounterBeforeMoveAfterTool,
+          pathCounterBeforeMoveAfterTool,
+          config.moveConfirmTimeoutMs,
+        );
+        actionSucceeded = true;
+        break;
+      } catch (error) {
+        logger(
+          'debug',
+          '[handleMacheteAction] Walk failed again after using machete.',
+        );
+      }
+    }
+    await delay(250); // Small delay before next retry
+  }
+  return actionSucceeded;
+};
+
+const handleDoorAction = async (targetWaypoint) => {
+  const initialPos = { ...playerMinimapPosition };
+  if (!initialPos) return false;
+  const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
+  if (!gameWorld || !tileSize) {
+    logger('error', '[handleDoorAction] Missing region coordinates for click.');
+    return false;
+  }
+  const clickCoords = getAbsoluteGameWorldClickCoordinates(
+    targetWaypoint.x,
+    targetWaypoint.y,
+    initialPos,
+    gameWorld,
+    tileSize,
+    'center',
+  );
+  if (!clickCoords) {
+    logger(
+      'error',
+      '[handleDoorAction] Could not calculate click coordinates.',
+    );
+    return false;
+  }
+
+  // Try to walk onto the tile
+  const posCounterBeforeMove = lastPlayerPosCounter;
+  const pathCounterBeforeMove = lastPathDataCounter;
+  const dirKey = getDirectionKey(playerMinimapPosition, targetWaypoint);
+  if (dirKey) {
+    keypress.sendKey(dirKey, globalState.global.display);
+    try {
+      await awaitWalkConfirmation(
+        posCounterBeforeMove,
+        pathCounterBeforeMove,
+        config.moveConfirmTimeoutMs,
+      );
+      // If walk succeeded, we are done
+      return true;
+    } catch (error) {
+      logger(
+        'debug',
+        '[handleDoorAction] Walk failed, attempting to click door.',
+      );
+    }
+  }
+
+  // If walk failed, perform a direct left click
+  await delay(config.preClickDelayMs);
   mouseController.leftClick(
     parseInt(globalState.global.windowId, 10),
     clickCoords.x,
     clickCoords.y,
     globalState.global.display || ':0',
   );
-  const zChanged = await awaitStateChange(
-    (state) => state.gameState?.playerMinimapPosition?.z !== initialPos.z,
+
+  // Assume click opens door and allows movement, then check if player moved
+  const moved = await awaitWalkConfirmation(
+    posCounterBeforeMove,
+    pathCounterBeforeMove,
     config.actionStateChangeTimeoutMs,
   );
-  if (zChanged) {
-    floorChangeGraceUntil = Date.now() + 500;
-    const finalPos = globalState.gameState.playerMinimapPosition;
-    if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
-      stuckDetectionGraceUntil = Date.now() + config.postTeleportGraceMs;
-    }
-    return true;
-  }
-  return false;
+  return moved;
 };
 
 const handleScriptAction = async (targetWpt) => {
@@ -499,22 +718,39 @@ const fsm = {
     execute: async (context) => {
       const { playerPos, targetWaypoint, status, path, chebyshevDist } =
         context;
-      if (
-        playerPos.x === targetWaypoint.x &&
-        playerPos.y === targetWaypoint.y &&
-        playerPos.z === targetWaypoint.z
-      ) {
-        await advanceToNextWaypoint();
-        return 'IDLE';
-      }
       switch (targetWaypoint.type) {
         case 'Script':
           return 'EXECUTING_SCRIPT';
         case 'Stand':
-          if (chebyshevDist === 1) return 'PERFORMING_ACTION';
-          break;
         case 'Ladder':
-          if (chebyshevDist <= 1) return 'PERFORMING_ACTION';
+        case 'Rope':
+        case 'Shovel':
+        case 'Machete':
+        case 'Door':
+          if (typeof chebyshevDist === 'number' && chebyshevDist <= 1) {
+            if (
+              playerPos.x === targetWaypoint.x &&
+              playerPos.y === targetWaypoint.y &&
+              playerPos.z === targetWaypoint.z
+            ) {
+              logger(
+                'info',
+                `[Cavebot] Player is exactly on action waypoint ${targetWaypoint.type}. Performing action.`,
+              );
+            }
+            return 'PERFORMING_ACTION';
+          }
+          break;
+        case 'Node': // Assuming 'Node' is the default type for walk waypoints
+        case 'Walk': // If there's a specific 'Walk' type
+          if (
+            playerPos.x === targetWaypoint.x &&
+            playerPos.y === targetWaypoint.y &&
+            playerPos.z === targetWaypoint.z
+          ) {
+            await advanceToNextWaypoint();
+            return 'IDLE';
+          }
           break;
         default:
           break;
@@ -569,6 +805,14 @@ const fsm = {
         actionSucceeded = await handleStandAction(targetWaypoint);
       else if (targetWaypoint.type === 'Ladder')
         actionSucceeded = await handleLadderAction(targetCoords);
+      else if (targetWaypoint.type === 'Rope')
+        actionSucceeded = await handleRopeAction(targetCoords);
+      else if (targetWaypoint.type === 'Shovel')
+        actionSucceeded = await handleShovelAction(targetCoords);
+      else if (targetWaypoint.type === 'Machete')
+        actionSucceeded = await handleMacheteAction(targetWaypoint);
+      else if (targetWaypoint.type === 'Door')
+        actionSucceeded = await handleDoorAction(targetWaypoint);
       if (actionSucceeded) {
         await advanceToNextWaypoint();
         return 'IDLE';
@@ -709,14 +953,6 @@ async function performOperation() {
       return;
     }
     if (targetWaypoint.z !== playerMinimapPosition.z) {
-      await advanceToNextWaypoint();
-      return;
-    }
-    if (
-      playerMinimapPosition.x === targetWaypoint.x &&
-      playerMinimapPosition.y === targetWaypoint.y &&
-      playerMinimapPosition.z === targetWaypoint.z
-    ) {
       await advanceToNextWaypoint();
       return;
     }

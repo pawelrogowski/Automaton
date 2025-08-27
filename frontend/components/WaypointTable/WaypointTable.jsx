@@ -596,10 +596,7 @@ const WaypointTable = () => {
           'Rope',
           'Machete',
           'Ladder',
-          'Use',
           'Script',
-          'Lure',
-          'Attack',
         ],
       },
       {

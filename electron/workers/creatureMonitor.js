@@ -1,6 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/creatureMonitor.js
-// --- Drop-in Replacement with Full Pathfinder Context ---
-
 import { parentPort, workerData } from 'worker_threads';
 import findTarget from 'find-target-native';
 import Pathfinder from 'pathfinder-native';
@@ -27,24 +24,32 @@ const PLAYER_Z_INDEX = 2;
 const PLAYER_ANIMATION_FREEZE_MS = 150;
 const PLAYER_SETTLING_GRACE_PERIOD_MS = 500;
 const STICKY_SNAP_THRESHOLD_TILES = 0.4;
-const JITTER_FILTER_TIME_MS = 100;
+const JITTER_FILTER_TIME_MS = 250;
 const JITTER_HISTORY_LENGTH = 3;
+
+// Increased from 45 to make correlation much more robust against player and creature movement.
+const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 150;
+
+// Grace period to prevent target loss from single-frame detection failures.
+const TARGET_LOSS_GRACE_PERIOD_MS = 100;
 
 let currentState = null;
 let isInitialized = false;
 let isShuttingDown = false;
 let lastSentCreatures = [];
 let lastSentTarget = null;
-let lastSpecialAreasJson = ''; // NEW: To track changes in special areas
+let lastSpecialAreasJson = '';
+
+let nextInstanceId = 0;
+let activeCreatures = new Map(); // Map<instanceId, creatureObject>
+
+// Timestamp for when the target is truly considered lost after disappearing.
+let targetLossGracePeriodEndTime = 0;
 
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let playerSettlingGracePeriodEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
-
-const creatureLastReportedGameCoords = new Map();
-const creatureLastCalculatedFloatCoords = new Map();
-const creatureReportHistory = new Map();
 
 function getHealthTagFromColor(color) {
   if (!color) return 'Full';
@@ -77,6 +82,7 @@ function deepCompareEntities(a, b) {
       const entityA = a[i];
       const entityB = b[i];
       if (
+        entityA.instanceId !== entityB.instanceId ||
         entityA.name !== entityB.name ||
         entityA.healthTag !== entityB.healthTag ||
         entityA.isReachable !== entityB.isReachable ||
@@ -91,6 +97,7 @@ function deepCompareEntities(a, b) {
 
   if (typeof a === 'object' && typeof b === 'object') {
     return (
+      a.instanceId === b.instanceId &&
       a.name === b.name &&
       arePositionsEqual(a.gameCoordinates, b.gameCoordinates) &&
       areAbsoluteCoordsEqual(a.absoluteCoordinates, b.absoluteCoordinates)
@@ -99,184 +106,140 @@ function deepCompareEntities(a, b) {
   return a === b;
 }
 
-function processGameWorldEntities(
-  ocrData,
+function screenDist(p1, p2) {
+  if (!p1 || !p2) return Infinity;
+  const dx = p1.x - p2.x;
+  const dy = p1.y - p2.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function updateCreatureState(
+  creature,
+  detection,
   currentPlayerMinimapPosition,
   regions,
   tileSize,
   now,
   isPlayerInAnimationFreeze,
 ) {
-  if (
-    !regions?.gameWorld ||
-    !tileSize ||
-    !currentPlayerMinimapPosition ||
-    !Array.isArray(ocrData)
-  )
-    return [];
+  const { gameWorld } = regions;
+  const { r } = detection;
+  const creatureName = r.text;
+  const creatureScreenX = r.click.x;
+  const NAMEPLATE_TEXT_HEIGHT = 10;
+  const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
+  const nameplateCenterY = r.y + textHeight / 2 + tileSize.height / 10;
+  const creatureScreenY = nameplateCenterY + tileSize.height / 1.4;
 
-  const playerFixedScreenCenterX =
-    regions.gameWorld.x + (PLAYER_SCREEN_TILE_X + 0.5) * tileSize.width;
-  const playerFixedScreenCenterY =
-    regions.gameWorld.y + (PLAYER_SCREEN_TILE_Y + 0.5) * tileSize.height;
+  let finalGameX,
+    finalGameY,
+    finalGameZ = currentPlayerMinimapPosition.z;
 
-  const entities = ocrData
-    .map((r) => {
-      const creatureName = r.text;
-      const creatureScreenX = r.click.x;
-      const NAMEPLATE_TEXT_HEIGHT = 10;
-      const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
-      const nameplateCenterY = r.y + textHeight / 2 + tileSize.height / 10;
-      const creatureScreenY = nameplateCenterY + tileSize.height / 1.4;
+  const playerPosForCreatureCalc = isPlayerInAnimationFreeze
+    ? lastStablePlayerMinimapPosition
+    : currentPlayerMinimapPosition;
 
-      let finalGameX,
-        finalGameY,
-        finalGameZ = currentPlayerMinimapPosition.z;
+  const rawGameCoordsFloat = getGameCoordinatesFromScreen(
+    creatureScreenX,
+    creatureScreenY,
+    playerPosForCreatureCalc,
+    gameWorld,
+    tileSize,
+  );
 
-      const playerPosForCreatureCalc = isPlayerInAnimationFreeze
-        ? lastStablePlayerMinimapPosition
-        : currentPlayerMinimapPosition;
+  if (!rawGameCoordsFloat) return null;
+  const currentCreatureZ = currentPlayerMinimapPosition.z;
 
-      const rawGameCoordsFloat = getGameCoordinatesFromScreen(
-        creatureScreenX,
-        creatureScreenY,
-        playerPosForCreatureCalc,
-        regions.gameWorld,
-        tileSize,
+  if (isPlayerInAnimationFreeze && creature.gameCoords) {
+    finalGameX = creature.gameCoords.x;
+    finalGameY = creature.gameCoords.y;
+    finalGameZ = creature.gameCoords.z;
+  } else {
+    const lastReportedGameCoords = creature.gameCoords;
+    const lastCalculatedFloatCoords = creature.lastCalculatedFloatCoords;
+
+    const newGameX_int = Math.floor(rawGameCoordsFloat.x);
+    const newGameY_int = Math.floor(rawGameCoordsFloat.y);
+
+    finalGameX = newGameX_int;
+    finalGameY = newGameY_int;
+
+    if (lastReportedGameCoords && lastCalculatedFloatCoords) {
+      const distX_to_last_int = Math.abs(
+        rawGameCoordsFloat.x - lastReportedGameCoords.x,
+      );
+      const distY_to_last_int = Math.abs(
+        rawGameCoordsFloat.y - lastReportedGameCoords.y,
       );
 
-      if (!rawGameCoordsFloat) return null;
-      const currentCreatureZ = currentPlayerMinimapPosition.z;
-
-      if (isPlayerInAnimationFreeze) {
-        let lastReported = creatureLastReportedGameCoords.get(creatureName);
-        if (!lastReported) {
-          lastReported = {
-            x: Math.floor(rawGameCoordsFloat.x),
-            y: Math.floor(rawGameCoordsFloat.y),
-            z: currentCreatureZ,
-          };
-          creatureLastReportedGameCoords.set(creatureName, lastReported);
-          creatureLastCalculatedFloatCoords.set(creatureName, {
-            x: rawGameCoordsFloat.x,
-            y: rawGameCoordsFloat.y,
-          });
-        }
-        finalGameX = lastReported.x;
-        finalGameY = lastReported.y;
-        finalGameZ = lastReported.z;
-      } else {
-        const lastReportedGameCoords =
-          creatureLastReportedGameCoords.get(creatureName);
-        const lastCalculatedFloatCoords =
-          creatureLastCalculatedFloatCoords.get(creatureName);
-
-        const newGameX_int = Math.floor(rawGameCoordsFloat.x);
-        const newGameY_int = Math.floor(rawGameCoordsFloat.y);
-
-        finalGameX = newGameX_int;
-        finalGameY = newGameY_int;
-
-        if (lastReportedGameCoords && lastCalculatedFloatCoords) {
-          const distX_to_last_int = Math.abs(
-            rawGameCoordsFloat.x - lastReportedGameCoords.x,
-          );
-          const distY_to_last_int = Math.abs(
-            rawGameCoordsFloat.y - lastReportedGameCoords.y,
-          );
-
-          if (
-            distX_to_last_int < STICKY_SNAP_THRESHOLD_TILES &&
-            distY_to_last_int < STICKY_SNAP_THRESHOLD_TILES
-          ) {
-            finalGameX = lastReportedGameCoords.x;
-            finalGameY = lastReportedGameCoords.y;
-          }
-        }
-
-        const history = creatureReportHistory.get(creatureName) || [];
-        if (history.length >= 2) {
-          const lastEntry = history[history.length - 1];
-          const secondLastEntry = history[history.length - 2];
-
-          if (
-            now - lastEntry.timestamp < JITTER_FILTER_TIME_MS &&
-            arePositionsEqual(
-              { x: finalGameX, y: finalGameY, z: currentCreatureZ },
-              secondLastEntry.coords,
-            ) &&
-            !arePositionsEqual(
-              { x: finalGameX, y: finalGameY, z: currentCreatureZ },
-              lastEntry.coords,
-            )
-          ) {
-            finalGameX = secondLastEntry.coords.x;
-            finalGameY = secondLastEntry.coords.y;
-            finalGameZ = secondLastEntry.coords.z;
-          }
-        }
-
-        history.push({
-          coords: { x: finalGameX, y: finalGameY, z: finalGameZ },
-          timestamp: now,
-        });
-        if (history.length > JITTER_HISTORY_LENGTH) {
-          history.shift();
-        }
-        creatureReportHistory.set(creatureName, history);
+      if (
+        distX_to_last_int < STICKY_SNAP_THRESHOLD_TILES &&
+        distY_to_last_int < STICKY_SNAP_THRESHOLD_TILES
+      ) {
+        finalGameX = lastReportedGameCoords.x;
+        finalGameY = lastReportedGameCoords.y;
       }
-
-      creatureLastReportedGameCoords.set(creatureName, {
-        x: finalGameX,
-        y: finalGameY,
-        z: finalGameZ,
-      });
-      creatureLastCalculatedFloatCoords.set(creatureName, {
-        x: rawGameCoordsFloat.x,
-        y: rawGameCoordsFloat.y,
-      });
-
-      const dx_pixels = creatureScreenX - playerFixedScreenCenterX;
-      const dy_pixels = creatureScreenY - playerFixedScreenCenterY;
-      const dx_tiles = dx_pixels / tileSize.width;
-      const dy_tiles = dy_pixels / tileSize.height;
-      const distance = Math.sqrt(dx_tiles * dx_tiles + dy_tiles * dy_tiles);
-
-      return {
-        name: creatureName,
-        healthTag: getHealthTagFromColor(r.color),
-        absoluteCoords: {
-          x: Math.round(creatureScreenX),
-          y: Math.round(creatureScreenY),
-          lastUpdate: now,
-        },
-        gameCoords: { x: finalGameX, y: finalGameY, z: finalGameZ },
-        distance: parseFloat(distance.toFixed(1)),
-      };
-    })
-    .filter(Boolean)
-    .filter(
-      (e) =>
-        e.gameCoords.x !== currentPlayerMinimapPosition.x ||
-        e.gameCoords.y !== currentPlayerMinimapPosition.y ||
-        e.gameCoords.z !== currentPlayerMinimapPosition.z,
-    );
-
-  const detectedNames = new Set(entities.map((e) => e.name));
-  for (const name of creatureLastReportedGameCoords.keys()) {
-    if (!detectedNames.has(name)) {
-      creatureLastReportedGameCoords.delete(name);
-      creatureLastCalculatedFloatCoords.delete(name);
-      creatureReportHistory.delete(name);
     }
+
+    const history = creature.reportHistory || [];
+    if (history.length >= 2) {
+      const lastEntry = history[history.length - 1];
+      const secondLastEntry = history[history.length - 2];
+
+      if (
+        now - lastEntry.timestamp < JITTER_FILTER_TIME_MS &&
+        arePositionsEqual(
+          { x: finalGameX, y: finalGameY, z: currentCreatureZ },
+          secondLastEntry.coords,
+        ) &&
+        !arePositionsEqual(
+          { x: finalGameX, y: finalGameY, z: currentCreatureZ },
+          lastEntry.coords,
+        )
+      ) {
+        finalGameX = secondLastEntry.coords.x;
+        finalGameY = secondLastEntry.coords.y;
+        finalGameZ = secondLastEntry.coords.z;
+      }
+    }
+
+    history.push({
+      coords: { x: finalGameX, y: finalGameY, z: finalGameZ },
+      timestamp: now,
+    });
+    if (history.length > JITTER_HISTORY_LENGTH) {
+      history.shift();
+    }
+    creature.reportHistory = history;
   }
 
-  entities.sort((a, b) => {
-    if (a.distance !== b.distance) return a.distance - b.distance;
-    return a.name.localeCompare(b.name);
-  });
+  creature.lastCalculatedFloatCoords = {
+    x: rawGameCoordsFloat.x,
+    y: rawGameCoordsFloat.y,
+  };
 
-  return entities;
+  const playerFixedScreenCenterX =
+    gameWorld.x + (PLAYER_SCREEN_TILE_X + 0.5) * tileSize.width;
+  const playerFixedScreenCenterY =
+    gameWorld.y + (PLAYER_SCREEN_TILE_Y + 0.5) * tileSize.height;
+
+  const dx_pixels = creatureScreenX - playerFixedScreenCenterX;
+  const dy_pixels = creatureScreenY - playerFixedScreenCenterY;
+  const dx_tiles = dx_pixels / tileSize.width;
+  const dy_tiles = dy_pixels / tileSize.height;
+  const distance = Math.sqrt(dx_tiles * dx_tiles + dy_tiles * dy_tiles);
+
+  creature.name = creatureName;
+  creature.healthTag = getHealthTagFromColor(r.color);
+  creature.absoluteCoords = {
+    x: Math.round(creatureScreenX),
+    y: Math.round(creatureScreenY),
+    lastUpdate: now,
+  };
+  creature.gameCoords = { x: finalGameX, y: finalGameY, z: finalGameZ };
+  creature.distance = parseFloat(distance.toFixed(1));
+
+  return creature;
 }
 
 async function performOperation() {
@@ -291,7 +254,6 @@ async function performOperation() {
     )
       return;
 
-    // --- NEW: Update special areas if they have changed ---
     const specialAreas = currentState.cavebot?.specialAreas || [];
     const currentSpecialAreasJson = JSON.stringify(specialAreas);
     if (currentSpecialAreasJson !== lastSpecialAreasJson) {
@@ -309,7 +271,6 @@ async function performOperation() {
       );
       lastSpecialAreasJson = currentSpecialAreasJson;
     }
-    // --- END NEW ---
 
     const { regions } = currentState.regionCoordinates;
     const { gameWorld, tileSize } = regions;
@@ -344,13 +305,78 @@ async function performOperation() {
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
     const ocrData = currentState.ocr.regions.gameWorld || [];
 
-    let detectedEntities = processGameWorldEntities(
-      ocrData,
-      currentPlayerMinimapPosition,
-      regions,
-      tileSize,
-      now,
-      isPlayerInAnimationFreeze,
+    const preliminaryDetections = ocrData
+      .map((r) => ({
+        name: r.text,
+        absoluteCoords: { x: r.click.x, y: r.click.y },
+        r,
+      }))
+      .filter(Boolean);
+
+    const newActiveCreatures = new Map();
+    const matchedDetections = new Set();
+
+    for (const [instanceId, oldCreature] of activeCreatures.entries()) {
+      let bestMatch = null;
+      let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
+
+      for (const newDetection of preliminaryDetections) {
+        if (matchedDetections.has(newDetection)) continue;
+        if (newDetection.name !== oldCreature.name) continue;
+
+        const distance = screenDist(
+          newDetection.absoluteCoords,
+          oldCreature.absoluteCoords,
+        );
+        if (distance < minDistance) {
+          minDistance = distance;
+          bestMatch = newDetection;
+        }
+      }
+
+      if (bestMatch) {
+        const updatedCreature = updateCreatureState(
+          oldCreature,
+          bestMatch,
+          currentPlayerMinimapPosition,
+          regions,
+          tileSize,
+          now,
+          isPlayerInAnimationFreeze,
+        );
+        if (updatedCreature) {
+          newActiveCreatures.set(instanceId, updatedCreature);
+        }
+        matchedDetections.add(bestMatch);
+      }
+    }
+
+    for (const newDetection of preliminaryDetections) {
+      if (!matchedDetections.has(newDetection)) {
+        const newInstanceId = nextInstanceId++;
+        let newCreature = { instanceId: newInstanceId, reportHistory: [] };
+        newCreature = updateCreatureState(
+          newCreature,
+          newDetection,
+          currentPlayerMinimapPosition,
+          regions,
+          tileSize,
+          now,
+          isPlayerInAnimationFreeze,
+        );
+        if (newCreature) {
+          newActiveCreatures.set(newInstanceId, newCreature);
+        }
+      }
+    }
+
+    activeCreatures = newActiveCreatures;
+
+    let detectedEntities = Array.from(activeCreatures.values()).filter(
+      (e) =>
+        e.gameCoords.x !== currentPlayerMinimapPosition.x ||
+        e.gameCoords.y !== currentPlayerMinimapPosition.y ||
+        e.gameCoords.z !== currentPlayerMinimapPosition.z,
     );
 
     if (detectedEntities.length > 0) {
@@ -375,6 +401,11 @@ async function performOperation() {
       });
     }
 
+    detectedEntities.sort((a, b) => {
+      if (a.distance !== b.distance) return a.distance - b.distance;
+      return a.name.localeCompare(b.name);
+    });
+
     if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
       parentPort.postMessage({
         storeUpdate: true,
@@ -392,6 +423,7 @@ async function performOperation() {
       );
 
       if (targetRect) {
+        targetLossGracePeriodEndTime = 0; // Target found, reset grace period.
         const screenX = targetRect.x + targetRect.width / 2;
         const screenY = targetRect.y + targetRect.height / 2;
         const playerPosForTargetCalc = isPlayerInAnimationFreeze
@@ -426,12 +458,31 @@ async function performOperation() {
               currentPlayerMinimapPosition,
               closestCreature.gameCoords,
             );
+            // The target object in Redux needs the instanceId for unique identification.
             currentTarget = {
+              instanceId: closestCreature.instanceId,
               name: closestCreature.name,
               distance: parseFloat(distanceFromPlayer.toFixed(1)),
               gameCoordinates: closestCreature.gameCoords,
               absoluteCoordinates: closestCreature.absoluteCoords,
             };
+          }
+        }
+      } else {
+        // --- Target NOT FOUND ---
+        if (lastSentTarget) {
+          // Only apply grace period if we previously had a target.
+          if (targetLossGracePeriodEndTime === 0) {
+            // Target was visible last frame, but not this one. Start the grace period.
+            targetLossGracePeriodEndTime = now + TARGET_LOSS_GRACE_PERIOD_MS;
+          }
+
+          if (now < targetLossGracePeriodEndTime) {
+            // Grace period is active, so we pretend the target is still there to prevent flickering.
+            currentTarget = lastSentTarget;
+          } else {
+            // Grace period has expired. The target is officially lost.
+            currentTarget = null;
           }
         }
       }

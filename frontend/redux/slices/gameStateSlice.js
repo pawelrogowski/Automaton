@@ -84,12 +84,18 @@ const gameStateSlice = createSlice({
       if (attackCd !== undefined) state.attackCd = attackCd;
 
       if (characterStatus !== undefined) {
-        // Merge characterStatus to avoid overwriting other potential status fields
+        // Create a new object with all initial statuses set to false
+        const newCharacterStatus = Object.fromEntries(
+          Object.keys(state.characterStatus).map((key) => [key, false]),
+        );
+
+        // Then, merge the active statuses from the payload
         for (const key in characterStatus) {
           if (Object.prototype.hasOwnProperty.call(characterStatus, key)) {
-            state.characterStatus[key] = characterStatus[key];
+            newCharacterStatus[key] = characterStatus[key];
           }
         }
+        state.characterStatus = newCharacterStatus;
       }
 
       if (isWalking !== undefined) state.isWalking = isWalking;

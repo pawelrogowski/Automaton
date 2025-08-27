@@ -10,7 +10,6 @@ import {
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
-import { appendFile } from 'fs/promises';
 import {
   createMainWindow,
   toggleWidgetWindowVisibility,
@@ -26,32 +25,6 @@ import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
 import windowinfo from 'windowinfo-native';
 import setGlobalState from './setGlobalState.js';
-
-const MAIN_LOG_INTERVAL_MS = 10000;
-const MAIN_LOG_FILE_NAME = 'main-process-memory-usage.log';
-const MAIN_LOG_FILE_PATH = path.join(process.cwd(), MAIN_LOG_FILE_NAME);
-
-const toMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
-
-async function logMainProcessMemoryUsage() {
-  try {
-    const memoryUsage = process.memoryUsage();
-    const timestamp = new Date().toISOString();
-    const logEntry =
-      `${timestamp} | ` +
-      `RSS: ${toMB(memoryUsage.rss)} MB, ` +
-      `HeapTotal: ${toMB(memoryUsage.heapTotal)} MB, ` +
-      `HeapUsed: ${toMB(memoryUsage.heapUsed)} MB, ` +
-      `External: ${toMB(memoryUsage.external)} MB\n`;
-
-    await appendFile(MAIN_LOG_FILE_PATH, logEntry);
-  } catch (error) {
-    console.error(
-      '[Main MemoryLogger] Failed to write to memory log file:',
-      error,
-    );
-  }
-}
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -99,24 +72,6 @@ app.whenReady().then(async () => {
     workerManager.initialize(app, cwd, {});
     registerGlobalShortcuts(); // Register global shortcuts on startup
     setGlobalState('global/setGlobalShortcutsEnabled', true); // Set default to enabled
-
-    (async () => {
-      try {
-        const header = `\n--- Main Process Session Started at ${new Date().toISOString()} ---\n`;
-        await appendFile(MAIN_LOG_FILE_PATH, header);
-        console.log(
-          `[Main MemoryLogger] Memory usage logging is active. Outputting to ${MAIN_LOG_FILE_PATH}`,
-        );
-
-        await logMainProcessMemoryUsage();
-        setInterval(logMainProcessMemoryUsage, MAIN_LOG_INTERVAL_MS);
-      } catch (error) {
-        console.error(
-          '[Main MemoryLogger] Could not initialize memory log file:',
-          error,
-        );
-      }
-    })();
   } catch (error) {
     console.error('[Main] FATAL: Error during application startup:', error);
     dialog.showErrorBox(

@@ -4,9 +4,9 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   enabled: false,
   stickiness: 0,
-  // MODIFIED: The shape of a creature object will now include isReachable
-  creatures: [], // [{ name, healthTag, absoluteCoords, gameCoords, distance, isReachable }]
-  target: null,
+  // The shape of a creature object now includes instanceId and isReachable
+  creatures: [], // [{ instanceId, name, healthTag, absoluteCoords, gameCoords, distance, isReachable }]
+  target: null, // { instanceId, name, ... }
   targetingList: [],
 };
 
@@ -40,10 +40,10 @@ const targetingSlice = createSlice({
       }
     },
     setEntities: (state, action) => {
-      // MODIFIED: Ensure every creature object has the isReachable flag.
+      // Ensure every creature object has the isReachable flag.
       // This makes the state shape consistent and prevents errors if the
       // creatureMonitor ever fails to provide the flag.
-      state.creatures = action.payload.map((creature) => ({
+      state.creatures = (action.payload || []).map((creature) => ({
         ...creature,
         isReachable: creature.isReachable || false,
       }));

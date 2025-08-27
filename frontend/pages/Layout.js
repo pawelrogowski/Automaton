@@ -413,16 +413,8 @@ const Layout = () => {
                     onClick={() => handleAddWaypoint('Ladder')}
                   ></SidebarButton>
                   <SidebarButton
-                    text={'Use'}
-                    onClick={() => handleAddWaypoint('Use')}
-                  ></SidebarButton>
-                  <SidebarButton
                     text={'Script'}
                     onClick={() => handleAddWaypoint('Script')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Lure'}
-                    onClick={() => handleAddWaypoint('Lure')}
                   ></SidebarButton>
                 </div>
 

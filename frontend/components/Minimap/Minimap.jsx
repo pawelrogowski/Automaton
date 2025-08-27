@@ -67,9 +67,11 @@ const SPECIAL_AREA_TYPE_OPTIONS = [
 const WAYPOINT_TYPE_OPTIONS = [
   { value: 'Node', label: 'Node' },
   { value: 'Stand', label: 'Stand' },
+  { value: 'Shovel', label: 'Shovel' },
+  { value: 'Rope', label: 'Rope' },
+  { value: 'Machete', label: 'Machete' },
   { value: 'Ladder', label: 'Ladder' },
   { value: 'Script', label: 'Script' },
-  { value: 'Lure', label: 'Lure' },
 ];
 
 // --- Settings Modal Component ---
@@ -273,7 +275,12 @@ const Minimap = () => {
       path: { draw: true, color: MINIMAP_COLORS.PATH },
       waypoints: {
         draw: true,
-        typeColors: { ...MINIMAP_COLORS.WAYPOINT_TYPE },
+        typeColors: {
+          ...MINIMAP_COLORS.WAYPOINT_TYPE,
+          Shovel: '#C0C0C0', // Silver
+          Rope: '#8B4513', // SaddleBrown
+          Machete: '#2E8B57', // SeaGreen
+        },
       },
       specialAreas: {
         draw: true,

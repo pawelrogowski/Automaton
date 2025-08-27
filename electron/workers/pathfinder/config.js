@@ -11,6 +11,7 @@ export const PREPROCESSED_BASE_DIR = path.join(
   'preprocessed_minimaps',
 );
 
+console.log('PREPROCESSED_BASE_DIR:', process.cwd());
 // --- Logic Constants ---
 // Maps a waypoint type to the type of special avoidance area it should respect.
 export const WAYPOINT_AVOIDANCE_MAP = {

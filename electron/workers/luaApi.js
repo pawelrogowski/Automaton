@@ -9,10 +9,6 @@ import mouseController from 'mouse-controller';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
-import {
-  setActionPaused,
-  setenabled as setCavebotEnabled,
-} from '../../frontend/redux/slices/cavebotSlice.js';
 
 /**
  * Creates an object with getters for convenient, direct access to state in Lua.
@@ -40,6 +36,39 @@ const createStateShortcutObject = (getState, type) => {
   });
   Object.defineProperty(shortcuts, 'mppc', {
     get: () => gameState?.mppc,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'cap', {
+    get: () => uiValues?.skillsWidget?.capacity,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'stamina', {
+    get: () => uiValues?.skillsWidget?.stamina,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'level', {
+    get: () => uiValues?.skillsWidget?.level,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'exp', {
+    get: () => uiValues?.skillsWidget?.experience,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'soul', {
+    get: () => uiValues?.skillsWidget?.soulPoints,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'speed', {
+    get: () => uiValues?.skillsWidget?.speed,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'xpRate', {
+    get: () => uiValues?.skillsWidget?.xpGainRate,
+    enumerable: true,
+  });
+
+  Object.defineProperty(shortcuts, 'food', {
+    get: () => uiValues?.skillsWidget?.food,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isChatOff', {
@@ -112,41 +141,38 @@ const createStateShortcutObject = (getState, type) => {
     },
     enumerable: true,
   });
-
-  if (type === 'cavebot' && cavebot) {
-    Object.defineProperty(shortcuts, 'cavebot', {
-      get: () => cavebot?.enabled,
-      enumerable: true,
-    });
-    Object.defineProperty(shortcuts, 'section', {
-      get: () => cavebot?.waypointSections[cavebot?.currentSection]?.name,
-      enumerable: true,
-    });
-    Object.defineProperty(shortcuts, 'wpt', {
-      get: () => {
-        const currentWaypoints =
-          cavebot?.waypointSections[cavebot?.currentSection]?.waypoints || [];
-        const currentWptIndex = currentWaypoints.findIndex(
-          (wp) => wp.id === cavebot?.wptId,
-        );
-        const currentWpt =
-          currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
-        if (currentWpt) {
-          return {
-            id: currentWptIndex + 1,
-            x: currentWpt.x,
-            y: currentWpt.y,
-            z: currentWpt.z,
-            type: currentWpt.type,
-            label: currentWpt.label,
-            distance: cavebot.wptDistance,
-          };
-        }
-        return null;
-      },
-      enumerable: true,
-    });
-  }
+  Object.defineProperty(shortcuts, 'wpt', {
+    get: () => {
+      const currentWaypoints =
+        cavebot?.waypointSections[cavebot?.currentSection]?.waypoints || [];
+      const currentWptIndex = currentWaypoints.findIndex(
+        (wp) => wp.id === cavebot?.wptId,
+      );
+      const currentWpt =
+        currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
+      if (currentWpt) {
+        return {
+          id: currentWptIndex + 1,
+          x: currentWpt.x,
+          y: currentWpt.y,
+          z: currentWpt.z,
+          type: currentWpt.type,
+          label: currentWpt.label,
+          distance: cavebot.wptDistance,
+        };
+      }
+      return null;
+    },
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'cavebot', {
+    get: () => cavebot?.enabled,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'section', {
+    get: () => cavebot?.waypointSections[cavebot?.currentSection]?.name,
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, '$healing', {
     get: () => rules?.enabled,
     enumerable: true,

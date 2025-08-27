@@ -204,7 +204,7 @@ function selectBestTarget() {
   let stickinessBonus = 0;
   if (currentGameTarget) {
     const currentTargetOnScreen = reachableCreatures.find(
-      (c) => c.name === currentGameTarget.name,
+      (c) => c.instanceId === currentGameTarget.instanceId,
     );
     if (currentTargetOnScreen) {
       let activeRuleForCurrentTarget = targetingList.find(
@@ -248,7 +248,10 @@ function selectBestTarget() {
       if (!targetingInfo) return null;
 
       let effectivePriority = targetingInfo.priority;
-      if (currentGameTarget && creature.name === currentGameTarget.name) {
+      if (
+        currentGameTarget &&
+        creature.instanceId === currentGameTarget.instanceId
+      ) {
         effectivePriority += stickinessBonus;
       }
 
@@ -321,7 +324,10 @@ async function clickAndConfirmTarget(targetToClick) {
   const startTime = Date.now();
   while (Date.now() - startTime < CLICK_CONFIRMATION_TIMEOUT_MS) {
     const latestGameTarget = globalState.targeting.target;
-    if (latestGameTarget && latestGameTarget.name === targetToClick.name) {
+    if (
+      latestGameTarget &&
+      latestGameTarget.instanceId === targetToClick.instanceId
+    ) {
       logger('info', `[Targeting] Confirmed target: ${targetToClick.name}`);
       return true;
     }
@@ -395,7 +401,7 @@ async function performTargeting() {
     lastDispatchedVisitedTile = { ...playerMinimapPosition };
   }
 
-  if (bestTarget.name !== currentGameTarget?.name) {
+  if (bestTarget.instanceId !== currentGameTarget?.instanceId) {
     const clickedSuccessfully = await clickAndConfirmTarget(bestTarget);
     if (!clickedSuccessfully) {
       return;
