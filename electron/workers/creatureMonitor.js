@@ -42,6 +42,11 @@ let lastSpecialAreasJson = '';
 
 let nextInstanceId = 0;
 let activeCreatures = new Map(); // Map<instanceId, creatureObject>
+let reachableTilesCache = new Map(); // Map<string, boolean>
+
+function getCoordsKey(coords) {
+  return `${coords.x},${coords.y},${coords.z}`;
+}
 
 // Timestamp for when the target is truly considered lost after disappearing.
 let targetLossGracePeriodEndTime = 0;
@@ -270,6 +275,7 @@ async function performOperation() {
         currentState.gameState.playerMinimapPosition.z,
       );
       lastSpecialAreasJson = currentSpecialAreasJson;
+      reachableTilesCache.clear(); // Invalidate cache when special areas change
     }
 
     const { regions } = currentState.regionCoordinates;
@@ -299,6 +305,7 @@ async function performOperation() {
       playerSettlingGracePeriodEndTime =
         playerAnimationFreezeEndTime + PLAYER_SETTLING_GRACE_PERIOD_MS;
       lastStablePlayerMinimapPosition = { ...currentPlayerMinimapPosition };
+      reachableTilesCache.clear(); // Invalidate cache when player position changes
     }
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
 
@@ -386,17 +393,25 @@ async function performOperation() {
       ).map((c) => c.gameCoords);
 
       detectedEntities = detectedEntities.map((entity) => {
-        const otherCreatures = allCreaturePositions.filter(
-          (p) => p !== entity.gameCoords,
-        );
-        const pathLength = pathfinderInstance.getPathLength(
-          currentPlayerMinimapPosition,
-          entity.gameCoords,
-          otherCreatures,
-        );
+        const coordsKey = getCoordsKey(entity.gameCoords);
+        let isReachable = reachableTilesCache.get(coordsKey);
+
+        if (typeof isReachable === 'undefined') {
+          const otherCreatures = allCreaturePositions.filter(
+            (p) => p !== entity.gameCoords,
+          );
+          const pathLength = pathfinderInstance.getPathLength(
+            currentPlayerMinimapPosition,
+            entity.gameCoords,
+            otherCreatures,
+          );
+          isReachable = pathLength !== -1 && pathLength <= 10;
+          reachableTilesCache.set(coordsKey, isReachable);
+        }
+
         return {
           ...entity,
-          isReachable: pathLength !== -1 && pathLength <= 10,
+          isReachable: isReachable,
         };
       });
     }

@@ -98,6 +98,7 @@ export class CavebotLuaExecutor {
             parentPort.postMessage(message);
           }
         },
+        refreshLuaGlobalState: this._syncApiToLua.bind(this),
       });
 
       this.asyncFunctionNames = asyncFunctionNames;
@@ -294,6 +295,14 @@ export class CavebotLuaExecutor {
       this._logPerformanceStats();
       return result;
     }
+  }
+
+  /**
+   * Synchronizes the Lua API with the current worker context.
+   * This method is exposed to allow external state refreshes.
+   */
+  syncApiToLua() {
+    this._syncApiToLua();
   }
 
   /**

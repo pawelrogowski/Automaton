@@ -173,20 +173,20 @@ const createStateShortcutObject = (getState, type) => {
     get: () => cavebot?.waypointSections[cavebot?.currentSection]?.name,
     enumerable: true,
   });
-  Object.defineProperty(shortcuts, '$healing', {
+  Object.defineProperty(shortcuts, 'healing', {
     get: () => rules?.enabled,
     enumerable: true,
   });
-  Object.defineProperty(shortcuts, '$targeting', {
+  Object.defineProperty(shortcuts, 'targeting', {
     get: () => targeting?.enabled,
     enumerable: true,
   });
-  Object.defineProperty(shortcuts, '$cavebot', {
-    get: () => cavebot?.enabled,
+  Object.defineProperty(shortcuts, 'scripts', {
+    get: () => lua?.enabled,
     enumerable: true,
   });
-  Object.defineProperty(shortcuts, '$scripts', {
-    get: () => lua?.enabled,
+  Object.defineProperty(shortcuts, 'players', {
+    get: () => uiValues?.players || [],
     enumerable: true,
   });
   return shortcuts;
@@ -236,26 +236,77 @@ export const createLuaApi = (context) => {
       return Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
     },
     isLocation: (range = 0) => {
+      // try to refresh the state if worker provided that hook
+      try {
+        if (typeof refreshLuaGlobalState === 'function') {
+          const maybePromise = refreshLuaGlobalState(); // usually synchronous
+          if (maybePromise && typeof maybePromise.then === 'function') {
+            // refresh returned a Promise, but we are in a sync function.
+            // don't await here to avoid breaking existing Lua calls.
+            // Log so you know you might want to use async option below.
+            console.warn(
+              '[Lua] isLocation: refreshLuaGlobalState returned a Promise — consider using async isLocation if you can update Lua callsites.',
+            );
+          }
+        }
+      } catch (err) {
+        console.warn(
+          '[Lua] isLocation: refreshLuaGlobalState threw:',
+          err && err.message,
+        );
+      }
+
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
-      const { waypointSections, currentSection, wptId } = state.cavebot;
+      const { waypointSections, currentSection, wptId } = state.cavebot || {};
+
       if (
         !playerPos ||
-        !wptId ||
+        wptId == null ||
         !waypointSections ||
         !waypointSections[currentSection]
-      )
+      ) {
+        console.log('isLocation failed, missing data.', {
+          playerPos,
+          wptId,
+          currentSection,
+        });
         return false;
+      }
+
       const targetWpt = waypointSections[currentSection].waypoints.find(
         (wp) => wp.id === wptId,
       );
-      if (!targetWpt || playerPos.z !== targetWpt.z) return false;
-      return (
-        Math.max(
-          Math.abs(playerPos.x - targetWpt.x),
-          Math.abs(playerPos.y - targetWpt.y),
-        ) <= range
-      );
+      if (!targetWpt) {
+        console.log('isLocation: target waypoint not found for wptId', wptId);
+        return false;
+      }
+      if (playerPos.z !== targetWpt.z) {
+        console.log('isLocation: z mismatch', playerPos.z, targetWpt.z);
+        return false;
+      }
+
+      const px = Number(playerPos.x);
+      const py = Number(playerPos.y);
+      const tx = Number(targetWpt.x);
+      const ty = Number(targetWpt.y);
+
+      if ([px, py, tx, ty].some(Number.isNaN)) {
+        console.log('isLocation: numeric conversion failed', {
+          px,
+          py,
+          tx,
+          ty,
+        });
+        return false;
+      }
+
+      if (px === tx && py === ty) {
+        return true; // exact match fast-path
+      }
+
+      const dist = Math.max(Math.abs(px - tx), Math.abs(py - ty));
+      return dist <= range;
     },
     log: (level, ...messages) =>
       logger(

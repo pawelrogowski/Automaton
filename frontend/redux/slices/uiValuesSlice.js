@@ -61,6 +61,7 @@ const initialState = {
   },
   // REMOVED gameWorld state
   battleListEntries: [],
+  players: [], // NEW: Add players array
 };
 
 const uiValuesSlice = createSlice({
@@ -74,6 +75,10 @@ const uiValuesSlice = createSlice({
     },
     setBattleListEntries: (state, action) => {
       state.battleListEntries = action.payload;
+    },
+    setPlayers: (state, action) => {
+      // NEW: Add setPlayers reducer
+      state.players = action.payload;
     },
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;
@@ -117,6 +122,7 @@ export const {
   setChatTabs,
   setSelectCharacterModal,
   setVipWidget,
+  setPlayers, // NEW: Export setPlayers action
   resetUiValues,
   resetRegion,
   setState,
@@ -146,6 +152,7 @@ export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
 export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
 export const selectBattleListEntries = (state) =>
   state.uiValues.battleListEntries;
+export const selectPlayers = (state) => state.uiValues.players; // NEW: Add selectPlayers selector
 // REMOVED selectGameWorldOcr selector
 
 export default uiValuesSlice;

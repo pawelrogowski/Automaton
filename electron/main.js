@@ -13,6 +13,7 @@ import path from 'path';
 import {
   createMainWindow,
   toggleWidgetWindowVisibility,
+  getWidgetWindow, // Import getWidgetWindow
 } from './createMainWindow.js';
 import './ipcListeners.js';
 import {
@@ -25,6 +26,7 @@ import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
 import windowinfo from 'windowinfo-native';
 import setGlobalState from './setGlobalState.js';
+import store from './store.js'; // Import the store
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
@@ -146,6 +148,56 @@ ipcMain.on('update-bot-status', (event, { feature, isEnabled }) => {
       break;
     default:
       console.warn(`[Main] Unknown feature received from widget: ${feature}`);
+  }
+});
+
+// Store subscription to send state updates to the widget window
+let previousRulesEnabled = false;
+let previousCavebotEnabled = false;
+let previousTargetingEnabled = false;
+let previousLuaEnabled = false;
+
+store.subscribe(() => {
+  const state = store.getState();
+  const widgetWindow = getWidgetWindow();
+
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    const currentRulesEnabled = state.rules.enabled;
+    const currentCavebotEnabled = state.cavebot.enabled;
+    const currentTargetingEnabled = state.targeting.enabled;
+    const currentLuaEnabled = state.lua.enabled;
+
+    if (currentRulesEnabled !== previousRulesEnabled) {
+      widgetWindow.webContents.send('state-update', {
+        type: 'rules/setenabled',
+        payload: currentRulesEnabled,
+      });
+      previousRulesEnabled = currentRulesEnabled;
+    }
+
+    if (currentCavebotEnabled !== previousCavebotEnabled) {
+      widgetWindow.webContents.send('state-update', {
+        type: 'cavebot/setenabled',
+        payload: currentCavebotEnabled,
+      });
+      previousCavebotEnabled = currentCavebotEnabled;
+    }
+
+    if (currentTargetingEnabled !== previousTargetingEnabled) {
+      widgetWindow.webContents.send('state-update', {
+        type: 'targeting/setenabled',
+        payload: currentTargetingEnabled,
+      });
+      previousTargetingEnabled = currentTargetingEnabled;
+    }
+
+    if (currentLuaEnabled !== previousLuaEnabled) {
+      widgetWindow.webContents.send('state-update', {
+        type: 'lua/setenabled',
+        payload: currentLuaEnabled,
+      });
+      previousLuaEnabled = currentLuaEnabled;
+    }
   }
 });
 

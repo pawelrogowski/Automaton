@@ -761,6 +761,10 @@ const regionDefinitions = {
     maxDown: 200,
   },
   playerList: {
+    ocrColors: [
+      [192, 192, 192],
+      [247, 247, 247],
+    ],
     type: 'boundingBox',
     start: {
       direction: 'horizontal',

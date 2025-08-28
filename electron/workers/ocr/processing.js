@@ -112,11 +112,103 @@ export async function processBattleList(buffer, regions) {
   }
 }
 
+// --- PLAYER LIST PROCESSING ---
+
+export async function processPlayerList(buffer, regions) {
+  const playerListRegion = regions.playerList;
+  if (
+    !playerListRegion ||
+    !playerListRegion.x ||
+    !playerListRegion.y ||
+    playerListRegion.width <= 0 ||
+    playerListRegion.height <= 0
+  ) {
+    postUpdateOnce('uiValues/setPlayers', []);
+    return;
+  }
+
+  try {
+    const PLAYER_LIST_ENTRY_HEIGHT = 12; // Approximate height of a player name entry
+    const PLAYER_LIST_ENTRY_VERTICAL_PITCH = 14; // Approximate vertical distance between entries
+
+    const maxEntries = Math.floor(
+      (playerListRegion.height +
+        (PLAYER_LIST_ENTRY_VERTICAL_PITCH - PLAYER_LIST_ENTRY_HEIGHT)) /
+        PLAYER_LIST_ENTRY_VERTICAL_PITCH,
+    );
+
+    if (maxEntries <= 0) {
+      postUpdateOnce('uiValues/setPlayers', []);
+      return;
+    }
+
+    const playerNameRegions = [];
+    for (let i = 0; i < maxEntries; i++) {
+      const entryBaseY =
+        playerListRegion.y + i * PLAYER_LIST_ENTRY_VERTICAL_PITCH;
+      playerNameRegions.push({
+        x: playerListRegion.x,
+        y: entryBaseY,
+        width: playerListRegion.width,
+        height: PLAYER_LIST_ENTRY_HEIGHT,
+      });
+    }
+
+    // Create a "super region" that contains all nameplates to optimize the native call
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (const region of playerNameRegions) {
+      minX = Math.min(minX, region.x);
+      minY = Math.min(minY, region.y);
+      maxX = Math.max(maxX, region.x + region.width);
+      maxY = Math.max(maxY, region.y + region.height);
+    }
+    const superRegion = {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+
+    const playerOcrColors = regionDefinitions.playerList?.ocrColors || [];
+    const allowedCharsForPlayerList = CHAR_PRESETS.ALPHA + ' ';
+
+    const ocrResults =
+      recognizeText(
+        buffer,
+        superRegion,
+        playerOcrColors,
+        allowedCharsForPlayerList,
+      ) || [];
+
+    const playerNames = playerNameRegions
+      .map((entryRegion) => {
+        const foundText = ocrResults.find(
+          (ocrLine) => Math.abs(ocrLine.y - entryRegion.y) <= 3,
+        );
+        return foundText ? foundText.text.trim() : '';
+      })
+      .filter((name) => name.length > 0); // Filter out empty names
+
+    postUpdateOnce('uiValues/setPlayers', playerNames);
+  } catch (ocrError) {
+    console.error(
+      '[OcrProcessing] OCR failed for playerList entries:',
+      ocrError,
+    );
+  }
+}
+
 // --- GENERIC OCR REGION PROCESSING ---
 
 export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
   const processingPromises = [];
+
+  // Process playerList specifically
+  processingPromises.push(processPlayerList(buffer, regions));
 
   for (const regionKey of regionKeys) {
     const cfg = OCR_REGION_CONFIGS[regionKey];

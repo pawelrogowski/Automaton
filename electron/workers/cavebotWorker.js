@@ -94,7 +94,7 @@ const getDirectionKey = (current, target) => {
   return null;
 };
 
-const logger = createLogger({ info: true, error: true, debug: true });
+const logger = createLogger({ info: true, error: true, debug: false });
 
 const updateSABData = () => {
   if (playerPosArray) {
@@ -941,6 +941,18 @@ async function performOperation() {
 
     updateSABData();
     if (!playerMinimapPosition) return;
+
+    // Ensure globalState reflects the latest player position from SAB
+    if (globalState && globalState.gameState) {
+      globalState.gameState.playerMinimapPosition = playerMinimapPosition;
+    } else if (globalState) {
+      globalState.gameState = { playerMinimapPosition: playerMinimapPosition };
+    } else {
+      globalState = {
+        gameState: { playerMinimapPosition: playerMinimapPosition },
+      };
+    }
+
     let targetWaypoint = findCurrentWaypoint();
     if (!targetWaypoint) {
       if (fsmState !== 'IDLE') resetInternalState();
@@ -1033,12 +1045,14 @@ parentPort.on('message', (message) => {
     if (message.type === 'state_diff') {
       if (!globalState) globalState = {};
       Object.assign(globalState, message.payload);
+      if (luaExecutor) luaExecutor.syncApiToLua();
     } else if (message.type === 'shutdown') {
       isShuttingDown = true;
       if (luaExecutor) luaExecutor.destroy();
     } else if (typeof message === 'object' && !message.type) {
       if (!globalState) globalState = message;
       else Object.assign(globalState, message);
+      if (luaExecutor) luaExecutor.syncApiToLua(); // Sync on initial full state as well
       if (!isInitialized) {
         initializeWorker().catch((error) => {
           logger(
