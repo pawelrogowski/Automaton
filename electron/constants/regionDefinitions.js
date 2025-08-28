@@ -1031,6 +1031,7 @@ const regionDefinitions = {
     ocrColors: [
       [192, 192, 192],
       [68, 173, 37],
+      [211, 60, 60],
     ],
   },
   loginModal: {

@@ -39,11 +39,11 @@ const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'cap', {
-    get: () => uiValues?.skillsWidget?.capacity,
+    get: () => uiValues?.skillsWidget?.capacity || 0,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'stamina', {
-    get: () => uiValues?.skillsWidget?.stamina,
+    get: () => uiValues?.skillsWidget?.stamina || 0,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'level', {

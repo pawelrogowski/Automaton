@@ -11,6 +11,7 @@ import { showNotification } from './notificationHandler.js';
 import { createLogger } from './utils/logger.js';
 import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
+import { deepHash } from './utils/deepHash.js'; // Import deepHash
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
@@ -36,14 +37,9 @@ const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const DEBOUNCE_INTERVAL = 16;
 
+// Replaced quickHash with deepHash
 function quickHash(obj) {
-  let h = 0x811c9dc5;
-  const str = JSON.stringify(obj);
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0;
-  }
-  return h;
+  return deepHash(obj);
 }
 
 const WORKER_STATE_DEPENDENCIES = {
@@ -54,6 +50,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'targeting',
     'settings',
     'pathfinder',
+    'uiValues', // Add uiValues to ensure stamina and cap are updated
   ],
   targetingWorker: [
     'targeting',
@@ -121,6 +118,7 @@ class WorkerManager {
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
     this.handleStoreUpdate = this.handleStoreUpdate.bind(this);
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
+    this.precalculatedWorkerPayloads = new Map(); // New map for pre-calculated payloads
   }
 
   setupPaths(app, cwd) {
@@ -454,7 +452,22 @@ class WorkerManager {
   }
 
   broadcastStateUpdate(changedSlices, currentState) {
-    const changedKeys = Object.keys(changedSlices);
+    // Pre-calculate relevant payloads for each worker type once per update cycle
+    this.precalculatedWorkerPayloads.clear();
+    for (const workerName in WORKER_STATE_DEPENDENCIES) {
+      const workerDeps = WORKER_STATE_DEPENDENCIES[workerName];
+      const relevantPayload = {};
+      let hasRelevantChanges = false;
+      for (const k of Object.keys(changedSlices)) {
+        if (workerDeps.includes(k)) {
+          relevantPayload[k] = changedSlices[k];
+          hasRelevantChanges = true;
+        }
+      }
+      if (hasRelevantChanges) {
+        this.precalculatedWorkerPayloads.set(workerName, relevantPayload);
+      }
+    }
 
     for (const [name, workerEntry] of this.workers) {
       if (
@@ -472,21 +485,9 @@ class WorkerManager {
         continue;
       }
 
-      const workerDeps = WORKER_STATE_DEPENDENCIES[name];
-      const relevant = {};
-      let needsUpdate = false;
-      if (workerDeps) {
-        for (const k of changedKeys) {
-          if (workerDeps.includes(k)) {
-            relevant[k] = changedSlices[k];
-            needsUpdate = true;
-          }
-        }
-      } else {
-        Object.assign(relevant, changedSlices);
-        needsUpdate = true;
-      }
-      if (needsUpdate && Object.keys(relevant).length) {
+      const relevant = this.precalculatedWorkerPayloads.get(name);
+
+      if (relevant && Object.keys(relevant).length) {
         const hash = quickHash(relevant);
         if (this.workerStateCache.get(name) !== hash) {
           this.workerStateCache.set(name, hash);

@@ -214,10 +214,8 @@ export class CavebotLuaExecutor {
     this.navigationOccurred = false;
 
     try {
-      // Throttled API sync to avoid overhead on frequent executions
-      if (this._shouldSyncApi()) {
-        this._syncApiToLua();
-      }
+      // Ensure API is synced before execution to provide up-to-date state
+      this._syncApiToLua();
 
       // Preprocess script with error handling
       let processedCode;
