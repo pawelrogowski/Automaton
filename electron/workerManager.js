@@ -37,7 +37,6 @@ const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const DEBOUNCE_INTERVAL = 16;
 
-// Replaced quickHash with deepHash
 function quickHash(obj) {
   return deepHash(obj);
 }
@@ -93,6 +92,60 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'pathfinderWorker',
 ]);
 
+// --- NEW ---
+/**
+ * Checks if two rectangle objects intersect.
+ * @param {object} rectA - The first rectangle {x, y, width, height}.
+ * @param {object} rectB - The second rectangle {x, y, width, height}.
+ * @returns {boolean} True if the rectangles overlap.
+ */
+function rectsIntersect(rectA, rectB) {
+  if (
+    !rectA ||
+    !rectB ||
+    rectA.width <= 0 ||
+    rectA.height <= 0 ||
+    rectB.width <= 0 ||
+    rectB.height <= 0
+  ) {
+    return false;
+  }
+  return (
+    rectA.x < rectB.x + rectB.width &&
+    rectA.x + rectA.width > rectB.x &&
+    rectA.y < rectB.y + rectB.height &&
+    rectA.y + rectA.height > rectB.y
+  );
+}
+
+// --- NEW ---
+// Maps workers to the regions they depend on for frame updates.
+const WORKER_REGION_DEPENDENCIES = {
+  screenMonitor: [
+    'healthBar',
+    'manaBar',
+    'cooldownBar',
+    'statusBar',
+    'amuletSlot',
+    'ringSlot',
+    'bootsSlot',
+    'hotkeyBar',
+    'battleList',
+  ],
+  minimapMonitor: ['minimapFull', 'minimapFloorIndicatorColumn'],
+  ocrWorker: [
+    'skillsWidget',
+    'chatBoxTabRow',
+    'selectCharacterModal',
+    'vipWidget',
+    'gameWorld',
+    'battleList',
+  ],
+  creatureMonitor: ['gameWorld'],
+  // `null` is a special case: regionMonitor needs an update on ANY screen change.
+  regionMonitor: null,
+};
+
 class WorkerManager {
   constructor() {
     const filename = fileURLToPath(import.meta.url);
@@ -113,12 +166,36 @@ class WorkerManager {
     this.reusableChangedSlices = {};
     this.workerStateCache = new Map();
     this.debounceTimeout = null;
+    this.globalLuaVariables = new Map(); // Centralized store for global Lua variables
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
     this.handleStoreUpdate = this.handleStoreUpdate.bind(this);
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
     this.precalculatedWorkerPayloads = new Map(); // New map for pre-calculated payloads
+  }
+
+  setGlobalLuaVariable(key, value) {
+    this.globalLuaVariables.set(key, value);
+    this.broadcastGlobalLuaVariableUpdate(key, value);
+  }
+
+  getGlobalLuaVariable(key) {
+    return this.globalLuaVariables.get(key);
+  }
+
+  broadcastGlobalLuaVariableUpdate(key, value) {
+    for (const [name, workerEntry] of this.workers) {
+      if (
+        workerEntry.worker &&
+        (/^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker') // Only send to Lua script workers and cavebot worker
+      ) {
+        workerEntry.worker.postMessage({
+          type: 'lua_global_update',
+          payload: { key, value },
+        });
+      }
+    }
   }
 
   setupPaths(app, cwd) {
@@ -251,14 +328,45 @@ class WorkerManager {
   }
 
   handleWorkerMessage(message) {
+    // --- MODIFIED: Centralized Frame Update Distribution ---
     if (message.type === 'frame-update') {
+      const dirtyRects = message.payload.dirtyRects;
+      if (!dirtyRects || dirtyRects.length === 0) return;
+
+      const allRegions = store.getState().regionCoordinates.regions;
+      if (!allRegions) return;
+
       for (const [name, workerEntry] of this.workers.entries()) {
-        if (name !== 'captureWorker' && workerEntry.worker) {
+        if (name === 'captureWorker' || !workerEntry.worker) continue;
+
+        const dependencies = WORKER_REGION_DEPENDENCIES[name];
+
+        // Special case for regionMonitor: it needs an update on any screen change.
+        if (dependencies === null) {
           workerEntry.worker.postMessage(message);
+          continue;
+        }
+
+        if (dependencies) {
+          let needsUpdate = false;
+          for (const regionKey of dependencies) {
+            const region = allRegions[regionKey];
+            if (region) {
+              for (const dirtyRect of dirtyRects) {
+                if (rectsIntersect(region, dirtyRect)) {
+                  workerEntry.worker.postMessage(message);
+                  needsUpdate = true;
+                  break; // Break from inner loop (dirtyRects)
+                }
+              }
+            }
+            if (needsUpdate) break; // Break from outer loop (dependencies)
+          }
         }
       }
       return;
     }
+    // --- END MODIFICATION ---
 
     if (message.notification) {
       showNotification(message.notification.title, message.notification.body);
@@ -324,6 +432,19 @@ class WorkerManager {
       }
     } else if (message.type === 'play_alert') {
       playSound('alert.wav');
+    } else if (message.type === 'lua_global_set') {
+      this.setGlobalLuaVariable(message.payload.key, message.payload.value);
+    } else if (message.type === 'lua_global_get') {
+      const workerEntry = this.workers.get(message.senderId);
+      if (workerEntry?.worker) {
+        workerEntry.worker.postMessage({
+          type: 'lua_global_value',
+          payload: {
+            key: message.payload.key,
+            value: this.getGlobalLuaVariable(message.payload.key),
+          },
+        });
+      }
     }
   }
 
@@ -452,7 +573,6 @@ class WorkerManager {
   }
 
   broadcastStateUpdate(changedSlices, currentState) {
-    // Pre-calculate relevant payloads for each worker type once per update cycle
     this.precalculatedWorkerPayloads.clear();
     for (const workerName in WORKER_STATE_DEPENDENCIES) {
       const workerDeps = WORKER_STATE_DEPENDENCIES[workerName];
@@ -531,12 +651,6 @@ class WorkerManager {
     try {
       const currentState = store.getState();
       const { windowId, display } = currentState.global;
-
-      // --- REMOVED BRIDGE LOGIC ---
-      // The logic to switch between cavebot and targeting modes is now
-      // handled directly by the targetingWorker for better separation of concerns.
-      // The targetingWorker will set `isActionPaused` and `pathfinderMode`
-      // based on whether a valid target is found.
 
       if (windowId && display) {
         if (!this.sharedData) this.createSharedBuffers();

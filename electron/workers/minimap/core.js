@@ -1,3 +1,4 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/minimap/core.js
 import { parentPort, workerData } from 'worker_threads';
 import {
   MinimapMatcher,
@@ -7,9 +8,8 @@ import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
 import { FrameUpdateManager } from '../../utils/frameUpdateManager.js';
-import { LANDMARK_SIZE } from './config.js'; // Import LANDMARK_SIZE
+import { LANDMARK_SIZE } from './config.js';
 
-// --- Worker State ---
 let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
@@ -86,7 +86,6 @@ async function mainLoop() {
 }
 
 function handleMessage(message) {
-  // NEW: Delegate rect accumulation to the manager
   if (message.type === 'frame-update') {
     frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
     return;
@@ -98,24 +97,8 @@ function handleMessage(message) {
   } else if (message.type === 'state_diff') {
     if (!currentState) currentState = {};
     Object.assign(currentState, message.payload);
-    if (message.payload.regionCoordinates) {
-      // NEW: Update the manager with the latest regions of interest
-      const { regions } = currentState.regionCoordinates;
-      frameUpdateManager.setRegionsOfInterest([
-        regions.minimapFull,
-        regions.minimapFloorIndicatorColumn,
-      ]);
-    }
   } else if (typeof message === 'object' && !message.type) {
     currentState = message;
-    if (message.regionCoordinates) {
-      // NEW: Set initial regions for the manager
-      const { regions } = currentState.regionCoordinates;
-      frameUpdateManager.setRegionsOfInterest([
-        regions.minimapFull,
-        regions.minimapFloorIndicatorColumn,
-      ]);
-    }
     if (!isInitialized) {
       initialize().catch((err) => {
         console.error('[MinimapCore] Initialization failed:', err);

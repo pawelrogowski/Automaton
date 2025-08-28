@@ -8,32 +8,27 @@ import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 
-// --- Worker Configuration ---
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
 
-// --- Shared Buffer Setup ---
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
 const sharedBufferView = Buffer.from(imageSAB);
 
-// --- SharedArrayBuffer Indices ---
 const WIDTH_INDEX = 1;
 const HEIGHT_INDEX = 2;
 const IS_RUNNING_INDEX = 3;
 
-// --- State Variables ---
 let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
-let hasScannedInitially = false; // NEW: Flag for the initial scan
+let hasScannedInitially = false;
 
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor();
 const frameUpdateManager = new FrameUpdateManager();
 
-// --- Cached State ---
 let lastCalculatedState = {
   hppc: null,
   mppc: null,
@@ -51,7 +46,6 @@ let lastCalculatedState = {
   monsterNum: 0,
 };
 
-// --- Reusable objects ---
 const reusableGameStateUpdate = {
   storeUpdate: true,
   type: 'gameState/updateGameStateFromMonitorData',
@@ -85,7 +79,6 @@ function runRules(ruleInput) {
   }
 }
 
-// --- Calculation Functions (unchanged) ---
 function calculateHealthBar(bufferToUse, metadata, healthBarRegion) {
   if (!healthBarRegion) return lastCalculatedState.hppc;
   return calculatePercentages(
@@ -202,7 +195,6 @@ async function processGameState() {
   if (!isInitialized || !currentState?.regionCoordinates?.regions) return;
 
   try {
-    // MODIFIED: Use the manager and the initial scan flag to decide if we should process
     if (!hasScannedInitially && !frameUpdateManager.shouldProcess()) {
       lastCalculatedState.isWalking = calculateWalkingState();
       if (currentState?.rules?.enabled && currentState.gameState) {
@@ -274,7 +266,7 @@ async function processGameState() {
     reusableBattleListUpdate.payload = lastCalculatedState.battleList;
     parentPort.postMessage(reusableBattleListUpdate);
 
-    hasScannedInitially = true; // NEW: Set flag after the first successful scan
+    hasScannedInitially = true;
 
     if (currentState?.rules?.enabled && currentState.gameState) {
       runRules({
@@ -319,20 +311,10 @@ parentPort.on('message', (message) => {
       if (!currentState) currentState = {};
       Object.assign(currentState, message.payload);
       if (message.payload.regionCoordinates) {
-        const { regions } = currentState.regionCoordinates;
-        frameUpdateManager.setRegionsOfInterest(
-          Object.values(regions).filter(Boolean),
-        );
-        hasScannedInitially = false; // NEW: Reset flag if regions change
+        hasScannedInitially = false; // Reset flag if regions change
       }
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
-      if (message.regionCoordinates) {
-        const { regions } = currentState.regionCoordinates;
-        frameUpdateManager.setRegionsOfInterest(
-          Object.values(regions).filter(Boolean),
-        );
-      }
       if (!isInitialized) initializeWorker();
     }
   } catch (error) {

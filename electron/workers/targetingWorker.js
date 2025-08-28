@@ -1,3 +1,4 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
@@ -22,17 +23,20 @@ import {
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
-const MAIN_LOOP_INTERVAL = 25;
+// --- Worker Configuration ---
 const MOVEMENT_COOLDOWN_MS = 400;
 const CLICK_CONFIRMATION_TIMEOUT_MS = 400;
 const CLICK_POLL_INTERVAL_MS = 5;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
+const BORDER_THRESHOLD = 2; // Pixels from the edge of the game world to avoid clicking.
 
-const logger = createLogger({ info: false, error: false, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 
+// --- Worker State ---
 let isInitialized = false;
 let globalState = null;
 let isShuttingDown = false;
+let isProcessing = false; // Prevents re-entrant execution of targeting logic.
 let playerMinimapPosition = null;
 let path = [];
 let pathfindingStatus = 0;
@@ -40,6 +44,12 @@ let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
 let lastMovementTime = 0;
 let lastDispatchedVisitedTile = null;
+
+// --- Change Detection State ---
+let lastCreaturesHash = null;
+let lastTargetInstanceId = null;
+let lastTargetingListHash = null;
+let lastPlayerPosKey = null;
 let lastControlState = 'CAVEBOT';
 
 const { playerPosSAB, pathDataSAB } = workerData;
@@ -290,10 +300,10 @@ async function clickAndConfirmTarget(targetToClick) {
     const clickY = targetToClick.absoluteCoords.y;
 
     if (
-      clickX < x || // Too far left
-      clickX >= x + width || // Too far right (or exactly on the edge)
-      clickY < y || // Too far up
-      clickY >= y + height // Too far down (or exactly on the edge)
+      clickX < x + BORDER_THRESHOLD ||
+      clickX >= x + width - BORDER_THRESHOLD ||
+      clickY < y + BORDER_THRESHOLD ||
+      clickY >= y + height - BORDER_THRESHOLD
     ) {
       logger(
         'warn',
@@ -467,10 +477,6 @@ async function performTargeting() {
           pathCounterBeforeMove,
           MOVEMENT_CONFIRMATION_TIMEOUT_MS,
         );
-        logger(
-          'info',
-          `[Targeting] Confirmed movement to ${JSON.stringify(nextStep)}`,
-        );
       } catch (error) {
         logger(
           'error',
@@ -481,41 +487,82 @@ async function performTargeting() {
   }
 }
 
-async function mainLoop() {
-  logger('info', '[TargetingWorker] Starting main loop...');
-  while (!isShuttingDown) {
-    const loopStart = performance.now();
-    try {
-      await performTargeting();
-    } catch (error) {
-      logger('error', '[TargetingWorker] Error in main loop:', error);
-    } finally {
-      if (globalState?.cavebot) {
-        lastControlState = globalState.cavebot.controlState;
-      }
-    }
-    const elapsedTime = performance.now() - loopStart;
-    const delayTime = Math.max(0, MAIN_LOOP_INTERVAL - elapsedTime);
-    if (delayTime > 0) await delay(delayTime);
-  }
-}
-
+// Event-driven message handler. Replaces the mainLoop.
 parentPort.on('message', (message) => {
-  if (message.type === 'shutdown') {
-    isShuttingDown = true;
-  } else if (message.type === 'state_diff') {
-    if (!globalState) globalState = {};
-    Object.assign(globalState, message.payload);
-  } else if (typeof message === 'object' && !message.type) {
-    globalState = message;
-    if (!isInitialized) {
-      isInitialized = true;
-      logger(
-        'info',
-        '[TargetingWorker] Initial state received. Worker is now active.',
-      );
+  if (isShuttingDown) return;
+
+  try {
+    // Update state from incoming messages.
+    if (message.type === 'shutdown') {
+      isShuttingDown = true;
+      return;
+    } else if (message.type === 'state_diff') {
+      if (!globalState) globalState = {};
+      Object.assign(globalState, message.payload);
+    } else if (typeof message === 'object' && !message.type) {
+      globalState = message;
+      if (!isInitialized) {
+        isInitialized = true;
+        logger(
+          'info',
+          '[TargetingWorker] Initial state received. Worker is now active.',
+        );
+      }
+    } else {
+      // Not a state update, ignore for triggering logic.
+      return;
     }
+
+    // Prevent re-entrant execution if the logic is already running.
+    if (isProcessing) {
+      return;
+    }
+
+    // --- Change Detection ---
+    // Check for changes in critical state that should trigger targeting logic.
+    updateSABData(); // Always get the latest fast-buffer data.
+
+    const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures);
+    const newTargetInstanceId = globalState.targeting?.target?.instanceId;
+    const newTargetingListHash = JSON.stringify(
+      globalState.targeting?.targetingList,
+    );
+    const newPlayerPosKey = playerMinimapPosition
+      ? `${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}`
+      : null;
+    const newControlState = globalState.cavebot?.controlState;
+
+    const shouldProcess =
+      newCreaturesHash !== lastCreaturesHash ||
+      newTargetInstanceId !== lastTargetInstanceId ||
+      newTargetingListHash !== lastTargetingListHash ||
+      newPlayerPosKey !== lastPlayerPosKey ||
+      newControlState !== lastControlState;
+
+    if (shouldProcess) {
+      isProcessing = true;
+
+      // Update last known states *before* executing.
+      lastCreaturesHash = newCreaturesHash;
+      lastTargetInstanceId = newTargetInstanceId;
+      lastTargetingListHash = newTargetingListHash;
+      lastPlayerPosKey = newPlayerPosKey;
+      lastControlState = newControlState;
+
+      performTargeting()
+        .catch((err) => {
+          logger(
+            'error',
+            '[TargetingWorker] Unhandled error in performTargeting:',
+            err,
+          );
+        })
+        .finally(() => {
+          isProcessing = false;
+        });
+    }
+  } catch (error) {
+    logger('error', '[TargetingWorker] Error handling message:', error);
+    isProcessing = false;
   }
 });
-
-mainLoop();
