@@ -5,6 +5,7 @@
 #include <vector>
 #include <cmath>
 #include <functional>
+#include <unordered_set>
 #include "pathfinder.h"
 
 struct Node;
@@ -20,6 +21,15 @@ namespace AStar {
         std::function<void()> onCancelled
     );
 
+    std::vector<Node> findPathToAny(
+        const Node& start,
+        const std::unordered_set<int>& endIndices,
+        const MapData& mapData,
+        const std::vector<int>& cost_grid,
+        const std::vector<Node>& creaturePositions,
+        std::function<void()> onCancelled
+    );
+
     bool isReachable(
         const Node& start,
         const Node& end,
@@ -29,7 +39,6 @@ namespace AStar {
         std::function<void()> onCancelled
     );
 
-    // --- NEW FUNCTION DECLARATION ---
     int getPathLength(
         const Node& start,
         const Node& end,
@@ -39,7 +48,8 @@ namespace AStar {
         std::function<void()> onCancelled
     );
 
-    Node findBestTargetTile(
+    // --- FIX: Corrected declaration. It no longer returns a Node, but a set of indices. ---
+    std::unordered_set<int> findBestTargetTile(
         const Node& player,
         const Node& monster,
         const std::string& stance,

@@ -1,5 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.cc
-// --- Fix applied to FindPathToGoal ---
+// --- Contains all optimizations and fixes ---
 
 #include "pathfinder.h"
 #include "aStar.h"
@@ -113,8 +113,8 @@ namespace AStar {
         open.emplace(h0 + 0, h0, 0, startIdx);
 
         int iterations = 0;
-        const int dxs[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
-        const int dys[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+        const int dxs[8] = { -1, 1, 0, 0, -1, 1, -1, 1 };
+        const int dys[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
 
         while (!open.empty()) {
             if (++iterations % 1000 == 0) onCancelled();
@@ -179,80 +179,11 @@ namespace AStar {
         return -1;
     }
 
+    // --- OPTIMIZATION 1: isReachable now calls getPathLength ---
     bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
-        int W = mapData.width;
-        int H = mapData.height;
-        if (W <= 0 || H <= 0) return false;
-        int mapSize = W * H;
-        ensureBuffersSize(mapSize);
-        nextVisitToken();
-        int visit = sb.visitToken;
-        auto indexOf = [&](int x, int y) { return y * W + x; };
-        if (!inBounds(end.x, end.y, mapData)) return false;
-        int h0 = octileHeuristic(start.x, start.y, end.x, end.y);
-        using PQItem = std::tuple<int,int,int,int>;
-        struct Compare {
-            bool operator()(PQItem const& a, PQItem const& b) const {
-                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
-                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
-                return std::get<2>(a) > std::get<2>(b);
-            }
-        };
-        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
-        int startIdx = indexOf(start.x, start.y);
-        int endIdx = indexOf(end.x, end.y);
-        sb.gScore[startIdx] = 0;
-        sb.mark[startIdx] = visit;
-        open.emplace(h0 + 0, h0, 0, startIdx);
-        int iterations = 0;
-        const int dxs[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
-        const int dys[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
-        while (!open.empty()) {
-            if (++iterations % 1000 == 0) onCancelled();
-            auto [f, h, g, idx] = open.top();
-            open.pop();
-            if (sb.closedMark[idx] == visit || !(sb.mark[idx] == visit) || g > sb.gScore[idx]) continue;
-            if (idx == endIdx) {
-                return true;
-            }
-            sb.closedMark[idx] = visit;
-            int cx = idx % W;
-            int cy = idx / W;
-            for (int dir = 0; dir < 8; ++dir) {
-                int nx = cx + dxs[dir];
-                int ny = cy + dys[dir];
-                if (!inBounds(nx, ny, mapData)) continue;
-                int nIdx = indexOf(nx, ny);
-                int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
-                bool isWalkableByMap = isWalkable(nx, ny, mapData);
-                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(nx == end.x && ny == end.y))) {
-                    continue;
-                }
-                bool isCreatureTile = false;
-                for (const auto& creature : creaturePositions) {
-                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
-                        isCreatureTile = true;
-                        break;
-                    }
-                }
-                int creatureCost = (isCreatureTile && !(nx == end.x && ny == end.y)) ? CREATURE_BLOCK_COST : 0;
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
-                int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost;
-                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
-                    sb.gScore[nIdx] = tentativeG;
-                    sb.parent[nIdx] = idx;
-                    sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, end.x, end.y);
-                    int nf = tentativeG + nh;
-                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
-                    open.emplace(nf, nh, tentativeG, nIdx);
-                }
-            }
-        }
-        return false;
+        return getPathLength(start, end, mapData, cost_grid, creaturePositions, onCancelled) != -1;
     }
+
     std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
         std::vector<Node> path;
         int W = mapData.width;
@@ -281,8 +212,8 @@ namespace AStar {
         sb.mark[startIdx] = visit;
         open.emplace(h0 + 0, h0, 0, startIdx);
         int iterations = 0;
-        const int dxs[8] = { 1, 1, 0, -1, -1, -1, 0, 1 };
-        const int dys[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+        const int dxs[8] = { -1, 1, 0, 0, -1, 1, -1, 1 };
+        const int dys[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
         while (!open.empty()) {
             if (++iterations % 1000 == 0) onCancelled();
             auto [f, h, g, idx] = open.top();
@@ -347,42 +278,161 @@ namespace AStar {
         }
         return path;
     }
-    Node findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions) {
-        Node best_node = {-1, -1, 0, 0, nullptr, 0};
-        Node playerLocal = {player.x - mapData.minX, player.y - mapData.minY, 0, 0, nullptr, player.z};
+
+    // --- OPTIMIZATION 2: New A* function for finding a path to ANY goal in a set ---
+    std::vector<Node> findPathToAny(const Node& start, const std::unordered_set<int>& endIndices, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+        std::vector<Node> path;
+        int W = mapData.width;
+        int H = mapData.height;
+        if (W <= 0 || H <= 0 || endIndices.empty()) return path;
+
+        int mapSize = W * H;
+        ensureBuffersSize(mapSize);
+        nextVisitToken();
+        int visit = sb.visitToken;
+        auto indexOf = [&](int x, int y) { return y * W + x; };
+
+        int firstGoalIdx = *endIndices.begin();
+        int heuristicEndX = firstGoalIdx % W;
+        int heuristicEndY = firstGoalIdx / W;
+
+        using PQItem = std::tuple<int,int,int,int>;
+        struct Compare {
+             bool operator()(PQItem const& a, PQItem const& b) const {
+                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
+                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
+                return std::get<2>(a) > std::get<2>(b);
+            }
+        };
+        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
+
+        int startIdx = indexOf(start.x, start.y);
+        int h0 = octileHeuristic(start.x, start.y, heuristicEndX, heuristicEndY);
+
+        sb.gScore[startIdx] = 0;
+        sb.parent[startIdx] = -1;
+        sb.mark[startIdx] = visit;
+        open.emplace(h0, h0, 0, startIdx);
+
+        int iterations = 0;
+        const int dxs[8] = { -1, 1, 0, 0, -1, 1, -1, 1 };
+        const int dys[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
+
+        while (!open.empty()) {
+            if (++iterations % 1000 == 0) onCancelled();
+
+            auto [f, h, g, idx] = open.top();
+            open.pop();
+
+            if (sb.closedMark[idx] == visit || !(sb.mark[idx] == visit) || g > sb.gScore[idx]) continue;
+
+            if (endIndices.count(idx)) {
+                int cur = idx;
+                while (cur != -1) {
+                    Node node_to_add;
+                    node_to_add.x = cur % W;
+                    node_to_add.y = cur / W;
+                    node_to_add.z = start.z;
+                    path.push_back(node_to_add);
+                    cur = sb.parent[cur];
+                }
+                std::reverse(path.begin(), path.end());
+                return path;
+            }
+
+            sb.closedMark[idx] = visit;
+            int cx = idx % W;
+            int cy = idx / W;
+
+            for (int dir = 0; dir < 8; ++dir) {
+                int nx = cx + dxs[dir];
+                int ny = cy + dys[dir];
+                if (!inBounds(nx, ny, mapData)) continue;
+
+                int nIdx = indexOf(nx, ny);
+                int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
+                bool isWalkableByMap = isWalkable(nx, ny, mapData);
+
+                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0)) {
+                     continue;
+                }
+
+                bool isCreatureTile = false;
+                for (const auto& creature : creaturePositions) {
+                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
+                        isCreatureTile = true;
+                        break;
+                    }
+                }
+
+                if (isCreatureTile && endIndices.count(nIdx) == 0) {
+                    continue;
+                }
+                int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
+
+                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost;
+
+                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
+                    sb.gScore[nIdx] = tentativeG;
+                    sb.parent[nIdx] = idx;
+                    sb.mark[nIdx] = visit;
+                    int nh = octileHeuristic(nx, ny, heuristicEndX, heuristicEndY);
+                    int nf = tentativeG + nh;
+                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
+                    open.emplace(nf, nh, tentativeG, nIdx);
+                }
+            }
+        }
+        return path;
+    }
+
+    // --- BUG FIX: Renamed from findTargetTiles back to findBestTargetTile to match the header ---
+    std::unordered_set<int> findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions) {
+        std::unordered_set<int> target_indices;
         Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
         std::queue<std::pair<Node, int>> q;
         std::unordered_set<int> visited;
         auto indexOf = [&](int x, int y) { return y * mapData.width + x; };
-        if (!AStar::inBounds(monsterLocal.x, monsterLocal.y, mapData)) return best_node;
+
+        if (!AStar::inBounds(monsterLocal.x, monsterLocal.y, mapData)) return target_indices;
+
         q.push({monsterLocal, 0});
         visited.insert(indexOf(monsterLocal.x, monsterLocal.y));
-        std::vector<Node> candidates;
+
         while (!q.empty()) {
             auto [current, dist] = q.front();
             q.pop();
+
             if ((stance == "Reach" && dist == 1) || (stance == "keepAway" && dist == distance)) {
-                candidates.push_back(current);
+                int currentIdx = indexOf(current.x, current.y);
+                int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[currentIdx];
+                bool isCreatureOnTile = false;
+                for (const auto& creature : creaturePositions) {
+                    if (creature.x - mapData.minX == current.x && creature.y - mapData.minY == current.y && creature.z == player.z) {
+                        isCreatureOnTile = true;
+                        break;
+                    }
+                }
+                bool isWalkableNode = (tileAvoidance != 255) && isWalkable(current.x, current.y, mapData) && !isCreatureOnTile;
+                if (isWalkableNode) {
+                    target_indices.insert(currentIdx);
+                }
             }
+
             if ((stance == "Reach" && dist >= 1) || (stance == "keepAway" && dist >= distance)) {
                 continue;
             }
+
             for (int dx = -1; dx <= 1; ++dx) {
                 for (int dy = -1; dy <= 1; ++dy) {
                     if (dx == 0 && dy == 0) continue;
                     Node neighbor = {current.x + dx, current.y + dy, 0, 0, nullptr, current.z};
                     if (AStar::inBounds(neighbor.x, neighbor.y, mapData)) {
                         int neighborIdx = indexOf(neighbor.x, neighbor.y);
-                        int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[neighborIdx];
-                        bool isCreatureTile = false;
-                        for (const auto& creature : creaturePositions) {
-                            if (creature.x - mapData.minX == neighbor.x && creature.y - mapData.minY == neighbor.y && creature.z == player.z) {
-                                isCreatureTile = true;
-                                break;
-                            }
-                        }
-                        bool isWalkableNode = (tileAvoidance != 255) && isWalkable(neighbor.x, neighbor.y, mapData) && !isCreatureTile;
-                        if (isWalkableNode && visited.find(neighborIdx) == visited.end()) {
+                        if (visited.find(neighborIdx) == visited.end()) {
                             visited.insert(neighborIdx);
                             q.push({neighbor, dist + 1});
                         }
@@ -390,41 +440,9 @@ namespace AStar {
                 }
             }
         }
-        if (candidates.empty()) {
-            return best_node;
-        }
-
-        int min_path_length = INT_MAX;
-        Node best_candidate_node = {-1, -1, 0, 0, nullptr, 0};
-
-        for (const auto& cand : candidates) {
-            int candIdx = indexOf(cand.x, cand.y);
-            int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[candIdx];
-            bool isCreatureTile = false;
-            for (const auto& creature : creaturePositions) {
-                if (creature.x - mapData.minX == cand.x && creature.y - mapData.minY == cand.y && creature.z == player.z) {
-                    isCreatureTile = true;
-                    break;
-                }
-            }
-            bool isWalkableNode = (tileAvoidance != 255) && isWalkable(cand.x, cand.y, mapData) && !isCreatureTile;
-            if (!isWalkableNode) {
-                continue;
-            }
-
-            // Calculate actual path length from player to candidate tile
-            int path_length = AStar::getPathLength(playerLocal, cand, mapData, cost_grid, creaturePositions, [](){});
-
-            if (path_length != -1 && path_length < min_path_length) {
-                min_path_length = path_length;
-                best_candidate_node = cand;
-            }
-        }
-
-        best_node = best_candidate_node;
-        return best_node;
+        return target_indices;
     }
-}
+} // namespace AStar
 
 Napi::FunctionReference Pathfinder::constructor;
 
@@ -690,12 +708,15 @@ Napi::Value Pathfinder::FindPathSync(const Napi::CallbackInfo& info) {
     }
     return _findPathInternal(env, start, end, creaturePositions);
 }
+
 Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
+    auto startTime = std::chrono::high_resolution_clock::now();
     Napi::Env env = info.Env();
     if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsObject() || !info[2].IsArray()) {
         Napi::TypeError::New(env, "Expected start node, goal object, and creature positions array").ThrowAsJavaScriptException();
         return env.Undefined();
     }
+
     Napi::Object startObj = info[0].As<Napi::Object>();
     Node start = {startObj.Get("x").As<Napi::Number>().Int32Value(), startObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, startObj.Get("z").As<Napi::Number>().Int32Value()};
     Napi::Object goalObj = info[1].As<Napi::Object>();
@@ -714,6 +735,7 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
             creatureObj.Get("z").As<Napi::Number>().Int32Value()
         });
     }
+
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         Napi::Error::New(env, "Map data for this Z-level is not loaded.").ThrowAsJavaScriptException();
@@ -722,19 +744,51 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     const MapData& mapData = it_map->second;
     auto it_cache = this->cost_grid_cache.find(start.z);
     const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
-    Node best_target_tile = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid, creaturePositions);
-    if (best_target_tile.x == -1) {
-        Napi::Object result = Napi::Object::New(env);
-        result.Set("reason", Napi::String::New(env, "NO_PATH_FOUND"));
-        result.Set("path", env.Null());
-        Napi::Object performance = Napi::Object::New(env);
-        performance.Set("totalTimeMs", Napi::Number::New(env, 0));
-        result.Set("performance", performance);
-        return result;
+
+    std::unordered_set<int> target_indices = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid, creaturePositions);
+
+    std::vector<Node> pathResult;
+    std::string searchStatus = "UNKNOWN";
+
+    if (!target_indices.empty()) {
+        Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
+        pathResult = AStar::findPathToAny(localStart, target_indices, mapData, cost_grid, creaturePositions, [](){});
     }
-    Node final_end_node = {best_target_tile.x + mapData.minX, best_target_tile.y + mapData.minY, 0, 0, nullptr, best_target_tile.z};
-    // --- THIS IS THE FIX ---
-    return _findPathInternal(env, start, final_end_node, creaturePositions);
+
+    if (!pathResult.empty()) {
+        searchStatus = "PATH_FOUND";
+    } else {
+        searchStatus = "NO_PATH_FOUND";
+    }
+
+    if (pathResult.size() > 1 && pathResult[0].x == (start.x - mapData.minX) && pathResult[0].y == (start.y - mapData.minY)) {
+        pathResult.erase(pathResult.begin());
+    }
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
+
+    Napi::Object result = Napi::Object::New(env);
+    Napi::Object performance = Napi::Object::New(env);
+    performance.Set("totalTimeMs", Napi::Number::New(env, durationMs));
+    result.Set("performance", performance);
+    result.Set("reason", Napi::String::New(env, searchStatus));
+
+    if (!pathResult.empty()) {
+        Napi::Array pathArray = Napi::Array::New(env, pathResult.size());
+        for (size_t i = 0; i < pathResult.size(); ++i) {
+            Napi::Object point = Napi::Object::New(env);
+            point.Set("x", Napi::Number::New(env, pathResult[i].x + mapData.minX));
+            point.Set("y", Napi::Number::New(env, pathResult[i].y + mapData.minY));
+            point.Set("z", Napi::Number::New(env, pathResult[i].z));
+            pathArray[i] = point;
+        }
+        result.Set("path", pathArray);
+    } else {
+        result.Set("path", env.Null());
+    }
+
+    return result;
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {

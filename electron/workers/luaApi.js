@@ -99,6 +99,18 @@ const createStateShortcutObject = (getState, type) => {
     get: () => !!regionCoordinates?.regions?.onlineMarker,
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'stowText', {
+    get: () => regionCoordinates?.regions?.stowText,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'stashIcon', {
+    get: () => regionCoordinates?.regions?.stashIcon,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'pk', {
+    get: () => regionCoordinates?.regions?.playerList?.whiteSkull,
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'activeTab', {
     get: () => uiValues?.chatboxTabs?.activeTab || 'unknown',
     enumerable: true,

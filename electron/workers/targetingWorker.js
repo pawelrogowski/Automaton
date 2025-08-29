@@ -28,7 +28,7 @@ const MOVEMENT_COOLDOWN_MS = 400;
 const CLICK_CONFIRMATION_TIMEOUT_MS = 400;
 const CLICK_POLL_INTERVAL_MS = 5;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
-const BORDER_THRESHOLD = 2; // Pixels from the edge of the game world to avoid clicking.
+const BORDER_THRESHOLD = 0; // Pixels from the edge of the game world to avoid clicking.
 
 const logger = createLogger({ info: false, error: true, debug: false });
 
