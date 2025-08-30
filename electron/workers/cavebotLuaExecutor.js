@@ -1,3 +1,5 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebotLuaExecutor.js
+
 import { LuaFactory } from 'wasmoon';
 import { parentPort } from 'worker_threads';
 import { performance } from 'perf_hooks';
@@ -5,67 +7,83 @@ import { createLuaApi, createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
 
 export class CavebotLuaExecutor {
-  /**
-   * @param {object} context - The context from the cavebot worker.
-   */
   constructor(context) {
     this.lua = null;
     this.logger = context.logger;
-    // Ensure debug logging is enabled for this executor
-    this.logger.setDebug(true);
-    // Ensure debug logging is enabled for this executor
-    this.logger.setDebug(true);
     this.context = context;
     this.isInitialized = false;
     this.isShuttingDown = false;
-
-    // Performance tracking
     this.executionCount = 0;
     this.totalExecutionTime = 0;
     this.lastPerfReport = Date.now();
-
-    // API state management
     this.asyncFunctionNames = [];
     this.navigationOccurred = false;
-
-    // Error tracking
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 5000000;
-
-    // Reusable objects to reduce GC pressure
     this.reusableResult = {
       success: false,
       error: null,
       navigationOccurred: false,
     };
-
     this.logger(
       'info',
       '[CavebotLuaExecutor] Instance created with performance monitoring.',
     );
   }
 
-  async initialize() {
-    if (this.isShuttingDown) {
-      return false;
-    }
+  // ======================= FIX START: COMPLETE REFACTOR OF INITIALIZATION AND SYNC =======================
 
-    this.logger('info', '[CavebotLuaExecutor] Initializing Lua VM...');
+  async initialize() {
+    if (this.isShuttingDown) return false;
+    this.logger(
+      'info',
+      '[CavebotLuaExecutor] Initializing Lua VM and full API...',
+    );
 
     try {
       const initStart = performance.now();
-
       const factory = new LuaFactory();
       this.lua = await factory.createEngine();
 
-      await this._syncApiToLua(true);
+      // Create the full API, including the SharedGlobals proxy, ONCE.
+      const { api, asyncFunctionNames: newNames } = await createLuaApi({
+        type: 'cavebot',
+        ...this.context,
+        postSystemMessage: (message) => {
+          if (!this.isShuttingDown) parentPort.postMessage(message);
+        },
+        refreshLuaGlobalState: () => this._syncDynamicStateToLua(), // This now calls the lightweight sync
+        sharedLuaGlobals: this.context.sharedLuaGlobals,
+        lua: this.lua,
+      });
+
+      this.asyncFunctionNames = newNames;
+
+      // Wrap navigation functions to track events
+      const wrappedApi = { ...api };
+      const navFuncs = ['skipWaypoint', 'goToLabel', 'goToSection', 'goToWpt'];
+      navFuncs.forEach((funcName) => {
+        if (api[funcName]) {
+          wrappedApi[funcName] = (...args) => {
+            this.navigationOccurred = true;
+            return api[funcName](...args);
+          };
+        }
+      });
+
+      // Set all functions and the SharedGlobals proxy in the Lua environment
+      const globals = this.lua.global;
+      for (const funcName in wrappedApi) {
+        globals.set(funcName, wrappedApi[funcName]);
+      }
+
+      // Perform the first sync of dynamic state (__BOT_STATE__)
+      await this._syncDynamicStateToLua();
 
       const initTime = performance.now() - initStart;
       this.logger(
         'info',
-        `[CavebotLuaExecutor] Lua VM initialized successfully in ${initTime.toFixed(
-          2,
-        )}ms.`,
+        `[CavebotLuaExecutor] Lua VM and API initialized successfully in ${initTime.toFixed(2)}ms.`,
       );
 
       this.isInitialized = true;
@@ -82,63 +100,31 @@ export class CavebotLuaExecutor {
     }
   }
 
-  async _syncApiToLua(force = false) {
+  // This is the new lightweight function that runs before each script execution.
+  // It ONLY updates the __BOT_STATE__ object with fresh, per-tick data.
+  async _syncDynamicStateToLua() {
     if (!this.lua || this.isShuttingDown) return;
 
-    if (force) {
-      await this.context.getFreshState();
-    }
+    // Get fresh state from the main thread
+    await this.context.getFreshState();
 
-    const { api, asyncFunctionNames, stateObject, sharedGlobalsProxy } =
-      await createLuaApi({
-        type: 'cavebot',
-        ...this.context,
-        postSystemMessage: (message) => {
-          if (!this.isShuttingDown) {
-            parentPort.postMessage(message);
-          }
-        },
-        refreshLuaGlobalState: () => this._syncApiToLua(true),
-        sharedLuaGlobals: this.context.sharedLuaGlobals, // Pass the shared JS object
-        lua: this.lua, // Pass the Lua VM instance
-      });
-
-    this.asyncFunctionNames = asyncFunctionNames;
-
-    // Log the sharedGlobalsProxy before setting it
-    this.logger(
-      'debug',
-      `[CavebotLuaExecutor] sharedGlobalsProxy before setting: ${JSON.stringify(sharedGlobalsProxy)}`,
+    // Create and set only the dynamic state object
+    const stateObject = createStateShortcutObject(
+      () => this.context.getState(),
+      'cavebot',
     );
-
-    // Wrap navigation functions to track navigation events
-    const wrappedApi = { ...api };
-    const navFuncs = ['skipWaypoint', 'goToLabel', 'goToSection', 'goToWpt'];
-
-    navFuncs.forEach((funcName) => {
-      if (api[funcName]) {
-        wrappedApi[funcName] = (...args) => {
-          this.navigationOccurred = true;
-          return api[funcName](...args);
-        };
-      }
-    });
-
-    // Batch API sync for better performance
-    const globals = this.lua.global;
-    for (const funcName in wrappedApi) {
-      globals.set(funcName, wrappedApi[funcName]);
-    }
-    globals.set('__BOT_STATE__', stateObject);
-    globals.set('SharedGlobals', sharedGlobalsProxy); // NEW: Expose the shared globals proxy
+    this.lua.global.set('__BOT_STATE__', stateObject);
   }
+
+  // The old _syncApiToLua function is no longer needed and has been replaced by the logic above.
+
+  // ======================= FIX END =======================
 
   _logPerformanceStats() {
     const now = Date.now();
     const timeSinceLastReport = now - this.lastPerfReport;
 
     if (timeSinceLastReport >= 30000) {
-      // Log every 30 seconds
       const avgExecTime =
         this.executionCount > 0
           ? (this.totalExecutionTime / this.executionCount).toFixed(2)
@@ -153,7 +139,6 @@ export class CavebotLuaExecutor {
         `[CavebotLuaExecutor] Performance: ${execPerMinute} executions/min, avg: ${avgExecTime}ms, errors: ${this.consecutiveErrors}`,
       );
 
-      // Reset counters
       this.executionCount = 0;
       this.totalExecutionTime = 0;
       this.lastPerfReport = now;
@@ -180,7 +165,6 @@ export class CavebotLuaExecutor {
       return result;
     }
 
-    // Check for circuit breaker condition
     if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
       this.logger(
         'error',
@@ -199,15 +183,12 @@ export class CavebotLuaExecutor {
 
     const execStart = performance.now();
     this.logger('debug', '[CavebotLuaExecutor] Executing script...');
-
-    // Reset navigation flag before each execution
     this.navigationOccurred = false;
 
     try {
-      // Ensure API is synced before execution to provide up-to-date state
-      await this._syncApiToLua(true);
+      // Now only syncs the dynamic state, not the whole API
+      await this._syncDynamicStateToLua();
 
-      // Preprocess script with error handling
       let processedCode;
       try {
         processedCode = preprocessLuaScript(
@@ -220,15 +201,12 @@ export class CavebotLuaExecutor {
         );
       }
 
-      // Execute the Lua code
       await this.lua.doString(processedCode);
 
-      // Success case
       const execTime = performance.now() - execStart;
       this.executionCount++;
       this.totalExecutionTime += execTime;
 
-      // Log slow executions
       if (execTime > 100) {
         this.logger(
           'warn',
@@ -236,13 +214,10 @@ export class CavebotLuaExecutor {
         );
       }
 
-      // Reset error counter on success
       this.consecutiveErrors = 0;
-
       const result = this._resetResult();
       result.success = true;
       result.navigationOccurred = this.navigationOccurred;
-
       this._logPerformanceStats();
       return result;
     } catch (error) {
@@ -257,7 +232,6 @@ export class CavebotLuaExecutor {
         `[CavebotLuaExecutor] Script execution failed (attempt ${this.consecutiveErrors}): ${errorMessage}`,
       );
 
-      // Enhanced error logging with context
       try {
         const currentState = this.context.getState();
         const scriptId = currentState?.cavebot?.wptId;
@@ -279,23 +253,16 @@ export class CavebotLuaExecutor {
       const result = this._resetResult();
       result.error = errorMessage;
       result.navigationOccurred = this.navigationOccurred;
-
       this._logPerformanceStats();
       return result;
     }
   }
 
-  /**
-   * Reset the circuit breaker and error state
-   */
   reset() {
     this.consecutiveErrors = 0;
     this.logger('info', '[CavebotLuaExecutor] Error state reset.');
   }
 
-  /**
-   * Get current performance metrics
-   */
   getMetrics() {
     return {
       isInitialized: this.isInitialized,
@@ -311,16 +278,12 @@ export class CavebotLuaExecutor {
     };
   }
 
-  /**
-   * Graceful shutdown with cleanup
-   */
   destroy() {
     this.logger('info', '[CavebotLuaExecutor] Starting graceful shutdown...');
     this.isShuttingDown = true;
 
     if (this.lua) {
       try {
-        // Final performance report
         if (this.executionCount > 0) {
           const avgTime = (
             this.totalExecutionTime / this.executionCount
@@ -348,7 +311,6 @@ export class CavebotLuaExecutor {
       }
     }
 
-    // Clear references
     this.context = null;
     this.asyncFunctionNames = [];
   }

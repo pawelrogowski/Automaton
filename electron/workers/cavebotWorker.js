@@ -1,3 +1,5 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebotWorker.js
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import keypress from 'keypress-native';
@@ -34,6 +36,10 @@ import {
 const MAIN_LOOP_INTERVAL = 25;
 const STATE_CHANGE_POLL_INTERVAL = 5;
 const PRUNE_DISTANCE_THRESHOLD = 8;
+
+// ======================= FIX: Set the retry limit to 1 =======================
+const MAX_SCRIPT_RETRIES = 1;
+// =============================================================================
 
 const config = {
   actionStateChangeTimeoutMs: 200,
@@ -72,6 +78,9 @@ let stuckDetectionGraceUntil = 0;
 let floorChangeGraceUntil = 0;
 let recentKeyboardFailures = [];
 let lastProcessedWptId = null;
+
+let scriptErrorWaypointId = null;
+let scriptErrorCount = 0;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const getDistance = (p1, p2) =>
@@ -197,6 +206,13 @@ const updateSABData = () => {
 const postStoreUpdate = (type, payload) =>
   parentPort.postMessage({ storeUpdate: true, type, payload });
 
+const postGlobalVarUpdate = (key, value) => {
+  parentPort.postMessage({
+    type: 'lua_global_update',
+    payload: { key, value },
+  });
+};
+
 const awaitStateChange = (condition, timeoutMs) => {
   return new Promise((resolve) => {
     let intervalId = null;
@@ -243,6 +259,9 @@ const awaitZLevelChange = (initialZ, timeoutMs) => {
 };
 
 const advanceToNextWaypoint = async () => {
+  scriptErrorWaypointId = null;
+  scriptErrorCount = 0;
+
   if (!globalState?.cavebot) return false;
   const {
     waypointSections,
@@ -367,10 +386,6 @@ const handleLadderAction = async (targetCoords) => {
   if (!initialPos) return false;
   await delay(config.preClickDelayMs);
   const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
-  logger('debug', '[handleLadderAction] initialPos:', initialPos);
-  logger('debug', '[handleLadderAction] targetCoords:', targetCoords);
-  logger('debug', '[handleLadderAction] gameWorld:', gameWorld);
-  logger('debug', '[handleLadderAction] tileSize:', tileSize);
   if (!gameWorld || !tileSize) {
     logger(
       'error',
@@ -386,7 +401,6 @@ const handleLadderAction = async (targetCoords) => {
     tileSize,
     'bottomRight',
   );
-  logger('info', 'Ladder:', clickCoords);
   if (!clickCoords) {
     logger(
       'error',
@@ -413,10 +427,6 @@ const handleRopeAction = async (targetCoords) => {
   if (!initialPos) return false;
   await delay(config.preClickDelayMs);
   const { gameWorld, tileSize } = globalState.regionCoordinates.regions;
-  logger('debug', '[handleRopeAction] initialPos:', initialPos);
-  logger('debug', '[handleRopeAction] targetCoords:', targetCoords);
-  logger('debug', '[handleRopeAction] gameWorld:', gameWorld);
-  logger('debug', '[handleRopeAction] tileSize:', tileSize);
   if (!gameWorld || !tileSize) {
     logger('error', '[handleRopeAction] Missing region coordinates for click.');
     return false;
@@ -429,7 +439,6 @@ const handleRopeAction = async (targetCoords) => {
     tileSize,
     'bottomRight',
   );
-  logger('info', 'Rope:', clickCoords);
   if (!clickCoords) {
     logger(
       'error',
@@ -534,7 +543,6 @@ const handleMacheteAction = async (targetWaypoint) => {
 
   let actionSucceeded = false;
   for (let i = 0; i < 3; i++) {
-    // Try to walk onto the tile
     const posCounterBeforeMove = lastPlayerPosCounter;
     const pathCounterBeforeMove = lastPathDataCounter;
     const dirKey = getDirectionKey(playerMinimapPosition, targetWaypoint);
@@ -546,7 +554,6 @@ const handleMacheteAction = async (targetWaypoint) => {
           pathCounterBeforeMove,
           config.moveConfirmTimeoutMs,
         );
-        // If walk succeeded, we are done
         actionSucceeded = true;
         break;
       } catch (error) {
@@ -557,7 +564,6 @@ const handleMacheteAction = async (targetWaypoint) => {
       }
     }
 
-    // If walk failed, use machete and try to walk again
     useItemOnCoordinates(
       parseInt(globalState.global.windowId, 10),
       globalState.global.display || ':0',
@@ -567,7 +573,6 @@ const handleMacheteAction = async (targetWaypoint) => {
     );
     await delay(config.toolHotkeyWaitMs + config.preClickDelayMs);
 
-    // Try walking again after using machete
     const posCounterBeforeMoveAfterTool = lastPlayerPosCounter;
     const pathCounterBeforeMoveAfterTool = lastPathDataCounter;
     if (dirKey) {
@@ -587,7 +592,7 @@ const handleMacheteAction = async (targetWaypoint) => {
         );
       }
     }
-    await delay(250); // Small delay before next retry
+    await delay(250);
   }
   return actionSucceeded;
 };
@@ -616,7 +621,6 @@ const handleDoorAction = async (targetWaypoint) => {
     return false;
   }
 
-  // Try to walk onto the tile
   const posCounterBeforeMove = lastPlayerPosCounter;
   const pathCounterBeforeMove = lastPathDataCounter;
   const dirKey = getDirectionKey(playerMinimapPosition, targetWaypoint);
@@ -628,7 +632,6 @@ const handleDoorAction = async (targetWaypoint) => {
         pathCounterBeforeMove,
         config.moveConfirmTimeoutMs,
       );
-      // If walk succeeded, we are done
       return true;
     } catch (error) {
       logger(
@@ -638,7 +641,6 @@ const handleDoorAction = async (targetWaypoint) => {
     }
   }
 
-  // If walk failed, perform a direct left click
   await delay(config.preClickDelayMs);
   mouseController.leftClick(
     parseInt(globalState.global.windowId, 10),
@@ -647,7 +649,6 @@ const handleDoorAction = async (targetWaypoint) => {
     globalState.global.display || ':0',
   );
 
-  // Assume click opens door and allows movement, then check if player moved
   const moved = await awaitWalkConfirmation(
     posCounterBeforeMove,
     pathCounterBeforeMove,
@@ -656,16 +657,46 @@ const handleDoorAction = async (targetWaypoint) => {
   return moved;
 };
 
+// ======================= FIX: Implement error handling and retry logic =======================
 const handleScriptAction = async (targetWpt) => {
   if (!luaExecutor || !luaExecutor.isInitialized) {
-    await advanceToNextWaypoint();
+    await delay(100);
     return;
   }
+
+  if (scriptErrorWaypointId !== targetWpt.id) {
+    scriptErrorWaypointId = targetWpt.id;
+    scriptErrorCount = 0;
+  }
+
   const result = await luaExecutor.executeScript(targetWpt.script);
-  if (result.success && !result.navigationOccurred) {
-    await advanceToNextWaypoint();
+
+  if (result.success) {
+    scriptErrorCount = 0;
+    if (!result.navigationOccurred) {
+      await advanceToNextWaypoint();
+    }
+  } else {
+    scriptErrorCount++;
+    logger(
+      'warn',
+      `[Cavebot] Script at waypoint ${targetWpt.id} failed. Attempt ${scriptErrorCount}/${MAX_SCRIPT_RETRIES}.`,
+    );
+
+    if (scriptErrorCount >= MAX_SCRIPT_RETRIES) {
+      const attemptText =
+        MAX_SCRIPT_RETRIES === 1 ? '1 time' : `${MAX_SCRIPT_RETRIES} times`;
+      logger(
+        'error',
+        `[Cavebot] Script at waypoint ${targetWpt.id} failed ${attemptText}. Skipping to next waypoint.`,
+      );
+      await advanceToNextWaypoint();
+    } else {
+      await delay(250);
+    }
   }
 };
+// ==============================================================================================
 
 const awaitWalkConfirmation = (
   posCounterBeforeMove,
@@ -754,8 +785,8 @@ const fsm = {
             return 'PERFORMING_ACTION';
           }
           break;
-        case 'Node': // Assuming 'Node' is the default type for walk waypoints
-        case 'Walk': // If there's a specific 'Walk' type
+        case 'Node':
+        case 'Walk':
           if (
             playerPos.x === targetWaypoint.x &&
             playerPos.y === targetWaypoint.y &&
@@ -839,7 +870,7 @@ const fsm = {
     enter: () => postStoreUpdate('cavebot/setActionPaused', true),
     execute: async (context) => {
       await handleScriptAction(context.targetWaypoint);
-      return 'IDLE';
+      return 'EVALUATING_WAYPOINT';
     },
   },
 };
@@ -899,7 +930,6 @@ async function performOperation() {
       return;
     }
 
-    // This block executes on the first tick after regaining control from targeting.
     if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
       let skippedWaypoint = false;
       if (
@@ -919,7 +949,7 @@ async function performOperation() {
             y: currentWaypoint.y,
             z: currentWaypoint.z,
           };
-          const radius = 4; // Chebyshev distance
+          const radius = 4;
 
           const wasVisited = visitedTiles.some(
             (tile) =>
@@ -941,12 +971,9 @@ async function performOperation() {
         }
       }
 
-      // Always clean up visited tiles after the check, regardless of the outcome.
       postStoreUpdate('cavebot/clearVisitedTiles');
 
       if (skippedWaypoint) {
-        // If we skipped, update lastControlState immediately and return.
-        // The next loop will start fresh with the new waypoint.
         lastControlState = globalState.cavebot.controlState;
         return;
       }
@@ -955,7 +982,6 @@ async function performOperation() {
     updateSABData();
     if (!playerMinimapPosition) return;
 
-    // Ensure globalState reflects the latest player position from SAB
     if (globalState && globalState.gameState) {
       globalState.gameState.playerMinimapPosition = playerMinimapPosition;
     } else if (globalState) {
@@ -1042,7 +1068,8 @@ async function initializeWorker() {
       goToLabel,
       goToSection,
       goToWpt,
-      sharedLuaGlobals: workerData.sharedLuaGlobals, // Pass the shared Lua globals object
+      sharedLuaGlobals: workerData.sharedLuaGlobals,
+      postGlobalVarUpdate,
     });
     if (!(await luaExecutor.initialize()))
       throw new Error('LuaExecutor failed to initialize.');

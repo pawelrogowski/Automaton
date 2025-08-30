@@ -1,36 +1,20 @@
-import {
-  app,
-  ipcMain,
-  BrowserWindow,
-  dialog,
-  Tray,
-  Menu,
-  nativeImage,
-} from 'electron';
+import { app, ipcMain, BrowserWindow, dialog } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
-import {
-  createMainWindow,
-  toggleWidgetWindowVisibility,
-  getWidgetWindow, // Import getWidgetWindow
-} from './createMainWindow.js';
+import { createMainWindow, getWidgetWindow } from './createMainWindow.js';
 import './ipcListeners.js';
-import {
-  unregisterGlobalShortcuts,
-  registerGlobalShortcuts,
-} from './globalShortcuts.js';
+import { registerGlobalShortcuts } from './globalShortcuts.js';
 import { getLinuxHardwareId } from './hardwareId.js';
 // import { autoLoadRules } from './saveManager.js';
 import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
 import windowinfo from 'windowinfo-native';
 import setGlobalState from './setGlobalState.js';
-import store from './store.js'; // Import the store
+import store from './store.js';
 
 const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
-const preloadPath = path.join(cwd, '/preload.js');
 const log = createLogger();
 
 let selectWindow;
