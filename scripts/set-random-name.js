@@ -108,6 +108,12 @@ function updatePackageJson() {
   const packageJsonPath = path.join(__dirname, '..', 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
+  // Bump the version
+  const versionParts = packageJson.version.split('.');
+  versionParts[2] = parseInt(versionParts[2], 10) + 1;
+  const newVersion = versionParts.join('.');
+  packageJson.version = newVersion;
+
   const { displayName, packageName } = generateAppName();
 
   packageJson.name = packageName;
@@ -119,6 +125,7 @@ function updatePackageJson() {
 
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
   console.log(`Updated app name to: ${displayName} (package: ${packageName})`);
+  console.log(`Bumped version to: ${newVersion}`);
 
   return { displayName, packageName };
 }
