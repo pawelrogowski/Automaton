@@ -3,6 +3,7 @@
  * This module contains utility functions for manipulating Lua script code before
  * it is run by the wasmoon engine.
  */
+
 /**
  * Replaces convenient '$' prefixed variables with their valid, secret internal counterparts.
  * This uses a regular expression to safely replace `$var` with `__BOT_STATE__.var`

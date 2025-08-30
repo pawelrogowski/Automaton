@@ -1,9 +1,10 @@
-// luaScriptWorker.js  (drop-in replacement)
+// luaScriptWorker.js
 
 import { parentPort, workerData, threadId } from 'worker_threads';
 import { LuaFactory } from 'wasmoon';
 import { createLogger } from '../utils/logger.js';
 import { createLuaApi } from './luaApi.js';
+import { createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
 
 const log = createLogger();
@@ -13,6 +14,7 @@ let scriptConfig = {};
 let loopInterval = null;
 let asyncFunctionNames = [];
 let keepAliveInterval = null;
+let apiInitialized = false;
 
 // --- State machine to prevent shutdown during init ---
 let workerState = 'pending'; // 'pending' | 'initializing' | 'running'
@@ -23,7 +25,6 @@ let activeAsyncOperations = 0;
 const onAsyncStart = () => activeAsyncOperations++;
 const onAsyncEnd = () => activeAsyncOperations--;
 
-// NEW: lazy pull handle
 const getFreshState = () =>
   new Promise((res) => {
     const onSnap = (msg) => {
@@ -38,6 +39,13 @@ const getFreshState = () =>
 
 const postStoreUpdate = (type, payload) => {
   parentPort.postMessage({ storeUpdate: true, type, payload });
+};
+
+const postGlobalVarUpdate = (key, value) => {
+  parentPort.postMessage({
+    type: 'lua_global_update',
+    payload: { key, value },
+  });
 };
 
 const keepAlive = () => {
@@ -92,44 +100,53 @@ const initializeLuaVM = async () => {
   }
 };
 
-const _syncApiToLua = async (force = false) => {
-  if (!lua) return;
+const initializeLuaApi = async () => {
+  if (!lua || apiInitialized) return;
 
-  if (force) {
-    try {
-      const freshState = await getFreshState();
-      if (freshState) {
-        currentState = freshState;
-      }
-    } catch (e) {
-      log(
-        'error',
-        `[Lua Script Worker ${scriptConfig.id}] Failed to get fresh state: ${e.message}`,
-      );
-    }
-  }
+  currentState = await getFreshState();
 
-  const {
-    api,
-    asyncFunctionNames: newNames,
-    stateObject,
-  } = createLuaApi({
+  const { api, asyncFunctionNames: newNames } = await createLuaApi({
     type: 'script',
     getState: () => currentState,
     postSystemMessage: (m) => parentPort.postMessage(m),
     logger: log,
     id: scriptConfig.id,
     postStoreUpdate,
-    refreshLuaGlobalState: () => _syncApiToLua(true), // Pass the force option
+    postGlobalVarUpdate,
+    refreshLuaGlobalState: syncDynamicStateToLua, // Pass the sync function
     onAsyncStart,
     onAsyncEnd,
+    sharedLuaGlobals: workerData.sharedLuaGlobals,
+    lua: lua,
   });
 
   asyncFunctionNames = newNames;
   for (const fn in api) {
     lua.global.set(fn, api[fn]);
   }
-  lua.global.set('__BOT_STATE__', stateObject);
+
+  apiInitialized = true;
+};
+
+const syncDynamicStateToLua = async () => {
+  if (!lua || !apiInitialized) return;
+
+  try {
+    const freshState = await getFreshState();
+    if (freshState) {
+      currentState = freshState;
+      const stateObject = createStateShortcutObject(
+        () => currentState,
+        'script',
+      );
+      lua.global.set('__BOT_STATE__', stateObject);
+    }
+  } catch (e) {
+    log(
+      'error',
+      `[Lua Script Worker ${scriptConfig.id}] Failed to get fresh state: ${e.message}`,
+    );
+  }
 };
 
 const executeOneShot = async () => {
@@ -145,18 +162,22 @@ const executeOneShot = async () => {
     return;
   }
   try {
-    await _syncApiToLua(true);
+    await syncDynamicStateToLua();
+    // Log SharedGlobals.asd before execution
+    const sharedAsdValue = workerData.sharedLuaGlobals.asd;
+    log(
+      'debug',
+      `[Lua Script Worker ${scriptConfig.id}] Lua script sees SharedGlobals.asd as: ${sharedAsdValue}`,
+    );
+
     const processedCode = preprocessLuaScript(
       scriptConfig.code,
       asyncFunctionNames,
     );
-    console.log('About to execute Lua code:', processedCode);
     await lua.doString(processedCode);
-    console.log('Lua code execution completed');
   } catch (error) {
     const msg = error.message || String(error);
-    console.error('Lua execution error:', msg, error.stack);
-    log('error', `[Lua Script Worker ${scriptConfig.id}] loop error:`, msg);
+    log('error', `[Lua Script Worker ${scriptConfig.id}] one-shot error:`, msg);
     postStoreUpdate('lua/addLogEntry', {
       id: scriptConfig.id,
       message: `[ERROR] ${msg}`,
@@ -173,7 +194,14 @@ const executeScriptLoop = async () => {
     );
   } else {
     try {
-      await _syncApiToLua(true);
+      await syncDynamicStateToLua();
+      // Log SharedGlobals.asd before execution
+      const sharedAsdValue = workerData.sharedLuaGlobals.asd;
+      log(
+        'debug',
+        `[Lua Script Worker ${scriptConfig.id}] Lua script sees SharedGlobals.asd as: ${sharedAsdValue}`,
+      );
+
       await lua.doString(
         preprocessLuaScript(scriptConfig.code, asyncFunctionNames),
       );
@@ -214,6 +242,22 @@ parentPort.on('message', async (message) => {
     return;
   }
 
+  if (message.type === 'lua_global_broadcast') {
+    const { key, value } = message.payload;
+    log(
+      'debug',
+      `[Lua Script Worker ${scriptConfig.id}] Received lua_global_broadcast: key=${key}, value=${value}`,
+    );
+    if (workerData.sharedLuaGlobals) {
+      workerData.sharedLuaGlobals[key] = value;
+      log(
+        'debug',
+        `[Lua Script Worker ${scriptConfig.id}] workerData.sharedLuaGlobals.${key} updated to: ${workerData.sharedLuaGlobals[key]}`,
+      );
+    }
+    return;
+  }
+
   if (message.type === 'init') {
     workerState = 'initializing';
     scriptConfig = message.script;
@@ -225,8 +269,9 @@ parentPort.on('message', async (message) => {
       return;
     }
 
+    await initializeLuaApi();
+
     workerState = 'running';
-    await _syncApiToLua(true);
 
     if (scriptConfig.type === 'oneshot') {
       await executeOneShot();
@@ -255,3 +300,5 @@ parentPort.on('close', async () => {
   log('info', `[Lua Script Worker ${scriptConfig.id}] Parent port closed.`);
   await cleanupAndExit();
 });
+
+log('info', `[Lua Script Worker] New instance created, threadId: ${threadId}`);

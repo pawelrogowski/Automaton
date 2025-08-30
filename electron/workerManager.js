@@ -166,6 +166,7 @@ class WorkerManager {
     this.reusableChangedSlices = {};
     this.workerStateCache = new Map();
     this.debounceTimeout = null;
+    this.sharedLuaGlobals = {}; // NEW: Centralized object for shared Lua globals
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
@@ -417,8 +418,35 @@ class WorkerManager {
             });
         });
       }
+    } else if (message.type === 'lua_global_update') {
+      const { key, value } = message.payload;
+      log(
+        'debug',
+        `[Worker Manager] Received lua_global_update: key=${key}, value=${value}`,
+      );
+      this.sharedLuaGlobals[key] = value; // Update the master copy
+
+      // Broadcast to all other workers, including cavebotWorker
+      for (const [name, workerEntry] of this.workers) {
+        // The `workerName` is the sender, so don't send it back to the sender
+        if (
+          name !== workerName &&
+          (/^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker')
+        ) {
+          log(
+            'debug',
+            `[Worker Manager] Broadcasting lua_global_broadcast to ${name}: key=${key}, value=${value}`,
+          );
+          workerEntry.worker.postMessage({
+            type: 'lua_global_broadcast',
+            payload: { key, value },
+          });
+        }
+      }
+      return; // Message handled
     } else if (message.type === 'play_alert') {
       playSound('alert.wav');
+      return;
     }
   }
 
@@ -452,6 +480,7 @@ class WorkerManager {
         sharedData: needsSharedScreen ? this.sharedData : null,
         playerPosSAB: needsPlayerPosSAB ? this.sharedData.playerPosSAB : null,
         pathDataSAB: needsPathDataSAB ? this.sharedData.pathDataSAB : null,
+        sharedLuaGlobals: this.sharedLuaGlobals, // NEW: Pass the shared Lua globals object
         enableMemoryLogging: true,
       };
       if (needsSharedScreen) {

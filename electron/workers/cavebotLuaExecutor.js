@@ -1,7 +1,7 @@
 import { LuaFactory } from 'wasmoon';
 import { parentPort } from 'worker_threads';
 import { performance } from 'perf_hooks';
-import { createLuaApi } from './luaApi.js';
+import { createLuaApi, createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
 
 export class CavebotLuaExecutor {
@@ -11,6 +11,10 @@ export class CavebotLuaExecutor {
   constructor(context) {
     this.lua = null;
     this.logger = context.logger;
+    // Ensure debug logging is enabled for this executor
+    this.logger.setDebug(true);
+    // Ensure debug logging is enabled for this executor
+    this.logger.setDebug(true);
     this.context = context;
     this.isInitialized = false;
     this.isShuttingDown = false;
@@ -26,7 +30,7 @@ export class CavebotLuaExecutor {
 
     // Error tracking
     this.consecutiveErrors = 0;
-    this.maxConsecutiveErrors = 5;
+    this.maxConsecutiveErrors = 5000000;
 
     // Reusable objects to reduce GC pressure
     this.reusableResult = {
@@ -85,18 +89,27 @@ export class CavebotLuaExecutor {
       await this.context.getFreshState();
     }
 
-    const { api, asyncFunctionNames, stateObject } = createLuaApi({
-      type: 'cavebot',
-      ...this.context,
-      postSystemMessage: (message) => {
-        if (!this.isShuttingDown) {
-          parentPort.postMessage(message);
-        }
-      },
-      refreshLuaGlobalState: () => this._syncApiToLua(true),
-    });
+    const { api, asyncFunctionNames, stateObject, sharedGlobalsProxy } =
+      await createLuaApi({
+        type: 'cavebot',
+        ...this.context,
+        postSystemMessage: (message) => {
+          if (!this.isShuttingDown) {
+            parentPort.postMessage(message);
+          }
+        },
+        refreshLuaGlobalState: () => this._syncApiToLua(true),
+        sharedLuaGlobals: this.context.sharedLuaGlobals, // Pass the shared JS object
+        lua: this.lua, // Pass the Lua VM instance
+      });
 
     this.asyncFunctionNames = asyncFunctionNames;
+
+    // Log the sharedGlobalsProxy before setting it
+    this.logger(
+      'debug',
+      `[CavebotLuaExecutor] sharedGlobalsProxy before setting: ${JSON.stringify(sharedGlobalsProxy)}`,
+    );
 
     // Wrap navigation functions to track navigation events
     const wrappedApi = { ...api };
@@ -117,6 +130,7 @@ export class CavebotLuaExecutor {
       globals.set(funcName, wrappedApi[funcName]);
     }
     globals.set('__BOT_STATE__', stateObject);
+    globals.set('SharedGlobals', sharedGlobalsProxy); // NEW: Expose the shared globals proxy
   }
 
   _logPerformanceStats() {

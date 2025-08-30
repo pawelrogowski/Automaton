@@ -17,7 +17,7 @@ import { wait } from './exposedLuaFunctions.js';
  * @param {'script'|'cavebot'} type - The type of worker, to determine which variables to expose.
  * @returns {object} The state shortcut object.
  */
-const createStateShortcutObject = (getState, type) => {
+export const createStateShortcutObject = (getState, type) => {
   const shortcuts = {};
 
   Object.defineProperty(shortcuts, 'hppc', {
@@ -215,17 +215,17 @@ const createStateShortcutObject = (getState, type) => {
 /**
  * Creates a consolidated API (functions and state object) to be exposed to a Lua environment.
  * @param {object} context - The context object from the calling worker.
- * @returns {{api: object, asyncFunctionNames: string[], stateObject: object}}
+ * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
-export const createLuaApi = (context) => {
-  const { onAsyncStart, onAsyncEnd } = context;
+export const createLuaApi = async (context) => {
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua } = context; // NEW: Destructure sharedLuaGlobals and lua VM
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
     'wait',
     'keyPress',
     'keyPressMultiple',
-    'type',
+    'typeText',
     'typeSequence',
     'rotate',
     'leftClick',
@@ -334,7 +334,7 @@ export const createLuaApi = (context) => {
         modifier,
         delayMs,
       }),
-    type: async (...args) => {
+    typeText: async (...args) => {
       const display = getDisplay();
       if (args.length === 0) {
         logger(
@@ -1030,8 +1030,8 @@ export const createLuaApi = (context) => {
           }
           try {
             // NEW: Auto-refresh state before executing async function
-            if (typeof refreshLuaGlobalState === 'function') {
-              await refreshLuaGlobalState(true);
+            if (typeof context.refreshLuaGlobalState === 'function') {
+              await context.refreshLuaGlobalState(true);
             }
             return await originalMember.apply(target, args);
           } finally {
@@ -1044,5 +1044,28 @@ export const createLuaApi = (context) => {
       return Reflect.get(target, prop, receiver);
     },
   });
-  return { api: apiProxy, asyncFunctionNames, stateObject };
+
+  // NEW: Create a Lua table that proxies access to the sharedLuaGlobals JS object
+  lua.global.set('__automaton_index_handler', (table, key) => {
+    return sharedLuaGlobals[key];
+  });
+  lua.global.set('__automaton_newindex_handler', (table, key, value) => {
+    sharedLuaGlobals[key] = value;
+    if (context.postGlobalVarUpdate) {
+      context.postGlobalVarUpdate(key, value);
+    }
+  });
+  await lua.doString(`
+    local metatable = {
+      __index = __automaton_index_handler,
+      __newindex = __automaton_newindex_handler
+    }
+    SharedGlobals = {}
+    setmetatable(SharedGlobals, metatable)
+  `);
+  const sharedGlobalsProxy = lua.global.get('SharedGlobals');
+  lua.global.set('__automaton_index_handler', undefined);
+  lua.global.set('__automaton_newindex_handler', undefined);
+
+  return { api: apiProxy, asyncFunctionNames, stateObject, sharedGlobalsProxy }; // NEW: Return sharedGlobalsProxy
 };

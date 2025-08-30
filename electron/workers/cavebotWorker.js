@@ -1042,6 +1042,7 @@ async function initializeWorker() {
       goToLabel,
       goToSection,
       goToWpt,
+      sharedLuaGlobals: workerData.sharedLuaGlobals, // Pass the shared Lua globals object
     });
     if (!(await luaExecutor.initialize()))
       throw new Error('LuaExecutor failed to initialize.');
@@ -1062,6 +1063,15 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'shutdown') {
       isShuttingDown = true;
       if (luaExecutor) luaExecutor.destroy();
+    } else if (message.type === 'lua_global_broadcast') {
+      const { key, value } = message.payload;
+      if (workerData.sharedLuaGlobals) {
+        workerData.sharedLuaGlobals[key] = value;
+        logger(
+          'debug',
+          `[CavebotWorker] Received lua_global_broadcast: ${key} = ${value}. Current sharedLuaGlobals: ${JSON.stringify(workerData.sharedLuaGlobals)}`,
+        );
+      }
     } else if (typeof message === 'object' && !message.type) {
       if (!globalState) globalState = message;
       else Object.assign(globalState, message);
