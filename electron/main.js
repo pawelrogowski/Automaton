@@ -21,7 +21,7 @@ import {
   registerGlobalShortcuts,
 } from './globalShortcuts.js';
 import { getLinuxHardwareId } from './hardwareId.js';
-import { autoLoadRules } from './saveManager.js';
+// import { autoLoadRules } from './saveManager.js';
 import { createLogger } from './utils/logger.js';
 import workerManager from './workerManager.js';
 import windowinfo from 'windowinfo-native';
@@ -68,7 +68,7 @@ const createSelectWindow = () => {
 
 app.whenReady().then(async () => {
   try {
-    await autoLoadRules();
+    // await autoLoadRules();
     createSelectWindow();
 
     workerManager.initialize(app, cwd, {});

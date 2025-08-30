@@ -300,7 +300,7 @@ store.subscribe(() => {
     }
   }
 
-  if (hasChanged) {
-    auto_save_rules();
-  }
+  // if (hasChanged) {
+  //   auto_save_rules();
+  // }
 });

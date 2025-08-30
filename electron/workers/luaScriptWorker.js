@@ -92,8 +92,23 @@ const initializeLuaVM = async () => {
   }
 };
 
-const _syncApiToLua = () => {
+const _syncApiToLua = async (force = false) => {
   if (!lua) return;
+
+  if (force) {
+    try {
+      const freshState = await getFreshState();
+      if (freshState) {
+        currentState = freshState;
+      }
+    } catch (e) {
+      log(
+        'error',
+        `[Lua Script Worker ${scriptConfig.id}] Failed to get fresh state: ${e.message}`,
+      );
+    }
+  }
+
   const {
     api,
     asyncFunctionNames: newNames,
@@ -105,22 +120,16 @@ const _syncApiToLua = () => {
     logger: log,
     id: scriptConfig.id,
     postStoreUpdate,
-    refreshLuaGlobalState: _syncApiToLua,
+    refreshLuaGlobalState: () => _syncApiToLua(true), // Pass the force option
     onAsyncStart,
     onAsyncEnd,
-    getFreshState, // <-- expose lazy pull
   });
-  asyncFunctionNames = newNames;
-  for (const fn in api) lua.global.set(fn, api[fn]);
-  lua.global.set('__BOT_STATE__', stateObject);
-};
 
-const refreshLuaGlobalState = () => {
-  _syncApiToLua();
-  log(
-    'debug',
-    `[Lua Script Worker ${scriptConfig.id}] Lua global state refreshed.`,
-  );
+  asyncFunctionNames = newNames;
+  for (const fn in api) {
+    lua.global.set(fn, api[fn]);
+  }
+  lua.global.set('__BOT_STATE__', stateObject);
 };
 
 const executeOneShot = async () => {
@@ -136,7 +145,7 @@ const executeOneShot = async () => {
     return;
   }
   try {
-    _syncApiToLua();
+    await _syncApiToLua(true);
     const processedCode = preprocessLuaScript(
       scriptConfig.code,
       asyncFunctionNames,
@@ -164,7 +173,7 @@ const executeScriptLoop = async () => {
     );
   } else {
     try {
-      _syncApiToLua();
+      await _syncApiToLua(true);
       await lua.doString(
         preprocessLuaScript(scriptConfig.code, asyncFunctionNames),
       );
@@ -217,7 +226,7 @@ parentPort.on('message', async (message) => {
     }
 
     workerState = 'running';
-    _syncApiToLua();
+    await _syncApiToLua(true);
 
     if (scriptConfig.type === 'oneshot') {
       await executeOneShot();
@@ -233,13 +242,12 @@ parentPort.on('message', async (message) => {
     return;
   }
 
-  if (message.type === 'state_diff') {
+  if (message.type === 'state_snapshot') {
+    currentState = message.payload;
+  } else if (message.type === 'state_diff') {
+    // Apply partial state updates
+    if (!currentState) currentState = {};
     Object.assign(currentState, message.payload);
-    if (workerState === 'running') refreshLuaGlobalState();
-  } else if (message.type === undefined) {
-    // initial full state
-    currentState = message;
-    if (workerState === 'running') refreshLuaGlobalState();
   }
 });
 

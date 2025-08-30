@@ -96,6 +96,19 @@ const getDirectionKey = (current, target) => {
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
+const getFreshState = () =>
+  new Promise((res) => {
+    const onSnap = (msg) => {
+      if (msg.type === 'state_snapshot') {
+        parentPort.off('message', onSnap);
+        globalState = msg.payload;
+        res(msg.payload);
+      }
+    };
+    parentPort.on('message', onSnap);
+    parentPort.postMessage({ type: 'request_state_snapshot' });
+  });
+
 const updateSABData = () => {
   if (playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
@@ -1024,6 +1037,7 @@ async function initializeWorker() {
       logger,
       postStoreUpdate,
       getState: () => globalState,
+      getFreshState,
       advanceToNextWaypoint,
       goToLabel,
       goToSection,
@@ -1042,17 +1056,15 @@ async function initializeWorker() {
 
 parentPort.on('message', (message) => {
   try {
-    if (message.type === 'state_diff') {
+    if (message.type === 'state_full_sync') {
       if (!globalState) globalState = {};
       Object.assign(globalState, message.payload);
-      if (luaExecutor) luaExecutor.syncApiToLua();
     } else if (message.type === 'shutdown') {
       isShuttingDown = true;
       if (luaExecutor) luaExecutor.destroy();
     } else if (typeof message === 'object' && !message.type) {
       if (!globalState) globalState = message;
       else Object.assign(globalState, message);
-      if (luaExecutor) luaExecutor.syncApiToLua(); // Sync on initial full state as well
       if (!isInitialized) {
         initializeWorker().catch((error) => {
           logger(

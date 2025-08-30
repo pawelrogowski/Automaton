@@ -19,106 +19,98 @@ import { wait } from './exposedLuaFunctions.js';
  */
 const createStateShortcutObject = (getState, type) => {
   const shortcuts = {};
-  const state = getState();
-  const {
-    gameState,
-    regionCoordinates,
-    uiValues,
-    cavebot,
-    rules,
-    targeting,
-    lua,
-  } = state;
 
   Object.defineProperty(shortcuts, 'hppc', {
-    get: () => gameState?.hppc,
+    get: () => getState().gameState?.hppc,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'mppc', {
-    get: () => gameState?.mppc,
+    get: () => getState().gameState?.mppc,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'cap', {
-    get: () => uiValues?.skillsWidget?.capacity || 0,
+    get: () => getState().uiValues?.skillsWidget?.capacity || 0,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'stamina', {
-    get: () => uiValues?.skillsWidget?.stamina || 0,
+    get: () => getState().uiValues?.skillsWidget?.stamina || 0,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'level', {
-    get: () => uiValues?.skillsWidget?.level,
+    get: () => getState().uiValues?.skillsWidget?.level,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'exp', {
-    get: () => uiValues?.skillsWidget?.experience,
+    get: () => getState().uiValues?.skillsWidget?.experience,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'soul', {
-    get: () => uiValues?.skillsWidget?.soulPoints,
+    get: () => getState().uiValues?.skillsWidget?.soulPoints,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'speed', {
-    get: () => uiValues?.skillsWidget?.speed,
+    get: () => getState().uiValues?.skillsWidget?.speed,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'xpRate', {
-    get: () => uiValues?.skillsWidget?.xpGainRate,
+    get: () => getState().uiValues?.skillsWidget?.xpGainRate,
     enumerable: true,
   });
 
   Object.defineProperty(shortcuts, 'food', {
-    get: () => uiValues?.skillsWidget?.food,
+    get: () => getState().uiValues?.skillsWidget?.food,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isChatOff', {
-    get: () => gameState?.isChatOff,
+    get: () => getState().gameState?.isChatOff,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'monsterNum', {
     get: () =>
-      regionCoordinates.regions.battleList?.children?.entries?.list?.length,
+      getState().regionCoordinates.regions.battleList?.children?.entries?.list
+        ?.length,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'battleList', {
     get: () => ({
       entries:
-        regionCoordinates.regions.battleList?.children?.entries?.list || [],
+        getState().regionCoordinates.regions.battleList?.children?.entries
+          ?.list || [],
     }),
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'partyNum', {
-    get: () => gameState?.partyNum,
+    get: () => getState().gameState?.partyNum,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isTyping', {
-    get: () => gameState?.isTyping,
+    get: () => getState().gameState?.isTyping,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'isOnline', {
-    get: () => !!regionCoordinates?.regions?.onlineMarker,
+    get: () => !!getState().regionCoordinates?.regions?.onlineMarker,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'stowText', {
-    get: () => regionCoordinates?.regions?.stowText,
+    get: () => getState().regionCoordinates?.regions?.stowText,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'stashIcon', {
-    get: () => regionCoordinates?.regions?.stashIcon,
+    get: () => getState().regionCoordinates?.regions?.stashIcon,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'pk', {
-    get: () => regionCoordinates?.regions?.playerList?.whiteSkull,
+    get: () => getState().regionCoordinates?.regions?.playerList?.whiteSkull,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'activeTab', {
-    get: () => uiValues?.chatboxTabs?.activeTab || 'unknown',
+    get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'actionItems', {
     get: () => {
       const hotkeyBarChildren =
-        regionCoordinates?.regions?.hotkeyBar?.children || {};
+        getState().regionCoordinates?.regions?.hotkeyBar?.children || {};
       return new Proxy(
         {},
         {
@@ -138,27 +130,31 @@ const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
 
-  if (gameState && gameState.characterStatus) {
-    for (const status in gameState.characterStatus) {
+  const charStatus = getState().gameState?.characterStatus;
+  if (charStatus) {
+    for (const status in charStatus) {
       Object.defineProperty(shortcuts, status, {
-        get: () => gameState.characterStatus[status],
+        get: () => getState().gameState.characterStatus[status],
         enumerable: true,
       });
     }
   }
+
   Object.defineProperty(shortcuts, 'pos', {
     get: () => {
-      const pos = gameState?.playerMinimapPosition || {};
+      const pos = getState().gameState?.playerMinimapPosition || {};
       return { x: pos.x, y: pos.y, z: pos.z };
     },
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'wpt', {
     get: () => {
+      const cavebotState = getState().cavebot;
       const currentWaypoints =
-        cavebot?.waypointSections[cavebot?.currentSection]?.waypoints || [];
+        cavebotState?.waypointSections[cavebotState?.currentSection]
+          ?.waypoints || [];
       const currentWptIndex = currentWaypoints.findIndex(
-        (wp) => wp.id === cavebot?.wptId,
+        (wp) => wp.id === cavebotState?.wptId,
       );
       const currentWpt =
         currentWptIndex !== -1 ? currentWaypoints[currentWptIndex] : null;
@@ -170,7 +166,7 @@ const createStateShortcutObject = (getState, type) => {
           z: currentWpt.z,
           type: currentWpt.type,
           label: currentWpt.label,
-          distance: cavebot.wptDistance,
+          distance: cavebotState.wptDistance,
         };
       }
       return null;
@@ -178,27 +174,39 @@ const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'cavebot', {
-    get: () => cavebot?.enabled,
+    get: () => getState().cavebot?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'section', {
-    get: () => cavebot?.waypointSections[cavebot?.currentSection]?.name,
+    get: () =>
+      getState().cavebot?.waypointSections[getState().cavebot?.currentSection]
+        ?.name,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'healing', {
-    get: () => rules?.enabled,
+    get: () => getState().rules?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'targeting', {
-    get: () => targeting?.enabled,
+    get: () => getState().targeting?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'scripts', {
-    get: () => lua?.enabled,
+    get: () => getState().lua?.enabled,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'players', {
-    get: () => uiValues?.players || [],
+    get: () => getState().uiValues?.players || [],
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'standTime', {
+    get: () => {
+      const lastMoveTime = getState().gameState?.lastMoveTime;
+      if (lastMoveTime) {
+        return Date.now() - lastMoveTime;
+      }
+      return 0;
+    },
     enumerable: true,
   });
   return shortcuts;
@@ -211,14 +219,7 @@ const createStateShortcutObject = (getState, type) => {
  */
 export const createLuaApi = (context) => {
   const { onAsyncStart, onAsyncEnd } = context;
-  const {
-    type,
-    getState,
-    postSystemMessage,
-    logger,
-    id,
-    refreshLuaGlobalState,
-  } = context;
+  const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
     'wait',
@@ -248,26 +249,6 @@ export const createLuaApi = (context) => {
       return Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
     },
     isLocation: (range = 0) => {
-      // try to refresh the state if worker provided that hook
-      try {
-        if (typeof refreshLuaGlobalState === 'function') {
-          const maybePromise = refreshLuaGlobalState(); // usually synchronous
-          if (maybePromise && typeof maybePromise.then === 'function') {
-            // refresh returned a Promise, but we are in a sync function.
-            // don't await here to avoid breaking existing Lua calls.
-            // Log so you know you might want to use async option below.
-            console.warn(
-              '[Lua] isLocation: refreshLuaGlobalState returned a Promise — consider using async isLocation if you can update Lua callsites.',
-            );
-          }
-        }
-      } catch (err) {
-        console.warn(
-          '[Lua] isLocation: refreshLuaGlobalState threw:',
-          err && err.message,
-        );
-      }
-
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
       const { waypointSections, currentSection, wptId } = state.cavebot || {};
@@ -343,7 +324,8 @@ export const createLuaApi = (context) => {
       }
     },
     alert: () => postSystemMessage({ type: 'play_alert' }),
-    wait: (min_ms, max_ms) => wait(min_ms, max_ms, refreshLuaGlobalState),
+    wait: (min_ms, max_ms) =>
+      wait(min_ms, max_ms, context.refreshLuaGlobalState),
     keyPress: (key, modifier = null) =>
       keyPress(getDisplay(), key, { modifier }),
     keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
@@ -1047,6 +1029,10 @@ export const createLuaApi = (context) => {
             onAsyncStart();
           }
           try {
+            // NEW: Auto-refresh state before executing async function
+            if (typeof refreshLuaGlobalState === 'function') {
+              await refreshLuaGlobalState(true);
+            }
             return await originalMember.apply(target, args);
           } finally {
             if (onAsyncEnd) {

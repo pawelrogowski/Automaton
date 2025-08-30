@@ -45,6 +45,7 @@ const initialState = {
     redSkull: false,
   },
   playerMinimapPosition: { x: 0, y: 0, z: 0 },
+  lastMoveTime: null, // New field to store the last move time
 };
 
 const ITEM_DIMENSION = 34; // Each item is 34x34 pixels
@@ -177,6 +178,9 @@ const gameStateSlice = createSlice({
       // logger('info', `[gameStateSlice] setPlayerMinimapPosition received payload:`, action.payload);
       state.playerMinimapPosition = action.payload;
     },
+    setLastMoveTime: (state, action) => {
+      state.lastMoveTime = action.payload;
+    },
   },
 });
 
@@ -188,7 +192,8 @@ export const {
   setCharacterStatus,
   setPartyNum,
   setState,
-  setPlayerMinimapPosition, // Export the new action
+  setPlayerMinimapPosition,
+  setLastMoveTime, // Export the new action
   setIsTyping,
 } = gameStateSlice.actions;
 

@@ -166,36 +166,12 @@ class WorkerManager {
     this.reusableChangedSlices = {};
     this.workerStateCache = new Map();
     this.debounceTimeout = null;
-    this.globalLuaVariables = new Map(); // Centralized store for global Lua variables
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
     this.handleStoreUpdate = this.handleStoreUpdate.bind(this);
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
     this.precalculatedWorkerPayloads = new Map(); // New map for pre-calculated payloads
-  }
-
-  setGlobalLuaVariable(key, value) {
-    this.globalLuaVariables.set(key, value);
-    this.broadcastGlobalLuaVariableUpdate(key, value);
-  }
-
-  getGlobalLuaVariable(key) {
-    return this.globalLuaVariables.get(key);
-  }
-
-  broadcastGlobalLuaVariableUpdate(key, value) {
-    for (const [name, workerEntry] of this.workers) {
-      if (
-        workerEntry.worker &&
-        (/^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker') // Only send to Lua script workers and cavebot worker
-      ) {
-        workerEntry.worker.postMessage({
-          type: 'lua_global_update',
-          payload: { key, value },
-        });
-      }
-    }
   }
 
   setupPaths(app, cwd) {
@@ -327,7 +303,18 @@ class WorkerManager {
     }
   }
 
-  handleWorkerMessage(message) {
+  handleWorkerMessage(message, workerName) {
+    if (message.type === 'request_state_snapshot') {
+      const worker = this.workers.get(workerName)?.worker;
+      if (worker) {
+        worker.postMessage({
+          type: 'state_snapshot',
+          payload: store.getState(),
+        });
+      }
+      return;
+    }
+
     // --- MODIFIED: Centralized Frame Update Distribution ---
     if (message.type === 'frame-update') {
       const dirtyRects = message.payload.dirtyRects;
@@ -432,19 +419,6 @@ class WorkerManager {
       }
     } else if (message.type === 'play_alert') {
       playSound('alert.wav');
-    } else if (message.type === 'lua_global_set') {
-      this.setGlobalLuaVariable(message.payload.key, message.payload.value);
-    } else if (message.type === 'lua_global_get') {
-      const workerEntry = this.workers.get(message.senderId);
-      if (workerEntry?.worker) {
-        workerEntry.worker.postMessage({
-          type: 'lua_global_value',
-          payload: {
-            key: message.payload.key,
-            value: this.getGlobalLuaVariable(message.payload.key),
-          },
-        });
-      }
     }
   }
 
@@ -486,7 +460,7 @@ class WorkerManager {
       const worker = new Worker(workerPath, { name, workerData });
       this.workers.set(name, { worker, config: scriptConfig });
       this.workerInitialized.set(name, false);
-      worker.on('message', (msg) => this.handleWorkerMessage(msg));
+      worker.on('message', (msg) => this.handleWorkerMessage(msg, name));
       worker.on('error', (error) => this.handleWorkerError(name, error));
       worker.on('exit', (code) => this.handleWorkerExit(name, code));
       log('info', `[Worker Manager] Worker ${name} started successfully.`);
@@ -608,13 +582,25 @@ class WorkerManager {
       const relevant = this.precalculatedWorkerPayloads.get(name);
 
       if (relevant && Object.keys(relevant).length) {
-        const hash = quickHash(relevant);
-        if (this.workerStateCache.get(name) !== hash) {
-          this.workerStateCache.set(name, hash);
+        // Always send the full, fresh slice for cavebot worker for synchronous execution
+        if (name === 'cavebotWorker') {
+          const cavebotPayload = {};
+          for (const key of WORKER_STATE_DEPENDENCIES.cavebotWorker) {
+            cavebotPayload[key] = currentState[key];
+          }
           workerEntry.worker.postMessage({
-            type: 'state_diff',
-            payload: relevant,
+            type: 'state_full_sync',
+            payload: cavebotPayload,
           });
+        } else {
+          const hash = quickHash(relevant);
+          if (this.workerStateCache.get(name) !== hash) {
+            this.workerStateCache.set(name, hash);
+            workerEntry.worker.postMessage({
+              type: 'state_diff',
+              payload: relevant,
+            });
+          }
         }
       }
     }

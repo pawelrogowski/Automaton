@@ -353,32 +353,63 @@ export const toggleWidgetWindowVisibility = () => {
   }
 };
 
+let lastState = {};
 store.subscribe(() => {
-  const {
-    notificationsEnabled,
-    isGlobalShortcutsEnabled: globalShortcutsState,
-  } = store.getState().global;
-  isNotificationEnabled = notificationsEnabled;
-  const prevGlobalShortcutsEnabled = isGlobalShortcutsEnabled;
-  isGlobalShortcutsEnabled = globalShortcutsState;
+  const state = store.getState().global;
 
-  // Register/unregister global shortcuts based on state change
-  if (isGlobalShortcutsEnabled && !prevGlobalShortcutsEnabled) {
-    registerGlobalShortcuts();
-  } else if (!isGlobalShortcutsEnabled && prevGlobalShortcutsEnabled) {
-    unregisterGlobalShortcuts();
-  }
+  const newState = {
+    windowName: state.windowName,
+    isBotEnabled: state.isBotEnabled,
+    windowId: state.windowId,
+    notificationsEnabled: state.notificationsEnabled,
+    isGlobalShortcutsEnabled: state.isGlobalShortcutsEnabled,
+    isMainWindowVisible: mainWindow ? mainWindow.isVisible() : false,
+    isWidgetWindowVisible: widgetWindow ? widgetWindow.isVisible() : false,
+  };
 
-  // Update visibility states based on actual window visibility
-  isMainWindowVisible = mainWindow ? mainWindow.isVisible() : false;
-  isWidgetWindowVisible = widgetWindow ? widgetWindow.isVisible() : false;
+  // Only update if the relevant state has changed
+  const iconChanged =
+    lastState.isBotEnabled !== newState.isBotEnabled ||
+    lastState.windowId !== newState.windowId;
+
+  const menuChanged =
+    lastState.windowName !== newState.windowName ||
+    lastState.isMainWindowVisible !== newState.isMainWindowVisible ||
+    lastState.isWidgetWindowVisible !== newState.isWidgetWindowVisible ||
+    lastState.notificationsEnabled !== newState.notificationsEnabled ||
+    lastState.isGlobalShortcutsEnabled !== newState.isGlobalShortcutsEnabled;
 
   if (tray) {
-    tray.setContextMenu(buildTrayContextMenu());
-    updateTrayIcon();
+    if (iconChanged) {
+      updateTrayIcon();
+    }
+    if (menuChanged) {
+      tray.setContextMenu(buildTrayContextMenu());
+    }
   }
 
-  Menu.setApplicationMenu(buildAppMenu());
+  if (menuChanged) {
+    Menu.setApplicationMenu(buildAppMenu());
+  }
+
+  // Handle global shortcuts enable/disable
+  if (
+    lastState.isGlobalShortcutsEnabled !== newState.isGlobalShortcutsEnabled
+  ) {
+    if (newState.isGlobalShortcutsEnabled) {
+      registerGlobalShortcuts();
+    } else {
+      unregisterGlobalShortcuts();
+    }
+  }
+
+  // Update local module state
+  isNotificationEnabled = newState.notificationsEnabled;
+  isGlobalShortcutsEnabled = newState.isGlobalShortcutsEnabled;
+  isMainWindowVisible = newState.isMainWindowVisible;
+  isWidgetWindowVisible = newState.isWidgetWindowVisible;
+
+  lastState = newState;
 });
 
 export const getMainWindow = () => mainWindow;

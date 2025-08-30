@@ -102,6 +102,10 @@ export async function processMinimapData(
               type: 'gameState/setPlayerMinimapPosition',
               payload: newPos,
             },
+            {
+              type: 'gameState/setLastMoveTime',
+              payload: Date.now(),
+            },
           ],
         });
         // --- FIX END ---

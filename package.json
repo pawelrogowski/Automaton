@@ -1,6 +1,6 @@
 {
-  "name": "figma",
-  "version": "1.3.8",
+  "name": "mailspring_skype",
+  "version": "1.4.0",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.figma",
-    "productName": "Figma",
+    "appId": "com.electron.mailspring_skype",
+    "productName": "Mailspring Skype",
     "directories": {
       "output": "dist",
       "buildResources": "build"
