@@ -1,6 +1,6 @@
 {
-  "name": "mailspring_skype",
-  "version": "1.4.0",
+  "name": "termius",
+  "version": "1.4.1",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.mailspring_skype",
-    "productName": "Mailspring Skype",
+    "appId": "com.electron.termius",
+    "productName": "Termius",
     "directories": {
       "output": "dist",
       "buildResources": "build"
