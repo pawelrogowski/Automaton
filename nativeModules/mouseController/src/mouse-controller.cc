@@ -87,6 +87,11 @@ void DoSyntheticClick(const Napi::CallbackInfo& info, unsigned int button, const
     event.xbutton.state = modifier_mask;
     XSendEvent(display.get(), target_window, True, ButtonReleaseMask, &event);
     XFlush(display.get());
+
+    // --- Move mouse to fixed coordinates after click ---
+    usleep(1000); // 1ms delay
+    XWarpPointer(display.get(), None, root, 0, 0, 0, 0, 1400, 25);
+    XFlush(display.get());
 }
 
 /**

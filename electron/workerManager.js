@@ -59,6 +59,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'pathfinder',
     'cavebot',
     'regionCoordinates',
+    'battleList', // NEW DEPENDENCY
   ],
   regionMonitor: ['global'],
   screenMonitor: [

@@ -25,10 +25,9 @@ import {
 
 // --- Worker Configuration ---
 const MOVEMENT_COOLDOWN_MS = 400;
-const CLICK_CONFIRMATION_TIMEOUT_MS = 400;
-const CLICK_POLL_INTERVAL_MS = 5;
+const CLICK_POLL_INTERVAL_MS = 10;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
-const BORDER_THRESHOLD = 0; // Pixels from the edge of the game world to avoid clicking.
+const TARGET_CLICK_DELAY_MS = 250; // Prevent spam-clicking the battle list
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
@@ -36,7 +35,7 @@ const logger = createLogger({ info: true, error: true, debug: false });
 let isInitialized = false;
 let globalState = null;
 let isShuttingDown = false;
-let isProcessing = false; // Prevents re-entrant execution of targeting logic.
+let isProcessing = false;
 let playerMinimapPosition = null;
 let path = [];
 let pathfindingStatus = 0;
@@ -44,10 +43,13 @@ let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
 let lastMovementTime = 0;
 let lastDispatchedVisitedTile = null;
-let clearTargetCommandSent = false; // NEW: Flag to prevent F8 spam.
+let clearTargetCommandSent = false;
+let lastClickTime = 0;
+let lastClickedBattleListIndex = -1;
 
 // --- Change Detection State ---
-let lastCreaturesHash = null;
+let lastBattleListHash = null;
+let lastCreaturesHash = null; // NEW: Track creatures hash for best target selection
 let lastTargetInstanceId = null;
 let lastTargetingListHash = null;
 let lastPlayerPosKey = null;
@@ -79,6 +81,14 @@ const getDirectionKey = (current, target) => {
   return null;
 };
 
+const getHealthTag = (healthPercent) => {
+  if (healthPercent <= 5) return 'Critical';
+  if (healthPercent <= 30) return 'Low';
+  if (healthPercent <= 60) return 'Medium';
+  if (healthPercent <= 90) return 'High';
+  return 'Full';
+};
+
 const awaitWalkConfirmation = (
   posCounterBeforeMove,
   pathCounterBeforeMove,
@@ -90,14 +100,14 @@ const awaitWalkConfirmation = (
       reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     const intervalId = setInterval(() => {
-      const posChanged = playerPosArray
-        ? Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
-          posCounterBeforeMove
-        : false;
-      const pathChanged = pathDataArray
-        ? Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
-          pathCounterBeforeMove
-        : false;
+      const posChanged =
+        playerPosArray &&
+        Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
+          posCounterBeforeMove;
+      const pathChanged =
+        pathDataArray &&
+        Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
+          pathCounterBeforeMove;
       if (posChanged || pathChanged) {
         clearTimeout(timeoutId);
         clearInterval(intervalId);
@@ -112,7 +122,6 @@ const awaitPathfinderUpdate = (timeoutMs) => {
     const startTime = Date.now();
     const intervalId = setInterval(() => {
       updateSABData();
-
       if (pathfindingStatus === PATH_STATUS_PATH_FOUND) {
         clearInterval(intervalId);
         resolve(true);
@@ -120,7 +129,6 @@ const awaitPathfinderUpdate = (timeoutMs) => {
         clearInterval(intervalId);
         resolve(false);
       }
-
       if (Date.now() - startTime > timeoutMs) {
         clearInterval(intervalId);
         reject(
@@ -155,11 +163,9 @@ const updateSABData = () => {
         PATH_UPDATE_COUNTER_INDEX,
       );
       if (counterBeforeRead === lastPathDataCounter) return;
-
       const pathStartX = Atomics.load(pathDataArray, PATH_START_X_INDEX);
       const pathStartY = Atomics.load(pathDataArray, PATH_START_Y_INDEX);
       const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
-
       if (
         !playerMinimapPosition ||
         playerMinimapPosition.x !== pathStartX ||
@@ -169,7 +175,6 @@ const updateSABData = () => {
         lastPathDataCounter = counterBeforeRead;
         return;
       }
-
       pathfindingStatus = Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX);
       const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
       const tempPath = [];
@@ -197,7 +202,7 @@ const updateSABData = () => {
   }
 };
 
-function selectBestTarget() {
+function selectBestTargetFromGameWorld() {
   const {
     creatures,
     targetingList,
@@ -220,55 +225,38 @@ function selectBestTarget() {
       (c) => c.instanceId === currentGameTarget.instanceId,
     );
     if (currentTargetOnScreen) {
-      let activeRuleForCurrentTarget = targetingList.find(
-        (t) =>
-          t.name === currentTargetOnScreen.name &&
-          t.action === 'Attack' &&
-          t.healthRange === currentTargetOnScreen.healthTag,
+      const healthTag = getHealthTag(100); // Assuming full health for stickiness check
+      const activeRule = targetingList.find(
+        (r) =>
+          r.name.startsWith(currentTargetOnScreen.name) &&
+          r.action === 'Attack' &&
+          (r.healthRange === 'Any' || r.healthRange === healthTag),
       );
-      if (!activeRuleForCurrentTarget) {
-        activeRuleForCurrentTarget = targetingList.find(
-          (t) =>
-            t.name === currentTargetOnScreen.name &&
-            t.action === 'Attack' &&
-            t.healthRange === 'Any',
-        );
-      }
-      if (activeRuleForCurrentTarget) {
-        stickinessBonus = activeRuleForCurrentTarget.stickiness || 0;
+      if (activeRule) {
+        stickinessBonus = activeRule.stickiness || 0;
       }
     }
   }
 
   const targetableCreatures = reachableCreatures
     .map((creature) => {
-      let targetingInfo = targetingList.find(
-        (t) =>
-          t.name === creature.name &&
-          t.action === 'Attack' &&
-          t.healthRange === creature.healthTag,
+      const healthTag = getHealthTag(100); // Placeholder health
+      const rule = targetingList.find(
+        (r) =>
+          r.name.startsWith(creature.name) &&
+          r.action === 'Attack' &&
+          (r.healthRange === 'Any' || r.healthRange === healthTag),
       );
+      if (!rule) return null;
 
-      if (!targetingInfo) {
-        targetingInfo = targetingList.find(
-          (t) =>
-            t.name === creature.name &&
-            t.action === 'Attack' &&
-            t.healthRange === 'Any',
-        );
-      }
-
-      if (!targetingInfo) return null;
-
-      let effectivePriority = targetingInfo.priority;
+      let effectivePriority = rule.priority;
       if (
         currentGameTarget &&
         creature.instanceId === currentGameTarget.instanceId
       ) {
         effectivePriority += stickinessBonus;
       }
-
-      return { ...creature, ...targetingInfo, effectivePriority };
+      return { ...creature, rule, effectivePriority };
     })
     .filter(Boolean);
 
@@ -286,178 +274,109 @@ function selectBestTarget() {
   return targetableCreatures[0];
 }
 
-async function clickAndConfirmTarget(targetToClick) {
-  if (!targetToClick.absoluteCoords) {
-    logger(
-      'warn',
-      `[Targeting] Cannot click ${targetToClick.name}, missing absolute coordinates.`,
-    );
-    return false;
+function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
+  if (!pathfindingTarget) {
+    lastClickedBattleListIndex = -1; // No target to click, reset index
+    return; // No target to pathfind to, so no clicks needed
   }
 
-  const gameWorld = globalState.regionCoordinates?.regions?.gameWorld;
+  // If the current in-game target matches our pathfinding target, no click needed.
+  if (currentGameTarget?.instanceId === pathfindingTarget.instanceId) {
+    lastClickedBattleListIndex = -1; // Target is correct, reset click logic
+    return;
+  }
 
-  if (gameWorld) {
-    const { x, y, width, height } = gameWorld;
-    const clickX = targetToClick.absoluteCoords.x;
-    const clickY = targetToClick.absoluteCoords.y;
+  // If we are here, the in-game target does NOT match our pathfinding target.
+  // We need to click the battle list to correct it.
 
-    if (
-      clickX < x + BORDER_THRESHOLD ||
-      clickX >= x + width - BORDER_THRESHOLD ||
-      clickY < y + BORDER_THRESHOLD ||
-      clickY >= y + height - BORDER_THRESHOLD
-    ) {
-      logger(
-        'warn',
-        `[Targeting] Preventing click on ${targetToClick.name} at x: ${clickX}, y: ${clickY} because it's within ${BORDER_THRESHOLD}px of gameWorld borders.`,
-      );
-      return false;
+  if (Date.now() - lastClickTime < TARGET_CLICK_DELAY_MS) {
+    return; // Don't click too often
+  }
+
+  // Find all battle list entries that could match our desired pathfinding target
+  const potentialBLTargets = globalState.battleList.entries.reduce(
+    (acc, entry, index) => {
+      // Use startsWith for partial name matching
+      if (pathfindingTarget.name.startsWith(entry.name)) {
+        acc.push({ ...entry, index });
+      }
+      return acc;
+    },
+    [],
+  );
+
+  if (potentialBLTargets.length === 0) {
+    // Our desired pathfinding target is not on the battle list. Cannot click.
+    return;
+  }
+
+  // Determine which battle list entry to click.
+  // If lastClickedBattleListIndex is -1 or the creature at that index is no longer the pathfinding target,
+  // start from the beginning of the potential targets.
+  let targetToClick = null;
+  let startIndex =
+    lastClickedBattleListIndex !== -1 &&
+    potentialBLTargets[lastClickedBattleListIndex]?.name ===
+      pathfindingTarget.name
+      ? lastClickedBattleListIndex
+      : 0;
+
+  for (let i = 0; i < potentialBLTargets.length; i++) {
+    const currentIndex = (startIndex + i) % potentialBLTargets.length;
+    const entry = potentialBLTargets[currentIndex];
+
+    // Check if this entry matches the pathfinding target's game coordinates
+    // This is the crucial verification step.
+    const creatureInGameWorld = globalState.targeting.creatures.find(
+      (c) =>
+        c.name === entry.name &&
+        c.gameCoords.x === pathfindingTarget.gameCoords.x &&
+        c.gameCoords.y === pathfindingTarget.gameCoords.y &&
+        c.gameCoords.z === pathfindingTarget.gameCoords.z,
+    );
+
+    if (creatureInGameWorld) {
+      targetToClick = entry;
+      lastClickedBattleListIndex = currentIndex; // Store index for next time
+      break;
     }
   }
 
-  try {
-    const clickTime = performance.now();
+  if (targetToClick) {
+    logger(
+      'info',
+      `[Targeting] Correcting target. Clicking BL entry for: ${targetToClick.name}`,
+    );
+    const clickX = targetToClick.region.x + 5;
+    const clickY = targetToClick.region.y + 2;
     mouseController.leftClick(
       parseInt(globalState.global.windowId),
-      targetToClick.absoluteCoords.x,
-      targetToClick.absoluteCoords.y,
+      clickX,
+      clickY,
       globalState.global.display,
     );
-    await delay(50);
-    keypress.sendKey('f8', globalState.global.display);
-    logger('info', `[Targeting] Attempting to target: ${targetToClick.name}`);
-
-    const startTime = performance.now();
-    while (performance.now() - startTime < CLICK_CONFIRMATION_TIMEOUT_MS) {
-      const latestGameTarget = globalState.targeting.target;
-      if (
-        latestGameTarget &&
-        latestGameTarget.instanceId === targetToClick.instanceId
-      ) {
-        const confirmationTime = performance.now();
-        const timeToConfirm = confirmationTime - clickTime;
-        logger(
-          'info',
-          `[PERF] Time from click to state confirmation: ${timeToConfirm.toFixed(
-            2,
-          )}ms`,
-        );
-        return true;
-      }
-      await delay(CLICK_POLL_INTERVAL_MS);
-    }
-  } catch (error) {
-    logger(
-      'error',
-      `[Targeting] Failed to send click command: ${error.message}`,
-    );
-    return false;
+    lastClickTime = Date.now();
+  } else {
+    // If we couldn't find a matching creature in the game world for any BL entry,
+    // it means our pathfinding target is not visually confirmed. Reset index.
+    lastClickedBattleListIndex = -1;
   }
-
-  logger(
-    'warn',
-    `[Targeting] Target not confirmed for ${targetToClick.name} within ${CLICK_CONFIRMATION_TIMEOUT_MS}ms.`,
-  );
-  return false;
 }
 
-async function performTargeting() {
-  if (isShuttingDown || !isInitialized || !globalState?.global?.display) {
+async function manageMovement(pathfindingTarget) {
+  if (!pathfindingTarget || !pathfindingTarget.isReachable) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setDynamicTarget',
+      payload: null,
+    });
     return;
   }
 
-  // 1. Handle the disabled case first.
-  if (!globalState.targeting?.enabled) {
-    if (globalState.cavebot?.controlState === 'TARGETING') {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/releaseTargetingControl',
-      });
-    }
-    return;
-  }
-
-  // If we get here, targeting is enabled.
-  const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
-
-  // 2. If cavebot is disabled, targeting MUST be in control.
-  if (!cavebotIsEnabled) {
-    if (controlState !== 'TARGETING') {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/confirmTargetingControl',
-      });
-      return; // Wait for state update before proceeding
-    }
-  } else {
-    // 3. If cavebot is enabled, we need to negotiate.
-    if (controlState === 'CAVEBOT') {
-      const bestTarget = selectBestTarget();
-      if (bestTarget) {
-        parentPort.postMessage({
-          storeUpdate: true,
-          type: 'cavebot/requestTargetingControl',
-        });
-      }
-      return; // Let cavebot run until handover is complete.
-    } else if (controlState === 'HANDOVER_TO_TARGETING') {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/confirmTargetingControl',
-      });
-      return; // Wait for next tick.
-    }
-  }
-
-  // 4. If we are here, we should have control.
-  if (globalState.cavebot.controlState !== 'TARGETING') {
-    // We should have handled all other cases. If we are here, something is wrong, so we wait.
-    return;
-  }
-
-  updateSABData();
-  if (!playerMinimapPosition) return;
-
-  // --- Main targeting logic proceeds ---
-  const bestTarget = selectBestTarget();
-  const currentGameTarget = globalState.targeting.target;
-
-  if (bestTarget) {
-    // If we have a target, reset the flag that tracks if we've cleared the target.
-    clearTargetCommandSent = false;
-  } else {
-    // No more targets.
-    // Check if there was a target in the previous cycle and if we haven't already sent the clear command.
-    if (currentGameTarget && !clearTargetCommandSent) {
-      keypress.sendKey('f8', globalState.global.display); // Clear red box
-      clearTargetCommandSent = true; // Mark that we've sent the command
-    }
-
-    // Only release control if cavebot is enabled and can take over.
-    if (cavebotIsEnabled) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/releaseTargetingControl',
-      });
-    }
-    // If cavebot is disabled, do nothing. Keep control and wait.
-    return;
-  }
-
-  // If we have a valid target, but it's not the one selected in-game, we must click it first.
-  if (bestTarget.instanceId !== currentGameTarget?.instanceId) {
-    await clickAndConfirmTarget(bestTarget);
-    // After attempting to click, we will return and wait for the next cycle.
-    // This ensures we don't try to move towards a target that we haven't successfully clicked on yet.
-    return;
-  }
-
-  // If we reach here, we have a confirmed target lock.
   const dynamicGoal = {
-    stance: bestTarget.stance,
-    distance: bestTarget.stance === 'Stand' ? 0 : bestTarget.distance,
-    targetCreaturePos: bestTarget.gameCoords,
+    stance: pathfindingTarget.rule.stance,
+    distance: pathfindingTarget.rule.distance,
+    targetCreaturePos: pathfindingTarget.gameCoords,
   };
   parentPort.postMessage({
     storeUpdate: true,
@@ -481,18 +400,8 @@ async function performTargeting() {
 
   try {
     const pathFound = await awaitPathfinderUpdate(1000);
-    if (!pathFound) {
-      logger(
-        'warn',
-        `[Targeting] No path found for ${bestTarget.name}. Switching target.`,
-      );
-      return;
-    }
+    if (!pathFound) return;
   } catch (error) {
-    logger(
-      'error',
-      `[Targeting] Error waiting for pathfinder update: ${error.message}. Switching target.`,
-    );
     return;
   }
 
@@ -501,7 +410,7 @@ async function performTargeting() {
     return;
   }
 
-  if (bestTarget.stance === 'Stand') {
+  if (pathfindingTarget.rule.stance === 'Stand') {
     return;
   }
 
@@ -513,14 +422,12 @@ async function performTargeting() {
     ) {
       return;
     }
-
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
     if (dirKey) {
       const posCounterBeforeMove = lastPlayerPosCounter;
       const pathCounterBeforeMove = lastPathDataCounter;
       keypress.sendKey(dirKey, globalState.global.display);
       lastMovementTime = now;
-
       try {
         await awaitWalkConfirmation(
           posCounterBeforeMove,
@@ -537,12 +444,87 @@ async function performTargeting() {
   }
 }
 
-// Event-driven message handler. Replaces the mainLoop.
+async function performTargeting() {
+  if (isShuttingDown || !isInitialized || !globalState?.global?.display) {
+    return;
+  }
+
+  if (!globalState.targeting?.enabled) {
+    if (globalState.cavebot?.controlState === 'TARGETING') {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
+    }
+    return;
+  }
+
+  const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
+
+  if (!cavebotIsEnabled && controlState !== 'TARGETING') {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/confirmTargetingControl',
+    });
+    return;
+  }
+
+  const pathfindingTarget = selectBestTargetFromGameWorld();
+
+  if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
+    if (pathfindingTarget) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/requestTargetingControl',
+      });
+    }
+    return;
+  }
+
+  if (controlState === 'HANDOVER_TO_TARGETING') {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/confirmTargetingControl',
+    });
+    return;
+  }
+
+  if (globalState.cavebot.controlState !== 'TARGETING') {
+    return;
+  }
+
+  updateSABData();
+  if (!playerMinimapPosition) return;
+
+  const currentGameTarget = globalState.targeting.target;
+
+  // Always manage movement based on the pathfinding target.
+  await manageMovement(pathfindingTarget);
+
+  // Only manage clicks if there's a pathfinding target.
+  if (pathfindingTarget) {
+    clearTargetCommandSent = false;
+    manageTargetingClicks(pathfindingTarget, currentGameTarget);
+  } else {
+    lastClickedBattleListIndex = -1; // No target, reset click logic
+    if (currentGameTarget && !clearTargetCommandSent) {
+      keypress.sendKey('f8', globalState.global.display);
+      clearTargetCommandSent = true;
+    }
+    if (cavebotIsEnabled) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
+    }
+  }
+}
+
+// Event-driven message handler.
 parentPort.on('message', (message) => {
   if (isShuttingDown) return;
 
   try {
-    // Update state from incoming messages.
     if (message.type === 'shutdown') {
       isShuttingDown = true;
       return;
@@ -558,21 +540,14 @@ parentPort.on('message', (message) => {
           '[TargetingWorker] Initial state received. Worker is now active.',
         );
       }
-    } else {
-      // Not a state update, ignore for triggering logic.
-      return;
     }
 
-    // Prevent re-entrant execution if the logic is already running.
     if (isProcessing) {
       return;
     }
 
-    // --- Change Detection ---
-    // Check for changes in critical state that should trigger targeting logic.
-    updateSABData(); // Always get the latest fast-buffer data.
-
-    const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures);
+    const newBattleListHash = JSON.stringify(globalState.battleList?.entries);
+    const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures); // NEW
     const newTargetInstanceId = globalState.targeting?.target?.instanceId;
     const newTargetingListHash = JSON.stringify(
       globalState.targeting?.targetingList,
@@ -585,7 +560,8 @@ parentPort.on('message', (message) => {
     const newCavebotEnabled = globalState.cavebot?.enabled;
 
     const shouldProcess =
-      newCreaturesHash !== lastCreaturesHash ||
+      newBattleListHash !== lastBattleListHash ||
+      newCreaturesHash !== lastCreaturesHash || // NEW
       newTargetInstanceId !== lastTargetInstanceId ||
       newTargetingListHash !== lastTargetingListHash ||
       newPlayerPosKey !== lastPlayerPosKey ||
@@ -596,8 +572,8 @@ parentPort.on('message', (message) => {
     if (shouldProcess) {
       isProcessing = true;
 
-      // Update last known states *before* executing.
-      lastCreaturesHash = newCreaturesHash;
+      lastBattleListHash = newBattleListHash;
+      lastCreaturesHash = newCreaturesHash; // NEW
       lastTargetInstanceId = newTargetInstanceId;
       lastTargetingListHash = newTargetingListHash;
       lastPlayerPosKey = newPlayerPosKey;
