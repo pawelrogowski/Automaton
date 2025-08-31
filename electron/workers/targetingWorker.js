@@ -24,8 +24,8 @@ import {
 } from './sharedConstants.js';
 
 // --- Worker Configuration ---
-const MOVEMENT_COOLDOWN_MS = 400;
-const CLICK_POLL_INTERVAL_MS = 10;
+const MOVEMENT_COOLDOWN_MS = 25;
+const CLICK_POLL_INTERVAL_MS = 5;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
 const TARGET_CLICK_DELAY_MS = 250; // Prevent spam-clicking the battle list
 
@@ -203,17 +203,8 @@ const updateSABData = () => {
 };
 
 function selectBestTargetFromGameWorld() {
-  const {
-    creatures,
-    targetingList,
-    target: currentGameTarget,
-  } = globalState.targeting;
-  if (
-    !creatures ||
-    creatures.length === 0 ||
-    !targetingList ||
-    targetingList.length === 0
-  ) {
+  const { creatures, targetingList, target: currentGameTarget } = globalState.targeting;
+  if (!creatures || creatures.length === 0 || !targetingList || targetingList.length === 0) {
     return null;
   }
 
@@ -250,10 +241,7 @@ function selectBestTargetFromGameWorld() {
       if (!rule) return null;
 
       let effectivePriority = rule.priority;
-      if (
-        currentGameTarget &&
-        creature.instanceId === currentGameTarget.instanceId
-      ) {
+      if (currentGameTarget && creature.instanceId === currentGameTarget.instanceId) {
         effectivePriority += stickinessBonus;
       }
       return { ...creature, rule, effectivePriority };
@@ -275,38 +263,31 @@ function selectBestTargetFromGameWorld() {
 }
 
 function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
+  // If there's no pathfinding target, or we're already targeting the correct one, do nothing.
   if (!pathfindingTarget) {
     lastClickedBattleListIndex = -1; // No target to click, reset index
     return; // No target to pathfind to, so no clicks needed
   }
 
-  // If the current in-game target matches our pathfinding target, no click needed.
+  // If the current in-game target matches our pathfinding target.
   if (currentGameTarget?.instanceId === pathfindingTarget.instanceId) {
     lastClickedBattleListIndex = -1; // Target is correct, reset click logic
     return;
   }
 
-  // If we are here, the in-game target does NOT match our pathfinding target.
-  // We need to click the battle list to correct it.
-
+  // Don't click too often
   if (Date.now() - lastClickTime < TARGET_CLICK_DELAY_MS) {
-    return; // Don't click too often
+    return;
   }
 
-  // Find all battle list entries that could match our desired pathfinding target
-  const potentialBLTargets = globalState.battleList.entries.reduce(
-    (acc, entry, index) => {
-      // Use startsWith for partial name matching
-      if (pathfindingTarget.name.startsWith(entry.name)) {
-        acc.push({ ...entry, index });
-      }
-      return acc;
-    },
-    [],
+  // Find all battle list entries that could match our desired pathfinding target's name
+  const potentialBLTargets = globalState.battleList.entries.filter(entry =>
+    pathfindingTarget.name.startsWith(entry.name)
   );
 
   if (potentialBLTargets.length === 0) {
-    // Our desired pathfinding target is not on the battle list. Cannot click.
+    // Our target isn't on the battle list. Cannot click.
+    lastClickedBattleListIndex = -1; // Reset index
     return;
   }
 
@@ -314,12 +295,9 @@ function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
   // If lastClickedBattleListIndex is -1 or the creature at that index is no longer the pathfinding target,
   // start from the beginning of the potential targets.
   let targetToClick = null;
-  let startIndex =
-    lastClickedBattleListIndex !== -1 &&
-    potentialBLTargets[lastClickedBattleListIndex]?.name ===
-      pathfindingTarget.name
-      ? lastClickedBattleListIndex
-      : 0;
+  let startIndex = (lastClickedBattleListIndex !== -1 &&
+                    potentialBLTargets[lastClickedBattleListIndex]?.name === pathfindingTarget.name)
+                   ? lastClickedBattleListIndex : 0;
 
   for (let i = 0; i < potentialBLTargets.length; i++) {
     const currentIndex = (startIndex + i) % potentialBLTargets.length;
@@ -328,11 +306,10 @@ function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
     // Check if this entry matches the pathfinding target's game coordinates
     // This is the crucial verification step.
     const creatureInGameWorld = globalState.targeting.creatures.find(
-      (c) =>
-        c.name === entry.name &&
-        c.gameCoords.x === pathfindingTarget.gameCoords.x &&
-        c.gameCoords.y === pathfindingTarget.gameCoords.y &&
-        c.gameCoords.z === pathfindingTarget.gameCoords.z,
+      (c) => c.name === entry.name &&
+             c.gameCoords.x === pathfindingTarget.gameCoords.x &&
+             c.gameCoords.y === pathfindingTarget.gameCoords.y &&
+             c.gameCoords.z === pathfindingTarget.gameCoords.z
     );
 
     if (creatureInGameWorld) {
@@ -343,10 +320,7 @@ function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
   }
 
   if (targetToClick) {
-    logger(
-      'info',
-      `[Targeting] Correcting target. Clicking BL entry for: ${targetToClick.name}`,
-    );
+    logger('info', `[Targeting] Correcting target. Clicking BL entry for: ${targetToClick.name}`);
     const clickX = targetToClick.region.x + 5;
     const clickY = targetToClick.region.y + 2;
     mouseController.leftClick(
@@ -355,7 +329,13 @@ function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
       clickY,
       globalState.global.display,
     );
+    keypress.sendKey('f8', globalState.global.display);
+    await delay(50);
     lastClickTime = Date.now();
+
+    // NEW: Advance the index for the next attempt, regardless of success
+    lastClickedBattleListIndex = (lastClickedBattleListIndex + 1) % potentialBLTargets.length;
+
   } else {
     // If we couldn't find a matching creature in the game world for any BL entry,
     // it means our pathfinding target is not visually confirmed. Reset index.
@@ -364,12 +344,8 @@ function manageTargetingClicks(pathfindingTarget, currentGameTarget) {
 }
 
 async function manageMovement(pathfindingTarget) {
-  if (!pathfindingTarget || !pathfindingTarget.isReachable) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/setDynamicTarget',
-      payload: null,
-    });
+  if (!pathfindingTarget || !pathfindingTarget.isReachable || !pathfindingTarget.gameCoords) {
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setDynamicTarget', payload: null });
     return;
   }
 
@@ -378,11 +354,7 @@ async function manageMovement(pathfindingTarget) {
     distance: pathfindingTarget.rule.distance,
     targetCreaturePos: pathfindingTarget.gameCoords,
   };
-  parentPort.postMessage({
-    storeUpdate: true,
-    type: 'cavebot/setDynamicTarget',
-    payload: dynamicGoal,
-  });
+  parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setDynamicTarget', payload: dynamicGoal });
 
   if (
     !lastDispatchedVisitedTile ||
@@ -390,18 +362,11 @@ async function manageMovement(pathfindingTarget) {
     lastDispatchedVisitedTile.y !== playerMinimapPosition.y ||
     lastDispatchedVisitedTile.z !== playerMinimapPosition.z
   ) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/addVisitedTile',
-      payload: playerMinimapPosition,
-    });
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/addVisitedTile', payload: playerMinimapPosition });
     lastDispatchedVisitedTile = { ...playerMinimapPosition };
   }
 
-  try {
-    const pathFound = await awaitPathfinderUpdate(1000);
-    if (!pathFound) return;
-  } catch (error) {
+  if (pathfindingStatus !== PATH_STATUS_PATH_FOUND || path.length === 0) {
     return;
   }
 
@@ -416,10 +381,7 @@ async function manageMovement(pathfindingTarget) {
 
   if (pathfindingStatus === PATH_STATUS_PATH_FOUND && path.length > 0) {
     const nextStep = path[0];
-    if (
-      playerMinimapPosition.x === nextStep.x &&
-      playerMinimapPosition.y === nextStep.y
-    ) {
+    if (playerMinimapPosition.x === nextStep.x && playerMinimapPosition.y === nextStep.y) {
       return;
     }
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
@@ -429,16 +391,9 @@ async function manageMovement(pathfindingTarget) {
       keypress.sendKey(dirKey, globalState.global.display);
       lastMovementTime = now;
       try {
-        await awaitWalkConfirmation(
-          posCounterBeforeMove,
-          pathCounterBeforeMove,
-          MOVEMENT_CONFIRMATION_TIMEOUT_MS,
-        );
+        await awaitWalkConfirmation(posCounterBeforeMove, pathCounterBeforeMove, MOVEMENT_CONFIRMATION_TIMEOUT_MS);
       } catch (error) {
-        logger(
-          'error',
-          `[Targeting] Movement confirmation failed: ${error.message}`,
-        );
+        logger('error', `[Targeting] Movement confirmation failed: ${error.message}`);
       }
     }
   }
@@ -451,10 +406,7 @@ async function performTargeting() {
 
   if (!globalState.targeting?.enabled) {
     if (globalState.cavebot?.controlState === 'TARGETING') {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/releaseTargetingControl',
-      });
+      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
     }
     return;
   }
@@ -462,10 +414,7 @@ async function performTargeting() {
   const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
 
   if (!cavebotIsEnabled && controlState !== 'TARGETING') {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/confirmTargetingControl',
-    });
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/confirmTargetingControl' });
     return;
   }
 
@@ -473,19 +422,13 @@ async function performTargeting() {
 
   if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
     if (pathfindingTarget) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/requestTargetingControl',
-      });
+      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
     }
     return;
   }
 
   if (controlState === 'HANDOVER_TO_TARGETING') {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/confirmTargetingControl',
-    });
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/confirmTargetingControl' });
     return;
   }
 
@@ -498,7 +441,7 @@ async function performTargeting() {
 
   const currentGameTarget = globalState.targeting.target;
 
-  // Always manage movement based on the pathfinding target.
+  // Always run the movement logic.
   await manageMovement(pathfindingTarget);
 
   // Only manage clicks if there's a pathfinding target.
@@ -512,10 +455,7 @@ async function performTargeting() {
       clearTargetCommandSent = true;
     }
     if (cavebotIsEnabled) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/releaseTargetingControl',
-      });
+      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
     }
   }
 }
@@ -535,10 +475,7 @@ parentPort.on('message', (message) => {
       globalState = message;
       if (!isInitialized) {
         isInitialized = true;
-        logger(
-          'info',
-          '[TargetingWorker] Initial state received. Worker is now active.',
-        );
+        logger('info', '[TargetingWorker] Initial state received. Worker is now active.');
       }
     }
 
@@ -547,11 +484,9 @@ parentPort.on('message', (message) => {
     }
 
     const newBattleListHash = JSON.stringify(globalState.battleList?.entries);
-    const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures); // NEW
+    const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures);
     const newTargetInstanceId = globalState.targeting?.target?.instanceId;
-    const newTargetingListHash = JSON.stringify(
-      globalState.targeting?.targetingList,
-    );
+    const newTargetingListHash = JSON.stringify(globalState.targeting?.targetingList);
     const newPlayerPosKey = playerMinimapPosition
       ? `${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}`
       : null;
@@ -561,7 +496,7 @@ parentPort.on('message', (message) => {
 
     const shouldProcess =
       newBattleListHash !== lastBattleListHash ||
-      newCreaturesHash !== lastCreaturesHash || // NEW
+      newCreaturesHash !== lastCreaturesHash ||
       newTargetInstanceId !== lastTargetInstanceId ||
       newTargetingListHash !== lastTargetingListHash ||
       newPlayerPosKey !== lastPlayerPosKey ||
@@ -573,7 +508,7 @@ parentPort.on('message', (message) => {
       isProcessing = true;
 
       lastBattleListHash = newBattleListHash;
-      lastCreaturesHash = newCreaturesHash; // NEW
+      lastCreaturesHash = newCreaturesHash;
       lastTargetInstanceId = newTargetInstanceId;
       lastTargetingListHash = newTargetingListHash;
       lastPlayerPosKey = newPlayerPosKey;
@@ -583,8 +518,7 @@ parentPort.on('message', (message) => {
 
       performTargeting()
         .catch((err) => {
-          logger(
-            'error',
+          logger('error',
             '[TargetingWorker] Unhandled error in performTargeting:',
             err,
           );

@@ -1,5 +1,6 @@
 // /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.cc
 // --- Contains all optimizations and fixes ---
+// --- MODIFIED with subtle axis-preference tie-breaking ---
 
 #include "pathfinder.h"
 #include "aStar.h"
@@ -26,7 +27,7 @@ struct SpecialArea {
 namespace AStar {
     static constexpr int BASE_MOVE_COST = 10;
     static constexpr int DIAGONAL_MOVE_COST = 25;
-    static constexpr int DIAGONAL_TIE_PENALTY = 1;
+    static constexpr int DIAGONAL_TIE_PENALTY = 1; // General tie-breaker, still useful
     static const int INF_COST = 0x3f3f3f3f;
     static constexpr int CREATURE_BLOCK_COST = 1000000;
 
@@ -163,7 +164,19 @@ namespace AStar {
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost;
+
+                int tieBreakerCost = 0;
+                if (!isDiagonal) {
+                    int dx_to_end = std::abs(end.x - nx);
+                    int dy_to_end = std::abs(end.y - ny);
+                    if (dx_to_end < dy_to_end && ny == cy) {
+                        tieBreakerCost = 1;
+                    } else if (dy_to_end < dx_to_end && nx == cx) {
+                        tieBreakerCost = 1;
+                    }
+                }
+
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost + tieBreakerCost;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
@@ -179,7 +192,6 @@ namespace AStar {
         return -1;
     }
 
-    // --- OPTIMIZATION 1: isReachable now calls getPathLength ---
     bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
         return getPathLength(start, end, mapData, cost_grid, creaturePositions, onCancelled) != -1;
     }
@@ -264,7 +276,20 @@ namespace AStar {
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost;
+
+                int tieBreakerCost = 0;
+                if (!isDiagonal) {
+                    int dx_to_end = std::abs(end.x - nx);
+                    int dy_to_end = std::abs(end.y - ny);
+                    if (dx_to_end < dy_to_end && ny == cy) {
+                        tieBreakerCost = 1;
+                    } else if (dy_to_end < dx_to_end && nx == cx) {
+                        tieBreakerCost = 1;
+                    }
+                }
+
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost + tieBreakerCost;
+
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
@@ -279,7 +304,6 @@ namespace AStar {
         return path;
     }
 
-    // --- OPTIMIZATION 2: New A* function for finding a path to ANY goal in a set ---
     std::vector<Node> findPathToAny(const Node& start, const std::unordered_set<int>& endIndices, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
         std::vector<Node> path;
         int W = mapData.width;
@@ -373,7 +397,19 @@ namespace AStar {
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost;
+
+                int tieBreakerCost = 0;
+                if (!isDiagonal) {
+                    int dx_to_end = std::abs(heuristicEndX - nx);
+                    int dy_to_end = std::abs(heuristicEndY - ny);
+                    if (dx_to_end < dy_to_end && ny == cy) {
+                        tieBreakerCost = 1;
+                    } else if (dy_to_end < dx_to_end && nx == cx) {
+                        tieBreakerCost = 1;
+                    }
+                }
+
+                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost + tieBreakerCost;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
@@ -389,7 +425,6 @@ namespace AStar {
         return path;
     }
 
-    // --- BUG FIX: Renamed from findTargetTiles back to findBestTargetTile to match the header ---
     std::unordered_set<int> findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions) {
         std::unordered_set<int> target_indices;
         Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
