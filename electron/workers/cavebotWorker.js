@@ -945,17 +945,6 @@ async function performOperation() {
       return;
     }
 
-    // If we are here, controlState is 'CAVEBOT'.
-    // Now, check if we should hand over control.
-    if (targetingIsEnabled) {
-      const hasTarget = globalState.targeting.creatures.some((c) => c.isReachable);
-      if (hasTarget) {
-        postStoreUpdate('cavebot/requestTargetingControl');
-        // The state will change to HANDOVER_TO_TARGETING, and the logic will pause on the next tick.
-      }
-    }
-    // --- End of new control logic ---
-
     // This is the original logic for when targeting returns control. It's still valid.
     if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
       const { waypointIdAtTargetingStart, visitedTiles } = globalState.cavebot;

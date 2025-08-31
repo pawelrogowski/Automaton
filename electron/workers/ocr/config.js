@@ -33,24 +33,28 @@ export const OCR_REGION_CONFIGS = {
     parser: regionParsers.skillsWidget,
     storeAction: 'uiValues/setSkillsWidget',
     allowedChars: CHAR_PRESETS.ALPHANUMERIC + ' .:',
+    throttleMs: 250, // NEW
   },
   chatBoxTabRow: {
     colors: regionDefinitions.chatBoxTabRow?.ocrColors,
     parser: regionParsers.chatBoxTabRow,
     storeAction: 'uiValues/setChatTabs',
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
+    throttleMs: 500, // NEW
   },
   selectCharacterModal: {
     colors: regionDefinitions.selectCharacterModal?.ocrColors,
     parser: regionParsers.selectCharacterModal,
     storeAction: 'uiValues/setSelectCharacterModal',
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
+    throttleMs: 100, // NEW
   },
   vipWidget: {
     colors: regionDefinitions.vipWidget?.ocrColors,
     parser: regionParsers.vipWidget,
     storeAction: 'uiValues/setVipWidget',
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
+    throttleMs: 2000, // NEW
   },
   // REMOVED BATTLE LIST FROM GENERIC CONFIG
   gameWorld: {
@@ -58,5 +62,6 @@ export const OCR_REGION_CONFIGS = {
     parser: regionParsers.gameWorld,
     storeAction: 'ocr/setOcrRegionsText',
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
+    throttleMs: 0, // NEW
   },
 };

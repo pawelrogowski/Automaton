@@ -26,11 +26,11 @@ import {
 // --- Worker Configuration ---
 const MOVEMENT_COOLDOWN_MS = 400;
 const CLICK_CONFIRMATION_TIMEOUT_MS = 400;
-const CLICK_POLL_INTERVAL_MS = 25;
+const CLICK_POLL_INTERVAL_MS = 5;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
 const BORDER_THRESHOLD = 0; // Pixels from the edge of the game world to avoid clicking.
 
-const logger = createLogger({ info: false, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: false });
 
 // --- Worker State ---
 let isInitialized = false;
@@ -317,6 +317,7 @@ async function clickAndConfirmTarget(targetToClick) {
   }
 
   try {
+    const clickTime = performance.now();
     mouseController.leftClick(
       parseInt(globalState.global.windowId),
       targetToClick.absoluteCoords.x,
@@ -325,27 +326,33 @@ async function clickAndConfirmTarget(targetToClick) {
     );
     await delay(50);
     keypress.sendKey('f8', globalState.global.display);
-    await delay(50);
     logger('info', `[Targeting] Attempting to target: ${targetToClick.name}`);
+
+    const startTime = performance.now();
+    while (performance.now() - startTime < CLICK_CONFIRMATION_TIMEOUT_MS) {
+      const latestGameTarget = globalState.targeting.target;
+      if (
+        latestGameTarget &&
+        latestGameTarget.instanceId === targetToClick.instanceId
+      ) {
+        const confirmationTime = performance.now();
+        const timeToConfirm = confirmationTime - clickTime;
+        logger(
+          'info',
+          `[PERF] Time from click to state confirmation: ${timeToConfirm.toFixed(
+            2,
+          )}ms`,
+        );
+        return true;
+      }
+      await delay(CLICK_POLL_INTERVAL_MS);
+    }
   } catch (error) {
     logger(
       'error',
       `[Targeting] Failed to send click command: ${error.message}`,
     );
     return false;
-  }
-
-  const startTime = Date.now();
-  while (Date.now() - startTime < CLICK_CONFIRMATION_TIMEOUT_MS) {
-    const latestGameTarget = globalState.targeting.target;
-    if (
-      latestGameTarget &&
-      latestGameTarget.instanceId === targetToClick.instanceId
-    ) {
-      logger('info', `[Targeting] Confirmed target: ${targetToClick.name}`);
-      return true;
-    }
-    await delay(CLICK_POLL_INTERVAL_MS);
   }
 
   logger(
@@ -423,8 +430,7 @@ async function performTargeting() {
     // No more targets.
     // Check if there was a target in the previous cycle and if we haven't already sent the clear command.
     if (currentGameTarget && !clearTargetCommandSent) {
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
+      keypress.sendKey('f8', globalState.global.display); // Clear red box
       clearTargetCommandSent = true; // Mark that we've sent the command
     }
 
@@ -439,6 +445,26 @@ async function performTargeting() {
     return;
   }
 
+  // If we have a valid target, but it's not the one selected in-game, we must click it first.
+  if (bestTarget.instanceId !== currentGameTarget?.instanceId) {
+    await clickAndConfirmTarget(bestTarget);
+    // After attempting to click, we will return and wait for the next cycle.
+    // This ensures we don't try to move towards a target that we haven't successfully clicked on yet.
+    return;
+  }
+
+  // If we reach here, we have a confirmed target lock.
+  const dynamicGoal = {
+    stance: bestTarget.stance,
+    distance: bestTarget.stance === 'Stand' ? 0 : bestTarget.distance,
+    targetCreaturePos: bestTarget.gameCoords,
+  };
+  parentPort.postMessage({
+    storeUpdate: true,
+    type: 'cavebot/setDynamicTarget',
+    payload: dynamicGoal,
+  });
+
   if (
     !lastDispatchedVisitedTile ||
     lastDispatchedVisitedTile.x !== playerMinimapPosition.x ||
@@ -452,24 +478,6 @@ async function performTargeting() {
     });
     lastDispatchedVisitedTile = { ...playerMinimapPosition };
   }
-
-  if (bestTarget.instanceId !== currentGameTarget?.instanceId) {
-    const clickedSuccessfully = await clickAndConfirmTarget(bestTarget);
-    if (!clickedSuccessfully) {
-      return;
-    }
-  }
-
-  const dynamicGoal = {
-    stance: bestTarget.stance,
-    distance: bestTarget.stance === 'Stand' ? 0 : bestTarget.distance,
-    targetCreaturePos: bestTarget.gameCoords,
-  };
-  parentPort.postMessage({
-    storeUpdate: true,
-    type: 'cavebot/setDynamicTarget',
-    payload: dynamicGoal,
-  });
 
   try {
     const pathFound = await awaitPathfinderUpdate(1000);
