@@ -904,33 +904,61 @@ function findCurrentWaypoint() {
 
 async function performOperation() {
   try {
-    if (!globalState) return;
-    if (
-      !isInitialized ||
-      !globalState.cavebot?.enabled ||
-      !globalState.global?.windowId
-    ) {
-      if (fsmState !== 'IDLE') resetInternalState();
+    if (!globalState || !isInitialized || !globalState.global?.windowId) {
       return;
     }
-    const { controlState, waypointIdAtTargetingStart, visitedTiles } =
-      globalState.cavebot;
 
-    if (controlState === 'HANDOVER_TO_TARGETING') {
-      resetInternalState();
-      postStoreUpdate('cavebot/confirmTargetingControl');
-      lastControlState = controlState;
+    const { enabled: cavebotIsEnabled, controlState } = globalState.cavebot;
+    const targetingIsEnabled = globalState.targeting?.enabled;
+
+    // --- NEW: Main execution guard ---
+    if (!cavebotIsEnabled) {
+      if (fsmState !== 'IDLE') {
+        resetInternalState();
+      }
+      // If cavebot is disabled, it can't do anything.
+      // The targeting worker is responsible for taking control if it needs to.
       return;
     }
-    if (controlState !== 'CAVEBOT') {
-      if (lastControlState === 'CAVEBOT') {
+
+    // --- NEW: Refactored control logic ---
+    if (controlState === 'TARGETING') {
+      // If targeting has control, cavebot should be idle.
+      // But if targeting was just disabled, cavebot must reclaim control.
+      if (!targetingIsEnabled) {
+        logger('info', '[Cavebot] Targeting disabled, reclaiming control.');
+        postStoreUpdate('cavebot/setControlState', 'CAVEBOT');
+        resetInternalState();
+      }
+      if (lastControlState !== 'TARGETING') {
         resetInternalState();
       }
       lastControlState = controlState;
       return;
     }
 
+    if (controlState === 'HANDOVER_TO_TARGETING') {
+      // This is a transient state. Cavebot should just wait for it to become 'TARGETING'.
+      // If targeting gets disabled during this, the above block will catch it on the next tick.
+      resetInternalState();
+      lastControlState = controlState;
+      return;
+    }
+
+    // If we are here, controlState is 'CAVEBOT'.
+    // Now, check if we should hand over control.
+    if (targetingIsEnabled) {
+      const hasTarget = globalState.targeting.creatures.some((c) => c.isReachable);
+      if (hasTarget) {
+        postStoreUpdate('cavebot/requestTargetingControl');
+        // The state will change to HANDOVER_TO_TARGETING, and the logic will pause on the next tick.
+      }
+    }
+    // --- End of new control logic ---
+
+    // This is the original logic for when targeting returns control. It's still valid.
     if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
+      const { waypointIdAtTargetingStart, visitedTiles } = globalState.cavebot;
       let skippedWaypoint = false;
       if (
         waypointIdAtTargetingStart &&
@@ -1096,7 +1124,9 @@ parentPort.on('message', (message) => {
         workerData.sharedLuaGlobals[key] = value;
         logger(
           'debug',
-          `[CavebotWorker] Received lua_global_broadcast: ${key} = ${value}. Current sharedLuaGlobals: ${JSON.stringify(workerData.sharedLuaGlobals)}`,
+          `[CavebotWorker] Received lua_global_broadcast: ${key} = ${value}. Current sharedLuaGlobals: ${JSON.stringify(
+            workerData.sharedLuaGlobals,
+          )}`,
         );
       }
     } else if (typeof message === 'object' && !message.type) {

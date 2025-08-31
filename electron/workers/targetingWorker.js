@@ -26,7 +26,7 @@ import {
 // --- Worker Configuration ---
 const MOVEMENT_COOLDOWN_MS = 400;
 const CLICK_CONFIRMATION_TIMEOUT_MS = 400;
-const CLICK_POLL_INTERVAL_MS = 5;
+const CLICK_POLL_INTERVAL_MS = 25;
 const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
 const BORDER_THRESHOLD = 0; // Pixels from the edge of the game world to avoid clicking.
 
@@ -44,6 +44,7 @@ let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
 let lastMovementTime = 0;
 let lastDispatchedVisitedTile = null;
+let clearTargetCommandSent = false; // NEW: Flag to prevent F8 spam.
 
 // --- Change Detection State ---
 let lastCreaturesHash = null;
@@ -51,6 +52,8 @@ let lastTargetInstanceId = null;
 let lastTargetingListHash = null;
 let lastPlayerPosKey = null;
 let lastControlState = 'CAVEBOT';
+let lastTargetingEnabled = false;
+let lastCavebotEnabled = false;
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
@@ -322,6 +325,7 @@ async function clickAndConfirmTarget(targetToClick) {
     );
     await delay(50);
     keypress.sendKey('f8', globalState.global.display);
+    await delay(50);
     logger('info', `[Targeting] Attempting to target: ${targetToClick.name}`);
   } catch (error) {
     logger(
@@ -352,49 +356,87 @@ async function clickAndConfirmTarget(targetToClick) {
 }
 
 async function performTargeting() {
-  if (
-    isShuttingDown ||
-    !isInitialized ||
-    !globalState?.targeting?.enabled ||
-    !globalState?.global?.display
-  ) {
+  if (isShuttingDown || !isInitialized || !globalState?.global?.display) {
     return;
   }
 
-  updateSABData();
-  if (!playerMinimapPosition) return;
+  // 1. Handle the disabled case first.
+  if (!globalState.targeting?.enabled) {
+    if (globalState.cavebot?.controlState === 'TARGETING') {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
+    }
+    return;
+  }
 
-  const { controlState } = globalState.cavebot;
-  const bestTarget = selectBestTarget();
-  const currentGameTarget = globalState.targeting.target;
+  // If we get here, targeting is enabled.
+  const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
 
-  switch (controlState) {
-    case 'CAVEBOT':
+  // 2. If cavebot is disabled, targeting MUST be in control.
+  if (!cavebotIsEnabled) {
+    if (controlState !== 'TARGETING') {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/confirmTargetingControl',
+      });
+      return; // Wait for state update before proceeding
+    }
+  } else {
+    // 3. If cavebot is enabled, we need to negotiate.
+    if (controlState === 'CAVEBOT') {
+      const bestTarget = selectBestTarget();
       if (bestTarget) {
         parentPort.postMessage({
           storeUpdate: true,
           type: 'cavebot/requestTargetingControl',
         });
       }
-      return;
+      return; // Let cavebot run until handover is complete.
+    } else if (controlState === 'HANDOVER_TO_TARGETING') {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/confirmTargetingControl',
+      });
+      return; // Wait for next tick.
+    }
+  }
 
-    case 'HANDOVER_TO_TARGETING':
-      return;
+  // 4. If we are here, we should have control.
+  if (globalState.cavebot.controlState !== 'TARGETING') {
+    // We should have handled all other cases. If we are here, something is wrong, so we wait.
+    return;
+  }
 
-    case 'TARGETING':
-      if (!bestTarget) {
-        keypress.sendKey('f8', globalState.global.display);
-        parentPort.postMessage({
-          storeUpdate: true,
-          type: 'cavebot/releaseTargetingControl',
-        });
-        lastDispatchedVisitedTile = null;
-        return;
-      }
-      break;
+  updateSABData();
+  if (!playerMinimapPosition) return;
 
-    default:
-      return;
+  // --- Main targeting logic proceeds ---
+  const bestTarget = selectBestTarget();
+  const currentGameTarget = globalState.targeting.target;
+
+  if (bestTarget) {
+    // If we have a target, reset the flag that tracks if we've cleared the target.
+    clearTargetCommandSent = false;
+  } else {
+    // No more targets.
+    // Check if there was a target in the previous cycle and if we haven't already sent the clear command.
+    if (currentGameTarget && !clearTargetCommandSent) {
+      keypress.sendKey('f8', globalState.global.display);
+      await delay(50);
+      clearTargetCommandSent = true; // Mark that we've sent the command
+    }
+
+    // Only release control if cavebot is enabled and can take over.
+    if (cavebotIsEnabled) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
+    }
+    // If cavebot is disabled, do nothing. Keep control and wait.
+    return;
   }
 
   if (
@@ -531,13 +573,17 @@ parentPort.on('message', (message) => {
       ? `${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}`
       : null;
     const newControlState = globalState.cavebot?.controlState;
+    const newTargetingEnabled = globalState.targeting?.enabled;
+    const newCavebotEnabled = globalState.cavebot?.enabled;
 
     const shouldProcess =
       newCreaturesHash !== lastCreaturesHash ||
       newTargetInstanceId !== lastTargetInstanceId ||
       newTargetingListHash !== lastTargetingListHash ||
       newPlayerPosKey !== lastPlayerPosKey ||
-      newControlState !== lastControlState;
+      newControlState !== lastControlState ||
+      newTargetingEnabled !== lastTargetingEnabled ||
+      newCavebotEnabled !== lastCavebotEnabled;
 
     if (shouldProcess) {
       isProcessing = true;
@@ -548,6 +594,8 @@ parentPort.on('message', (message) => {
       lastTargetingListHash = newTargetingListHash;
       lastPlayerPosKey = newPlayerPosKey;
       lastControlState = newControlState;
+      lastTargetingEnabled = newTargetingEnabled;
+      lastCavebotEnabled = newCavebotEnabled;
 
       performTargeting()
         .catch((err) => {

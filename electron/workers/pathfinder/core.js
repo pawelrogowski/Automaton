@@ -11,6 +11,10 @@ import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
   PLAYER_Z_INDEX,
+  PATHFINDING_STATUS_INDEX,
+  PATH_STATUS_IDLE,
+  PATH_LENGTH_INDEX,
+  PATH_UPDATE_COUNTER_INDEX,
 } from '../sharedConstants.js';
 
 const logger = createLogger({ info: true, error: true, debug: false });
@@ -90,8 +94,24 @@ function handleMessage(message) {
       return;
     }
 
-    if (!state || !state.gameState || !state.targeting) {
-      // Ensure targeting slice exists
+    if (!state || !state.gameState || !state.targeting || !state.cavebot) {
+      // Ensure necessary slices exist
+      return;
+    }
+
+    // NEW: Guard against running pathfinder if both modules are disabled
+    if (pathDataArray && !state.cavebot.enabled && !state.targeting.enabled) {
+      // If pathfinder is already idle, no need to update SAB again.
+      if (
+        Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) ===
+        PATH_STATUS_IDLE
+      ) {
+        return;
+      }
+      // Set status to idle and update counter to notify consumers.
+      Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, PATH_STATUS_IDLE);
+      Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
+      Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
       return;
     }
 

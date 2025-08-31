@@ -60,7 +60,8 @@ const cavebotSlice = createSlice({
      * and cleaned up its internal state in response to the handover request.
      */
     confirmTargetingControl: (state) => {
-      if (state.controlState === 'HANDOVER_TO_TARGETING') {
+      // Allow taking control from a handover state OR from an idle/disabled cavebot.
+      if (state.controlState === 'HANDOVER_TO_TARGETING' || state.controlState === 'CAVEBOT') {
         state.controlState = 'TARGETING';
       }
     },
