@@ -28,6 +28,18 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().gameState?.mppc,
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'characterName', {
+    get: () => getState().gameState?.characterName,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'lastCharacterName', {
+    get: () => getState().gameState?.lastCharacterName,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'lastLabel', {
+    get: () => getState().cavebot?.lastLabel,
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'cap', {
     get: () => getState().uiValues?.skillsWidget?.capacity || 0,
     enumerable: true,
@@ -805,6 +817,8 @@ export const createLuaApi = async (context) => {
         }
         await keyPress(display, 'Escape');
         await wait(100);
+        await keyPress(display, 'Escape');
+        await wait(100);
         const emailInput = loginModal.children?.emailInput;
         if (!emailInput) {
           logger('warn', `[Lua/${scriptName}] emailInput not found`);
@@ -888,7 +902,6 @@ export const createLuaApi = async (context) => {
         name.toLowerCase().includes(targetCharacterLower),
       );
       if (!targetCharacterFound) {
-        await keyPress(display, character[0]);
         await wait(100);
         const updatedState = getState();
         const updatedCharacterData =

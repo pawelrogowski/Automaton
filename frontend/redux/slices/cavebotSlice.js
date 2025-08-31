@@ -87,6 +87,14 @@ const cavebotSlice = createSlice({
       const newWptId = action.payload;
       if (state.wptId !== newWptId) {
         state.wptId = newWptId;
+
+        const currentWaypoint = Object.values(state.waypointSections)
+          .flatMap((section) => section.waypoints)
+          .find((waypoint) => waypoint.id === newWptId);
+
+        if (currentWaypoint && currentWaypoint.label) {
+          state.lastLabel = currentWaypoint.label;
+        }
       }
     },
     setwptSelection: (state, action) => {

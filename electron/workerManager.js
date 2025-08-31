@@ -29,6 +29,7 @@ const DEFAULT_WORKER_CONFIG = {
   cavebotWorker: true,
   targetingWorker: true,
   pathfinderWorker: true,
+  windowTitleMonitor: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -79,6 +80,7 @@ const WORKER_STATE_DEPENDENCIES = {
   ],
   captureWorker: ['global'],
   pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
+  windowTitleMonitor: ['global', 'gameState'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -528,18 +530,30 @@ class WorkerManager {
 
   stopWorker(name) {
     const workerEntry = this.workers.get(name);
-    if (!workerEntry?.worker) return Promise.resolve();
+    // FIX: If worker doesn't exist or is already stopping, do nothing.
+    if (!workerEntry?.worker || workerEntry.stopping) {
+      return Promise.resolve();
+    }
+    // FIX: Mark the worker as stopping to prevent duplicate shutdown commands.
+    workerEntry.stopping = true;
+
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         if (this.workers.has(name) && !workerEntry.worker.killed) {
+          log(
+            'warn',
+            `[Worker Manager] Worker ${name} did not exit gracefully. Forcing termination.`,
+          );
           workerEntry.worker.terminate();
         }
         resolve();
       }, 5000);
+
       workerEntry.worker.once('exit', () => {
         clearTimeout(timeout);
         resolve();
       });
+
       if (
         /^[0-9a-fA-F]{8}-/.test(name) ||
         GRACEFUL_SHUTDOWN_WORKERS.has(name)
@@ -719,6 +733,11 @@ class WorkerManager {
           !this.workers.has('targetingWorker')
         )
           this.startWorker('targetingWorker');
+        if (
+          this.workerConfig.windowTitleMonitor &&
+          !this.workers.has('windowTitleMonitor')
+        )
+          this.startWorker('windowTitleMonitor');
       } else {
         if (this.workers.size > 0) {
           log(

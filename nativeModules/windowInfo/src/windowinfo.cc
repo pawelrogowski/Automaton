@@ -6,6 +6,7 @@
 #include <string>
 #include <cstring>
 #include <vector>
+#include <utility>
 
 // Structure to hold detailed window information
 struct WindowInfo {
@@ -51,6 +52,33 @@ struct WindowInfo {
 };
 
 // ---------------------------------------------------------------------
+// Helper function to get display and window from N-API info
+bool GetDisplayAndWindow(const Napi::CallbackInfo& info, Display** display, Window* window) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsObject()) {
+        Napi::TypeError::New(env, "Object with windowId and display is required").ThrowAsJavaScriptException();
+        return false;
+    }
+
+    Napi::Object obj = info[0].As<Napi::Object>();
+    if (!obj.Has("windowId") || !obj.Get("windowId").IsNumber() || !obj.Has("display") || !obj.Get("display").IsString()) {
+        Napi::TypeError::New(env, "Object must have a numeric 'windowId' and a string 'display'").ThrowAsJavaScriptException();
+        return false;
+    }
+
+    uint64_t window_id = obj.Get("windowId").As<Napi::Number>().Int64Value();
+    std::string display_name = obj.Get("display").As<Napi::String>().Utf8Value();
+
+    *window = (Window)window_id;
+    *display = XOpenDisplay(display_name.c_str());
+
+    if (!*display) {
+        Napi::Error::New(env, "Cannot open display: " + display_name).ThrowAsJavaScriptException();
+        return false;
+    }
+    return true;
+}
+
 // Existing helper functions
 
 bool GetWindowProperty(Display* display, Window window, Atom property, Atom type,
@@ -66,7 +94,6 @@ bool GetWindowProperty(Display* display, Window window, Atom property, Atom type
     return false;
 }
 
-// Helper function to get window class name
 std::string GetWindowClassName(Display* display, Window window) {
     XClassHint class_hint;
     std::string class_name;
@@ -83,7 +110,6 @@ std::string GetWindowClassName(Display* display, Window window) {
     return class_name;
 }
 
-// Helper function to find the actual application window
 Window FindActualWindow(Display* display, Window start_window, int root_x, int root_y) {
     Window target = start_window;
     Window root_return, parent_return, *children;
@@ -113,23 +139,18 @@ Window FindActualWindow(Display* display, Window start_window, int root_x, int r
     return target;
 }
 
-// Get window dimensions (basic version)
+// Get window dimensions
 Napi::Object GetWindowDimensions(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Object dimensions = Napi::Object::New(env);
+    Display* display = nullptr;
+    Window target_window = 0;
 
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Window ID required").ThrowAsJavaScriptException();
+    if (!GetDisplayAndWindow(info, &display, &target_window)) {
         return dimensions;
     }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    Display* display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return dimensions;
-    }
+
     XWindowAttributes attributes;
-    Window target_window = (Window)window_id;
     if (XGetWindowAttributes(display, target_window, &attributes)) {
         dimensions.Set("width", attributes.width);
         dimensions.Set("height", attributes.height);
@@ -144,17 +165,13 @@ Napi::Object GetWindowDimensions(const Napi::CallbackInfo& info) {
 // Get window name
 Napi::String GetWindowName(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Window ID required").ThrowAsJavaScriptException();
+    Display* display = nullptr;
+    Window target_window = 0;
+
+    if (!GetDisplayAndWindow(info, &display, &target_window)) {
         return Napi::String::New(env, "");
     }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    Display* display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return Napi::String::New(env, "");
-    }
-    Window target_window = (Window)window_id;
+
     char* window_name = NULL;
     std::string name;
     if (XFetchName(display, target_window, &window_name)) {
@@ -165,21 +182,17 @@ Napi::String GetWindowName(const Napi::CallbackInfo& info) {
     return Napi::String::New(env, name);
 }
 
-// Get window class (basic version)
+// Get window class
 Napi::Object GetWindowClass(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Object classInfo = Napi::Object::New(env);
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Window ID required").ThrowAsJavaScriptException();
+    Display* display = nullptr;
+    Window target_window = 0;
+
+    if (!GetDisplayAndWindow(info, &display, &target_window)) {
         return classInfo;
     }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    Display* display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return classInfo;
-    }
-    Window target_window = (Window)window_id;
+
     XClassHint class_hint;
     if (XGetClassHint(display, target_window, &class_hint)) {
         classInfo.Set("className", class_hint.res_class ? class_hint.res_class : "");
@@ -271,20 +284,16 @@ Napi::Number GetActiveWindow(const Napi::CallbackInfo& info) {
     return Napi::Number::New(env, (double)activeWindow);
 }
 
-// Get window state (basic version)
+// Get window state
 Napi::String GetWindowState(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Window ID required").ThrowAsJavaScriptException();
+    Display* display = nullptr;
+    Window target_window = 0;
+
+    if (!GetDisplayAndWindow(info, &display, &target_window)) {
         return Napi::String::New(env, "unknown");
     }
-    uint64_t window_id = info[0].As<Napi::Number>().Int64Value();
-    Display* display = XOpenDisplay(NULL);
-    if (!display) {
-        Napi::Error::New(env, "Cannot open display").ThrowAsJavaScriptException();
-        return Napi::String::New(env, "unknown");
-    }
-    Window target_window = (Window)window_id;
+
     Atom* properties = NULL;
     unsigned char* data = NULL;
     unsigned long nitems;
@@ -386,19 +395,78 @@ Napi::Object GetWindowInfoByClick(const Napi::CallbackInfo& info) {
     return allInfo;
 }
 
+// Rewritten for efficiency and to take display into account
 Napi::Object GetAllWindowInfo(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Object allInfo = Napi::Object::New(env);
-    if (info.Length() < 1 || !info[0].IsNumber()) {
-        Napi::TypeError::New(env, "Window ID required").ThrowAsJavaScriptException();
+    Display* display = nullptr;
+    Window target_window = 0;
+
+    if (!GetDisplayAndWindow(info, &display, &target_window)) {
         return allInfo;
     }
-    allInfo.Set("dimensions", GetWindowDimensions(info));
-    allInfo.Set("name", GetWindowName(info));
-    allInfo.Set("class", GetWindowClass(info));
-    allInfo.Set("state", GetWindowState(info));
+
+    // Get Dimensions
+    XWindowAttributes attributes;
+    if (XGetWindowAttributes(display, target_window, &attributes)) {
+        Napi::Object dimensions = Napi::Object::New(env);
+        dimensions.Set("width", attributes.width);
+        dimensions.Set("height", attributes.height);
+        dimensions.Set("x", attributes.x);
+        dimensions.Set("y", attributes.y);
+        dimensions.Set("visible", attributes.map_state == IsViewable);
+        allInfo.Set("dimensions", dimensions);
+    }
+
+    // Get Name
+    char* window_name = NULL;
+    std::string name;
+    if (XFetchName(display, target_window, &window_name) && window_name) {
+        name = window_name;
+        XFree(window_name);
+    }
+    allInfo.Set("name", Napi::String::New(env, name));
+
+    // Get Class
+    XClassHint class_hint;
+    Napi::Object classInfo = Napi::Object::New(env);
+    if (XGetClassHint(display, target_window, &class_hint)) {
+        classInfo.Set("className", class_hint.res_class ? class_hint.res_class : "");
+        classInfo.Set("instanceName", class_hint.res_name ? class_hint.res_name : "");
+        if (class_hint.res_name) XFree(class_hint.res_name);
+        if (class_hint.res_class) XFree(class_hint.res_class);
+    }
+    allInfo.Set("class", classInfo);
+
+    // Get State
+    Atom* properties = NULL;
+    unsigned char* data = NULL;
+    unsigned long nitems;
+    Atom _NET_WM_STATE = XInternAtom(display, "_NET_WM_STATE", False);
+    std::string state = "normal";
+    if (GetWindowProperty(display, target_window, _NET_WM_STATE, XA_ATOM, &data, &nitems)) {
+        properties = (Atom*)data;
+        Atom _NET_WM_STATE_HIDDEN = XInternAtom(display, "_NET_WM_STATE_HIDDEN", False);
+        Atom _NET_WM_STATE_MAXIMIZED_VERT = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+        Atom _NET_WM_STATE_MAXIMIZED_HORZ = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
+        bool is_hidden = false;
+        bool is_maximized_vert = false;
+        bool is_maximized_horz = false;
+        for (unsigned long i = 0; i < nitems; i++) {
+            if (properties[i] == _NET_WM_STATE_HIDDEN) is_hidden = true;
+            if (properties[i] == _NET_WM_STATE_MAXIMIZED_VERT) is_maximized_vert = true;
+            if (properties[i] == _NET_WM_STATE_MAXIMIZED_HORZ) is_maximized_horz = true;
+        }
+        if (is_hidden) state = "minimized";
+        else if (is_maximized_vert && is_maximized_horz) state = "maximized";
+        XFree(data);
+    }
+    allInfo.Set("state", Napi::String::New(env, state));
+
+    XCloseDisplay(display);
     return allInfo;
 }
+
 
 // ---------------------------------------------------------------------
 // Extended window info collection for GetWindowList
@@ -564,8 +632,6 @@ void CollectWindowInfo(Display* display, Window window, std::vector<WindowInfo>&
     }
 }
 
-// New function: Get list of windows (filtered) with as much info as possible
-// In this example, we only include windows with class "Tibia" and dimensions > 100x100.
 Napi::Array GetWindowList(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Array windowArray = Napi::Array::New(env);
@@ -576,7 +642,6 @@ Napi::Array GetWindowList(const Napi::CallbackInfo& info) {
         std::string display_name = ":" + std::to_string(i);
         Display* display = XOpenDisplay(display_name.c_str());
         if (!display) {
-            // Display not found or cannot be opened, try next
             continue;
         }
 
@@ -587,7 +652,6 @@ Napi::Array GetWindowList(const Napi::CallbackInfo& info) {
 
     uint32_t index = 0;
     for (size_t i = 0; i < all_results.size(); i++) {
-        // Filter: only include if name contains "Tibia" and dimensions > 100x100
         if (all_results[i].name.find("Tibia") != std::string::npos && all_results[i].width > 100 && all_results[i].height > 100) {
             Napi::Object obj = Napi::Object::New(env);
             obj.Set("windowId", Napi::Number::New(env, (double)all_results[i].windowId));
