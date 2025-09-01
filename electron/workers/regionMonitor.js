@@ -3,7 +3,6 @@ import { performance } from 'perf_hooks';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
 import findSequences from 'find-sequences-native';
-import { FrameUpdateManager } from '../utils/frameUpdateManager.js'; // NEW: Import the helper
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
@@ -27,7 +26,6 @@ let lastWidth = 0;
 let lastHeight = 0;
 let isShuttingDown = false;
 let isScanning = false;
-const frameUpdateManager = new FrameUpdateManager(); // NEW: Instantiate the manager
 
 // --- Performance tracking ---
 let scanCount = 0;
@@ -364,14 +362,6 @@ async function mainLoop() {
 
       const width = Atomics.load(syncArray, WIDTH_INDEX);
       const height = Atomics.load(syncArray, HEIGHT_INDEX);
-      const dimensionsChanged = width !== lastWidth || height !== lastHeight;
-
-      // MODIFIED: Use the manager to decide if a scan is needed.
-      // A scan is forced if dimensions change, otherwise it depends on dirty rects.
-      if (!frameUpdateManager.shouldProcess() && !dimensionsChanged) {
-        await delay(MIN_LOOP_DELAY_MS);
-        continue;
-      }
 
       if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 1) {
         if (Object.keys(lastKnownRegions).length > 0) {
@@ -430,18 +420,10 @@ async function mainLoop() {
 
 parentPort.on('message', (message) => {
   try {
-    // NEW: Delegate rect accumulation to the manager
-    if (message.type === 'frame-update') {
-      frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
-      return;
-    }
-
     if (message.type === 'shutdown') {
       console.log('[RegionMonitor] Received shutdown command.');
       isShuttingDown = true;
     }
-    // State updates are no longer needed for this worker's core logic,
-    // as it only finds regions and doesn't depend on game state.
   } catch (err) {
     console.error('[RegionMonitor] Error handling message:', err);
   }

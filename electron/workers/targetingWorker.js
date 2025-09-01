@@ -211,11 +211,7 @@ const updateSABData = () => {
 };
 
 function selectBestTargetFromGameWorld() {
-  const {
-    creatures,
-    targetingList,
-    target: currentGameTarget,
-  } = globalState.targeting;
+  const { creatures, targetingList } = globalState.targeting;
   if (
     !creatures ||
     creatures.length === 0 ||
@@ -226,11 +222,13 @@ function selectBestTargetFromGameWorld() {
   }
 
   const reachableCreatures = creatures.filter((c) => c.isReachable);
+  const pathfinderTargetInstanceId =
+    globalState.cavebot?.dynamicTarget?.targetInstanceId;
 
   let stickinessBonus = 0;
-  if (currentGameTarget) {
+  if (pathfinderTargetInstanceId) {
     const currentTargetOnScreen = reachableCreatures.find(
-      (c) => c.instanceId === currentGameTarget.instanceId,
+      (c) => c.instanceId === pathfinderTargetInstanceId,
     );
     if (currentTargetOnScreen) {
       const healthTag = getHealthTag(100);
@@ -259,8 +257,8 @@ function selectBestTargetFromGameWorld() {
 
       let effectivePriority = rule.priority;
       if (
-        currentGameTarget &&
-        creature.instanceId === currentGameTarget.instanceId
+        pathfinderTargetInstanceId &&
+        creature.instanceId === pathfinderTargetInstanceId
       ) {
         effectivePriority += stickinessBonus;
       }
@@ -272,15 +270,11 @@ function selectBestTargetFromGameWorld() {
     return null;
   }
 
-  // --- START: MODIFICATION ---
   targetableCreatures.sort((a, b) => {
-    // 1. Primary Sort: by effective priority (descending)
     if (a.effectivePriority !== b.effectivePriority) {
       return b.effectivePriority - a.effectivePriority;
     }
 
-    // 2. Secondary Sort (Tie-breaker): by Chebyshev distance (ascending)
-    // This is only used if priorities are identical.
     if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
       const distA = Math.max(
         Math.abs(a.gameCoords.x - playerMinimapPosition.x),
@@ -293,10 +287,8 @@ function selectBestTargetFromGameWorld() {
       return distA - distB;
     }
 
-    // Fallback to original float distance if gameCoords are not available
     return a.distance - b.distance;
   });
-  // --- END: MODIFICATION ---
 
   return targetableCreatures[0];
 }

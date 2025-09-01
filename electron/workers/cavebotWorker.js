@@ -35,11 +35,8 @@ import {
 
 const MAIN_LOOP_INTERVAL = 25;
 const STATE_CHANGE_POLL_INTERVAL = 5;
-const PRUNE_DISTANCE_THRESHOLD = 8;
 
-// ======================= FIX: Set the retry limit to 1 =======================
 const MAX_SCRIPT_RETRIES = 1;
-// =============================================================================
 
 const config = {
   actionStateChangeTimeoutMs: 200,
@@ -120,10 +117,12 @@ const getFreshState = () =>
 
 const updateSABData = () => {
   if (playerPosArray) {
+    // ======================= FIX: Corrected variable from SAB to TypedArray view =======================
     const newPlayerPosCounter = Atomics.load(
-      playerPosArray,
+      playerPosArray, // <-- This must be the Int32Array view, not the raw SharedArrayBuffer.
       PLAYER_POS_UPDATE_COUNTER_INDEX,
     );
+    // ===================================================================================================
     if (newPlayerPosCounter > lastPlayerPosCounter) {
       playerMinimapPosition = {
         x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
@@ -171,28 +170,7 @@ const updateSABData = () => {
 
       if (counterBeforeRead === counterAfterRead) {
         consistentRead = true;
-        let finalPath = tempPath;
-
-        if (playerMinimapPosition && tempPath.length > 0) {
-          let closestIndex = -1;
-          let minDistance = Infinity;
-
-          for (let i = 0; i < tempPath.length; i++) {
-            const distance = getDistance(playerMinimapPosition, tempPath[i]);
-            if (distance < minDistance) {
-              minDistance = distance;
-              closestIndex = i;
-            }
-          }
-
-          if (closestIndex !== -1 && minDistance < PRUNE_DISTANCE_THRESHOLD) {
-            finalPath = tempPath.slice(closestIndex);
-          } else {
-            finalPath = [];
-          }
-        }
-
-        path = finalPath;
+        path = tempPath;
         pathfindingStatus = tempPathfindingStatus;
         pathChebyshevDistance = tempPathChebyshevDistance;
         lastPathDataCounter = counterAfterRead;
@@ -328,11 +306,11 @@ const goToWpt = async (index) => {
   }
 };
 
-const handleWalkAction = async (targetWaypoint) => {
-  const nextStep = path[0] || targetWaypoint;
-  if (!nextStep) {
+const handleWalkAction = async () => {
+  if (!path || path.length === 0) {
     return;
   }
+  const nextStep = path[0];
   if (
     playerMinimapPosition.x === nextStep.x &&
     playerMinimapPosition.y === nextStep.y
@@ -657,7 +635,6 @@ const handleDoorAction = async (targetWaypoint) => {
   return moved;
 };
 
-// ======================= FIX: Implement error handling and retry logic =======================
 const handleScriptAction = async (targetWpt) => {
   if (!luaExecutor || !luaExecutor.isInitialized) {
     await delay(100);
@@ -696,7 +673,6 @@ const handleScriptAction = async (targetWpt) => {
     }
   }
 };
-// ==============================================================================================
 
 const awaitWalkConfirmation = (
   posCounterBeforeMove,
@@ -760,8 +736,8 @@ const fsm = {
   },
   EVALUATING_WAYPOINT: {
     execute: async (context) => {
-      const { playerPos, targetWaypoint, status, path, chebyshevDist } =
-        context;
+      const { playerPos, targetWaypoint, status, chebyshevDist } = context;
+
       switch (targetWaypoint.type) {
         case 'Script':
           return 'EXECUTING_SCRIPT';
@@ -799,22 +775,28 @@ const fsm = {
         default:
           break;
       }
-      if (
-        (status === PATH_STATUS_PATH_FOUND ||
-          status === PATH_STATUS_WAYPOINT_REACHED) &&
-        Array.isArray(path) &&
-        path.length === 0 &&
-        chebyshevDist > 0
-      ) {
-        return 'WALKING';
-      }
+
       if (status === PATH_STATUS_WAYPOINT_REACHED) {
         await advanceToNextWaypoint();
         return 'IDLE';
       }
+
       switch (status) {
         case PATH_STATUS_PATH_FOUND:
-          if (path.length > 0) return 'WALKING';
+          if (path.length > 0) {
+            const isStalePath = path.some(
+              (p) => p.x === playerPos.x && p.y === playerPos.y,
+            );
+            if (isStalePath) {
+              logger(
+                'debug',
+                '[Cavebot] Stale path detected (player is on path). Awaiting new path.',
+              );
+              path = [];
+              return 'EVALUATING_WAYPOINT';
+            }
+            return 'WALKING';
+          }
           return 'EVALUATING_WAYPOINT';
         case PATH_STATUS_NO_PATH_FOUND:
         case PATH_STATUS_NO_VALID_START_OR_END:
@@ -830,8 +812,8 @@ const fsm = {
   },
   WALKING: {
     enter: () => postStoreUpdate('cavebot/setActionPaused', false),
-    execute: async (context) => {
-      await handleWalkAction(context.targetWaypoint);
+    execute: async () => {
+      await handleWalkAction();
       return 'EVALUATING_WAYPOINT';
     },
   },
@@ -911,20 +893,14 @@ async function performOperation() {
     const { enabled: cavebotIsEnabled, controlState } = globalState.cavebot;
     const targetingIsEnabled = globalState.targeting?.enabled;
 
-    // --- NEW: Main execution guard ---
     if (!cavebotIsEnabled) {
       if (fsmState !== 'IDLE') {
         resetInternalState();
       }
-      // If cavebot is disabled, it can't do anything.
-      // The targeting worker is responsible for taking control if it needs to.
       return;
     }
 
-    // --- NEW: Refactored control logic ---
     if (controlState === 'TARGETING') {
-      // If targeting has control, cavebot should be idle.
-      // But if targeting was just disabled, cavebot must reclaim control.
       if (!targetingIsEnabled) {
         logger('info', '[Cavebot] Targeting disabled, reclaiming control.');
         postStoreUpdate('cavebot/setControlState', 'CAVEBOT');
@@ -938,14 +914,11 @@ async function performOperation() {
     }
 
     if (controlState === 'HANDOVER_TO_TARGETING') {
-      // This is a transient state. Cavebot should just wait for it to become 'TARGETING'.
-      // If targeting gets disabled during this, the above block will catch it on the next tick.
       resetInternalState();
       lastControlState = controlState;
       return;
     }
 
-    // This is the original logic for when targeting returns control. It's still valid.
     if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
       const { waypointIdAtTargetingStart, visitedTiles } = globalState.cavebot;
       let skippedWaypoint = false;
