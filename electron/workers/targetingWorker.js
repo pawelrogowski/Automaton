@@ -92,6 +92,11 @@ const getHealthTag = (healthPercent) => {
   return 'Full';
 };
 
+function arePositionsEqual(pos1, pos2) {
+  if (!pos1 || !pos2) return pos1 === pos2;
+  return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
+}
+
 const awaitWalkConfirmation = (
   posCounterBeforeMove,
   pathCounterBeforeMove,
@@ -308,16 +313,87 @@ const manageTargetingClicks = async (pathfindingTarget, currentGameTarget) => {
       currentGameTarget.name === pathfindingTarget.name &&
       currentGameTarget.gameCoords &&
       pathfindingTarget.gameCoords &&
-      currentGameTarget.gameCoords.x === pathfindingTarget.gameCoords.x &&
-      currentGameTarget.gameCoords.y === pathfindingTarget.gameCoords.y &&
-      currentGameTarget.gameCoords.z === pathfindingTarget.gameCoords.z)
+      arePositionsEqual(
+        currentGameTarget.gameCoords,
+        pathfindingTarget.gameCoords,
+      ))
   ) {
     lastClickedBattleListIndex = -1;
     return;
   }
 
-  if (Date.now() - lastClickTime < TARGET_CLICK_DELAY_MS) {
+  const now = Date.now();
+  if (now - lastClickTime < TARGET_CLICK_DELAY_MS) {
     return;
+  }
+
+  const battleList = globalState.battleList.entries;
+  const allCreatures = globalState.targeting.creatures;
+
+  const findBattleListIndex = (targetCreature) => {
+    if (!targetCreature) return -1;
+    const creatureInWorld = allCreatures.find(
+      (c) => c.instanceId === targetCreature.instanceId,
+    );
+    if (!creatureInWorld) return -1;
+
+    return battleList.findIndex((entry) => {
+      const matchingCreatureInWorld = allCreatures.find(
+        (c) =>
+          c.name.startsWith(entry.name) &&
+          arePositionsEqual(c.gameCoords, creatureInWorld.gameCoords),
+      );
+      return !!matchingCreatureInWorld;
+    });
+  };
+
+  if (battleList.length === 1) {
+    const singleCreature = battleList[0];
+    if (pathfindingTarget.name.startsWith(singleCreature.name)) {
+      logger(
+        'info',
+        `[Targeting] Using Tab to acquire the only target: ${pathfindingTarget.name}`,
+      );
+      keypress.sendKey('Tab', globalState.global.display);
+      lastClickTime = now;
+      await delay(50);
+      keypress.sendKey('f8', globalState.global.display);
+      await delay(50);
+      return;
+    }
+  }
+
+  const desiredIndex = findBattleListIndex(pathfindingTarget);
+  const currentIndex = findBattleListIndex(currentGameTarget);
+
+  if (desiredIndex !== -1 && currentIndex !== -1) {
+    const numTargets = battleList.length;
+
+    if (desiredIndex === (currentIndex + 1) % numTargets) {
+      logger(
+        'info',
+        `[Targeting] Using Tab to cycle to next target: ${pathfindingTarget.name}`,
+      );
+      keypress.sendKey('Tab', globalState.global.display);
+      lastClickTime = now;
+      await delay(50);
+      keypress.sendKey('f8', globalState.global.display);
+      await delay(50);
+      return;
+    }
+
+    if (desiredIndex === (currentIndex - 1 + numTargets) % numTargets) {
+      logger(
+        'info',
+        `[Targeting] Using Backtick to cycle to previous target: ${pathfindingTarget.name}`,
+      );
+      keypress.sendKey('`', globalState.global.display);
+      lastClickTime = now;
+      await delay(50);
+      keypress.sendKey('f8', globalState.global.display);
+      await delay(50);
+      return;
+    }
   }
 
   const potentialBLTargets = globalState.battleList.entries.filter((entry) =>
@@ -344,9 +420,7 @@ const manageTargetingClicks = async (pathfindingTarget, currentGameTarget) => {
     const creatureInGameWorld = globalState.targeting.creatures.find(
       (c) =>
         c.name.startsWith(entry.name) &&
-        c.gameCoords.x === pathfindingTarget.gameCoords.x &&
-        c.gameCoords.y === pathfindingTarget.gameCoords.y &&
-        c.gameCoords.z === pathfindingTarget.gameCoords.z,
+        arePositionsEqual(c.gameCoords, pathfindingTarget.gameCoords),
     );
 
     if (creatureInGameWorld) {
