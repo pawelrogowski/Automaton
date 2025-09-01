@@ -1,6 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.cc
-// --- Contains all optimizations and fixes ---
-// --- MODIFIED with subtle axis-preference tie-breaking ---
+// --- Contains all consolidated features and fixes ---
 
 #include "pathfinder.h"
 #include "aStar.h"
@@ -17,6 +16,8 @@
 #include <string>
 #include <functional>
 #include <climits>
+#include <cstdlib> // For std::rand()
+#include <ctime>   // For std::time()
 
 struct SpecialArea {
     int x, y, z;
@@ -26,8 +27,9 @@ struct SpecialArea {
 
 namespace AStar {
     static constexpr int BASE_MOVE_COST = 10;
-    static constexpr int DIAGONAL_MOVE_COST = 25;
-    static constexpr int DIAGONAL_TIE_PENALTY = 1; // General tie-breaker, still useful
+    static constexpr int DIAGONAL_MOVE_COST_NORMAL = 25;
+    static constexpr int DIAGONAL_MOVE_COST_CHEAP = 20;
+    static constexpr int DIAGONAL_TIE_PENALTY = 1;
     static const int INF_COST = 0x3f3f3f3f;
     static constexpr int CREATURE_BLOCK_COST = 1000000;
 
@@ -44,11 +46,11 @@ namespace AStar {
         return x >= 0 && x < mapData.width && y >= 0 && y < mapData.height;
     }
 
-    inline int octileHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST, int D2 = DIAGONAL_MOVE_COST) {
+    inline int octileHeuristic(int x1, int y1, int x2, int y2, int diagonalCost, int D = BASE_MOVE_COST) {
         int dx = std::abs(x1 - x2);
         int dy = std::abs(y1 - y2);
         int mn = std::min(dx, dy);
-        return D * (dx + dy) + (D2 - 2 * D) * mn;
+        return D * (dx + dy) + (diagonalCost - 2 * D) * mn;
     }
 
     struct ScratchBuffers {
@@ -80,7 +82,7 @@ namespace AStar {
         }
     }
 
-    int getPathLength(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+    int getPathLength(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, int dynamicDiagonalCost, std::function<void()> onCancelled) {
         int W = mapData.width;
         int H = mapData.height;
         if (W <= 0 || H <= 0) return -1;
@@ -93,7 +95,7 @@ namespace AStar {
 
         if (!inBounds(end.x, end.y, mapData)) return -1;
 
-        int h0 = octileHeuristic(start.x, start.y, end.x, end.y);
+        int h0 = octileHeuristic(start.x, start.y, end.x, end.y, dynamicDiagonalCost);
 
         using PQItem = std::tuple<int,int,int,int>;
         struct Compare {
@@ -162,7 +164,7 @@ namespace AStar {
                 int creatureCost = (isCreatureTile && !(nx == end.x && ny == end.y)) ? CREATURE_BLOCK_COST : 0;
 
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                int baseMoveCost = isDiagonal ? dynamicDiagonalCost : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
                 int tieBreakerCost = 0;
@@ -182,7 +184,7 @@ namespace AStar {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, end.x, end.y);
+                    int nh = octileHeuristic(nx, ny, end.x, end.y, dynamicDiagonalCost);
                     int nf = tentativeG + nh;
                     if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
                     open.emplace(nf, nh, tentativeG, nIdx);
@@ -192,11 +194,12 @@ namespace AStar {
         return -1;
     }
 
-    bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
-        return getPathLength(start, end, mapData, cost_grid, creaturePositions, onCancelled) != -1;
+    bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, int dynamicDiagonalCost, std::function<void()> onCancelled) {
+        // This function could be optimized by not reconstructing the path, but for now this is fine.
+        return getPathLength(start, end, mapData, cost_grid, creaturePositions, dynamicDiagonalCost, onCancelled) != -1;
     }
 
-    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, int dynamicDiagonalCost, std::function<void()> onCancelled) {
         std::vector<Node> path;
         int W = mapData.width;
         int H = mapData.height;
@@ -207,7 +210,9 @@ namespace AStar {
         int visit = sb.visitToken;
         auto indexOf = [&](int x, int y) { return y * W + x; };
         if (!inBounds(end.x, end.y, mapData)) return path;
-        int h0 = octileHeuristic(start.x, start.y, end.x, end.y);
+
+        int h0 = octileHeuristic(start.x, start.y, end.x, end.y, dynamicDiagonalCost);
+
         using PQItem = std::tuple<int,int,int,int>;
         struct Compare {
             bool operator()(PQItem const& a, PQItem const& b) const {
@@ -274,7 +279,7 @@ namespace AStar {
                     creatureCost = CREATURE_BLOCK_COST;
                 }
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                int baseMoveCost = isDiagonal ? dynamicDiagonalCost : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
                 int tieBreakerCost = 0;
@@ -294,7 +299,7 @@ namespace AStar {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, end.x, end.y);
+                    int nh = octileHeuristic(nx, ny, end.x, end.y, dynamicDiagonalCost);
                     int nf = tentativeG + nh;
                     if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
                     open.emplace(nf, nh, tentativeG, nIdx);
@@ -304,7 +309,7 @@ namespace AStar {
         return path;
     }
 
-    std::vector<Node> findPathToAny(const Node& start, const std::unordered_set<int>& endIndices, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+    std::vector<Node> findPathToAny(const Node& start, const std::unordered_set<int>& endIndices, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, int dynamicDiagonalCost, std::function<void()> onCancelled) {
         std::vector<Node> path;
         int W = mapData.width;
         int H = mapData.height;
@@ -331,7 +336,7 @@ namespace AStar {
         std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
 
         int startIdx = indexOf(start.x, start.y);
-        int h0 = octileHeuristic(start.x, start.y, heuristicEndX, heuristicEndY);
+        int h0 = octileHeuristic(start.x, start.y, heuristicEndX, heuristicEndY, dynamicDiagonalCost);
 
         sb.gScore[startIdx] = 0;
         sb.parent[startIdx] = -1;
@@ -395,7 +400,7 @@ namespace AStar {
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
 
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
+                int baseMoveCost = isDiagonal ? dynamicDiagonalCost : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
                 int tieBreakerCost = 0;
@@ -415,7 +420,7 @@ namespace AStar {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, heuristicEndX, heuristicEndY);
+                    int nh = octileHeuristic(nx, ny, heuristicEndX, heuristicEndY, dynamicDiagonalCost);
                     int nf = tentativeG + nh;
                     if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
                     open.emplace(nf, nh, tentativeG, nIdx);
@@ -441,7 +446,8 @@ namespace AStar {
             auto [current, dist] = q.front();
             q.pop();
 
-            if ((stance == "Reach" && dist == 1) || (stance == "keepAway" && dist == distance)) {
+            // This logic now only applies to "keepAway"
+            if (stance == "keepAway" && dist == distance) {
                 int currentIdx = indexOf(current.x, current.y);
                 int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[currentIdx];
                 bool isCreatureOnTile = false;
@@ -457,7 +463,7 @@ namespace AStar {
                 }
             }
 
-            if ((stance == "Reach" && dist >= 1) || (stance == "keepAway" && dist >= distance)) {
+            if (stance == "keepAway" && dist >= distance) {
                 continue;
             }
 
@@ -482,6 +488,8 @@ namespace AStar {
 Napi::FunctionReference Pathfinder::constructor;
 
 Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
     Napi::Function func = DefineClass(env, "Pathfinder", {
         InstanceMethod("loadMapData", &Pathfinder::LoadMapData),
         InstanceMethod("findPathSync", &Pathfinder::FindPathSync),
@@ -520,7 +528,7 @@ int Pathfinder::_getPathLengthInternal(Napi::Env env, const Node& start, const N
     auto it_cache = this->cost_grid_cache.find(start.z);
     const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
 
-    return AStar::getPathLength(localStart, localEnd, mapData, cost_grid, creaturePositions, [](){});
+    return AStar::getPathLength(localStart, localEnd, mapData, cost_grid, creaturePositions, AStar::DIAGONAL_MOVE_COST_NORMAL, [](){});
 }
 
 Napi::Value Pathfinder::GetPathLength(const Napi::CallbackInfo& info) {
@@ -565,7 +573,7 @@ bool Pathfinder::_isReachableInternal(Napi::Env env, const Node& start, const No
     }
     auto it_cache = this->cost_grid_cache.find(start.z);
     const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
-    return AStar::isReachable(localStart, localEnd, mapData, cost_grid, creaturePositions, [](){});
+    return AStar::isReachable(localStart, localEnd, mapData, cost_grid, creaturePositions, AStar::DIAGONAL_MOVE_COST_NORMAL, [](){});
 }
 Napi::Value Pathfinder::IsReachable(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -680,15 +688,20 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
     const MapData& mapData = it_map->second;
     Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
     Node localEnd = {end.x - mapData.minX, end.y - mapData.minY, 0, 0, nullptr, end.z};
+
+    int dynamicDiagonalCost = (std::rand() % 100 == 0)
+                                ? AStar::DIAGONAL_MOVE_COST_CHEAP
+                                : AStar::DIAGONAL_MOVE_COST_NORMAL;
+
     if (!AStar::inBounds(localStart.x, localStart.y, mapData)) {
         searchStatus = "NO_VALID_START";
     } else {
         auto it_cache = this->cost_grid_cache.find(start.z);
         if (it_cache != this->cost_grid_cache.end()) {
-            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, it_cache->second, creaturePositions, [](){});
+            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, it_cache->second, creaturePositions, dynamicDiagonalCost, [](){});
         } else {
             std::vector<int> empty_costs;
-            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, empty_costs, creaturePositions, [](){});
+            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, empty_costs, creaturePositions, dynamicDiagonalCost, [](){});
         }
         if (!pathResult.empty()) {
             searchStatus = "PATH_FOUND";
@@ -756,9 +769,10 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     Node start = {startObj.Get("x").As<Napi::Number>().Int32Value(), startObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, startObj.Get("z").As<Napi::Number>().Int32Value()};
     Napi::Object goalObj = info[1].As<Napi::Object>();
     std::string stance = goalObj.Get("stance").As<Napi::String>().Utf8Value();
-    int distance = goalObj.Get("distance").As<Napi::Number>().Int32Value();
+
     Napi::Object monsterPosObj = goalObj.Get("targetCreaturePos").As<Napi::Object>();
     Node monster = {monsterPosObj.Get("x").As<Napi::Number>().Int32Value(), monsterPosObj.Get("y").As<Napi::Number>().Int32Value(), 0, 0, nullptr, monsterPosObj.Get("z").As<Napi::Number>().Int32Value()};
+
     Napi::Array creaturePositionsArray = info[2].As<Napi::Array>();
     std::vector<Node> creaturePositions;
     for (uint32_t i = 0; i < creaturePositionsArray.Length(); ++i) {
@@ -780,15 +794,35 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     auto it_cache = this->cost_grid_cache.find(start.z);
     const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
 
-    std::unordered_set<int> target_indices = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid, creaturePositions);
-
     std::vector<Node> pathResult;
     std::string searchStatus = "UNKNOWN";
+    Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
 
-    if (!target_indices.empty()) {
-        Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
-        pathResult = AStar::findPathToAny(localStart, target_indices, mapData, cost_grid, creaturePositions, [](){});
+    int dynamicDiagonalCost = (std::rand() % 100 == 0)
+                                ? AStar::DIAGONAL_MOVE_COST_CHEAP
+                                : AStar::DIAGONAL_MOVE_COST_NORMAL;
+
+    if (stance == "Reach") {
+        Node localEnd = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
+
+        std::vector<Node> otherCreaturePositions;
+        for (const auto& creature : creaturePositions) {
+            if (creature.x != monster.x || creature.y != monster.y || creature.z != monster.z) {
+                otherCreaturePositions.push_back(creature);
+            }
+        }
+
+        pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, cost_grid, otherCreaturePositions, dynamicDiagonalCost, [](){});
+
+    } else if (stance == "keepAway") {
+        int distance = goalObj.Get("distance").As<Napi::Number>().Int32Value();
+        std::unordered_set<int> target_indices = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid, creaturePositions);
+
+        if (!target_indices.empty()) {
+            pathResult = AStar::findPathToAny(localStart, target_indices, mapData, cost_grid, creaturePositions, dynamicDiagonalCost, [](){});
+        }
     }
+
 
     if (!pathResult.empty()) {
         searchStatus = "PATH_FOUND";
