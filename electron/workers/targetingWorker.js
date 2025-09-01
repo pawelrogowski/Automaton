@@ -48,8 +48,7 @@ let lastDispatchedVisitedTile = null;
 let clearTargetCommandSent = false;
 let lastClickTime = 0;
 let lastClickedBattleListIndex = -1;
-let closeToTargetSince = 0;
-let closeToTargetInstanceId = null;
+const meleeRangeTimers = new Map();
 
 // --- Change Detection State ---
 let lastBattleListHash = null;
@@ -404,6 +403,7 @@ async function manageMovement(pathfindingTarget) {
     stance: pathfindingTarget.rule.stance,
     distance: pathfindingTarget.rule.distance,
     targetCreaturePos: pathfindingTarget.gameCoords,
+    targetInstanceId: pathfindingTarget.instanceId,
   };
   parentPort.postMessage({
     storeUpdate: true,
@@ -426,30 +426,6 @@ async function manageMovement(pathfindingTarget) {
   }
 
   const now = Date.now();
-  const currentTargetId = pathfindingTarget.instanceId;
-
-  if (currentTargetId !== closeToTargetInstanceId) {
-    closeToTargetSince = 0;
-    closeToTargetInstanceId = currentTargetId;
-  }
-
-  if (pathfindingTarget.distance < MELEE_DISTANCE_THRESHOLD) {
-    if (closeToTargetSince === 0) {
-      closeToTargetSince = now;
-    }
-
-    const durationClose = now - closeToTargetSince;
-
-    if (durationClose > MELEE_RANGE_TIMEOUT_MS) {
-      logger(
-        'debug',
-        `[Targeting] In melee range of ${pathfindingTarget.name} for ${durationClose}ms. Halting movement.`,
-      );
-      return;
-    }
-  } else {
-    closeToTargetSince = 0;
-  }
 
   if (pathfindingStatus !== PATH_STATUS_PATH_FOUND || path.length === 0) {
     return;
@@ -548,9 +524,45 @@ async function performTargeting() {
   updateSABData();
   if (!playerMinimapPosition) return;
 
-  const currentGameTarget = globalState.targeting.target;
+  const now = Date.now();
+  const allCreatures = globalState.targeting.creatures || [];
+  const creaturesInMelee = new Set();
 
-  await manageMovement(pathfindingTarget);
+  for (const creature of allCreatures) {
+    if (creature.distance < MELEE_DISTANCE_THRESHOLD) {
+      creaturesInMelee.add(creature.instanceId);
+      if (!meleeRangeTimers.has(creature.instanceId)) {
+        meleeRangeTimers.set(creature.instanceId, now);
+      }
+    }
+  }
+
+  for (const instanceId of Array.from(meleeRangeTimers.keys())) {
+    if (!creaturesInMelee.has(instanceId)) {
+      meleeRangeTimers.delete(instanceId);
+    }
+  }
+
+  let haltMovementDueToMelee = false;
+  for (const [instanceId, startTime] of meleeRangeTimers.entries()) {
+    if (now - startTime > MELEE_RANGE_TIMEOUT_MS) {
+      const creature = allCreatures.find((c) => c.instanceId === instanceId);
+      logger(
+        'debug',
+        `[Targeting] In melee range of ${
+          creature?.name || 'a creature'
+        } for ${now - startTime}ms. Halting movement.`,
+      );
+      haltMovementDueToMelee = true;
+      break;
+    }
+  }
+
+  if (!haltMovementDueToMelee) {
+    await manageMovement(pathfindingTarget);
+  }
+
+  const currentGameTarget = globalState.targeting.target;
 
   if (pathfindingTarget) {
     clearTargetCommandSent = false;

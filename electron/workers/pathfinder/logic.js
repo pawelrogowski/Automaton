@@ -128,11 +128,58 @@ export function runPathfindingLogic(context) {
     logicContext.lastCreatureDataHash = currentCreatureDataHash;
 
     if (isTargetingMode) {
-      result = pathfinderInstance.findPathToGoal(
-        playerMinimapPosition,
-        cavebot.dynamicTarget,
-        creaturePositions,
-      );
+      const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
+
+      if (!targetInstanceId) {
+        // Fallback for old dynamicTarget format, but still solve Problem B.
+        const obstacles = creaturePositions.filter((pos) => {
+          return (
+            pos.x !== cavebot.dynamicTarget.targetCreaturePos.x ||
+            pos.y !== cavebot.dynamicTarget.targetCreaturePos.y ||
+            pos.z !== cavebot.dynamicTarget.targetCreaturePos.z
+          );
+        });
+        result = pathfinderInstance.findPathToGoal(
+          playerMinimapPosition,
+          cavebot.dynamicTarget,
+          obstacles,
+        );
+      } else {
+        const targetCreature = (targeting.creatures || []).find(
+          (c) => c.instanceId === targetInstanceId,
+        );
+
+        if (targetCreature) {
+          // State is consistent, target found. Use its fresh position.
+          const correctedDynamicTarget = {
+            ...cavebot.dynamicTarget,
+            targetCreaturePos: targetCreature.gameCoords,
+          };
+
+          // Filter the fresh position from the list of obstacles.
+          const obstacles = creaturePositions.filter((pos) => {
+            return (
+              pos.x !== correctedDynamicTarget.targetCreaturePos.x ||
+              pos.y !== correctedDynamicTarget.targetCreaturePos.y ||
+              pos.z !== correctedDynamicTarget.targetCreaturePos.z
+            );
+          });
+
+          result = pathfinderInstance.findPathToGoal(
+            playerMinimapPosition,
+            correctedDynamicTarget,
+            obstacles,
+          );
+        } else {
+          // Target has disappeared. Path to its last known position.
+          // `creaturePositions` is already correct (doesn't contain the disappeared target).
+          result = pathfinderInstance.findPathToGoal(
+            playerMinimapPosition,
+            cavebot.dynamicTarget,
+            creaturePositions,
+          );
+        }
+      }
     } else if (targetIdentifier) {
       // Cavebot mode with a valid waypoint
       const { waypointSections, currentSection, wptId } = cavebot;

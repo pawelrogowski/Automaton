@@ -400,12 +400,14 @@ async function performOperation() {
           const otherCreatures = allCreaturePositions.filter(
             (p) => p !== entity.gameCoords,
           );
+          const reachableDistance =
+            currentState.targeting?.reachableDistance ?? 14;
           const pathLength = pathfinderInstance.getPathLength(
             currentPlayerMinimapPosition,
             entity.gameCoords,
             otherCreatures,
           );
-          isReachable = pathLength !== -1 && pathLength <= 10;
+          isReachable = pathLength !== -1 && pathLength <= reachableDistance;
           reachableTilesCache.set(coordsKey, isReachable);
         }
 
