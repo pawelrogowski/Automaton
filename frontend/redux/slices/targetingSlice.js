@@ -6,7 +6,7 @@ const initialState = {
   stickiness: 0,
   // The shape of a creature object now includes instanceId and isReachable
   creatures: [], // [{ instanceId, name, healthTag, absoluteCoords, gameCoords, distance, isReachable }]
-  target: null, // { instanceId, name, ... }
+  target: null, // { instanceId, name, distanceFrom, ... }
   targetingList: [],
 };
 
@@ -48,9 +48,22 @@ const targetingSlice = createSlice({
         isReachable: creature.isReachable || false,
       }));
     },
+    // --- START: MODIFICATION ---
     setTarget: (state, action) => {
-      state.target = action.payload;
+      const newTarget = action.payload;
+      if (newTarget) {
+        // When a target is set, create a new object that includes all of its original
+        // properties, and adds the 'distanceFrom' key, populated from 'distance'.
+        state.target = {
+          ...newTarget,
+          distanceFrom: newTarget.distance,
+        };
+      } else {
+        // If the payload is null, clear the target.
+        state.target = null;
+      }
     },
+    // --- END: MODIFICATION ---
     addCreatureToTargetingList: (state, action) => {
       const { id, name, stance, distance } = action.payload;
       state.targetingList.push({

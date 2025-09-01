@@ -21,14 +21,14 @@ const PLAYER_X_INDEX = 0;
 const PLAYER_Y_INDEX = 1;
 const PLAYER_Z_INDEX = 2;
 
-const PLAYER_ANIMATION_FREEZE_MS = 200;
-const PLAYER_SETTLING_GRACE_PERIOD_MS = 500;
-const STICKY_SNAP_THRESHOLD_TILES = 0.4;
-const JITTER_FILTER_TIME_MS = 200;
-const JITTER_HISTORY_LENGTH = 5;
+const PLAYER_ANIMATION_FREEZE_MS = 150;
+const PLAYER_SETTLING_GRACE_PERIOD_MS = 300;
+const STICKY_SNAP_THRESHOLD_TILES = 0.5;
+const JITTER_FILTER_TIME_MS = 150;
+const JITTER_HISTORY_LENGTH = 3;
 
 // Increased from 45 to make correlation much more robust against player and creature movement.
-const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
+const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 150;
 
 // Grace period to prevent target loss from single-frame detection failures.
 const TARGET_LOSS_GRACE_PERIOD_MS = 150;

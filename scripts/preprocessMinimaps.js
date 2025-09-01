@@ -308,9 +308,9 @@ async function preprocessMinimaps() {
           );
 
           // Log specific waypoint cost map files
-          const targetX = 32814;
-          const targetY = 32110;
-          const targetZ = 10;
+          const targetX = 32937;
+          const targetY = 32147;
+          const targetZ = 6;
 
           const { data, info } = await sharp(inputFilePath)
             .raw()
