@@ -3,6 +3,7 @@
   "version": "1.4.2",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
+  "type": "module",
   "extraResources": [
     "frontend/preload.js"
   ],

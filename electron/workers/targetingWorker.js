@@ -26,7 +26,9 @@ import {
 // --- Worker Configuration ---
 const MOVEMENT_COOLDOWN_MS = 50;
 const CLICK_POLL_INTERVAL_MS = 50;
-const MOVEMENT_CONFIRMATION_TIMEOUT_MS = 400;
+const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
+const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
+const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
 const TARGET_CLICK_DELAY_MS = 400;
 const MELEE_RANGE_TIMEOUT_MS = 100;
 const MELEE_DISTANCE_THRESHOLD = 1.9;
@@ -517,14 +519,23 @@ async function manageMovement(pathfindingTarget) {
     if (dirKey) {
       const posCounterBeforeMove = lastPlayerPosCounter;
       const pathCounterBeforeMove = lastPathDataCounter;
+
+      const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
+      const timeout = isDiagonal
+        ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
+        : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
+
       keypress.sendKey(dirKey, globalState.global.display);
       lastMovementTime = now;
       try {
         await awaitWalkConfirmation(
           posCounterBeforeMove,
           pathCounterBeforeMove,
-          MOVEMENT_CONFIRMATION_TIMEOUT_MS,
+          timeout,
         );
+        if (isDiagonal) {
+          await delay(MOVE_CONFIRM_GRACE_DIAGONAL_MS);
+        }
       } catch (error) {
         logger(
           'error',

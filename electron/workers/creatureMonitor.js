@@ -24,8 +24,7 @@ const PLAYER_Z_INDEX = 2;
 const PLAYER_ANIMATION_FREEZE_MS = 150;
 const PLAYER_SETTLING_GRACE_PERIOD_MS = 300;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
-const JITTER_FILTER_TIME_MS = 150;
-const JITTER_HISTORY_LENGTH = 3;
+const JITTER_CONFIRMATION_TIME_MS = 100; // Time-based window for jitter detection.
 
 // Increased from 45 to make correlation much more robust against player and creature movement.
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 150;
@@ -153,69 +152,82 @@ function updateCreatureState(
   );
 
   if (!rawGameCoordsFloat) return null;
-  const currentCreatureZ = currentPlayerMinimapPosition.z;
 
   if (isPlayerInAnimationFreeze && creature.gameCoords) {
     finalGameX = creature.gameCoords.x;
     finalGameY = creature.gameCoords.y;
     finalGameZ = creature.gameCoords.z;
   } else {
+    let intermediateX = Math.floor(rawGameCoordsFloat.x);
+    let intermediateY = Math.floor(rawGameCoordsFloat.y);
+    let finalCoords;
+
+    // Sticky snapping logic to reduce minor drift
     const lastReportedGameCoords = creature.gameCoords;
-    const lastCalculatedFloatCoords = creature.lastCalculatedFloatCoords;
-
-    const newGameX_int = Math.floor(rawGameCoordsFloat.x);
-    const newGameY_int = Math.floor(rawGameCoordsFloat.y);
-
-    finalGameX = newGameX_int;
-    finalGameY = newGameY_int;
-
-    if (lastReportedGameCoords && lastCalculatedFloatCoords) {
-      const distX_to_last_int = Math.abs(
-        rawGameCoordsFloat.x - lastReportedGameCoords.x,
-      );
-      const distY_to_last_int = Math.abs(
-        rawGameCoordsFloat.y - lastReportedGameCoords.y,
-      );
-
+    if (lastReportedGameCoords) {
+      const distX = Math.abs(rawGameCoordsFloat.x - lastReportedGameCoords.x);
+      const distY = Math.abs(rawGameCoordsFloat.y - lastReportedGameCoords.y);
       if (
-        distX_to_last_int < STICKY_SNAP_THRESHOLD_TILES &&
-        distY_to_last_int < STICKY_SNAP_THRESHOLD_TILES
+        distX < STICKY_SNAP_THRESHOLD_TILES &&
+        distY < STICKY_SNAP_THRESHOLD_TILES
       ) {
-        finalGameX = lastReportedGameCoords.x;
-        finalGameY = lastReportedGameCoords.y;
+        intermediateX = lastReportedGameCoords.x;
+        intermediateY = lastReportedGameCoords.y;
       }
     }
 
-    const history = creature.reportHistory || [];
-    if (history.length >= 2) {
-      const lastEntry = history[history.length - 1];
-      const secondLastEntry = history[history.length - 2];
+    // --- Refactored Jitter Logic ---
+    const newCoords = {
+      x: intermediateX,
+      y: intermediateY,
+      z: currentPlayerMinimapPosition.z,
+    };
 
-      if (
-        now - lastEntry.timestamp < JITTER_FILTER_TIME_MS &&
-        arePositionsEqual(
-          { x: finalGameX, y: finalGameY, z: currentCreatureZ },
-          secondLastEntry.coords,
-        ) &&
-        !arePositionsEqual(
-          { x: finalGameX, y: finalGameY, z: currentCreatureZ },
-          lastEntry.coords,
-        )
-      ) {
-        finalGameX = secondLastEntry.coords.x;
-        finalGameY = secondLastEntry.coords.y;
-        finalGameZ = secondLastEntry.coords.z;
+    // Initialize stable coordinates on the creature object if they don't exist.
+    if (!creature.stableCoords) {
+      creature.stableCoords = newCoords;
+    }
+
+    const hasChanged = !arePositionsEqual(newCoords, creature.stableCoords);
+    const isUnconfirmed = !!creature.unconfirmedChange;
+
+    if (isUnconfirmed) {
+      const unconfirmed = creature.unconfirmedChange;
+      // An unconfirmed change is in progress.
+      if (arePositionsEqual(newCoords, unconfirmed.newCoords)) {
+        // The new detection matches the unconfirmed position.
+        // Check if enough time has passed to confirm it.
+        if (now - unconfirmed.timestamp > JITTER_CONFIRMATION_TIME_MS) {
+          // Time has passed. The move is confirmed.
+          creature.stableCoords = unconfirmed.newCoords;
+          creature.unconfirmedChange = null;
+          finalCoords = creature.stableCoords;
+        } else {
+          // Not enough time has passed. Keep reporting the last stable position.
+          finalCoords = creature.stableCoords;
+        }
+      } else if (arePositionsEqual(newCoords, creature.stableCoords)) {
+        // The position reverted to the last stable one. This was a jitter. Cancel the unconfirmed change.
+        creature.unconfirmedChange = null;
+        finalCoords = creature.stableCoords;
+      } else {
+        // A third, different position was detected. Reset the timer with this new position.
+        creature.unconfirmedChange = { newCoords: newCoords, timestamp: now };
+        finalCoords = creature.stableCoords;
       }
+    } else if (hasChanged) {
+      // No unconfirmed change, but the detected position is new.
+      // Start the confirmation process. Report the last stable position for now.
+      creature.unconfirmedChange = { newCoords: newCoords, timestamp: now };
+      finalCoords = creature.stableCoords;
+    } else {
+      // No change and no unconfirmed process. Everything is stable.
+      finalCoords = creature.stableCoords;
     }
 
-    history.push({
-      coords: { x: finalGameX, y: finalGameY, z: finalGameZ },
-      timestamp: now,
-    });
-    if (history.length > JITTER_HISTORY_LENGTH) {
-      history.shift();
-    }
-    creature.reportHistory = history;
+    finalGameX = finalCoords.x;
+    finalGameY = finalCoords.y;
+    finalGameZ = finalCoords.z;
   }
 
   creature.lastCalculatedFloatCoords = {
@@ -361,7 +373,7 @@ async function performOperation() {
     for (const newDetection of preliminaryDetections) {
       if (!matchedDetections.has(newDetection)) {
         const newInstanceId = nextInstanceId++;
-        let newCreature = { instanceId: newInstanceId, reportHistory: [] };
+        let newCreature = { instanceId: newInstanceId }; // Removed reportHistory initialization
         newCreature = updateCreatureState(
           newCreature,
           newDetection,

@@ -45,6 +45,8 @@ const config = {
   teleportDistanceThreshold: 5,
   postTeleportGraceMs: 1250,
   moveConfirmTimeoutMs: 400,
+  moveConfirmTimeoutDiagonalMs: 750,
+  moveConfirmGraceDiagonalMs: 150,
   toolHotkeys: {
     rope: 'b',
     machete: 'n',
@@ -324,13 +326,22 @@ const handleWalkAction = async () => {
   if (!dirKey) {
     return;
   }
+
+  const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
+  const timeout = isDiagonal
+    ? config.moveConfirmTimeoutDiagonalMs
+    : config.moveConfirmTimeoutMs;
+
   keypress.sendKey(dirKey, globalState.global.display);
   try {
     await awaitWalkConfirmation(
       posCounterBeforeMove,
       pathCounterBeforeMove,
-      config.moveConfirmTimeoutMs,
+      timeout,
     );
+    if (isDiagonal) {
+      await delay(config.moveConfirmGraceDiagonalMs);
+    }
   } catch (error) {
     recentKeyboardFailures.push(Date.now());
   }
