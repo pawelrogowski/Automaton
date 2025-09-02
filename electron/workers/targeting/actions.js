@@ -135,7 +135,37 @@ export function createTargetingActions(workerContext) {
 
     const performActionAndWait = async (action, clickRegion = null) => {
       targetingContext.acquisitionUnlockTime = Date.now() + 400;
-      const checkTarget = () => globalState.targeting.target?.instanceId === pathfindingTarget.instanceId;
+
+      const checkTargetAndAcceptSubstitute = () => {
+        const currentTarget = globalState.targeting.target;
+        if (!currentTarget) return false;
+
+        // 1. Check for perfect instanceId match
+        if (currentTarget.instanceId === pathfindingTarget.instanceId) {
+          return true;
+        }
+
+        // 2. Check for acceptable substitute (same name and is adjacent)
+        const isSameName =
+          currentTarget.name &&
+          pathfindingTarget.name &&
+          currentTarget.name.startsWith(pathfindingTarget.name);
+        const isAdjacent = currentTarget.distance < MELEE_DISTANCE_THRESHOLD;
+
+        if (isSameName && isAdjacent) {
+          logger(
+            'info',
+            `[Targeting] Original target not found, but accepted adjacent substitute: ${currentTarget.name}`,
+          );
+          // Update the main target to this new one to prevent re-targeting next tick.
+          targetingContext.pathfindingTarget = {
+            ...currentTarget,
+            rule: pathfindingTarget.rule, // Keep the original rule for stance, etc.
+          };
+          return true;
+        }
+        return false;
+      };
 
       if (action === 'tab') {
         keypress.sendKey('tab', globalState.global.display);
@@ -144,17 +174,22 @@ export function createTargetingActions(workerContext) {
       } else if (action === 'click' && clickRegion) {
         const clickX = clickRegion.x + 5;
         const clickY = clickRegion.y + 2;
-        mouseController.leftClick(parseInt(globalState.global.windowId), clickX, clickY, globalState.global.display);
+        mouseController.leftClick(
+          parseInt(globalState.global.windowId),
+          clickX,
+          clickY,
+          globalState.global.display,
+        );
       }
       targetingContext.lastClickTime = Date.now();
       await delay(50);
 
       const startTime = Date.now();
       while (Date.now() - startTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
-        if (checkTarget()) return true;
+        if (checkTargetAndAcceptSubstitute()) return true;
         await delay(CLICK_POLL_INTERVAL_MS);
       }
-      return checkTarget();
+      return checkTargetAndAcceptSubstitute();
     };
 
     const currentIndex = battleList.findIndex((e) => e.isTarget);
