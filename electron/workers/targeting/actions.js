@@ -10,6 +10,7 @@ const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
 const TARGET_CLICK_DELAY_MS = 400;
 const TARGET_CONFIRMATION_TIMEOUT_MS = 1000;
+const MELEE_DISTANCE_THRESHOLD = 1.9;
 
 /**
  * Creates a set of targeting action functions that close over the provided worker-specific dependencies.
@@ -218,6 +219,11 @@ export function createTargetingActions(workerContext) {
   const manageMovement = async (targetingContext, globalState, pathfindingTarget, path, pathfindingStatus, playerMinimapPosition) => {
     if (!pathfindingTarget || !pathfindingTarget.isReachable || !pathfindingTarget.gameCoords) {
       parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setDynamicTarget', payload: null });
+      return;
+    }
+
+    // If the target is already adjacent, do not attempt to move.
+    if (pathfindingTarget.distance < MELEE_DISTANCE_THRESHOLD) {
       return;
     }
 
