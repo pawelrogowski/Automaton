@@ -112,7 +112,8 @@ export const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'pk', {
-    get: () => getState().regionCoordinates?.regions?.playerList?.whiteSkull.x,
+    get: () =>
+      getState().regionCoordinates?.regions?.playerList?.children?.whiteSkull,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'activeTab', {

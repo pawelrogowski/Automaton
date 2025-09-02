@@ -52,6 +52,8 @@ let clearTargetCommandSent = false;
 let lastClickTime = 0;
 let lastClickedBattleListIndex = -1;
 const meleeRangeTimers = new Map();
+let shouldRequestNewPath = false;
+let justGainedControl = false;
 
 // --- Change Detection State ---
 let lastBattleListHash = null;
@@ -166,6 +168,14 @@ const updateSABData = () => {
     }
   }
   if (pathDataArray) {
+    if (shouldRequestNewPath) {
+      path = [];
+      pathfindingStatus = PATH_STATUS_IDLE;
+      lastPathDataCounter = -1;
+      shouldRequestNewPath = false;
+      return; // Do not read from SAB immediately
+    }
+
     let consistentRead = false;
     let attempts = 0;
     do {
@@ -228,25 +238,31 @@ function selectBestTargetFromGameWorld() {
   const pathfinderTargetInstanceId =
     globalState.cavebot?.dynamicTarget?.targetInstanceId;
 
-  let stickinessBonus = 0;
+  // 1. Check if the pathfinder's current target is still valid and should be stuck to.
   if (pathfinderTargetInstanceId) {
-    const currentTargetOnScreen = reachableCreatures.find(
+    const currentPathfinderTarget = reachableCreatures.find(
       (c) => c.instanceId === pathfinderTargetInstanceId,
     );
-    if (currentTargetOnScreen) {
-      const healthTag = getHealthTag(100);
-      const activeRule = targetingList.find(
+    if (currentPathfinderTarget) {
+      const rule = targetingList.find(
         (r) =>
-          r.name.startsWith(currentTargetOnScreen.name) &&
-          r.action === 'Attack' &&
-          (r.healthRange === 'Any' || r.healthRange === healthTag),
+          r.name.startsWith(currentPathfinderTarget.name) &&
+          r.action === 'Attack',
       );
-      if (activeRule) {
-        stickinessBonus = activeRule.stickiness || 0;
+      if (rule) {
+        // The pathfinder's target is on screen, reachable, and targetable.
+        // We will stick with it to prevent fighting the pathfinder.
+        const stickiness = rule.stickiness || 0;
+        return {
+          ...currentPathfinderTarget,
+          rule,
+          effectivePriority: rule.priority + stickiness,
+        };
       }
     }
   }
 
+  // 2. If pathfinder has no target, or its target is invalid, pick the best new one based on priority.
   const targetableCreatures = reachableCreatures
     .map((creature) => {
       const rule = targetingList.find(
@@ -257,14 +273,8 @@ function selectBestTargetFromGameWorld() {
       );
       if (!rule) return null;
 
-      let effectivePriority = rule.priority;
-      if (
-        pathfinderTargetInstanceId &&
-        creature.instanceId === pathfinderTargetInstanceId
-      ) {
-        effectivePriority += stickinessBonus;
-      }
-      return { ...creature, rule, effectivePriority };
+      // Use raw priority when selecting a new target.
+      return { ...creature, rule, effectivePriority: rule.priority };
     })
     .filter(Boolean);
 
@@ -272,6 +282,7 @@ function selectBestTargetFromGameWorld() {
     return null;
   }
 
+  // Sort by priority, then by distance.
   targetableCreatures.sort((a, b) => {
     if (a.effectivePriority !== b.effectivePriority) {
       return b.effectivePriority - a.effectivePriority;
@@ -529,6 +540,12 @@ async function performTargeting() {
     return;
   }
 
+  // Grace period after gaining control
+  if (justGainedControl) {
+    await delay(100);
+    justGainedControl = false;
+  }
+
   if (!globalState.targeting?.enabled) {
     if (globalState.cavebot?.controlState === 'TARGETING') {
       await delay(50);
@@ -579,10 +596,14 @@ async function performTargeting() {
   updateSABData();
   if (!playerMinimapPosition) return;
 
+  // Use the highest priority target as the default for this tick
+  let effectiveTarget = pathfindingTarget;
+
   const now = Date.now();
   const allCreatures = globalState.targeting.creatures || [];
   const creaturesInMelee = new Set();
 
+  // First, update our map of which creatures are in melee and for how long
   for (const creature of allCreatures) {
     if (creature.distance < MELEE_DISTANCE_THRESHOLD) {
       creaturesInMelee.add(creature.instanceId);
@@ -592,36 +613,63 @@ async function performTargeting() {
     }
   }
 
+  // Clean up timers for creatures that are no longer in melee
   for (const instanceId of Array.from(meleeRangeTimers.keys())) {
     if (!creaturesInMelee.has(instanceId)) {
       meleeRangeTimers.delete(instanceId);
     }
   }
 
-  let haltMovementDueToMelee = false;
-  for (const [instanceId, startTime] of meleeRangeTimers.entries()) {
-    if (now - startTime > MELEE_RANGE_TIMEOUT_MS) {
-      const creature = allCreatures.find((c) => c.instanceId === instanceId);
+  // --- Melee Override Logic to Prevent Paralysis ---
+  // Find the first creature that has been in melee for the required time
+  // and is NOT our current effective target.
+  const meleeConflict = Array.from(meleeRangeTimers.entries()).find(
+    ([instanceId, startTime]) =>
+      now - startTime > MELEE_RANGE_TIMEOUT_MS &&
+      effectiveTarget?.instanceId !== instanceId,
+  );
+
+  if (meleeConflict) {
+    const [meleeInstanceId] = meleeConflict;
+    const blockingCreature = allCreatures.find(
+      (c) => c.instanceId === meleeInstanceId,
+    );
+
+    // Check if this blocking creature is a valid target we should fight
+    const blockingCreatureRule =
+      blockingCreature && globalState.targeting.targetingList
+        ? globalState.targeting.targetingList.find(
+            (r) =>
+              r.name.startsWith(blockingCreature.name) && r.action === 'Attack',
+          )
+        : null;
+
+    if (blockingCreature && blockingCreatureRule) {
+      // This is the "Idle Paralysis" scenario.
+      // Instead of halting, we temporarily switch our focus to the blocker.
       logger(
-        'debug',
-        `[Targeting] In melee range of ${
-          creature?.name || 'a creature'
-        } for ${now - startTime}ms. Halting movement.`,
+        'info',
+        `[Targeting] Overriding target ${
+          effectiveTarget?.name || 'None'
+        } to attack ${blockingCreature.name} in melee range.`,
       );
-      haltMovementDueToMelee = true;
-      break;
+      effectiveTarget = {
+        ...blockingCreature,
+        rule: blockingCreatureRule,
+      };
     }
+    // If the blocking creature is not a valid target, we do nothing and proceed
+    // to move towards our original effectiveTarget, ignoring the blocker.
   }
 
-  if (!haltMovementDueToMelee) {
-    await manageMovement(pathfindingTarget);
-  }
+  // All subsequent actions use the (potentially overridden) effectiveTarget
+  await manageMovement(effectiveTarget);
 
   const currentGameTarget = globalState.targeting.target;
 
-  if (pathfindingTarget) {
+  if (effectiveTarget) {
     clearTargetCommandSent = false;
-    manageTargetingClicks(pathfindingTarget, currentGameTarget);
+    manageTargetingClicks(effectiveTarget, currentGameTarget);
   } else {
     lastClickedBattleListIndex = -1;
     if (currentGameTarget && !clearTargetCommandSent) {
@@ -692,6 +740,15 @@ parentPort.on('message', (message) => {
 
     if (shouldProcess) {
       isProcessing = true;
+
+      // Check for control state transition to TARGETING or HANDOVER_TO_TARGETING
+      if (
+        (newControlState === 'TARGETING' && lastControlState !== 'TARGETING') ||
+        (newControlState === 'HANDOVER_TO_TARGETING' && lastControlState !== 'HANDOVER_TO_TARGETING')
+      ) {
+        shouldRequestNewPath = true;
+        justGainedControl = true;
+      }
 
       lastBattleListHash = newBattleListHash;
       lastCreaturesHash = newCreaturesHash;

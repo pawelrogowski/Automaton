@@ -77,6 +77,7 @@ let stuckDetectionGraceUntil = 0;
 let floorChangeGraceUntil = 0;
 let recentKeyboardFailures = [];
 let lastProcessedWptId = null;
+let shouldRequestNewPath = false;
 
 let scriptErrorWaypointId = null;
 let scriptErrorCount = 0;
@@ -136,6 +137,15 @@ const updateSABData = () => {
   }
 
   if (pathDataArray) {
+    if (shouldRequestNewPath) {
+      path = [];
+      pathfindingStatus = PATH_STATUS_IDLE;
+      lastPathDataCounter = -1;
+      shouldRequestNewPath = false;
+      // Do not read from SAB immediately, let the FSM trigger a new path request
+      return;
+    }
+
     let consistentRead = false;
     let attempts = 0;
     do {
@@ -978,6 +988,13 @@ async function performOperation() {
         lastControlState = globalState.cavebot.controlState;
         return;
       }
+      // Set flag to request new path after handover
+      shouldRequestNewPath = true;
+    }
+
+    // Grace period after gaining control
+    if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
+      await delay(100);
     }
 
     updateSABData();
