@@ -32,6 +32,7 @@ const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
 const TARGET_CLICK_DELAY_MS = 400;
 const MELEE_RANGE_TIMEOUT_MS = 100;
 const MELEE_DISTANCE_THRESHOLD = 1.9;
+const TARGET_CONFIRMATION_TIMEOUT_MS = 1000; // Max time to wait for target confirmation
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
@@ -248,12 +249,11 @@ function selectBestTargetFromGameWorld() {
 
   const targetableCreatures = reachableCreatures
     .map((creature) => {
-      const healthTag = getHealthTag(100);
       const rule = targetingList.find(
         (r) =>
           r.name.startsWith(creature.name) &&
           r.action === 'Attack' &&
-          (r.healthRange === 'Any' || r.healthRange === healthTag),
+          (r.healthRange === 'Any' || r.healthRange === creature.healthTag),
       );
       if (!rule) return null;
 
@@ -301,14 +301,15 @@ const manageTargetingClicks = async (pathfindingTarget, currentGameTarget) => {
     return;
   }
 
+  // If the current game target already matches the pathfinding target, we're good.
   if (
     currentGameTarget?.instanceId === pathfindingTarget.instanceId ||
     (currentGameTarget &&
       currentGameTarget.name === pathfindingTarget.name &&
-      currentGameTarget.gameCoords &&
+      currentGameTarget.gameCoordinates &&
       pathfindingTarget.gameCoords &&
       arePositionsEqual(
-        currentGameTarget.gameCoords,
+        currentGameTarget.gameCoordinates,
         pathfindingTarget.gameCoords,
       ))
   ) {
@@ -324,111 +325,68 @@ const manageTargetingClicks = async (pathfindingTarget, currentGameTarget) => {
   const battleList = globalState.battleList.entries;
   const allCreatures = globalState.targeting.creatures;
 
-  const findBattleListIndex = (targetCreature) => {
-    if (!targetCreature) return -1;
-    const creatureInWorld = allCreatures.find(
-      (c) => c.instanceId === targetCreature.instanceId,
+  // Helper to check if the current in-game target matches the desired pathfinding target
+  const isTargetConfirmed = () => {
+    const currentTarget = globalState.targeting.target;
+    return (
+      currentTarget?.instanceId === pathfindingTarget.instanceId ||
+      (currentTarget &&
+        currentTarget.name === pathfindingTarget.name &&
+        currentTarget.gameCoordinates &&
+        pathfindingTarget.gameCoords &&
+        arePositionsEqual(
+          currentTarget.gameCoordinates,
+          pathfindingTarget.gameCoords,
+        ))
     );
-    if (!creatureInWorld) return -1;
-
-    return battleList.findIndex((entry) => {
-      const matchingCreatureInWorld = allCreatures.find(
-        (c) =>
-          c.name.startsWith(entry.name) &&
-          arePositionsEqual(c.gameCoords, creatureInWorld.gameCoords),
-      );
-      return !!matchingCreatureInWorld;
-    });
   };
 
-  if (battleList.length === 1) {
-    const singleCreature = battleList[0];
-    if (pathfindingTarget.name.startsWith(singleCreature.name)) {
-      logger(
-        'info',
-        `[Targeting] Using Tab to acquire the only target: ${pathfindingTarget.name}`,
-      );
-      keypress.sendKey('Tab', globalState.global.display);
-      lastClickTime = now;
-      await delay(50);
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
-      return;
+  // Helper to await target confirmation
+  const awaitTargetConfirmation = async () => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
+      if (isTargetConfirmed()) {
+        return true;
+      }
+      await delay(CLICK_POLL_INTERVAL_MS);
     }
-  }
+    return false;
+  };
 
-  const desiredIndex = findBattleListIndex(pathfindingTarget);
-  const currentIndex = findBattleListIndex(currentGameTarget);
-
-  if (desiredIndex !== -1 && currentIndex !== -1) {
-    const numTargets = battleList.length;
-
-    if (desiredIndex === (currentIndex + 1) % numTargets) {
-      logger(
-        'info',
-        `[Targeting] Using Tab to cycle to next target: ${pathfindingTarget.name}`,
-      );
-      keypress.sendKey('Tab', globalState.global.display);
-      lastClickTime = now;
-      await delay(50);
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
-      return;
-    }
-
-    if (desiredIndex === (currentIndex - 1 + numTargets) % numTargets) {
-      logger(
-        'info',
-        `[Targeting] Using Backtick to cycle to previous target: ${pathfindingTarget.name}`,
-      );
-      keypress.sendKey('`', globalState.global.display);
-      lastClickTime = now;
-      await delay(50);
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
-      return;
-    }
-  }
-
-  const potentialBLTargets = globalState.battleList.entries.filter((entry) =>
+  // Find all battle list entries that match the name of the pathfinding target
+  const potentialBLTargets = battleList.filter((entry) =>
     pathfindingTarget.name.startsWith(entry.name),
   );
 
   if (potentialBLTargets.length === 0) {
+    logger(
+      'debug',
+      `[Targeting] No battle list entries found for ${pathfindingTarget.name}`,
+    );
     lastClickedBattleListIndex = -1;
     return;
   }
 
-  let targetToClick = null;
-  let startIndex =
-    lastClickedBattleListIndex !== -1 &&
-    potentialBLTargets[lastClickedBattleListIndex]?.name ===
-      pathfindingTarget.name
-      ? lastClickedBattleListIndex
-      : 0;
+  let targetConfirmed = false;
+  let attempts = 0;
+  const maxAttempts = potentialBLTargets.length; // Try each matching entry once
 
-  for (let i = 0; i < potentialBLTargets.length; i++) {
-    const currentIndex = (startIndex + i) % potentialBLTargets.length;
-    const entry = potentialBLTargets[currentIndex];
+  while (!targetConfirmed && attempts < maxAttempts) {
+    const entryIndex = (lastClickedBattleListIndex + 1) % maxAttempts;
+    const targetToClick = potentialBLTargets[entryIndex];
 
-    const creatureInGameWorld = globalState.targeting.creatures.find(
-      (c) =>
-        c.name.startsWith(entry.name) &&
-        arePositionsEqual(c.gameCoords, pathfindingTarget.gameCoords),
-    );
-
-    if (creatureInGameWorld) {
-      targetToClick = entry;
-      lastClickedBattleListIndex = currentIndex;
+    if (!targetToClick) {
+      logger('warn', '[Targeting] Invalid battle list entry selected for click.');
       break;
     }
-  }
 
-  if (targetToClick) {
     logger(
       'info',
-      `[Targeting] Correcting target. Clicking BL entry for: ${targetToClick.name}`,
+      `[Targeting] Attempting to target ${targetToClick.name} via battle list click (attempt ${
+        attempts + 1
+      }/${maxAttempts})`,
     );
+
     const clickX = targetToClick.region.x + 5;
     const clickY = targetToClick.region.y + 2;
 
@@ -439,17 +397,37 @@ const manageTargetingClicks = async (pathfindingTarget, currentGameTarget) => {
       globalState.global.display,
     );
     lastClickTime = Date.now();
+    await delay(50); // Short delay after click
 
-    await delay(50);
+    keypress.sendKey('f8', globalState.global.display); // Confirm target with F8
+    await delay(50); // Short delay after F8
 
-    keypress.sendKey('f8', globalState.global.display);
+    targetConfirmed = await awaitTargetConfirmation();
 
-    await delay(50);
+    if (targetConfirmed) {
+      logger(
+        'info',
+        `[Targeting] Successfully confirmed target: ${pathfindingTarget.name}`,
+      );
+      lastClickedBattleListIndex = entryIndex;
+      break;
+    } else {
+      logger(
+        'debug',
+        `[Targeting] Target confirmation failed for ${targetToClick.name}. Retrying...`,
+      );
+      lastClickedBattleListIndex = entryIndex; // Move to the next entry for the next attempt
+      attempts++;
+    }
+  }
 
-    lastClickedBattleListIndex =
-      (lastClickedBattleListIndex + 1) % potentialBLTargets.length;
-  } else {
-    lastClickedBattleListIndex = -1;
+  if (!targetConfirmed) {
+    logger(
+      'error',
+      `[Targeting] Failed to acquire correct target ${pathfindingTarget.name} after ${maxAttempts} attempts.`,
+    );
+    // Optionally, you might want to clear the pathfinding target here
+    // parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setDynamicTarget', payload: null });
   }
 };
 
