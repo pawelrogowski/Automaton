@@ -168,18 +168,24 @@ export function createTargetingActions(workerContext) {
       };
 
       if (action === 'tab') {
+        await delay(50); // Delay before keypress
         keypress.sendKey('tab', globalState.global.display);
+        await delay(50); // Delay after keypress
       } else if (action === 'grave') {
+        await delay(50); // Delay before keypress
         keypress.sendKey('`', globalState.global.display);
+        await delay(50); // Delay after keypress
       } else if (action === 'click' && clickRegion) {
         const clickX = clickRegion.x + 5;
         const clickY = clickRegion.y + 2;
+        await delay(50); // Delay before mouse click
         mouseController.leftClick(
           parseInt(globalState.global.windowId),
           clickX,
           clickY,
           globalState.global.display,
         );
+        await delay(50); // Delay after mouse click
       }
       targetingContext.lastClickTime = Date.now();
       await delay(50);
@@ -213,13 +219,19 @@ export function createTargetingActions(workerContext) {
 
     if (bestKeyPlan.action && bestKeyPlan.presses <= KEY_PRESS_LIMIT) {
       logger('info', `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`);
-      await performActionAndWait(bestKeyPlan.action);
+      const acquired = await performActionAndWait(bestKeyPlan.action);
+      if (acquired) {
+        // F8 press removed as per new requirement
+      }
       return;
     }
 
     if (currentIndex === -1) {
       logger('info', "[Targeting] Acquisition: No current target. Trying one 'tab' press.");
-      await performActionAndWait('tab');
+      const acquired = await performActionAndWait('tab');
+      if (acquired) {
+        // F8 press removed as per new requirement
+      }
       return;
     }
 
@@ -243,7 +255,9 @@ export function createTargetingActions(workerContext) {
     for (let i = 0; i < potentialBLTargets.length; i++) {
       const targetToClick = potentialBLTargets[(startClickIndex + i) % potentialBLTargets.length];
       logger('info', `[Targeting] Acquisition: Attempting to click ${targetToClick.name} at index ${targetToClick.index}`);
-      if (await performActionAndWait('click', targetToClick.region)) {
+      const acquired = await performActionAndWait('click', targetToClick.region);
+      if (acquired) {
+        // F8 press removed as per new requirement
         return;
       }
     }

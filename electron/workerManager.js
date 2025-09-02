@@ -30,6 +30,7 @@ const DEFAULT_WORKER_CONFIG = {
   targetingWorker: true,
   pathfinderWorker: true,
   windowTitleMonitor: true,
+  lootingWorker: true, // NEW: Add lootingWorker
   enableLuaScriptWorkers: true,
 };
 
@@ -59,8 +60,9 @@ const WORKER_STATE_DEPENDENCIES = {
     'pathfinder',
     'cavebot',
     'regionCoordinates',
-    'battleList', // NEW DEPENDENCY
+    'battleList',
   ],
+  lootingWorker: ['global', 'battleList'], // NEW: Add lootingWorker dependencies
   regionMonitor: ['global'],
   screenMonitor: [
     'global',
@@ -739,6 +741,11 @@ class WorkerManager {
           !this.workers.has('windowTitleMonitor')
         )
           this.startWorker('windowTitleMonitor');
+        if (
+          this.workerConfig.lootingWorker && // NEW: Start lootingWorker
+          !this.workers.has('lootingWorker')
+        )
+          this.startWorker('lootingWorker');
       } else {
         if (this.workers.size > 0) {
           log(

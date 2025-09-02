@@ -72,7 +72,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const updateSABData = () => {
   if (playerPosArray) {
-    const newPlayerPosCounter = Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
+    const newPlayerPosCounter = Atomics.load(
+      playerPosArray,
+      PLAYER_POS_UPDATE_COUNTER_INDEX,
+    );
     if (newPlayerPosCounter > lastPlayerPosCounter) {
       playerMinimapPosition = {
         x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
@@ -94,14 +97,22 @@ const updateSABData = () => {
     let consistentRead = false;
     let attempts = 0;
     do {
-      const counterBeforeRead = Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX);
+      const counterBeforeRead = Atomics.load(
+        pathDataArray,
+        PATH_UPDATE_COUNTER_INDEX,
+      );
       if (counterBeforeRead === lastPathDataCounter) return;
 
       const pathStartX = Atomics.load(pathDataArray, PATH_START_X_INDEX);
       const pathStartY = Atomics.load(pathDataArray, PATH_START_Y_INDEX);
       const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
 
-      if (!playerMinimapPosition || playerMinimapPosition.x !== pathStartX || playerMinimapPosition.y !== pathStartY || playerMinimapPosition.z !== pathStartZ) {
+      if (
+        !playerMinimapPosition ||
+        playerMinimapPosition.x !== pathStartX ||
+        playerMinimapPosition.y !== pathStartY ||
+        playerMinimapPosition.z !== pathStartZ
+      ) {
         lastPathDataCounter = counterBeforeRead;
         return;
       }
@@ -119,7 +130,10 @@ const updateSABData = () => {
         });
       }
 
-      const counterAfterRead = Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX);
+      const counterAfterRead = Atomics.load(
+        pathDataArray,
+        PATH_UPDATE_COUNTER_INDEX,
+      );
       if (counterAfterRead === counterBeforeRead) {
         path = tempPath;
         lastPathDataCounter = counterBeforeRead;
@@ -143,10 +157,11 @@ async function performTargeting() {
 
   if (!globalState.targeting?.enabled) {
     if (globalState.cavebot?.controlState === 'TARGETING') {
-      await delay(50);
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
+      // F8 press removed as per new requirement
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
     }
     return;
   }
@@ -154,7 +169,10 @@ async function performTargeting() {
   const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
 
   if (!cavebotIsEnabled && controlState !== 'TARGETING') {
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/confirmTargetingControl' });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/confirmTargetingControl',
+    });
     return;
   }
 
@@ -185,13 +203,19 @@ async function performTargeting() {
 
   if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
     if (targetingContext.pathfindingTarget) {
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/requestTargetingControl',
+      });
     }
     return;
   }
 
   if (controlState === 'HANDOVER_TO_TARGETING') {
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/confirmTargetingControl' });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/confirmTargetingControl',
+    });
     return;
   }
 
@@ -207,36 +231,59 @@ async function performTargeting() {
   const allCreatures = globalState.targeting.creatures || [];
 
   // Melee Override Logic
-  const meleeConflict = Array.from(meleeRangeTimers.entries()).find(([instanceId, startTime]) => now - startTime > 100 && effectiveTarget?.instanceId !== instanceId);
+  const meleeConflict = Array.from(meleeRangeTimers.entries()).find(
+    ([instanceId, startTime]) =>
+      now - startTime > 100 && effectiveTarget?.instanceId !== instanceId,
+  );
   if (meleeConflict) {
     const [meleeInstanceId] = meleeConflict;
-    const blockingCreature = allCreatures.find((c) => c.instanceId === meleeInstanceId);
-    const blockingCreatureRule = blockingCreature && globalState.targeting.targetingList?.find((r) => r.name.startsWith(blockingCreature.name) && r.action === 'Attack');
+    const blockingCreature = allCreatures.find(
+      (c) => c.instanceId === meleeInstanceId,
+    );
+    const blockingCreatureRule =
+      blockingCreature &&
+      globalState.targeting.targetingList?.find(
+        (r) =>
+          r.name.startsWith(blockingCreature.name) && r.action === 'Attack',
+      );
     if (blockingCreature && blockingCreatureRule) {
-      logger('info', `[Targeting] Overriding target ${effectiveTarget?.name || 'None'} to attack ${blockingCreature.name} in melee range.`);
+      logger(
+        'info',
+        `[Targeting] Overriding target ${effectiveTarget?.name || 'None'} to attack ${blockingCreature.name} in melee range.`,
+      );
       effectiveTarget = { ...blockingCreature, rule: blockingCreatureRule };
     }
   }
 
-  await targetingActions.manageMovement(targetingContext, globalState, effectiveTarget, path, pathfindingStatus, playerMinimapPosition);
+  await targetingActions.manageMovement(
+    targetingContext,
+    globalState,
+    effectiveTarget,
+    path,
+    pathfindingStatus,
+    playerMinimapPosition,
+  );
 
   const currentGameTarget = globalState.targeting.target;
   if (effectiveTarget) {
     if (Date.now() > targetingContext.acquisitionUnlockTime) {
-      targetingActions.manageTargetAcquisition(targetingContext, globalState, effectiveTarget, currentGameTarget);
+      targetingActions.manageTargetAcquisition(
+        targetingContext,
+        globalState,
+        effectiveTarget,
+        currentGameTarget,
+      );
     }
   } else {
-    if (currentGameTarget) {
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
-    }
     if (cavebotIsEnabled) {
-      await delay(50);
-      keypress.sendKey('f8', globalState.global.display);
-      await delay(50);
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
     }
   }
+  // Update lastEffectiveTarget for the next cycle
+  targetingContext.lastEffectiveTarget = effectiveTarget;
 }
 
 // --- Main Worker Loop ---
@@ -254,7 +301,10 @@ parentPort.on('message', (message) => {
       globalState = message;
       if (!isInitialized) {
         isInitialized = true;
-        logger('info', '[TargetingWorker] Initial state received. Worker is now active.');
+        logger(
+          'info',
+          '[TargetingWorker] Initial state received. Worker is now active.',
+        );
       }
     }
 
@@ -263,8 +313,12 @@ parentPort.on('message', (message) => {
     const newBattleListHash = JSON.stringify(globalState.battleList?.entries);
     const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures);
     const newTargetInstanceId = globalState.targeting?.target?.instanceId;
-    const newTargetingListHash = JSON.stringify(globalState.targeting?.targetingList);
-    const newPlayerPosKey = playerMinimapPosition ? `${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}` : null;
+    const newTargetingListHash = JSON.stringify(
+      globalState.targeting?.targetingList,
+    );
+    const newPlayerPosKey = playerMinimapPosition
+      ? `${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}`
+      : null;
     const newControlState = globalState.cavebot?.controlState;
     const newTargetingEnabled = globalState.targeting?.enabled;
     const newCavebotEnabled = globalState.cavebot?.enabled;
@@ -282,7 +336,11 @@ parentPort.on('message', (message) => {
     if (shouldProcess) {
       isProcessing = true;
 
-      if ((newControlState === 'TARGETING' && lastControlState !== 'TARGETING') || (newControlState === 'HANDOVER_TO_TARGETING' && lastControlState !== 'HANDOVER_TO_TARGETING')) {
+      if (
+        (newControlState === 'TARGETING' && lastControlState !== 'TARGETING') ||
+        (newControlState === 'HANDOVER_TO_TARGETING' &&
+          lastControlState !== 'HANDOVER_TO_TARGETING')
+      ) {
         shouldRequestNewPath = true;
         justGainedControl = true;
       }
@@ -297,8 +355,16 @@ parentPort.on('message', (message) => {
       lastCavebotEnabled = newCavebotEnabled;
 
       performTargeting()
-        .catch((err) => logger('error', '[TargetingWorker] Unhandled error in performTargeting:', err))
-        .finally(() => { isProcessing = false; });
+        .catch((err) =>
+          logger(
+            'error',
+            '[TargetingWorker] Unhandled error in performTargeting:',
+            err,
+          ),
+        )
+        .finally(() => {
+          isProcessing = false;
+        });
     }
   } catch (error) {
     logger('error', '[TargetingWorker] Error handling message:', error);
