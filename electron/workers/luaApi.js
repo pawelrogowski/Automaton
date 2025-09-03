@@ -241,10 +241,8 @@ export const createLuaApi = async (context) => {
     'typeText',
     'typeSequence',
     'rotate',
-    'leftClick',
-    'rightClick',
-    'leftClickAbsolute',
-    'rightClickAbsolute',
+    'clickTile',
+    'clickAbsolute',
     'mapClick',
     'drag',
     'dragAbsolute',
@@ -399,7 +397,7 @@ export const createLuaApi = async (context) => {
     },
     rotate: (direction) => rotate(getDisplay(), direction),
     isTyping: () => getIsTyping(),
-    leftClick: async (x, y, position = 'bottomRight') => {
+    clickTile: async (button, x, y, position = 'center') => {
       const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
@@ -408,7 +406,7 @@ export const createLuaApi = async (context) => {
       if (!gameWorld || !tileSize || !playerPos) {
         logger(
           'warn',
-          `[Lua/${scriptName}] Cannot perform game left-click: missing region data or player position`,
+          `[Lua/${scriptName}] Cannot perform game click: missing region data or player position`,
         );
         return false;
       }
@@ -423,65 +421,36 @@ export const createLuaApi = async (context) => {
       if (!clickCoords) {
         logger(
           'warn',
-          `[Lua/${scriptName}] Cannot perform game left-click: invalid coordinates`,
+          `[Lua/${scriptName}] Cannot perform game click: invalid coordinates`,
         );
         return false;
       }
-      mouseController.leftClick(
-        parseInt(windowId),
-        clickCoords.x,
-        clickCoords.y,
-        getDisplay(),
-      );
-      await wait(100);
-      return true;
-    },
-    leftClickAbsolute: async (x, y) => {
-      const windowId = String(getWindowId());
-      mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
-      await wait(100);
-      return true;
-    },
-    rightClickAbsolute: async (x, y) => {
-      const windowId = String(getWindowId());
-      mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
-      await wait(100);
-      return true;
-    },
-    rightClick: async (x, y, position = 'bottomRight') => {
-      const windowId = String(getWindowId());
-      const state = getState();
-      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
-      const tileSize = state.regionCoordinates?.regions?.tileSize;
-      const playerPos = state.gameState?.playerMinimapPosition;
-      if (!gameWorld || !tileSize || !playerPos) {
-        logger(
-          'warn',
-          `[Lua/${scriptName}] Cannot perform game right-click: missing region data or player position`,
+
+      if (button === 'right') {
+        mouseController.rightClick(
+          parseInt(windowId),
+          clickCoords.x,
+          clickCoords.y,
+          getDisplay(),
         );
-        return false;
-      }
-      const clickCoords = getAbsoluteGameWorldClickCoordinates(
-        x,
-        y,
-        playerPos,
-        gameWorld,
-        tileSize,
-        position,
-      );
-      if (!clickCoords) {
-        logger(
-          'warn',
-          `[Lua/${scriptName}] Cannot perform game right-click: invalid coordinates`,
+      } else {
+        mouseController.leftClick(
+          parseInt(windowId),
+          clickCoords.x,
+          clickCoords.y,
+          getDisplay(),
         );
-        return false;
       }
-      mouseController.rightClick(
-        parseInt(windowId),
-        clickCoords.x,
-        clickCoords.y,
-        getDisplay(),
-      );
+      await wait(100);
+      return true;
+    },
+    clickAbsolute: async (button, x, y) => {
+      const windowId = String(getWindowId());
+      if (button === 'right') {
+        mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
+      } else {
+        mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
+      }
       await wait(100);
       return true;
     },
@@ -733,12 +702,33 @@ export const createLuaApi = async (context) => {
         `[Lua/${scriptName}] Cavebot ${enabled ? 'enabled' : 'disabled'}`,
       );
     },
+    isCreatureOnTile: (x, y, z) => {
+      const creatures = getCreatures(getState);
+      return creatures.some(
+        (creature) =>
+          creature.x === x && creature.y === y && creature.z === z,
+      );
+    },
     setScripts: (enabled) => {
       context.postStoreUpdate('lua/setenabled', !!enabled);
       logger(
         'info',
         `[Lua/${scriptName}] Scripts ${enabled ? 'enabled' : 'disabled'}`,
       );
+    },
+    pauseWalking: (ms) => {
+      const duration = parseInt(ms, 10);
+      if (!isNaN(duration)) {
+        postSystemMessage({ type: 'lua-pause-walking', payload: duration });
+        logger('info', `[Lua/${scriptName}] Pausing walking for ${duration}ms`);
+      }
+    },
+    pauseTargeting: (ms) => {
+      const duration = parseInt(ms, 10);
+      if (!isNaN(duration)) {
+        postSystemMessage({ type: 'lua-pause-targeting', payload: duration });
+        logger('info', `[Lua/${scriptName}] Pausing targeting for ${duration}ms`);
+      }
     },
     login: async (email, password, character) => {
       const windowId = String(getWindowId());

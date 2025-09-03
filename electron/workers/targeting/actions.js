@@ -23,7 +23,7 @@ const MELEE_DISTANCE_THRESHOLD = 1.9;
  */
 export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort } = workerContext;
-  const logger = createLogger({ info: true, error: true, debug: false });
+  const logger = createLogger({ info: false, error: true, debug: false });
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const getDirectionKey = (current, target) => {
@@ -44,15 +44,25 @@ export function createTargetingActions(workerContext) {
     return null;
   };
 
-  const awaitWalkConfirmation = (posCounterBeforeMove, pathCounterBeforeMove, timeoutMs) => {
+  const awaitWalkConfirmation = (
+    posCounterBeforeMove,
+    pathCounterBeforeMove,
+    timeoutMs,
+  ) => {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         clearInterval(intervalId);
-        reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
+        reject(
+          new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`),
+        );
       }, timeoutMs);
       const intervalId = setInterval(() => {
-        const posChanged = playerPosArray && Atomics.load(playerPosArray, 3) > posCounterBeforeMove;
-        const pathChanged = pathDataArray && Atomics.load(pathDataArray, 4) > pathCounterBeforeMove;
+        const posChanged =
+          playerPosArray &&
+          Atomics.load(playerPosArray, 3) > posCounterBeforeMove;
+        const pathChanged =
+          pathDataArray &&
+          Atomics.load(pathDataArray, 4) > pathCounterBeforeMove;
         if (posChanged || pathChanged) {
           clearTimeout(timeoutId);
           clearInterval(intervalId);
@@ -62,22 +72,41 @@ export function createTargetingActions(workerContext) {
     });
   };
 
-  const selectBestTargetFromGameWorld = (globalState, playerMinimapPosition) => {
+  const selectBestTargetFromGameWorld = (
+    globalState,
+    playerMinimapPosition,
+  ) => {
     const { creatures, targetingList } = globalState.targeting;
-    if (!creatures || creatures.length === 0 || !targetingList || targetingList.length === 0) {
+    if (
+      !creatures ||
+      creatures.length === 0 ||
+      !targetingList ||
+      targetingList.length === 0
+    ) {
       return null;
     }
 
     const reachableCreatures = creatures.filter((c) => c.isReachable);
-    const pathfinderTargetInstanceId = globalState.cavebot?.dynamicTarget?.targetInstanceId;
+    const pathfinderTargetInstanceId =
+      globalState.cavebot?.dynamicTarget?.targetInstanceId;
 
     if (pathfinderTargetInstanceId) {
-      const currentPathfinderTarget = reachableCreatures.find((c) => c.instanceId === pathfinderTargetInstanceId);
+      const currentPathfinderTarget = reachableCreatures.find(
+        (c) => c.instanceId === pathfinderTargetInstanceId,
+      );
       if (currentPathfinderTarget) {
-        const rule = targetingList.find((r) => r.name.startsWith(currentPathfinderTarget.name) && r.action === 'Attack');
+        const rule = targetingList.find(
+          (r) =>
+            r.name.startsWith(currentPathfinderTarget.name) &&
+            r.action === 'Attack',
+        );
         if (rule) {
           const stickiness = rule.stickiness || 0;
-          return { ...currentPathfinderTarget, rule, effectivePriority: rule.priority + stickiness };
+          return {
+            ...currentPathfinderTarget,
+            rule,
+            effectivePriority: rule.priority + stickiness,
+          };
         }
       }
     }
@@ -104,8 +133,14 @@ export function createTargetingActions(workerContext) {
         return b.effectivePriority - a.effectivePriority;
       }
       if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
-        const distA = Math.max(Math.abs(a.gameCoords.x - playerMinimapPosition.x), Math.abs(a.gameCoords.y - playerMinimapPosition.y));
-        const distB = Math.max(Math.abs(b.gameCoords.x - playerMinimapPosition.x), Math.abs(b.gameCoords.y - playerMinimapPosition.y));
+        const distA = Math.max(
+          Math.abs(a.gameCoords.x - playerMinimapPosition.x),
+          Math.abs(a.gameCoords.y - playerMinimapPosition.y),
+        );
+        const distB = Math.max(
+          Math.abs(b.gameCoords.x - playerMinimapPosition.x),
+          Math.abs(b.gameCoords.y - playerMinimapPosition.y),
+        );
         return distA - distB;
       }
       return a.distance - b.distance;
@@ -114,7 +149,12 @@ export function createTargetingActions(workerContext) {
     return targetableCreatures[0];
   };
 
-  const manageTargetAcquisition = async (targetingContext, globalState, pathfindingTarget, currentGameTarget) => {
+  const manageTargetAcquisition = async (
+    targetingContext,
+    globalState,
+    pathfindingTarget,
+    currentGameTarget,
+  ) => {
     if (!pathfindingTarget) {
       targetingContext.lastClickedBattleListIndex = -1;
       return;
@@ -202,14 +242,20 @@ export function createTargetingActions(workerContext) {
     let bestKeyPlan = { action: null, presses: Infinity };
 
     if (currentIndex !== -1) {
-      const potentialIndices = battleList.map((e, i) => i).filter((i) => pathfindingTarget.name.startsWith(battleList[i].name));
+      const potentialIndices = battleList
+        .map((e, i) => i)
+        .filter((i) => pathfindingTarget.name.startsWith(battleList[i].name));
       if (potentialIndices.length > 0) {
         for (const desiredIndex of potentialIndices) {
-          const tabs = (desiredIndex - currentIndex + battleList.length) % battleList.length;
+          const tabs =
+            (desiredIndex - currentIndex + battleList.length) %
+            battleList.length;
           if (tabs > 0 && tabs < bestKeyPlan.presses) {
             bestKeyPlan = { action: 'tab', presses: tabs };
           }
-          const graves = (currentIndex - desiredIndex + battleList.length) % battleList.length;
+          const graves =
+            (currentIndex - desiredIndex + battleList.length) %
+            battleList.length;
           if (graves > 0 && graves < bestKeyPlan.presses) {
             bestKeyPlan = { action: 'grave', presses: graves };
           }
@@ -218,7 +264,10 @@ export function createTargetingActions(workerContext) {
     }
 
     if (bestKeyPlan.action && bestKeyPlan.presses <= KEY_PRESS_LIMIT) {
-      logger('info', `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`);
+      logger(
+        'info',
+        `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`,
+      );
       const acquired = await performActionAndWait(bestKeyPlan.action);
       if (acquired) {
         // F8 press removed as per new requirement
@@ -227,7 +276,10 @@ export function createTargetingActions(workerContext) {
     }
 
     if (currentIndex === -1) {
-      logger('info', "[Targeting] Acquisition: No current target. Trying one 'tab' press.");
+      logger(
+        'info',
+        "[Targeting] Acquisition: No current target. Trying one 'tab' press.",
+      );
       const acquired = await performActionAndWait('tab');
       if (acquired) {
         // F8 press removed as per new requirement
@@ -235,39 +287,77 @@ export function createTargetingActions(workerContext) {
       return;
     }
 
-    logger('info', `[Targeting] Acquisition: Key plan too expensive (cost ${bestKeyPlan.presses}). Falling back to mouse clicks.`);
-    const potentialBLTargets = battleList.map((entry, index) => ({ ...entry, index })).filter((entry) => pathfindingTarget.name.startsWith(entry.name));
+    logger(
+      'info',
+      `[Targeting] Acquisition: Key plan too expensive (cost ${bestKeyPlan.presses}). Falling back to mouse clicks.`,
+    );
+    const potentialBLTargets = battleList
+      .map((entry, index) => ({ ...entry, index }))
+      .filter((entry) => pathfindingTarget.name.startsWith(entry.name));
 
     if (potentialBLTargets.length === 0) {
-      logger('warn', `[Targeting] Target ${pathfindingTarget.name} not found in battle list.`);
+      logger(
+        'warn',
+        `[Targeting] Target ${pathfindingTarget.name} not found in battle list.`,
+      );
       return;
     }
 
     let startClickIndex = 0;
     const currentBLTarget = battleList[currentIndex];
-    if (currentBLTarget && pathfindingTarget.name.startsWith(currentBLTarget.name)) {
-      const lastTryIndex = potentialBLTargets.findIndex((t) => t.index === currentIndex);
+    if (
+      currentBLTarget &&
+      pathfindingTarget.name.startsWith(currentBLTarget.name)
+    ) {
+      const lastTryIndex = potentialBLTargets.findIndex(
+        (t) => t.index === currentIndex,
+      );
       if (lastTryIndex !== -1) {
         startClickIndex = (lastTryIndex + 1) % potentialBLTargets.length;
       }
     }
 
     for (let i = 0; i < potentialBLTargets.length; i++) {
-      const targetToClick = potentialBLTargets[(startClickIndex + i) % potentialBLTargets.length];
-      logger('info', `[Targeting] Acquisition: Attempting to click ${targetToClick.name} at index ${targetToClick.index}`);
-      const acquired = await performActionAndWait('click', targetToClick.region);
+      const targetToClick =
+        potentialBLTargets[(startClickIndex + i) % potentialBLTargets.length];
+      logger(
+        'info',
+        `[Targeting] Acquisition: Attempting to click ${targetToClick.name} at index ${targetToClick.index}`,
+      );
+      const acquired = await performActionAndWait(
+        'click',
+        targetToClick.region,
+      );
       if (acquired) {
         // F8 press removed as per new requirement
         return;
       }
     }
 
-    logger('error', `[Targeting] Failed to acquire target ${pathfindingTarget.name} after trying all methods.`);
+    logger(
+      'error',
+      `[Targeting] Failed to acquire target ${pathfindingTarget.name} after trying all methods.`,
+    );
   };
 
-  const manageMovement = async (targetingContext, globalState, pathfindingTarget, path, pathfindingStatus, playerMinimapPosition) => {
-    if (!pathfindingTarget || !pathfindingTarget.isReachable || !pathfindingTarget.gameCoords) {
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setDynamicTarget', payload: null });
+  const manageMovement = async (
+    targetingContext,
+    globalState,
+    pathfindingTarget,
+    path,
+    pathfindingStatus,
+    playerMinimapPosition,
+  ) => {
+    if (
+      !pathfindingTarget ||
+      !pathfindingTarget.isReachable ||
+      !pathfindingTarget.gameCoords
+    ) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
       return;
     }
 
@@ -282,15 +372,31 @@ export function createTargetingActions(workerContext) {
       targetCreaturePos: pathfindingTarget.gameCoords,
       targetInstanceId: pathfindingTarget.instanceId,
     };
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setDynamicTarget', payload: dynamicGoal });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setDynamicTarget',
+      payload: dynamicGoal,
+    });
 
-    if (!targetingContext.lastDispatchedVisitedTile || targetingContext.lastDispatchedVisitedTile.x !== playerMinimapPosition.x || targetingContext.lastDispatchedVisitedTile.y !== playerMinimapPosition.y || targetingContext.lastDispatchedVisitedTile.z !== playerMinimapPosition.z) {
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/addVisitedTile', payload: playerMinimapPosition });
+    if (
+      !targetingContext.lastDispatchedVisitedTile ||
+      targetingContext.lastDispatchedVisitedTile.x !==
+        playerMinimapPosition.x ||
+      targetingContext.lastDispatchedVisitedTile.y !==
+        playerMinimapPosition.y ||
+      targetingContext.lastDispatchedVisitedTile.z !== playerMinimapPosition.z
+    ) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/addVisitedTile',
+        payload: playerMinimapPosition,
+      });
       targetingContext.lastDispatchedVisitedTile = { ...playerMinimapPosition };
     }
 
     const now = Date.now();
-    if (pathfindingStatus !== 1 || path.length === 0) { // PATH_STATUS_PATH_FOUND = 1
+    if (pathfindingStatus !== 1 || path.length === 0) {
+      // PATH_STATUS_PATH_FOUND = 1
       return;
     }
 
@@ -304,7 +410,10 @@ export function createTargetingActions(workerContext) {
 
     if (pathfindingStatus === 1 && path.length > 0) {
       const nextStep = path[0];
-      if (playerMinimapPosition.x === nextStep.x && playerMinimapPosition.y === nextStep.y) {
+      if (
+        playerMinimapPosition.x === nextStep.x &&
+        playerMinimapPosition.y === nextStep.y
+      ) {
         return;
       }
       const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
@@ -312,18 +421,22 @@ export function createTargetingActions(workerContext) {
         const posCounterBeforeMove = Atomics.load(playerPosArray, 3);
         const pathCounterBeforeMove = Atomics.load(pathDataArray, 4);
         const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
-        const timeout = isDiagonal ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
+        const timeout = isDiagonal
+          ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
+          : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
 
         keypress.sendKey(dirKey, globalState.global.display);
         targetingContext.lastMovementTime = now;
         try {
-          await awaitWalkConfirmation(posCounterBeforeMove, pathCounterBeforeMove, timeout);
+          await awaitWalkConfirmation(
+            posCounterBeforeMove,
+            pathCounterBeforeMove,
+            timeout,
+          );
           if (isDiagonal) {
             await delay(MOVE_CONFIRM_GRACE_DIAGONAL_MS);
           }
-        } catch (error) {
-          logger('error', `[Targeting] Movement confirmation failed: ${error.message}`);
-        }
+        } catch (error) {}
       }
     }
   };

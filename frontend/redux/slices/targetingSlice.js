@@ -8,6 +8,8 @@ const initialState = {
   creatures: [], // [{ instanceId, name, healthTag, absoluteCoords, gameCoords, distance, isReachable }]
   target: null, // { instanceId, name, distanceFrom, ... }
   targetingList: [],
+  isPausedByScript: false,
+  pauseTimerId: null,
 };
 
 const targetingSlice = createSlice({
@@ -103,6 +105,10 @@ const targetingSlice = createSlice({
         };
       }
     },
+    setScriptPause: (state, action) => {
+      state.isPausedByScript = action.payload.isPaused;
+      state.pauseTimerId = action.payload.timerId;
+    },
   },
 });
 
@@ -115,6 +121,23 @@ export const {
   addCreatureToTargetingList,
   removeCreatureFromTargetingList,
   updateCreatureInTargetingList,
+  setScriptPause,
 } = targetingSlice.actions;
+
+export const setTargetingPause = (ms) => (dispatch, getState) => {
+  const { pauseTimerId } = getState().targeting;
+  if (pauseTimerId) {
+    clearTimeout(pauseTimerId);
+  }
+
+  if (ms > 0) {
+    const timerId = setTimeout(() => {
+      dispatch(targetingSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+    }, ms);
+    dispatch(targetingSlice.actions.setScriptPause({ isPaused: true, timerId }));
+  } else {
+    dispatch(targetingSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+  }
+};
 
 export default targetingSlice;

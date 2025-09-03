@@ -3,6 +3,7 @@
 import { postStoreUpdate } from './helpers/communication.js';
 import { advanceToNextWaypoint } from './helpers/navigation.js';
 import { delay } from './helpers/asyncUtils.js';
+import { getDistance } from '../../utils/distance.js';
 import {
   handleWalkAction,
   handleStandAction,

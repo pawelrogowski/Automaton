@@ -52,6 +52,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'settings',
     'pathfinder',
     'uiValues', // Add uiValues to ensure stamina and cap are updated
+    'gameState',
   ],
   targetingWorker: [
     'targeting',
@@ -458,6 +459,12 @@ class WorkerManager {
     } else if (message.type === 'play_alert') {
       playSound('alert.wav');
       return;
+    } else if (message.type === 'lua-pause-walking') {
+      store.dispatch(setWalkingPause(message.payload));
+      return;
+    } else if (message.type === 'lua-pause-targeting') {
+      store.dispatch(setTargetingPause(message.payload));
+      return;
     }
   }
 
@@ -636,13 +643,9 @@ class WorkerManager {
       if (relevant && Object.keys(relevant).length) {
         // Always send the full, fresh slice for cavebot worker for synchronous execution
         if (name === 'cavebotWorker') {
-          const cavebotPayload = {};
-          for (const key of WORKER_STATE_DEPENDENCIES.cavebotWorker) {
-            cavebotPayload[key] = currentState[key];
-          }
           workerEntry.worker.postMessage({
             type: 'state_full_sync',
-            payload: cavebotPayload,
+            payload: currentState,
           });
         } else {
           const hash = quickHash(relevant);

@@ -19,7 +19,7 @@ import {
   PATH_STATUS_IDLE,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // --- Worker State ---
 let isInitialized = false;
@@ -147,6 +147,10 @@ const updateSABData = () => {
 
 async function performTargeting() {
   if (isShuttingDown || !isInitialized || !globalState?.global?.display) {
+    return;
+  }
+
+  if (globalState.targeting?.isPausedByScript) {
     return;
   }
 

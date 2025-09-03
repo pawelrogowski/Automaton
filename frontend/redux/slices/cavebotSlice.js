@@ -25,6 +25,8 @@ const initialState = {
   currentSection: 'default',
   standTime: 0,
   isActionPaused: false,
+  isPausedByScript: false,
+  pauseTimerId: null,
   scriptFeedback: null,
   waypointSections: {
     default: {
@@ -302,6 +304,10 @@ const cavebotSlice = createSlice({
     clearVisitedTiles: (state) => {
       state.visitedTiles = [];
     },
+    setScriptPause: (state, action) => {
+      state.isPausedByScript = action.payload.isPaused;
+      state.pauseTimerId = action.payload.timerId;
+    },
   },
 });
 
@@ -331,8 +337,25 @@ export const {
   setDynamicTarget,
   addVisitedTile,
   clearVisitedTiles, // Export the correctly named action
+  setScriptPause,
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };
+
+export const setWalkingPause = (ms) => (dispatch, getState) => {
+  const { pauseTimerId } = getState().cavebot;
+  if (pauseTimerId) {
+    clearTimeout(pauseTimerId);
+  }
+
+  if (ms > 0) {
+    const timerId = setTimeout(() => {
+      dispatch(cavebotSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+    }, ms);
+    dispatch(cavebotSlice.actions.setScriptPause({ isPaused: true, timerId }));
+  } else {
+    dispatch(cavebotSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+  }
+};
 
 export default cavebotSlice;

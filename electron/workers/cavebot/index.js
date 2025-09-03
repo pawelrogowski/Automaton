@@ -3,9 +3,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { CavebotLuaExecutor } from '../cavebotLuaExecutor.js';
-// ====================== MODIFICATION START ======================
-import { createLogger } from '../../utils/logger.js'; // Corrected path
-// ======================= MODIFICATION END =======================
+import { createLogger } from '../../utils/logger.js';
 import { config } from './config.js';
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
@@ -106,7 +104,16 @@ async function performOperation() {
     return;
   }
 
-  const { enabled: cavebotIsEnabled, controlState } = globalState.cavebot;
+  const {
+    enabled: cavebotIsEnabled,
+    controlState,
+    isPausedByScript,
+  } = globalState.cavebot;
+
+  if (isPausedByScript) {
+    if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
+    return;
+  }
 
   if (!cavebotIsEnabled) {
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
@@ -264,6 +271,18 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'shutdown') {
       workerState.isShuttingDown = true;
       if (workerState.luaExecutor) workerState.luaExecutor.destroy();
+      // ====================== MODIFICATION START ======================
+      // Re-added the missing message handler for shared global updates.
+    } else if (message.type === 'lua_global_broadcast') {
+      const { key, value } = message.payload;
+      if (workerData.sharedLuaGlobals) {
+        workerData.sharedLuaGlobals[key] = value;
+        workerState.logger(
+          'debug',
+          `[CavebotWorker] Received lua_global_broadcast: ${key} = ${value}`,
+        );
+      }
+      // ======================= MODIFICATION END =======================
     } else if (typeof message === 'object' && !message.type) {
       workerState.globalState = message;
       if (!workerState.isInitialized) {
