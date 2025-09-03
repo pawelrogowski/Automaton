@@ -230,6 +230,12 @@ class WorkerManager {
     if (isUUID) {
       return resolve(this.electronDir, './workers', 'luaScriptWorker.js');
     }
+    // ====================== MODIFICATION START ======================
+    // Point cavebotWorker to its new modular entry point.
+    if (workerName === 'cavebotWorker') {
+      return resolve(this.electronDir, './workers', 'cavebot', 'index.js');
+    }
+    // ======================= MODIFICATION END =======================
     return resolve(this.electronDir, './workers', `${workerName}.js`);
   }
 

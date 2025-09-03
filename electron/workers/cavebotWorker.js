@@ -8,6 +8,8 @@ import useItemOnCoordinates from '../mouseControll/useItemOnCoordinates.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { createLogger } from '../utils/logger.js';
+import getDirectionKey from '../utils/getDirectionKey.js';
+import { getDistance } from '../utils/distance.js';
 import { CavebotLuaExecutor } from './cavebotLuaExecutor.js';
 import {
   PLAYER_X_INDEX,
@@ -33,12 +35,10 @@ import {
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
 
-const MAIN_LOOP_INTERVAL = 25;
-const STATE_CHANGE_POLL_INTERVAL = 5;
-
-const MAX_SCRIPT_RETRIES = 1;
-
 const config = {
+  mainLoopInterval: 25,
+  stateChangePollInterval: 25,
+  maxScriptRetries: 1,
   actionStateChangeTimeoutMs: 200,
   preClickDelayMs: 250,
   toolHotkeyWaitMs: 250,
@@ -52,6 +52,12 @@ const config = {
     machete: 'n',
     shovel: 'v',
   },
+  waypointSkipRadius: 4,
+  defaultAwaitStateChangeTimeout: 500,
+  floorChangeGraceMs: 500,
+  macheteRetryDelay: 250,
+  scriptErrorDelay: 250,
+  controlHandoverGraceMs: 100,
 };
 
 let globalState = null;
@@ -83,25 +89,6 @@ let scriptErrorWaypointId = null;
 let scriptErrorCount = 0;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const getDistance = (p1, p2) =>
-  Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-const getDirectionKey = (current, target) => {
-  const dx = target.x - current.x;
-  const dy = target.y - current.y;
-  if (dy < 0) {
-    if (dx < 0) return 'q';
-    if (dx === 0) return 'w';
-    if (dx > 0) return 'e';
-  } else if (dy === 0) {
-    if (dx < 0) return 'a';
-    if (dx > 0) return 'd';
-  } else if (dy > 0) {
-    if (dx < 0) return 'z';
-    if (dx === 0) return 's';
-    if (dx > 0) return 'c';
-  }
-  return null;
-};
 
 const logger = createLogger({ info: true, error: true, debug: false });
 
@@ -216,7 +203,7 @@ const awaitStateChange = (condition, timeoutMs) => {
         clearInterval(intervalId);
         resolve(true);
       }
-    }, STATE_CHANGE_POLL_INTERVAL);
+    }, config.stateChangePollInterval);
   });
 };
 
@@ -244,7 +231,7 @@ const awaitZLevelChange = (initialZ, timeoutMs) => {
         clearInterval(intervalId);
         resolve(false);
       }
-    }, STATE_CHANGE_POLL_INTERVAL);
+    }, config.stateChangePollInterval);
   });
 };
 
@@ -268,7 +255,7 @@ const advanceToNextWaypoint = async () => {
     postStoreUpdate('cavebot/setwptId', nextWpt.id);
     const confirmed = await awaitStateChange(
       (state) => state?.cavebot?.wptId === nextWpt.id,
-      500,
+      config.defaultAwaitStateChangeTimeout,
     );
     if (confirmed) {
       lastProcessedWptId = nextWpt.id;
@@ -327,7 +314,7 @@ const handleWalkAction = async () => {
     playerMinimapPosition.x === nextStep.x &&
     playerMinimapPosition.y === nextStep.y
   ) {
-    await delay(MAIN_LOOP_INTERVAL);
+    await delay(config.mainLoopInterval);
     return;
   }
   const posCounterBeforeMove = lastPlayerPosCounter;
@@ -368,9 +355,10 @@ const handleStandAction = async (targetWaypoint) => {
     const { finalPos } = await awaitStandConfirmation(
       initialPos,
       targetWaypoint,
-      500,
+      config.defaultAwaitStateChangeTimeout,
     );
-    if (finalPos.z !== initialPos.z) floorChangeGraceUntil = Date.now() + 500;
+    if (finalPos.z !== initialPos.z)
+      floorChangeGraceUntil = Date.now() + config.floorChangeGraceMs;
     if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
       stuckDetectionGraceUntil = Date.now() + config.postTeleportGraceMs;
     }
@@ -413,9 +401,12 @@ const handleLadderAction = async (targetCoords) => {
     clickCoords.y,
     globalState.global.display || ':0',
   );
-  const zChanged = await awaitZLevelChange(initialPos.z, 500);
+  const zChanged = await awaitZLevelChange(
+    initialPos.z,
+    config.defaultAwaitStateChangeTimeout,
+  );
   if (zChanged) {
-    floorChangeGraceUntil = Date.now() + 500;
+    floorChangeGraceUntil = Date.now() + config.floorChangeGraceMs;
     return true;
   }
   return false;
@@ -453,9 +444,12 @@ const handleRopeAction = async (targetCoords) => {
     clickCoords.y,
     globalState.global.display || ':0',
   );
-  const zChanged = await awaitZLevelChange(initialPos.z, 500);
+  const zChanged = await awaitZLevelChange(
+    initialPos.z,
+    config.defaultAwaitStateChangeTimeout,
+  );
   if (zChanged) {
-    floorChangeGraceUntil = Date.now() + 500;
+    floorChangeGraceUntil = Date.now() + config.floorChangeGraceMs;
     return true;
   }
   return false;
@@ -500,9 +494,12 @@ const handleShovelAction = async (targetCoords) => {
     clickCoords.y,
     hotkey,
   );
-  const zChanged = await awaitZLevelChange(initialPos.z, 500);
+  const zChanged = await awaitZLevelChange(
+    initialPos.z,
+    config.defaultAwaitStateChangeTimeout,
+  );
   if (zChanged) {
-    floorChangeGraceUntil = Date.now() + 500;
+    floorChangeGraceUntil = Date.now() + config.floorChangeGraceMs;
     return true;
   }
   return false;
@@ -658,7 +655,7 @@ const handleDoorAction = async (targetWaypoint) => {
 
 const handleScriptAction = async (targetWpt) => {
   if (!luaExecutor || !luaExecutor.isInitialized) {
-    await delay(100);
+    await delay(config.controlHandoverGraceMs);
     return;
   }
 
@@ -678,19 +675,21 @@ const handleScriptAction = async (targetWpt) => {
     scriptErrorCount++;
     logger(
       'warn',
-      `[Cavebot] Script at waypoint ${targetWpt.id} failed. Attempt ${scriptErrorCount}/${MAX_SCRIPT_RETRIES}.`,
+      `[Cavebot] Script at waypoint ${targetWpt.id} failed. Attempt ${scriptErrorCount}/${config.maxScriptRetries}.`,
     );
 
-    if (scriptErrorCount >= MAX_SCRIPT_RETRIES) {
+    if (scriptErrorCount >= config.maxScriptRetries) {
       const attemptText =
-        MAX_SCRIPT_RETRIES === 1 ? '1 time' : `${MAX_SCRIPT_RETRIES} times`;
+        config.maxScriptRetries === 1
+          ? '1 time'
+          : `${config.maxScriptRetries} times`;
       logger(
         'error',
         `[Cavebot] Script at waypoint ${targetWpt.id} failed ${attemptText}. Skipping to next waypoint.`,
       );
       await advanceToNextWaypoint();
     } else {
-      await delay(250);
+      await delay(config.scriptErrorDelay);
     }
   }
 };
@@ -719,7 +718,7 @@ const awaitWalkConfirmation = (
         clearInterval(intervalId);
         resolve(true);
       }
-    }, STATE_CHANGE_POLL_INTERVAL);
+    }, config.stateChangePollInterval);
   });
 };
 
@@ -745,7 +744,7 @@ const awaitStandConfirmation = (initialPos, targetPos, timeoutMs) => {
           new Error(`awaitStandConfirmation timed out after ${timeoutMs}ms`),
         );
       }
-    }, STATE_CHANGE_POLL_INTERVAL);
+    }, config.stateChangePollInterval);
   });
 };
 
@@ -864,7 +863,7 @@ const fsm = {
         await advanceToNextWaypoint();
         return 'IDLE';
       } else {
-        await delay(250);
+        await delay(config.macheteRetryDelay);
         return 'EVALUATING_WAYPOINT';
       }
     },
@@ -960,7 +959,7 @@ async function performOperation() {
             y: currentWaypoint.y,
             z: currentWaypoint.z,
           };
-          const radius = 4;
+          const radius = config.waypointSkipRadius;
 
           const wasVisited = visitedTiles.some(
             (tile) =>
@@ -994,7 +993,7 @@ async function performOperation() {
 
     // Grace period after gaining control
     if (lastControlState !== 'CAVEBOT' && controlState === 'CAVEBOT') {
-      await delay(100);
+      await delay(config.controlHandoverGraceMs);
     }
 
     updateSABData();
@@ -1064,11 +1063,11 @@ async function mainLoop() {
     } catch (error) {
       logger('error', '[CavebotWorker] Unhandled error in main loop:', error);
       fsmState = 'IDLE';
-      await delay(100);
+      await delay(config.controlHandoverGraceMs);
     }
     const loopEnd = performance.now();
     const elapsedTime = loopEnd - loopStart;
-    const delayTime = Math.max(0, MAIN_LOOP_INTERVAL - elapsedTime);
+    const delayTime = Math.max(0, config.mainLoopInterval - elapsedTime);
     if (delayTime > 0) await delay(delayTime);
   }
   logger('info', '[CavebotWorker] Main loop stopped.');

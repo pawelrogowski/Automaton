@@ -9,3 +9,6 @@ export function calculateDistance(pos1, pos2) {
   const dz = pos1.z - pos2.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
+
+export const getDistance = (p1, p2) =>
+  Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
