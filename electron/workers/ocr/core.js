@@ -7,7 +7,7 @@ import * as config from './config.js';
 import {
   rectsIntersect,
   processOcrRegions,
-  processBattleList, // IMPORT THE DEDICATED FUNCTION
+  processBattleListOcr, // Import the new dedicated function
 } from './processing.js';
 
 // --- Worker Configuration & Setup ---
@@ -23,7 +23,7 @@ let isInitialized = false;
 let lastProcessedFrameCounter = -1;
 let lastRegionHash = null;
 let oneTimeInitializedRegions = new Set();
-const lastOcrScanTimes = {}; // NEW: To track scan times for throttling
+const pendingThrottledRegions = new Map();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -41,6 +41,28 @@ function hashRegionCoordinates(regionCoordinates) {
           }, {})
       : value;
   return JSON.stringify(regionCoordinates, replacer);
+}
+
+async function processPendingRegions() {
+  if (pendingThrottledRegions.size === 0) return;
+  const now = Date.now();
+  const regionsToProcessNow = new Set();
+  for (const [regionKey, startTime] of pendingThrottledRegions.entries()) {
+    const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
+    if (now - startTime >= (regionConfig.throttle || 0)) {
+      regionsToProcessNow.add(regionKey);
+    }
+  }
+  if (regionsToProcessNow.size > 0) {
+    await processOcrRegions(
+      sharedBufferView,
+      currentState.regionCoordinates.regions,
+      regionsToProcessNow,
+    );
+    for (const regionKey of regionsToProcessNow) {
+      pendingThrottledRegions.delete(regionKey);
+    }
+  }
 }
 
 async function performOperation() {
@@ -79,29 +101,24 @@ async function performOperation() {
     }
 
     const processingTasks = [];
-    const regionsToProcess = new Set();
-    const now = Date.now();
+    const immediateGenericRegions = new Set();
 
-    // --- NEW THROTTLING LOGIC ---
-    // 1. Handle Battle List separately (it's critical and has custom logic)
+    // --- MODIFIED LOGIC ---
+    // 1. Handle Battle List with its dedicated, specialized processor first.
     if (regions.battleList) {
       const isDirty = dirtyRects.some((dirtyRect) =>
         rectsIntersect(regions.battleList, dirtyRect),
       );
       if (isDirty || !oneTimeInitializedRegions.has('battleList')) {
-        processingTasks.push(processBattleList(sharedBufferView, regions));
+        processingTasks.push(processBattleListOcr(sharedBufferView, regions));
         oneTimeInitializedRegions.add('battleList');
       }
     }
 
-    // 2. Handle all other generic OCR regions with throttling
+    // 2. Handle all other generic OCR regions.
     for (const regionKey in config.OCR_REGION_CONFIGS) {
       const region = regions[regionKey];
       if (!region) continue;
-
-      const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
-      const throttle = regionConfig.throttleMs || 0;
-      const lastScanTime = lastOcrScanTimes[regionKey] || 0;
 
       const isDirty = dirtyRects.some((dirtyRect) =>
         rectsIntersect(region, dirtyRect),
@@ -109,9 +126,13 @@ async function performOperation() {
       const needsOneTimeInit = !oneTimeInitializedRegions.has(regionKey);
 
       if (isDirty || needsOneTimeInit) {
-        if (now - lastScanTime >= throttle) {
-          regionsToProcess.add(regionKey);
-          lastOcrScanTimes[regionKey] = now;
+        const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
+        if (regionConfig.throttle && !needsOneTimeInit) {
+          if (!pendingThrottledRegions.has(regionKey)) {
+            pendingThrottledRegions.set(regionKey, Date.now());
+          }
+        } else {
+          immediateGenericRegions.add(regionKey);
           if (needsOneTimeInit) {
             oneTimeInitializedRegions.add(regionKey);
           }
@@ -119,12 +140,12 @@ async function performOperation() {
       }
     }
 
-    if (regionsToProcess.size > 0) {
+    if (immediateGenericRegions.size > 0) {
       processingTasks.push(
-        processOcrRegions(sharedBufferView, regions, regionsToProcess),
+        processOcrRegions(sharedBufferView, regions, immediateGenericRegions),
       );
     }
-    // --- END NEW LOGIC ---
+    // --- END MODIFICATION ---
 
     if (processingTasks.length > 0) {
       await Promise.all(processingTasks);
@@ -140,6 +161,7 @@ async function mainLoop() {
     const loopStart = performance.now();
     if (isInitialized) {
       await performOperation();
+      await processPendingRegions();
     }
     const elapsedTime = performance.now() - loopStart;
     const delayTime = Math.max(0, config.MAIN_LOOP_INTERVAL - elapsedTime);

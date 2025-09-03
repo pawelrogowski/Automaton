@@ -1,8 +1,9 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/screenMonitor.js
+// --- CORRECTED ---
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { resourceBars } from '../constants/index.js';
-import { setBattleListEntries } from '../../frontend/redux/slices/battleListSlice.js';
 import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js';
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
@@ -40,7 +41,6 @@ let lastCalculatedState = {
   isWalking: false,
   activeActionItems: {},
   equippedItems: {},
-  battleList: [],
   lastMovementTimestamp: 0,
   lastKnownPlayerMinimapPosition: null,
   monsterNum: 0,
@@ -50,11 +50,6 @@ const reusableGameStateUpdate = {
   storeUpdate: true,
   type: 'gameState/updateGameStateFromMonitorData',
   payload: {},
-};
-const reusableBattleListUpdate = {
-  storeUpdate: true,
-  type: setBattleListEntries.type,
-  payload: [],
 };
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -153,24 +148,6 @@ function calculateActiveActionItems(hotkeyBarRegion) {
       )
     : {};
 }
-function calculateBattleList(bufferToUse, metadata, battleListRegion) {
-  const battleListEntries = battleListRegion?.children?.entries?.list || [];
-  const uiBattleListNames = currentState.uiValues?.battleListEntries || [];
-  return battleListEntries.map((entry, index) => ({
-    name: uiBattleListNames[index] || '',
-    health:
-      calculatePercentages(
-        bufferToUse,
-        metadata,
-        entry.healthBarFill,
-        resourceBars.partyEntryHpBar,
-        entry.healthBarFill.width,
-      ) ?? 0,
-    isTargeted: entry.isTargeted,
-    isAttacking: entry.isAttacking,
-    region: entry.healthBarFull,
-  }));
-}
 function calculateWalkingState() {
   const { gameState } = currentState;
   if (!gameState?.playerMinimapPosition) return lastCalculatedState.isWalking;
@@ -227,7 +204,7 @@ async function processGameState() {
       metadata,
       regions.manaBar,
     );
-    Object.assign(lastCalculatedState, calculateCooldowns(regions.cooldowns));
+    Object.assign(lastCalculatedState, calculateCooldowns(regions.cooldownBar));
     lastCalculatedState.characterStatus = calculateCharacterStatus(
       regions.statusBar,
     );
@@ -239,14 +216,11 @@ async function processGameState() {
     lastCalculatedState.activeActionItems = calculateActiveActionItems(
       regions.hotkeyBar,
     );
-    lastCalculatedState.battleList = calculateBattleList(
-      bufferToUse,
-      metadata,
-      regions.battleList,
-    );
-    lastCalculatedState.isWalking = calculateWalkingState();
+
+    // This worker now ONLY READS the monster count from the state populated by the ocrWorker.
     lastCalculatedState.monsterNum =
-      regions.battleList?.children?.entries?.list?.length || 0;
+      currentState.battleList?.entries?.length || 0;
+    lastCalculatedState.isWalking = calculateWalkingState();
 
     reusableGameStateUpdate.payload = {
       hppc: lastCalculatedState.hppc,
@@ -262,9 +236,6 @@ async function processGameState() {
       equippedItems: lastCalculatedState.equippedItems,
     };
     parentPort.postMessage(reusableGameStateUpdate);
-
-    reusableBattleListUpdate.payload = lastCalculatedState.battleList;
-    parentPort.postMessage(reusableBattleListUpdate);
 
     hasScannedInitially = true;
 
@@ -311,7 +282,7 @@ parentPort.on('message', (message) => {
       if (!currentState) currentState = {};
       Object.assign(currentState, message.payload);
       if (message.payload.regionCoordinates) {
-        hasScannedInitially = false; // Reset flag if regions change
+        hasScannedInitially = false;
       }
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;

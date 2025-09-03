@@ -1,5 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/frontend/redux/slices/uiValuesSlice.js
-// --- MODIFIED ---
+// --- CORRECTED ---
 
 import { createSlice } from '@reduxjs/toolkit';
 
@@ -59,9 +59,9 @@ const initialState = {
     offline: [],
     lastUpdate: null,
   },
-  // REMOVED gameWorld state
-  battleListEntries: [],
-  players: [], // NEW: Add players array
+  players: [],
+  // REMOVED: battleListEntries is no longer part of this slice.
+  // Its data now lives exclusively in the battleListSlice.
 };
 
 const uiValuesSlice = createSlice({
@@ -73,11 +73,8 @@ const uiValuesSlice = createSlice({
         state.skillsWidget = action.payload;
       }
     },
-    setBattleListEntries: (state, action) => {
-      state.battleListEntries = action.payload;
-    },
+    // REMOVED: setBattleListEntries reducer is gone.
     setPlayers: (state, action) => {
-      // NEW: Add setPlayers reducer
       state.players = action.payload;
     },
     setChatboxMain: (state, action) => {
@@ -100,7 +97,6 @@ const uiValuesSlice = createSlice({
     setVipWidget: (state, action) => {
       state.vipWidget = { ...action.payload, lastUpdate: Date.now() };
     },
-    // REMOVED setGameWorldOcr reducer
     resetUiValues: () => initialState,
     resetRegion: (state, action) => {
       const region = action.payload;
@@ -116,13 +112,12 @@ const uiValuesSlice = createSlice({
 
 export const {
   setSkillsWidget,
-  setBattleListEntries,
   setChatboxMain,
   setChatboxSecondary,
   setChatTabs,
   setSelectCharacterModal,
   setVipWidget,
-  setPlayers, // NEW: Export setPlayers action
+  setPlayers,
   resetUiValues,
   resetRegion,
   setState,
@@ -150,9 +145,6 @@ export const selectChatboxTabsList = (state) => state.uiValues.chatboxTabs.tabs;
 export const selectVipWidget = (state) => state.uiValues.vipWidget;
 export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
 export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
-export const selectBattleListEntries = (state) =>
-  state.uiValues.battleListEntries;
-export const selectPlayers = (state) => state.uiValues.players; // NEW: Add selectPlayers selector
-// REMOVED selectGameWorldOcr selector
+export const selectPlayers = (state) => state.uiValues.players;
 
 export default uiValuesSlice;

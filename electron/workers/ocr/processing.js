@@ -1,5 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/ocr/processing.js
-// --- REFACTORED ---
+// --- CORRECTED ---
 
 import { parentPort } from 'worker_threads';
 import pkg from 'font-ocr';
@@ -45,75 +45,54 @@ function postUpdateOnce(type, payload) {
   });
 }
 
-// --- BATTLE LIST PROCESSING (RESTORED DEDICATED LOGIC) ---
+// --- SPECIALIZED REGION PROCESSORS ---
 
-export async function processBattleList(buffer, regions) {
-  const battleListEntries = regions.battleList?.children?.entries?.list;
-  if (!Array.isArray(battleListEntries) || battleListEntries.length === 0) {
-    postUpdateOnce('uiValues/setBattleListEntries', []);
+/**
+ * Performs a single, bulk OCR scan on the battle list and dispatches the final
+ * list of creature names directly to the battleList slice.
+ */
+export async function processBattleListOcr(buffer, regions) {
+  const entriesRegion = regions.battleList?.children?.entries;
+  if (!entriesRegion || entriesRegion.height <= 0) {
+    // --- CORRECTED ACTION TYPE ---
+    postUpdateOnce('battleList/setBattleListEntries', []);
     return;
   }
 
   try {
-    const validNameRegions = battleListEntries
-      .filter((e) => e?.name && typeof e.name.x === 'number')
-      .map((e) => e.name);
-
-    if (validNameRegions.length === 0) {
-      postUpdateOnce('uiValues/setBattleListEntries', []);
-      return;
-    }
-
-    // Create a "super region" that contains all nameplates to optimize the native call
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-    for (const region of validNameRegions) {
-      minX = Math.min(minX, region.x);
-      minY = Math.min(minY, region.y);
-      maxX = Math.max(maxX, region.x + region.width);
-      maxY = Math.max(maxY, region.y + region.height);
-    }
-    const superRegion = {
-      x: minX,
-      y: minY,
-      width: maxX - minX,
-      height: maxY - minY,
+    const ocrConfig = {
+      colors: regionDefinitions.battleList?.ocrColors || [],
+      allowedChars: CHAR_PRESETS.ALPHA + ' ',
     };
-
-    const monsterNameColors = regionDefinitions.battleList?.ocrColors || [];
-    const allowedCharsForBattleList = CHAR_PRESETS.ALPHA + ' ';
 
     const ocrResults =
       recognizeText(
         buffer,
-        superRegion,
-        monsterNameColors,
-        allowedCharsForBattleList,
+        entriesRegion,
+        ocrConfig.colors,
+        ocrConfig.allowedChars,
       ) || [];
 
-    // Map the OCR results back to the individual entries based on vertical position
-    const monsterNames = battleListEntries.map((entry) => {
-      if (!entry?.name) return '';
-      // Find the OCR line that is vertically aligned with the entry's nameplate
-      const foundText = ocrResults.find(
-        (ocrLine) => Math.abs(ocrLine.y - entry.name.y) <= 3,
-      );
-      return foundText ? foundText.text.trim() : '';
-    });
+    // Create a simple array of names, sorted by their vertical position.
+    const creatureNames = ocrResults
+      .sort((a, b) => a.y - b.y)
+      .map((result) => result.text.trim())
+      .filter(Boolean);
 
-    postUpdateOnce('uiValues/setBattleListEntries', monsterNames);
+    // --- CORRECTED ACTION TYPE ---
+    // This now correctly matches the reducer in battleListSlice.js
+    postUpdateOnce('battleList/setBattleListEntries', creatureNames);
   } catch (ocrError) {
     console.error(
-      '[OcrProcessing] OCR failed for battleList entries:',
+      '[OcrProcessing] OCR failed for battleList region:',
       ocrError,
     );
   }
 }
 
-// --- PLAYER LIST PROCESSING ---
-
+/**
+ * Processes the player list region to extract player names.
+ */
 export async function processPlayerList(buffer, regions) {
   const playerListRegion = regions.playerList;
   if (
@@ -128,69 +107,20 @@ export async function processPlayerList(buffer, regions) {
   }
 
   try {
-    const PLAYER_LIST_ENTRY_HEIGHT = 12; // Approximate height of a player name entry
-    const PLAYER_LIST_ENTRY_VERTICAL_PITCH = 14; // Approximate vertical distance between entries
-
-    const maxEntries = Math.floor(
-      (playerListRegion.height +
-        (PLAYER_LIST_ENTRY_VERTICAL_PITCH - PLAYER_LIST_ENTRY_HEIGHT)) /
-        PLAYER_LIST_ENTRY_VERTICAL_PITCH,
-    );
-
-    if (maxEntries <= 0) {
-      postUpdateOnce('uiValues/setPlayers', []);
-      return;
-    }
-
-    const playerNameRegions = [];
-    for (let i = 0; i < maxEntries; i++) {
-      const entryBaseY =
-        playerListRegion.y + i * PLAYER_LIST_ENTRY_VERTICAL_PITCH;
-      playerNameRegions.push({
-        x: playerListRegion.x,
-        y: entryBaseY,
-        width: playerListRegion.width,
-        height: PLAYER_LIST_ENTRY_HEIGHT,
-      });
-    }
-
-    // Create a "super region" that contains all nameplates to optimize the native call
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-    for (const region of playerNameRegions) {
-      minX = Math.min(minX, region.x);
-      minY = Math.min(minY, region.y);
-      maxX = Math.max(maxX, region.x + region.width);
-      maxY = Math.max(maxY, region.y + region.height);
-    }
-    const superRegion = {
-      x: minX,
-      y: minY,
-      width: maxX - minX,
-      height: maxY - minY,
-    };
-
     const playerOcrColors = regionDefinitions.playerList?.ocrColors || [];
     const allowedCharsForPlayerList = CHAR_PRESETS.ALPHA + ' ';
 
     const ocrResults =
       recognizeText(
         buffer,
-        superRegion,
+        playerListRegion,
         playerOcrColors,
         allowedCharsForPlayerList,
       ) || [];
 
-    const playerNames = playerNameRegions
-      .map((entryRegion) => {
-        const foundText = ocrResults.find(
-          (ocrLine) => Math.abs(ocrLine.y - entryRegion.y) <= 3,
-        );
-        return foundText ? foundText.text.trim() : '';
-      })
-      .filter((name) => name.length > 0); // Filter out empty names
+    const playerNames = ocrResults
+      .map((result) => result.text.trim())
+      .filter((name) => name.length > 0);
 
     postUpdateOnce('uiValues/setPlayers', playerNames);
   } catch (ocrError) {
@@ -207,10 +137,13 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
   const processingPromises = [];
 
-  // Process playerList specifically
-  processingPromises.push(processPlayerList(buffer, regions));
+  if (regionKeys.has('playerList')) {
+    processingPromises.push(processPlayerList(buffer, regions));
+  }
 
   for (const regionKey of regionKeys) {
+    if (regionKey === 'playerList') continue;
+
     const cfg = OCR_REGION_CONFIGS[regionKey];
     const region = regions[regionKey];
     if (!region || !cfg) continue;

@@ -760,6 +760,7 @@ const regionDefinitions = {
     maxRight: 160,
     maxDown: 200,
   },
+
   playerList: {
     ocrColors: [
       [192, 192, 192],
@@ -779,13 +780,13 @@ const regionDefinitions = {
       ],
     },
     end: {
-      direction: 'horizontal',
-      offset: { x: -137, y: 0 },
+      direction: 'vertical',
+      offset: { x: 9, y: 7 },
       sequence: [
-        [67, 67, 67],
-        [78, 78, 78],
+        [159, 159, 159],
+        [160, 160, 160],
         [104, 104, 104],
-        [67, 67, 67],
+        [10, 10, 10],
       ],
     },
     children: {
@@ -794,18 +795,14 @@ const regionDefinitions = {
         direction: 'horizontal',
         offset: { x: 0, y: 0 },
         sequence: [
+          [0, 0, 0],
           [227, 227, 227],
           [138, 138, 138],
           [83, 83, 83],
-          [235, 235, 235],
-          [243, 243, 243],
-          [114, 114, 114],
         ],
-        width: 1,
-        height: 1,
       },
     },
-    maxRight: 1920,
+    maxRight: 180,
     maxDown: 1080,
   },
   gameWorld: {

@@ -3,6 +3,7 @@ import { performance } from 'perf_hooks';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
 import findSequences from 'find-sequences-native';
+import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
@@ -26,6 +27,7 @@ let lastWidth = 0;
 let lastHeight = 0;
 let isShuttingDown = false;
 let isScanning = false;
+const frameUpdateManager = new FrameUpdateManager();
 
 // --- Performance tracking ---
 let scanCount = 0;
@@ -52,7 +54,7 @@ function logPerformanceStats() {
   }
 }
 
-// --- Recursive Region Finding Logic (largely unchanged) ---
+// --- Recursive Region Finding Logic ---
 async function findRegionsRecursive(
   buffer,
   definitions,
@@ -222,104 +224,12 @@ async function findRegionsRecursive(
   }
 }
 
-// --- BattleList & TileSize Helpers (unchanged) ---
-const BATTLE_LIST_ENTRY_HEIGHT = 20;
-const BATTLE_LIST_ENTRY_VERTICAL_PITCH = 22;
-function generateBattleListTasks(entriesRegion) {
-  const maxEntries = Math.floor(
-    (entriesRegion.height +
-      (BATTLE_LIST_ENTRY_VERTICAL_PITCH - BATTLE_LIST_ENTRY_HEIGHT)) /
-      BATTLE_LIST_ENTRY_VERTICAL_PITCH,
-  );
-  if (maxEntries <= 0) return null;
-  const pixelChecks = { '#FF0000': [], '#FF8080': [], '#000000': [] };
-  for (let i = 0; i < maxEntries; i++) {
-    const entryBaseY = entriesRegion.y + i * BATTLE_LIST_ENTRY_VERTICAL_PITCH;
-    const entryBaseX = entriesRegion.x;
-    pixelChecks['#FF0000'].push({
-      x: entryBaseX,
-      y: entryBaseY,
-      id: `entry_${i}_isTargeted_red`,
-    });
-    pixelChecks['#FF8080'].push({
-      x: entryBaseX,
-      y: entryBaseY,
-      id: `entry_${i}_isTargeted_hovered`,
-    });
-    pixelChecks['#000000'].push({
-      x: entryBaseX,
-      y: entryBaseY,
-      id: `entry_${i}_isAttacking_0_0`,
-    });
-    pixelChecks['#000000'].push({
-      x: entryBaseX + 1,
-      y: entryBaseY + 1,
-      id: `entry_${i}_isAttacking_1_1`,
-    });
-    pixelChecks['#000000'].push({
-      x: entryBaseX + 22,
-      y: entryBaseY + 15,
-      id: `entry_${i}_isValid`,
-    });
-  }
-  return { searchArea: entriesRegion, pixelChecks };
-}
-function processBattleListResults(checkResults, entriesRegion) {
-  const maxEntries = Math.floor(
-    (entriesRegion.height +
-      (BATTLE_LIST_ENTRY_VERTICAL_PITCH - BATTLE_LIST_ENTRY_HEIGHT)) /
-      BATTLE_LIST_ENTRY_VERTICAL_PITCH,
-  );
-  const entryList = [];
-  if (!checkResults || maxEntries <= 0) {
-    entriesRegion.list = [];
-    return;
-  }
-  for (let i = 0; i < maxEntries; i++) {
-    if (checkResults[`entry_${i}_isValid`]) {
-      const entryBaseY = entriesRegion.y + i * BATTLE_LIST_ENTRY_VERTICAL_PITCH;
-      const entryBaseX = entriesRegion.x;
-      entryList.push({
-        isValid: true,
-        isTargeted:
-          !!checkResults[`entry_${i}_isTargeted_red`] ||
-          !!checkResults[`entry_${i}_isTargeted_hovered`],
-        isAttacking:
-          !!checkResults[`entry_${i}_isAttacking_0_0`] ||
-          !!checkResults[`entry_${i}_isAttacking_1_1`],
-        name: { x: entryBaseX + 22, y: entryBaseY + 2, width: 131, height: 12 },
-        healthBarFull: {
-          x: entryBaseX + 22,
-          y: entryBaseY + 15,
-          width: 132,
-          height: 5,
-        },
-        healthBarFill: {
-          x: entryBaseX + 23,
-          y: entryBaseY + 16,
-          width: 130,
-          height: 3,
-        },
-      });
-    }
-  }
-  entriesRegion.list = entryList;
-}
+/**
+ * Processes special regions after the main recursive find.
+ * This is now only responsible for calculating the tile size from the gameWorld region.
+ * All battle list logic has been removed.
+ */
 async function processSpecialRegions(buffer, regions, metadata) {
-  if (regions.battleList?.children?.entries?.endFound) {
-    const battleListTask = generateBattleListTasks(
-      regions.battleList.children.entries,
-    );
-    if (battleListTask) {
-      const results = await findSequences.findSequencesNativeBatch(buffer, {
-        battleListChecks: battleListTask,
-      });
-      processBattleListResults(
-        results.battleListChecks,
-        regions.battleList.children.entries,
-      );
-    }
-  }
   if (regions.gameWorld?.endFound) {
     const { gameWorld } = regions;
     regions.tileSize = {
@@ -362,6 +272,12 @@ async function mainLoop() {
 
       const width = Atomics.load(syncArray, WIDTH_INDEX);
       const height = Atomics.load(syncArray, HEIGHT_INDEX);
+      const dimensionsChanged = width !== lastWidth || height !== lastHeight;
+
+      if (!frameUpdateManager.shouldProcess() && !dimensionsChanged) {
+        await delay(MIN_LOOP_DELAY_MS);
+        continue;
+      }
 
       if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 1) {
         if (Object.keys(lastKnownRegions).length > 0) {
@@ -420,6 +336,11 @@ async function mainLoop() {
 
 parentPort.on('message', (message) => {
   try {
+    if (message.type === 'frame-update') {
+      frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
+      return;
+    }
+
     if (message.type === 'shutdown') {
       console.log('[RegionMonitor] Received shutdown command.');
       isShuttingDown = true;
