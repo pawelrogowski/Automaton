@@ -68,7 +68,7 @@ function parseSkillsWidget(ocrData) {
           result.soulPoints = parseInt(value) || null;
           break;
         case 'capacity':
-          result.capacity = parseInt(value) || null;
+          result.capacity = parseInt(value.replace(/,/g, '')) || null;
           break;
         case 'speed':
           result.speed = parseInt(value) || null;

@@ -32,7 +32,7 @@ export const OCR_REGION_CONFIGS = {
     colors: regionDefinitions.skillsWidget?.ocrColors,
     parser: regionParsers.skillsWidget,
     storeAction: 'uiValues/setSkillsWidget',
-    allowedChars: CHAR_PRESETS.ALPHANUMERIC + ' .:',
+    allowedChars: CHAR_PRESETS.ALPHANUMERIC + ' .:,',
     throttleMs: 250, // NEW
   },
   chatBoxTabRow: {
