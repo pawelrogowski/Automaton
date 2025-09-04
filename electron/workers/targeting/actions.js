@@ -9,7 +9,7 @@ const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
 const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
 const TARGET_CLICK_DELAY_MS = 400;
-const TARGET_CONFIRMATION_TIMEOUT_MS = 1000;
+const TARGET_CONFIRMATION_TIMEOUT_MS = 450;
 const MELEE_DISTANCE_THRESHOLD = 1.9;
 
 /**
@@ -25,6 +25,10 @@ export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort } = workerContext;
   const logger = createLogger({ info: false, error: true, debug: false });
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  let acquisitionTimes = [];
+  let maxAcquisitionTime = 0;
+  let avgAcquisitionTime = 0;
 
   const getDirectionKey = (current, target) => {
     const dx = target.x - current.x;
@@ -171,10 +175,25 @@ export function createTargetingActions(workerContext) {
     }
 
     const battleList = globalState.battleList.entries;
-    const KEY_PRESS_LIMIT = 3;
+    const KEY_PRESS_LIMIT = 2;
+
+    const logAcquisition = (startTime) => {
+      const acquisitionTime = Date.now() - startTime;
+      acquisitionTimes.push(acquisitionTime);
+      if (acquisitionTime > maxAcquisitionTime) {
+        maxAcquisitionTime = acquisitionTime;
+      }
+      const sum = acquisitionTimes.reduce((a, b) => a + b, 0);
+      avgAcquisitionTime = Math.round(sum / acquisitionTimes.length);
+
+      console.log(
+        `[Targeting] Acquired target in: ${acquisitionTime}ms (Avg: ${avgAcquisitionTime}ms, Max: ${maxAcquisitionTime}ms)`,
+      );
+    };
 
     const performActionAndWait = async (action, clickRegion = null) => {
       targetingContext.acquisitionUnlockTime = Date.now() + 400;
+      const actionTriggerTime = Date.now();
 
       const checkTargetAndAcceptSubstitute = () => {
         const currentTarget = globalState.targeting.target;
@@ -232,10 +251,19 @@ export function createTargetingActions(workerContext) {
 
       const startTime = Date.now();
       while (Date.now() - startTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
-        if (checkTargetAndAcceptSubstitute()) return true;
+        if (checkTargetAndAcceptSubstitute()) {
+          logAcquisition(actionTriggerTime);
+          return true;
+        }
         await delay(CLICK_POLL_INTERVAL_MS);
       }
-      return checkTargetAndAcceptSubstitute();
+
+      if (checkTargetAndAcceptSubstitute()) {
+        logAcquisition(actionTriggerTime);
+        return true;
+      }
+
+      return false;
     };
 
     const currentIndex = battleList.findIndex((e) => e.isTarget);
@@ -263,7 +291,11 @@ export function createTargetingActions(workerContext) {
       }
     }
 
-    if (bestKeyPlan.action && bestKeyPlan.presses <= KEY_PRESS_LIMIT) {
+    if (
+      bestKeyPlan.action &&
+      bestKeyPlan.presses <= KEY_PRESS_LIMIT &&
+      Math.random() > 0.05
+    ) {
       logger(
         'info',
         `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`,
@@ -273,6 +305,11 @@ export function createTargetingActions(workerContext) {
         // F8 press removed as per new requirement
       }
       return;
+    } else if (bestKeyPlan.action && bestKeyPlan.presses <= KEY_PRESS_LIMIT) {
+      logger(
+        'info',
+        '[Targeting] Acquisition: Key plan was cheap, but using mouse click due to random chance (5%).',
+      );
     }
 
     if (currentIndex === -1) {

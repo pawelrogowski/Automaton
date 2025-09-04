@@ -180,7 +180,6 @@ async function performTargeting() {
   }
 
   if (justGainedControl) {
-    await delay(100);
     justGainedControl = false;
   }
 
@@ -212,19 +211,16 @@ async function performTargeting() {
   );
 
   if (!newPathfindingTarget) {
-    // If no target is found, clear it immediately, ignoring the cooldown.
+    // If no target is found, clear it immediately.
     targetingContext.pathfindingTarget = null;
   } else if (
     newPathfindingTarget.instanceId !==
     targetingContext.pathfindingTarget?.instanceId
   ) {
-    // A switch between two different valid targets is requested. Apply cooldown.
+    // A switch between two different valid targets is requested.
     const now = Date.now();
-    if (now - targetingContext.lastPathfindingTargetSwitchTime > 100) {
-      targetingContext.pathfindingTarget = newPathfindingTarget;
-      targetingContext.lastPathfindingTargetSwitchTime = now;
-    }
-    // Otherwise, stick with the old target for this tick.
+    targetingContext.pathfindingTarget = newPathfindingTarget;
+    targetingContext.lastPathfindingTargetSwitchTime = now;
   } else {
     // It's the same target instance, just update its data.
     targetingContext.pathfindingTarget = newPathfindingTarget;
