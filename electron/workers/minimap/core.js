@@ -7,20 +7,19 @@ import {
 import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
-import { FrameUpdateManager } from '../../utils/frameUpdateManager.js';
 import { LANDMARK_SIZE } from './config.js';
 
 let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
 let minimapMatcher = null;
-const frameUpdateManager = new FrameUpdateManager();
+let isProcessing = false;
+let needsReProcessing = false;
+let dirtyRectsQueue = [];
 
 const { imageSAB, syncSAB } = workerData.sharedData;
 const syncArray = new Int32Array(syncSAB);
 const sharedBufferView = Buffer.from(imageSAB);
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function initialize() {
   console.log('[MinimapCore] Initializing...');
@@ -37,15 +36,9 @@ async function initialize() {
   console.log('[MinimapCore] Initialized successfully.');
 }
 
-async function performOperation() {
+async function performOperation(dirtyRects) {
   if (!isInitialized || !currentState?.regionCoordinates?.regions) {
     return;
-  }
-
-  if (!frameUpdateManager.shouldProcess()) {
-    if (currentState.gameState.playerMinimapPosition.x !== 0) {
-      return;
-    }
   }
 
   const { minimapFull, minimapFloorIndicatorColumn } =
@@ -70,24 +63,35 @@ async function performOperation() {
   }
 }
 
-async function mainLoop() {
-  while (!isShuttingDown) {
-    const loopStart = Date.now();
-    try {
-      await performOperation();
-    } catch (error) {
-      console.error('[MinimapCore] Error in main loop:', error);
-    }
-    const elapsedTime = Date.now() - loopStart;
-    const delayTime = Math.max(0, config.MAIN_LOOP_INTERVAL - elapsedTime);
-    if (delayTime > 0) await delay(delayTime);
+async function processFrames() {
+  if (isProcessing) {
+    needsReProcessing = true;
+    return;
   }
-  console.log('[MinimapCore] Main loop stopped.');
+  isProcessing = true;
+
+  try {
+    while (dirtyRectsQueue.length > 0) {
+      const currentDirtyRects = dirtyRectsQueue.shift();
+      await performOperation(currentDirtyRects);
+    }
+  } catch (error) {
+    console.error('[MinimapCore] Error during frame processing:', error);
+  } finally {
+    isProcessing = false;
+    if (needsReProcessing) {
+      needsReProcessing = false;
+      setTimeout(processFrames, 0);
+    }
+  }
 }
 
 function handleMessage(message) {
   if (message.type === 'frame-update') {
-    frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
+    if (message.payload.dirtyRects && message.payload.dirtyRects.length > 0) {
+      dirtyRectsQueue.push(message.payload.dirtyRects);
+    }
+    processFrames();
     return;
   }
 
@@ -111,5 +115,4 @@ function handleMessage(message) {
 export function start() {
   console.log('[MinimapCore] Worker starting up.');
   parentPort.on('message', handleMessage);
-  mainLoop();
 }
