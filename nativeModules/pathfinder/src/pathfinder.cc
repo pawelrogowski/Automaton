@@ -146,6 +146,29 @@ namespace AStar {
                 int ny = cy + dys[dir];
                 if (!inBounds(nx, ny, mapData)) continue;
 
+                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+                if (isDiagonal) {
+                    int orth_x1 = cx + dxs[dir];
+                    int orth_y1 = cy;
+                    int orth_x2 = cx;
+                    int orth_y2 = cy + dys[dir];
+
+                    auto isOrthogonalWalkable = [&](int x, int y) {
+                        if (!inBounds(x, y, mapData)) return false;
+                        int nIdx = indexOf(x, y);
+                        int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
+                        bool isWalkableByMap = isWalkable(x, y, mapData);
+                        if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(x == end.x && y == end.y))) {
+                            return false;
+                        }
+                        return true;
+                    };
+
+                    if (isOrthogonalWalkable(orth_x1, orth_y1) || isOrthogonalWalkable(orth_x2, orth_y2)) {
+                        continue;
+                    }
+                }
+
                 int nIdx = indexOf(nx, ny);
                 int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
                 bool isWalkableByMap = isWalkable(nx, ny, mapData);
@@ -163,7 +186,6 @@ namespace AStar {
                 }
                 int creatureCost = (isCreatureTile && !(nx == end.x && ny == end.y)) ? CREATURE_BLOCK_COST : 0;
 
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
@@ -257,6 +279,30 @@ namespace AStar {
                 int nx = cx + dxs[dir];
                 int ny = cy + dys[dir];
                 if (!inBounds(nx, ny, mapData)) continue;
+
+                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+                if (isDiagonal) {
+                    int orth_x1 = cx + dxs[dir];
+                    int orth_y1 = cy;
+                    int orth_x2 = cx;
+                    int orth_y2 = cy + dys[dir];
+
+                    auto isOrthogonalWalkable = [&](int x, int y) {
+                        if (!inBounds(x, y, mapData)) return false;
+                        int nIdx = indexOf(x, y);
+                        int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
+                        bool isWalkableByMap = isWalkable(x, y, mapData);
+                        if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(x == end.x && y == end.y))) {
+                            return false;
+                        }
+                        return true;
+                    };
+
+                    if (isOrthogonalWalkable(orth_x1, orth_y1) || isOrthogonalWalkable(orth_x2, orth_y2)) {
+                        continue;
+                    }
+                }
+
                 int nIdx = indexOf(nx, ny);
                 int tileAvoidance = 0;
                 if (nIdx >= 0 && nIdx < (int)cost_grid.size()) {
@@ -277,7 +323,6 @@ namespace AStar {
                 if (isCreatureTile && !(nx == end.x && ny == end.y)) {
                     creatureCost = CREATURE_BLOCK_COST;
                 }
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
@@ -377,6 +422,41 @@ namespace AStar {
                 int ny = cy + dys[dir];
                 if (!inBounds(nx, ny, mapData)) continue;
 
+                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+                if (isDiagonal) {
+                    int orth_x1 = cx + dxs[dir];
+                    int orth_y1 = cy;
+                    int orth_x2 = cx;
+                    int orth_y2 = cy + dys[dir];
+
+                    auto isOrthogonalWalkable = [&](int x, int y) {
+                        if (!inBounds(x, y, mapData)) return false;
+                        int nIdx = indexOf(x, y);
+                        int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
+                        bool isWalkableByMap = isWalkable(x, y, mapData);
+                        if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0)) {
+                             return false;
+                        }
+
+                        bool isCreatureTile = false;
+                        for (const auto& creature : creaturePositions) {
+                            if (creature.x - mapData.minX == x && creature.y - mapData.minY == y && creature.z == start.z) {
+                                isCreatureTile = true;
+                                break;
+                            }
+                        }
+
+                        if (isCreatureTile && endIndices.count(nIdx) == 0) {
+                            return false;
+                        }
+                        return true;
+                    };
+
+                    if (isOrthogonalWalkable(orth_x1, orth_y1) || isOrthogonalWalkable(orth_x2, orth_y2)) {
+                        continue;
+                    }
+                }
+
                 int nIdx = indexOf(nx, ny);
                 int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
                 bool isWalkableByMap = isWalkable(nx, ny, mapData);
@@ -398,7 +478,6 @@ namespace AStar {
                 }
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
 
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
 
