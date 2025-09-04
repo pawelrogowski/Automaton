@@ -43,16 +43,9 @@ async function performWalk(
 }
 
 export async function handleWalkAction(workerState, config) {
-  if (!workerState.path || workerState.path.length === 0) return;
+  if (!workerState.path || workerState.path.length < 2) return;
 
-  const nextStep = workerState.path[0];
-  if (
-    workerState.playerMinimapPosition.x === nextStep.x &&
-    workerState.playerMinimapPosition.y === nextStep.y
-  ) {
-    await delay(config.mainLoopIntervalMs);
-    return;
-  }
+  const nextStep = workerState.path[1];
 
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, nextStep);
   if (!dirKey) return;

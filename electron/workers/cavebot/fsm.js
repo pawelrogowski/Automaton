@@ -79,30 +79,12 @@ export function createFsm(workerState, config) {
 
         switch (status) {
           case PATH_STATUS_PATH_FOUND:
-            if (workerState.path.length > 0) {
-              const playerOnPathIndex = workerState.path.findIndex(
-                (p) => p.x === playerPos.x && p.y === playerPos.y,
-              );
-
-              if (playerOnPathIndex !== -1) {
-                logger(
-                  'debug',
-                  '[FSM] Stale path detected (player is on path).',
-                );
-                // --- Stale Path Handling Change ---
-                // Trim the path and proceed immediately with the next step
-                workerState.path.splice(0, playerOnPathIndex + 1);
-                // Request a new path in the background
-                workerState.shouldRequestNewPath = true;
-                logger(
-                  'debug',
-                  '[FSM] Trimming path and requesting fresh one.',
-                );
-                return 'WALKING';
-              }
+            if (workerState.path.length > 1) {
+              // Path has player position and at least one step, it's walkable.
               return 'WALKING';
             }
-            return 'EVALUATING_WAYPOINT'; // Path found but empty, re-evaluate
+            // Path is empty or only contains the player's position, re-evaluate.
+            return 'EVALUATING_WAYPOINT';
           case PATH_STATUS_NO_PATH_FOUND:
           case PATH_STATUS_NO_VALID_START_OR_END:
           case PATH_STATUS_ERROR:

@@ -102,7 +102,21 @@ export const updateSABData = (workerState, config) => {
 
       if (counterBeforeRead === counterAfterRead) {
         consistentRead = true;
-        workerState.path = tempPath;
+        if (tempPath.length > 0) {
+          const pathStart = tempPath[0];
+          if (
+            !workerState.playerMinimapPosition ||
+            pathStart.x !== workerState.playerMinimapPosition.x ||
+            pathStart.y !== workerState.playerMinimapPosition.y ||
+            pathStart.z !== workerState.playerMinimapPosition.z
+          ) {
+            workerState.path = []; // Invalidate path
+          } else {
+            workerState.path = tempPath;
+          }
+        } else {
+          workerState.path = tempPath;
+        }
         workerState.pathfindingStatus = tempPathfindingStatus;
         workerState.pathChebyshevDistance = tempPathChebyshevDistance;
         workerState.lastPathDataCounter = counterAfterRead;

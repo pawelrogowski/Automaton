@@ -702,9 +702,8 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
             searchStatus = "NO_PATH_FOUND";
         }
     }
-    if (pathResult.size() > 1 && pathResult[0].x == localStart.x && pathResult[0].y == localStart.y) {
-        pathResult.erase(pathResult.begin());
-    }
+    
+
     auto endTime = std::chrono::high_resolution_clock::now();
     double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
     Napi::Object performance = Napi::Object::New(env);
@@ -819,9 +818,9 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
         searchStatus = "NO_PATH_FOUND";
     }
 
-    if (pathResult.size() > 1 && pathResult[0].x == (start.x - mapData.minX) && pathResult[0].y == (start.y - mapData.minY)) {
-        pathResult.erase(pathResult.begin());
-    }
+    
+
+    
 
     auto endTime = std::chrono::high_resolution_clock::now();
     double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;

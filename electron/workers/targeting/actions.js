@@ -408,14 +408,8 @@ export function createTargetingActions(workerContext) {
       return;
     }
 
-    if (pathfindingStatus === 1 && path.length > 0) {
-      const nextStep = path[0];
-      if (
-        playerMinimapPosition.x === nextStep.x &&
-        playerMinimapPosition.y === nextStep.y
-      ) {
-        return;
-      }
+    if (pathfindingStatus === 1 && path.length > 1) {
+      const nextStep = path[1];
       const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
       if (dirKey) {
         const posCounterBeforeMove = Atomics.load(playerPosArray, 3);

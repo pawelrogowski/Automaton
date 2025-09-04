@@ -237,12 +237,7 @@ export function runPathfindingLogic(context) {
     const statusString = result.reason;
 
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
-    if (normalizedPath.length > 0) {
-      const first = normalizedPath[0];
-      if (first.x === x && first.y === y && first.z === z) {
-        normalizedPath.shift();
-      }
-    }
+    
 
     let statusCode = PATH_STATUS_IDLE;
     switch (statusString) {

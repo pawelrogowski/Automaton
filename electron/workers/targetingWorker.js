@@ -135,7 +135,32 @@ const updateSABData = () => {
         PATH_UPDATE_COUNTER_INDEX,
       );
       if (counterAfterRead === counterBeforeRead) {
-        path = tempPath;
+        if (tempPath.length > 0) {
+          const pathStart = tempPath[0];
+          const pathEnd = tempPath[tempPath.length - 1];
+          const target = targetingContext.pathfindingTarget;
+
+          if (
+            pathStart.x !== playerMinimapPosition.x ||
+            pathStart.y !== playerMinimapPosition.y ||
+            pathStart.z !== playerMinimapPosition.z
+          ) {
+            path = []; // Invalidate: Path doesn't start at player's current position.
+          } else if (
+            target &&
+            target.gameCoords &&
+            (pathEnd.x !== target.gameCoords.x ||
+              pathEnd.y !== target.gameCoords.y ||
+              pathEnd.z !== target.gameCoords.z)
+          ) {
+            path = []; // Invalidate: Path doesn't end at the intended target.
+          } else {
+            path = tempPath; // Path is valid.
+          }
+        } else {
+          path = tempPath; // Path is empty, accept it as is.
+        }
+
         lastPathDataCounter = counterBeforeRead;
         consistentRead = true;
       } else {
