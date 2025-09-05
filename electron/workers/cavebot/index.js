@@ -104,6 +104,27 @@ async function performOperation() {
     return;
   }
 
+  if (
+    !globalState.regionCoordinates ||
+    !globalState.regionCoordinates.regions.gameWorld
+  ) {
+    if (
+      workerState.fsmState === 'SCRIPT' &&
+      workerState.luaExecutor.isExecuting()
+    ) {
+      const scriptContent = workerState.luaExecutor.getCurrentScriptContent();
+      if (scriptContent && !scriptContent.includes('login(')) {
+        workerState.logger(
+          'warn',
+          '[Cavebot] Game world not visible. Terminating non-login script.'
+        );
+        workerState.luaExecutor.forceStop();
+        resetInternalState(workerState, fsm);
+      }
+    }
+    return;
+  }
+
   const {
     enabled: cavebotIsEnabled,
     controlState,

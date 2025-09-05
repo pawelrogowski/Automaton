@@ -171,6 +171,13 @@ const updateSABData = () => {
 };
 
 async function performTargeting() {
+  if (
+    !globalState.regionCoordinates ||
+    !globalState.regionCoordinates.regions.gameWorld
+  ) {
+    // If gameWorld is not visible, do nothing.
+    return;
+  }
   if (isShuttingDown || !isInitialized || !globalState?.global?.display) {
     return;
   }
