@@ -626,7 +626,10 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
             }
         }
 
-        pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, cost_grid, otherCreaturePositions, [](){});
+        pathResult = AStar::findPathWithCosts(localEnd, localStart, mapData, cost_grid, otherCreaturePositions, [](){});
+        if (!pathResult.empty()) {
+            std::reverse(pathResult.begin(), pathResult.end());
+        }
 
     } else if (stance == "keepAway") {
         int distance = goalObj.Get("distance").As<Napi::Number>().Int32Value();
