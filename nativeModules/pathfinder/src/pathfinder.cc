@@ -143,18 +143,18 @@ namespace AStar {
                     int orth_x2 = cx;
                     int orth_y2 = cy + dys[dir];
 
-                    auto isOrthogonalWalkable = [&](int x, int y) {
+                    auto isCornerWalkable = [&](int x, int y) {
                         if (!inBounds(x, y, mapData)) return false;
                         int nIdx = indexOf(x, y);
                         int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
                         bool isWalkableByMap = isWalkable(x, y, mapData);
-                        if (tileAvoidance == 255 || (!isWalkableByMap && (tileAvoidance > 0 || !isGoal(nIdx)))) {
+                        if (tileAvoidance == 255 || !isWalkableByMap) {
                             return false;
                         }
                         return true;
                     };
 
-                    if (isOrthogonalWalkable(orth_x1, orth_y1) || isOrthogonalWalkable(orth_x2, orth_y2)) {
+                    if (isCornerWalkable(orth_x1, orth_y1) || isCornerWalkable(orth_x2, orth_y2)) {
                         continue;
                     }
                 }

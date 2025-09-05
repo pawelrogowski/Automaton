@@ -641,21 +641,13 @@ class WorkerManager {
       const relevant = this.precalculatedWorkerPayloads.get(name);
 
       if (relevant && Object.keys(relevant).length) {
-        // Always send the full, fresh slice for cavebot worker for synchronous execution
-        if (name === 'cavebotWorker') {
+        const hash = quickHash(relevant);
+        if (this.workerStateCache.get(name) !== hash) {
+          this.workerStateCache.set(name, hash);
           workerEntry.worker.postMessage({
-            type: 'state_full_sync',
-            payload: currentState,
+            type: 'state_diff',
+            payload: relevant,
           });
-        } else {
-          const hash = quickHash(relevant);
-          if (this.workerStateCache.get(name) !== hash) {
-            this.workerStateCache.set(name, hash);
-            workerEntry.worker.postMessage({
-              type: 'state_diff',
-              payload: relevant,
-            });
-          }
         }
       }
     }

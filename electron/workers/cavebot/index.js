@@ -22,6 +22,7 @@ import {
   goToSection,
   goToWpt,
 } from './helpers/navigation.js';
+import { deepMerge } from './helpers/objectUtils.js';
 
 // --- Worker State Management ---
 const workerState = {
@@ -289,11 +290,13 @@ parentPort.on('message', (message) => {
   try {
     if (message.type === 'state_full_sync') {
       workerState.globalState = message.payload;
+    } else if (message.type === 'state_diff') {
+      if (workerState.globalState && message.payload) {
+        deepMerge(workerState.globalState, message.payload);
+      }
     } else if (message.type === 'shutdown') {
       workerState.isShuttingDown = true;
       if (workerState.luaExecutor) workerState.luaExecutor.destroy();
-      // ====================== MODIFICATION START ======================
-      // Re-added the missing message handler for shared global updates.
     } else if (message.type === 'lua_global_broadcast') {
       const { key, value } = message.payload;
       if (workerData.sharedLuaGlobals) {
@@ -303,7 +306,6 @@ parentPort.on('message', (message) => {
           `[CavebotWorker] Received lua_global_broadcast: ${key} = ${value}`,
         );
       }
-      // ======================= MODIFICATION END =======================
     } else if (typeof message === 'object' && !message.type) {
       workerState.globalState = message;
       if (!workerState.isInitialized) {

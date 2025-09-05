@@ -19,18 +19,20 @@ const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
-// --- THIS IS THE CORRECTED LISTENER ---
-ipcMain.on('state-change', (_, serializedAction) => {
+ipcMain.on('state-change-batch', (_, serializedBatch) => {
   try {
-    const action = JSON.parse(serializedAction);
-    if (action.origin === 'renderer') {
-      setGlobalState(action.type, action.payload);
+    const batch = JSON.parse(serializedBatch);
+    if (Array.isArray(batch)) {
+      for (const action of batch) {
+        if (action.origin === 'renderer') {
+          setGlobalState(action.type, action.payload);
+        }
+      }
     }
   } catch (error) {
-    console.error('Error handling state-change from renderer:', error);
+    console.error('Error handling state-change-batch from renderer:', error);
   }
 });
-// --- END CORRECTION ---
 
 ipcMain.on('save-rules', async () => {
   const mainWindow = getMainWindow();
