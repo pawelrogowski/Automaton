@@ -6,7 +6,6 @@ import { createLogger } from '../../utils/logger.js';
 import * as config from './config.js';
 import { loadAllMapData } from './dataLoader.js';
 import { runPathfindingLogic } from './logic.js';
-import { PerformanceTracker } from './performanceTracker.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -32,9 +31,6 @@ const logicContext = {
 const { playerPosSAB, pathDataSAB } = workerData; // creaturePosSAB is removed
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
-
-const perfTracker = new PerformanceTracker();
-let lastPerfReportTime = Date.now();
 
 const REDUX_UPDATE_INTERVAL_MS = 25;
 let lastReduxUpdateTime = 0;
@@ -68,16 +64,6 @@ function throttleReduxUpdate(payload) {
       postThrottledUpdate,
       REDUX_UPDATE_INTERVAL_MS - timeSinceLastUpdate,
     );
-  }
-}
-
-function logPerformanceReport() {
-  if (!config.PERFORMANCE_LOGGING_ENABLED) return;
-  const now = Date.now();
-  if (now - lastPerfReportTime >= config.PERFORMANCE_LOG_INTERVAL_MS) {
-    logger('info', perfTracker.getReport());
-    perfTracker.reset();
-    lastPerfReportTime = now;
   }
 }
 
@@ -137,7 +123,7 @@ function handleMessage(message) {
       gameState: { ...state.gameState, playerMinimapPosition },
     };
 
-    const duration = runPathfindingLogic({
+    runPathfindingLogic({
       logicContext: logicContext,
       state: synchronizedState,
       pathfinderInstance,
@@ -146,11 +132,6 @@ function handleMessage(message) {
       throttleReduxUpdate,
     });
 
-    if (typeof duration === 'number') {
-      perfTracker.addMeasurement(duration);
-    }
-
-    logPerformanceReport();
   } catch (error) {
     logger(
       'error',

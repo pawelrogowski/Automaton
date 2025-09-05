@@ -51,7 +51,7 @@ export function runPathfindingLogic(context) {
     const { playerMinimapPosition } = gameState;
 
     if (!playerMinimapPosition) {
-      return null;
+      return;
     }
 
     const { x, y, z } = playerMinimapPosition;
@@ -61,7 +61,7 @@ export function runPathfindingLogic(context) {
       typeof z !== 'number'
     ) {
       logger('error', `Invalid player position: {x: ${x}, y: ${y}, z: ${z}}`);
-      return null;
+      return;
     }
 
     const creaturePositions = (targeting.creatures || []).map(
@@ -120,7 +120,7 @@ export function runPathfindingLogic(context) {
       logicContext.lastTargetWptId === targetIdentifier &&
       logicContext.lastCreatureDataHash === currentCreatureDataHash
     ) {
-      return null; // No change in inputs, skip pathfinding.
+      return; // No change in inputs, skip pathfinding.
     }
 
     logicContext.lastPlayerPosKey = currentPosKey;
@@ -202,7 +202,7 @@ export function runPathfindingLogic(context) {
             Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
             Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
           }
-          return null;
+          return;
         }
         result = pathfinderInstance.findPathSync(
           playerMinimapPosition,
@@ -215,8 +215,7 @@ export function runPathfindingLogic(context) {
     if (targetIdentifier && !result) {
       result = {
         path: [],
-        reason: 'NO_PATH_FOUND',
-        performance: { totalTimeMs: 0 },
+        reason: 'NO_PATH_FOUND'
       };
     }
 
@@ -230,7 +229,7 @@ export function runPathfindingLogic(context) {
         Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
         Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
       }
-      return null;
+      return;
     }
 
     const rawPath = result.path || [];
@@ -306,11 +305,9 @@ export function runPathfindingLogic(context) {
     throttleReduxUpdate({
       pathWaypoints: normalizedPath,
       wptDistance: distance,
-      routeSearchMs: result.performance.totalTimeMs,
       pathfindingStatus: statusString,
     });
 
-    return result.performance.totalTimeMs;
   } catch (error) {
     logger('error', `Pathfinding error: ${error.message}`);
     throttleReduxUpdate({
@@ -323,6 +320,5 @@ export function runPathfindingLogic(context) {
       Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
       Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
     }
-    return null;
   }
 }
