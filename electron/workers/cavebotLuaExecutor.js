@@ -3,8 +3,14 @@
 import { LuaFactory } from 'wasmoon';
 import { parentPort } from 'worker_threads';
 import { performance } from 'perf_hooks';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createLuaApi, createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export class CavebotLuaExecutor {
   constructor(context) {
@@ -33,6 +39,28 @@ export class CavebotLuaExecutor {
 
   // ======================= FIX START: COMPLETE REFACTOR OF INITIALIZATION AND SYNC =======================
 
+  async _loadLuaLibraries() {
+    if (!this.lua) return;
+    const libPath = path.join(__dirname, 'lua', 'lib');
+    try {
+      const files = await fs.readdir(libPath);
+      for (const file of files) {
+        if (path.extname(file) === '.lua') {
+          const filePath = path.join(libPath, file);
+          const content = await fs.readFile(filePath, 'utf8');
+          await this.lua.doString(content);
+          this.logger('info', `[CavebotLuaExecutor] Loaded Lua library: ${file}`);
+        }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        this.logger('error', `[CavebotLuaExecutor] Error loading Lua libraries:`, error);
+      } else {
+        this.logger('info', `[CavebotLuaExecutor] No Lua libraries found to load.`);
+      }
+    }
+  }
+
   async initialize() {
     if (this.isShuttingDown) return false;
     this.logger(
@@ -44,6 +72,7 @@ export class CavebotLuaExecutor {
       const initStart = performance.now();
       const factory = new LuaFactory();
       this.lua = await factory.createEngine();
+      await this._loadLuaLibraries();
 
       // Create the full API, including the SharedGlobals proxy, ONCE.
       const { api, asyncFunctionNames: newNames } = await createLuaApi({

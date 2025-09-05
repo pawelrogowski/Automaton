@@ -2,10 +2,16 @@
 
 import { parentPort, workerData, threadId } from 'worker_threads';
 import { LuaFactory } from 'wasmoon';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createLogger } from '../utils/logger.js';
 import { createLuaApi } from './luaApi.js';
 import { createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const log = createLogger({ info: true, error: true, debug: false });
 let lua;
@@ -94,11 +100,34 @@ const cleanupAndExit = async () => {
   process.exit(0);
 };
 
+const loadLuaLibraries = async () => {
+  if (!lua) return;
+  const libPath = path.join(__dirname, 'lua', 'lib');
+  try {
+    const files = await fs.readdir(libPath);
+    for (const file of files) {
+      if (path.extname(file) === '.lua') {
+        const filePath = path.join(libPath, file);
+        const content = await fs.readFile(filePath, 'utf8');
+        await lua.doString(content);
+        log('info', `[Lua Script Worker ${scriptConfig.id}] Loaded Lua library: ${file}`);
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      log('error', `[Lua Script Worker ${scriptConfig.id}] Error loading Lua libraries:`, error);
+    } else {
+      log('info', `[Lua Script Worker ${scriptConfig.id}] No Lua libraries found to load.`);
+    }
+  }
+};
+
 const initializeLuaVM = async () => {
   log('info', `[Lua Script Worker ${scriptConfig.id}] Initializing Lua VM…`);
   try {
     const factory = new LuaFactory();
     lua = await factory.createEngine();
+    await loadLuaLibraries();
     log('info', `[Lua Script Worker ${scriptConfig.id}] Lua VM ready.`);
   } catch (error) {
     log(
