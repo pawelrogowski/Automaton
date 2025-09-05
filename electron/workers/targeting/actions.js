@@ -10,7 +10,8 @@ const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
 const TARGET_CLICK_DELAY_MS = 400;
 const TARGET_CONFIRMATION_TIMEOUT_MS = 450;
-const MELEE_DISTANCE_THRESHOLD = 1.9;
+const SHORT_CLICK_DELAY_MS = 50;
+const MELEE_DISTANCE_THRESHOLD = 1.5;
 
 /**
  * Creates a set of targeting action functions that close over the provided worker-specific dependencies.
@@ -185,14 +186,27 @@ export function createTargetingActions(workerContext) {
       }
       const sum = acquisitionTimes.reduce((a, b) => a + b, 0);
       avgAcquisitionTime = Math.round(sum / acquisitionTimes.length);
-
-      console.log(
-        `[Targeting] Acquired target in: ${acquisitionTime}ms (Avg: ${avgAcquisitionTime}ms, Max: ${maxAcquisitionTime}ms)`,
-      );
     };
 
-    const performActionAndWait = async (action, clickRegion = null) => {
-      targetingContext.acquisitionUnlockTime = Date.now() + 400;
+    const performActionAndWait = async (
+      action,
+      clickRegion = null,
+      presses = 1,
+    ) => {
+      let currentClickDelay = TARGET_CLICK_DELAY_MS;
+      let isMultiTabOrGrave = false;
+
+      if (action === 'tab' || action === 'grave') {
+        if (presses > 1) {
+          isMultiTabOrGrave = true;
+        }
+      }
+
+      if (action === 'click' || isMultiTabOrGrave) {
+        currentClickDelay = SHORT_CLICK_DELAY_MS;
+      }
+
+      targetingContext.acquisitionUnlockTime = Date.now() + currentClickDelay;
       const actionTriggerTime = Date.now();
 
       const checkTargetAndAcceptSubstitute = () => {
@@ -246,6 +260,13 @@ export function createTargetingActions(workerContext) {
         );
         await delay(50); // Delay after mouse click
       }
+
+      if (action === 'tab' && presses === 2) {
+        await delay(100); // Wait 100ms between clicks
+        keypress.sendKey('tab', globalState.global.display);
+        await delay(50); // Delay after second keypress
+      }
+
       targetingContext.lastClickTime = Date.now();
       await delay(50);
 
@@ -300,7 +321,11 @@ export function createTargetingActions(workerContext) {
         'info',
         `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`,
       );
-      const acquired = await performActionAndWait(bestKeyPlan.action);
+      const acquired = await performActionAndWait(
+        bestKeyPlan.action,
+        null,
+        bestKeyPlan.presses,
+      );
       if (acquired) {
         // F8 press removed as per new requirement
       }
@@ -317,7 +342,7 @@ export function createTargetingActions(workerContext) {
         'info',
         "[Targeting] Acquisition: No current target. Trying one 'tab' press.",
       );
-      const acquired = await performActionAndWait('tab');
+      const acquired = await performActionAndWait('tab', null, 1);
       if (acquired) {
         // F8 press removed as per new requirement
       }
@@ -364,6 +389,7 @@ export function createTargetingActions(workerContext) {
       const acquired = await performActionAndWait(
         'click',
         targetToClick.region,
+        1,
       );
       if (acquired) {
         // F8 press removed as per new requirement

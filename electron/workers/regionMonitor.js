@@ -1,5 +1,4 @@
 import { parentPort, workerData } from 'worker_threads';
-import { performance } from 'perf_hooks';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
 import findSequences from 'find-sequences-native';
@@ -9,7 +8,6 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 const { sharedData } = workerData;
 const FULL_SCAN_INTERVAL_MS = 500;
 const MIN_LOOP_DELAY_MS = 200;
-const PERFORMANCE_LOG_INTERVAL = 10000;
 
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
@@ -29,30 +27,7 @@ let isShuttingDown = false;
 let isScanning = false;
 const frameUpdateManager = new FrameUpdateManager();
 
-// --- Performance tracking ---
-let scanCount = 0;
-let totalScanTime = 0;
-let lastPerfReport = Date.now();
-
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function logPerformanceStats() {
-  const now = Date.now();
-  if (now - lastPerfReport >= PERFORMANCE_LOG_INTERVAL) {
-    const avgScanTime =
-      scanCount > 0 ? (totalScanTime / scanCount).toFixed(2) : 0;
-    const scansPerSecond = (
-      (scanCount / (now - lastPerfReport)) *
-      1000
-    ).toFixed(1);
-    console.log(
-      `[RegionMonitor] Performance: ${scansPerSecond} scans/sec, avg: ${avgScanTime}ms`,
-    );
-    scanCount = 0;
-    totalScanTime = 0;
-    lastPerfReport = now;
-  }
-}
 
 // --- Recursive Region Finding Logic ---
 async function findRegionsRecursive(
@@ -240,7 +215,6 @@ async function processSpecialRegions(buffer, regions, metadata) {
 }
 
 async function performFullScan(buffer, metadata) {
-  const scanStart = performance.now();
   const foundRegions = {};
   await findRegionsRecursive(
     buffer,
@@ -251,19 +225,12 @@ async function performFullScan(buffer, metadata) {
     metadata,
   );
   await processSpecialRegions(buffer, foundRegions, metadata);
-  const scanTime = performance.now() - scanStart;
-  scanCount++;
-  totalScanTime += scanTime;
-  if (scanTime > 100) {
-    console.log(`[RegionMonitor] Slow full scan: ${scanTime.toFixed(2)}ms`);
-  }
   return foundRegions;
 }
 
 async function mainLoop() {
-  console.log('[RegionMonitor] Starting main loop...');
   while (!isShuttingDown) {
-    const loopStartTime = performance.now();
+    const loopStartTime = Date.now();
     try {
       if (isScanning) {
         await delay(MIN_LOOP_DELAY_MS);
@@ -281,7 +248,6 @@ async function mainLoop() {
 
       if (Atomics.load(syncArray, IS_RUNNING_INDEX) !== 1) {
         if (Object.keys(lastKnownRegions).length > 0) {
-          console.log('[RegionMonitor] Capture stopped. Clearing regions.');
           lastKnownRegions = {};
           parentPort.postMessage({
             storeUpdate: true,
@@ -318,20 +284,17 @@ async function mainLoop() {
       } finally {
         isScanning = false;
       }
-
-      logPerformanceStats();
     } catch (err) {
       console.error('[RegionMonitor] Error in main loop:', err);
       lastKnownRegions = {};
     }
 
-    const elapsedTime = performance.now() - loopStartTime;
+    const elapsedTime = Date.now() - loopStartTime;
     const delayTime = Math.max(0, FULL_SCAN_INTERVAL_MS - elapsedTime);
     if (delayTime > 0) {
       await delay(delayTime);
     }
   }
-  console.log('[RegionMonitor] Main loop stopped.');
 }
 
 parentPort.on('message', (message) => {
@@ -342,7 +305,6 @@ parentPort.on('message', (message) => {
     }
 
     if (message.type === 'shutdown') {
-      console.log('[RegionMonitor] Received shutdown command.');
       isShuttingDown = true;
     }
   } catch (err) {
@@ -351,7 +313,6 @@ parentPort.on('message', (message) => {
 });
 
 async function startWorker() {
-  console.log('[RegionMonitor] Worker starting up...');
   mainLoop().catch((err) => {
     console.error('[RegionMonitor] Fatal error in main loop:', err);
     process.exit(1);

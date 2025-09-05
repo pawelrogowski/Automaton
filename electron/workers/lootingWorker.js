@@ -2,7 +2,7 @@ import { parentPort } from 'worker_threads';
 import keypress from 'keypress-native';
 import { createLogger } from '../utils/logger.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let isInitialized = false;
@@ -45,7 +45,6 @@ parentPort.on('message', async (message) => {
           'info',
           `[LootingWorker] BattleList entries decreased from ${previousBattleListLength} to ${currentBattleListLength}. Pressing F8.`,
         );
-        await delay(50);
         keypress.sendKey('f8', globalState.global.display);
         await delay(50);
       }
