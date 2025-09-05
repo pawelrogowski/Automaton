@@ -29,7 +29,6 @@ struct SpecialArea {
 namespace AStar {
     static constexpr int BASE_MOVE_COST = 10;
     static constexpr int DIAGONAL_MOVE_COST = 30;
-    static constexpr int DIAGONAL_TIE_PENALTY = 1;
     static const int INF_COST = 0x3f3f3f3f;
     static constexpr int CREATURE_BLOCK_COST = 1000000;
 
@@ -46,11 +45,10 @@ namespace AStar {
         return x >= 0 && x < mapData.width && y >= 0 && y < mapData.height;
     }
 
-    inline int octileHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST, int D2 = DIAGONAL_MOVE_COST) {
+    inline int manhattanHeuristic(int x1, int y1, int x2, int y2, int D = BASE_MOVE_COST) {
         int dx = std::abs(x1 - x2);
         int dy = std::abs(y1 - y2);
-        int mn = std::min(dx, dy);
-        return D * (dx + dy) + (D2 - 2 * D) * mn;
+        return D * (dx + dy);
     }
 
     struct ScratchBuffers {
@@ -82,282 +80,12 @@ namespace AStar {
         }
     }
 
-    int getPathLength(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
-        int W = mapData.width;
-        int H = mapData.height;
-        if (W <= 0 || H <= 0) return -1;
-        int mapSize = W * H;
-        ensureBuffersSize(mapSize);
-        nextVisitToken();
-        int visit = sb.visitToken;
-
-        auto indexOf = [&](int x, int y) { return y * W + x; };
-
-        if (!inBounds(end.x, end.y, mapData)) return -1;
-
-        int h0 = octileHeuristic(start.x, start.y, end.x, end.y);
-
-        using PQItem = std::tuple<int,int,int,int>;
-        struct Compare {
-            bool operator()(PQItem const& a, PQItem const& b) const {
-                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
-                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
-                return std::get<2>(a) > std::get<2>(b);
-            }
-        };
-        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
-
-        int startIdx = indexOf(start.x, start.y);
-        int endIdx = indexOf(end.x, end.y);
-
-        sb.gScore[startIdx] = 0;
-        sb.parent[startIdx] = -1;
-        sb.mark[startIdx] = visit;
-        open.emplace(h0 + 0, h0, 0, startIdx);
-
-        int iterations = 0;
-        const int dxs[8] = { -1, 1, 0, 0, -1, 1, -1, 1 };
-        const int dys[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
-
-        while (!open.empty()) {
-            if (++iterations % 1000 == 0) onCancelled();
-
-            auto [f, h, g, idx] = open.top();
-            open.pop();
-
-            if (sb.closedMark[idx] == visit || !(sb.mark[idx] == visit) || g > sb.gScore[idx]) continue;
-
-            if (idx == endIdx) {
-                int length = 0;
-                int cur = endIdx;
-                while (cur != -1 && cur != startIdx) {
-                    length++;
-                    cur = sb.parent[cur];
-                }
-                return length;
-            }
-
-            sb.closedMark[idx] = visit;
-            int cx = idx % W;
-            int cy = idx / W;
-
-            for (int dir = 0; dir < 8; ++dir) {
-                int nx = cx + dxs[dir];
-                int ny = cy + dys[dir];
-                if (!inBounds(nx, ny, mapData)) continue;
-
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                if (isDiagonal) {
-                    int orth_x1 = cx + dxs[dir];
-                    int orth_y1 = cy;
-                    int orth_x2 = cx;
-                    int orth_y2 = cy + dys[dir];
-
-                    auto isOrthogonalWalkable = [&](int x, int y) {
-                        if (!inBounds(x, y, mapData)) return false;
-                        int nIdx = indexOf(x, y);
-                        int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
-                        bool isWalkableByMap = isWalkable(x, y, mapData);
-                        if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(x == end.x && y == end.y))) {
-                            return false;
-                        }
-                        return true;
-                    };
-
-                    if (isOrthogonalWalkable(orth_x1, orth_y1) || isOrthogonalWalkable(orth_x2, orth_y2)) {
-                        continue;
-                    }
-                }
-
-                int nIdx = indexOf(nx, ny);
-                int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
-                bool isWalkableByMap = isWalkable(nx, ny, mapData);
-
-                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(nx == end.x && ny == end.y))) {
-                    continue;
-                }
-
-                bool isCreatureTile = false;
-                for (const auto& creature : creaturePositions) {
-                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
-                        isCreatureTile = true;
-                        break;
-                    }
-                }
-                int creatureCost = (isCreatureTile && !(nx == end.x && ny == end.y)) ? CREATURE_BLOCK_COST : 0;
-
-                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
-                int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-
-                int tieBreakerCost = 0;
-                if (!isDiagonal) {
-                    int dx_from_current = std::abs(end.x - cx);
-                    int dy_from_current = std::abs(end.y - cy);
-                    if (dx_from_current > dy_from_current) {
-                        if (nx == cx) tieBreakerCost = 11; // --- MODIFICATION: Penalty increased to 11
-                    } else if (dy_from_current > dx_from_current) {
-                        if (ny == cy) tieBreakerCost = 11; // --- MODIFICATION: Penalty increased to 11
-                    }
-                }
-
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost + tieBreakerCost;
-
-                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
-                    sb.gScore[nIdx] = tentativeG;
-                    sb.parent[nIdx] = idx;
-                    sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, end.x, end.y);
-                    int nf = tentativeG + nh;
-                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
-                    open.emplace(nf, nh, tentativeG, nIdx);
-                }
-            }
-        }
-        return -1;
-    }
-
-    bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
-        return getPathLength(start, end, mapData, cost_grid, creaturePositions, onCancelled) != -1;
-    }
-
-    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+    template <typename FindGoalFunc>
+    std::vector<Node> findPathGeneric(const Node& start, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled, FindGoalFunc isGoal) {
         std::vector<Node> path;
         int W = mapData.width;
         int H = mapData.height;
         if (W <= 0 || H <= 0) return path;
-        int mapSize = W * H;
-        ensureBuffersSize(mapSize);
-        nextVisitToken();
-        int visit = sb.visitToken;
-        auto indexOf = [&](int x, int y) { return y * W + x; };
-        if (!inBounds(end.x, end.y, mapData)) return path;
-
-        int h0 = octileHeuristic(start.x, start.y, end.x, end.y);
-
-        using PQItem = std::tuple<int,int,int,int>;
-        struct Compare {
-            bool operator()(PQItem const& a, PQItem const& b) const {
-                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
-                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
-                return std::get<2>(a) > std::get<2>(b);
-            }
-        };
-        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
-        int startIdx = indexOf(start.x, start.y);
-        int endIdx = indexOf(end.x, end.y);
-        sb.gScore[startIdx] = 0;
-        sb.parent[startIdx] = -1;
-        sb.mark[startIdx] = visit;
-        open.emplace(h0 + 0, h0, 0, startIdx);
-        int iterations = 0;
-        const int dxs[8] = { -1, 1, 0, 0, -1, 1, -1, 1 };
-        const int dys[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
-        while (!open.empty()) {
-            if (++iterations % 1000 == 0) onCancelled();
-            auto [f, h, g, idx] = open.top();
-            open.pop();
-            if (sb.closedMark[idx] == visit) continue;
-            if (!(sb.mark[idx] == visit)) continue;
-            if (g > sb.gScore[idx]) continue;
-            int cx = idx % W;
-            int cy = idx / W;
-            if (idx == endIdx) {
-                int cur = endIdx;
-                while (cur != -1) {
-                    Node node_to_add;
-                    node_to_add.x = cur % W;
-                    node_to_add.y = cur / W;
-                    node_to_add.z = start.z;
-                    path.push_back(node_to_add);
-                    cur = sb.parent[cur];
-                }
-                std::reverse(path.begin(), path.end());
-                return path;
-            }
-            sb.closedMark[idx] = visit;
-            for (int dir = 0; dir < 8; ++dir) {
-                int nx = cx + dxs[dir];
-                int ny = cy + dys[dir];
-                if (!inBounds(nx, ny, mapData)) continue;
-
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                if (isDiagonal) {
-                    int orth_x1 = cx + dxs[dir];
-                    int orth_y1 = cy;
-                    int orth_x2 = cx;
-                    int orth_y2 = cy + dys[dir];
-
-                    auto isOrthogonalWalkable = [&](int x, int y) {
-                        if (!inBounds(x, y, mapData)) return false;
-                        int nIdx = indexOf(x, y);
-                        int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
-                        bool isWalkableByMap = isWalkable(x, y, mapData);
-                        if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(x == end.x && y == end.y))) {
-                            return false;
-                        }
-                        return true;
-                    };
-
-                    if (isOrthogonalWalkable(orth_x1, orth_y1) || isOrthogonalWalkable(orth_x2, orth_y2)) {
-                        continue;
-                    }
-                }
-
-                int nIdx = indexOf(nx, ny);
-                int tileAvoidance = 0;
-                if (nIdx >= 0 && nIdx < (int)cost_grid.size()) {
-                    tileAvoidance = cost_grid[nIdx];
-                }
-                bool isWalkableByMap = isWalkable(nx, ny, mapData);
-                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0 && !(nx == end.x && ny == end.y))) {
-                    continue;
-                }
-                bool isCreatureTile = false;
-                for (const auto& creature : creaturePositions) {
-                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
-                        isCreatureTile = true;
-                        break;
-                    }
-                }
-                int creatureCost = 0;
-                if (isCreatureTile && !(nx == end.x && ny == end.y)) {
-                    creatureCost = CREATURE_BLOCK_COST;
-                }
-                int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
-                int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-
-                int tieBreakerCost = 0;
-                if (!isDiagonal) {
-                    int dx_from_current = std::abs(end.x - cx);
-                    int dy_from_current = std::abs(end.y - cy);
-                    if (dx_from_current > dy_from_current) {
-                        if (nx == cx) tieBreakerCost = 11; // --- MODIFICATION: Penalty increased to 11
-                    } else if (dy_from_current > dx_from_current) {
-                        if (ny == cy) tieBreakerCost = 11; // --- MODIFICATION: Penalty increased to 11
-                    }
-                }
-
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost + tieBreakerCost;
-
-                if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
-                    sb.gScore[nIdx] = tentativeG;
-                    sb.parent[nIdx] = idx;
-                    sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, end.x, end.y);
-                    int nf = tentativeG + nh;
-                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
-                    open.emplace(nf, nh, tentativeG, nIdx);
-                }
-            }
-        }
-        return path;
-    }
-
-    std::vector<Node> findPathToAny(const Node& start, const std::unordered_set<int>& endIndices, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
-        std::vector<Node> path;
-        int W = mapData.width;
-        int H = mapData.height;
-        if (W <= 0 || H <= 0 || endIndices.empty()) return path;
 
         int mapSize = W * H;
         ensureBuffersSize(mapSize);
@@ -365,48 +93,32 @@ namespace AStar {
         int visit = sb.visitToken;
         auto indexOf = [&](int x, int y) { return y * W + x; };
 
-        int firstGoalIdx = *endIndices.begin();
-        int heuristicEndX = firstGoalIdx % W;
-        int heuristicEndY = firstGoalIdx / W;
-
-        using PQItem = std::tuple<int,int,int,int>;
-        struct Compare {
-             bool operator()(PQItem const& a, PQItem const& b) const {
-                if (std::get<0>(a) != std::get<0>(b)) return std::get<0>(a) > std::get<0>(b);
-                if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) > std::get<1>(b);
-                return std::get<2>(a) > std::get<2>(b);
-            }
-        };
-        std::priority_queue<PQItem, std::vector<PQItem>, Compare> open;
+        using PQItem = std::tuple<int, int, int, int, int>;
+        std::priority_queue<PQItem, std::vector<PQItem>, std::greater<PQItem>> open;
 
         int startIdx = indexOf(start.x, start.y);
-        int h0 = octileHeuristic(start.x, start.y, heuristicEndX, heuristicEndY);
+        int h0 = isGoal.heuristic(start.x, start.y);
 
         sb.gScore[startIdx] = 0;
         sb.parent[startIdx] = -1;
         sb.mark[startIdx] = visit;
-        open.emplace(h0, h0, 0, startIdx);
+        open.emplace(h0, h0, 0, 0, startIdx); // f, h, preference, g, idx
 
         int iterations = 0;
-        const int dxs[8] = { -1, 1, 0, 0, -1, 1, -1, 1 };
-        const int dys[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
+        const int dxs[8] = { 1, 1, 0, -1, 1, -1, -1, 0 };
+        const int dys[8] = { 1, 0, 1, 1, -1, -1, 0, -1 };
 
         while (!open.empty()) {
             if (++iterations % 1000 == 0) onCancelled();
-
-            auto [f, h, g, idx] = open.top();
+            auto [f, h, preference, g, idx] = open.top();
             open.pop();
 
-            if (sb.closedMark[idx] == visit || !(sb.mark[idx] == visit) || g > sb.gScore[idx]) continue;
+            if (sb.closedMark[idx] == visit || g > sb.gScore[idx]) continue;
 
-            if (endIndices.count(idx)) {
+            if (isGoal(idx)) {
                 int cur = idx;
                 while (cur != -1) {
-                    Node node_to_add;
-                    node_to_add.x = cur % W;
-                    node_to_add.y = cur / W;
-                    node_to_add.z = start.z;
-                    path.push_back(node_to_add);
+                    path.emplace_back(Node{cur % W, cur / W, 0, 0, nullptr, start.z});
                     cur = sb.parent[cur];
                 }
                 std::reverse(path.begin(), path.end());
@@ -416,6 +128,8 @@ namespace AStar {
             sb.closedMark[idx] = visit;
             int cx = idx % W;
             int cy = idx / W;
+
+            bool prefer_horizontal = (cx + cy) % 2 == 0;
 
             for (int dir = 0; dir < 8; ++dir) {
                 int nx = cx + dxs[dir];
@@ -434,19 +148,7 @@ namespace AStar {
                         int nIdx = indexOf(x, y);
                         int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
                         bool isWalkableByMap = isWalkable(x, y, mapData);
-                        if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0)) {
-                             return false;
-                        }
-
-                        bool isCreatureTile = false;
-                        for (const auto& creature : creaturePositions) {
-                            if (creature.x - mapData.minX == x && creature.y - mapData.minY == y && creature.z == start.z) {
-                                isCreatureTile = true;
-                                break;
-                            }
-                        }
-
-                        if (isCreatureTile && endIndices.count(nIdx) == 0) {
+                        if (tileAvoidance == 255 || (!isWalkableByMap && (tileAvoidance > 0 || !isGoal(nIdx)))) {
                             return false;
                         }
                         return true;
@@ -461,54 +163,99 @@ namespace AStar {
                 int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
                 bool isWalkableByMap = isWalkable(nx, ny, mapData);
 
-                if (tileAvoidance == 255 || (!isWalkableByMap && tileAvoidance > 0) || (!isWalkableByMap && tileAvoidance == 0)) {
-                     continue;
+                if (tileAvoidance == 255 || (!isWalkableByMap && (tileAvoidance > 0 || !isGoal(nIdx) ))) {
+                    continue;
                 }
 
                 bool isCreatureTile = false;
-                for (const auto& creature : creaturePositions) {
-                    if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
-                        isCreatureTile = true;
-                        break;
+                if (!isGoal(nIdx)) {
+                    for (const auto& creature : creaturePositions) {
+                        if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
+                            isCreatureTile = true;
+                            break;
+                        }
                     }
                 }
 
-                if (isCreatureTile && endIndices.count(nIdx) == 0) {
-                    continue;
-                }
-                int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
+                if (isCreatureTile) continue;
 
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-
-                int tieBreakerCost = 0;
-                if (!isDiagonal) {
-                    int dx_from_current = std::abs(heuristicEndX - cx);
-                    int dy_from_current = std::abs(heuristicEndY - cy);
-                    if (dx_from_current > dy_from_current) {
-                        if (nx == cx) tieBreakerCost = 11; // --- MODIFICATION: Penalty increased to 11
-                    } else if (dy_from_current > dx_from_current) {
-                        if (ny == cy) tieBreakerCost = 11; // --- MODIFICATION: Penalty increased to 11
-                    }
-                }
-
-                int tentativeG = (sb.mark[idx] == visit ? sb.gScore[idx] : INF_COST) + baseMoveCost + addedCost + creatureCost + tieBreakerCost;
+                int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
+                int tentativeG = g + baseMoveCost + addedCost + creatureCost;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
-                    int nh = octileHeuristic(nx, ny, heuristicEndX, heuristicEndY);
+
+                    int nh = isGoal.heuristic(nx, ny);
                     int nf = tentativeG + nh;
-                    if (isDiagonal) nf += DIAGONAL_TIE_PENALTY;
-                    open.emplace(nf, nh, tentativeG, nIdx);
+
+                    int current_dx = dxs[dir];
+                    int current_dy = dys[dir];
+
+                    int axis_preference = 1;
+                    bool is_horizontal = (current_dy == 0 && current_dx != 0);
+                    bool is_vertical = (current_dx == 0 && current_dy != 0);
+
+                    if ((prefer_horizontal && is_horizontal) || (!prefer_horizontal && is_vertical)) {
+                        axis_preference = 0;
+                    }
+
+                    open.emplace(nf, nh, axis_preference, tentativeG, nIdx);
                 }
             }
         }
         return path;
     }
 
-    // ... (rest of file is unchanged) ...
+    std::vector<Node> findPathWithCosts(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+        int W = mapData.width;
+        auto indexOf = [&](int x, int y) { return y * W + x; };
+        int endIdx = indexOf(end.x, end.y);
+
+        struct Goal {
+            int end_idx;
+            int end_x, end_y;
+            bool operator()(int idx) const { return idx == end_idx; }
+            int heuristic(int x, int y) const { return manhattanHeuristic(x, y, end_x, end_y); }
+        };
+
+        return findPathGeneric(start, mapData, cost_grid, creaturePositions, onCancelled, Goal{endIdx, end.x, end.y});
+    }
+
+    std::vector<Node> findPathToAny(const Node& start, const std::unordered_set<int>& endIndices, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+        int W = mapData.width;
+        int heuristicEndX = 0, heuristicEndY = 0;
+        if (!endIndices.empty()) {
+            int firstGoalIdx = *endIndices.begin();
+            heuristicEndX = firstGoalIdx % W;
+            heuristicEndY = firstGoalIdx / W;
+        }
+
+        struct Goal {
+            const std::unordered_set<int>& ends;
+            int h_x, h_y;
+            bool operator()(int idx) const { return ends.count(idx); }
+            int heuristic(int x, int y) const { return manhattanHeuristic(x, y, h_x, h_y); }
+        };
+
+        return findPathGeneric(start, mapData, cost_grid, creaturePositions, onCancelled, Goal{endIndices, heuristicEndX, heuristicEndY});
+    }
+
+    // --- CRASH FIX HERE ---
+    // These functions now correctly assume they receive LOCAL coordinates
+    // and pass them directly to the main finder, preventing a double conversion.
+    int getPathLength(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+        auto path = findPathWithCosts(start, end, mapData, cost_grid, creaturePositions, onCancelled);
+        return path.empty() ? -1 : path.size() - 1;
+    }
+
+    bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
+        return !findPathWithCosts(start, end, mapData, cost_grid, creaturePositions, onCancelled).empty();
+    }
+
     std::unordered_set<int> findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions) {
         std::unordered_set<int> target_indices;
         Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
@@ -781,7 +528,7 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
             searchStatus = "NO_PATH_FOUND";
         }
     }
-    
+
 
     auto endTime = std::chrono::high_resolution_clock::now();
     double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
@@ -896,10 +643,6 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     } else {
         searchStatus = "NO_PATH_FOUND";
     }
-
-    
-
-    
 
     auto endTime = std::chrono::high_resolution_clock::now();
     double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
