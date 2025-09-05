@@ -4,7 +4,7 @@
 -- @param serverSaveTimeStr (string) The server save time in "HH:MM" format (e.g., "10:00").
 -- @return (boolean) True if it's currently within the no-login window, false otherwise.
 ---
-function isServerSaveWindow(serverSaveTimeStr)
+function isServerSaveTime(serverSaveTimeStr)
   -- --- Configuration ---
   local preSaveMinutes = 10  -- Block logins this many minutes BEFORE server save
   local postSaveMinutes = 5  -- Block logins this many minutes AFTER server save
@@ -25,7 +25,7 @@ function isServerSaveWindow(serverSaveTimeStr)
   local now = os.date("*t")
   local currentTotalMinutes = now.hour * 60 + now.min
   local ssTotalMinutes = ssHour * 60 + ssMinute
-  
+
   -- A day has 1440 minutes (24 * 60)
   local minutesInDay = 1440
 

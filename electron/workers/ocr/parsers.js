@@ -185,8 +185,9 @@ function parseSelectCharacterModal(ocrData) {
       if (!accountStatus) accountStatus = text;
       return;
     }
-    characters[text] = {
-      name: text,
+    const characterName = text.replace(/(?!^)(?<!\s)([A-Z])/g, ' $1');
+    characters[characterName] = {
+      name: characterName,
       position: { x: item.click.x, y: item.click.y },
       originalPosition: { x: item.x, y: item.y },
       color: item.color,
@@ -197,7 +198,7 @@ function parseSelectCharacterModal(ocrData) {
       item.color.g === 244 &&
       item.color.b === 244
     ) {
-      selectedCharacter = text;
+      selectedCharacter = characterName;
     }
   });
   return { selectedCharacter, characters, accountStatus };

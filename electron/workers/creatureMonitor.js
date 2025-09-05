@@ -21,16 +21,16 @@ const PLAYER_X_INDEX = 0;
 const PLAYER_Y_INDEX = 1;
 const PLAYER_Z_INDEX = 2;
 
-const PLAYER_ANIMATION_FREEZE_MS = 150;
-const PLAYER_SETTLING_GRACE_PERIOD_MS = 300;
+const PLAYER_ANIMATION_FREEZE_MS = 120;
+const PLAYER_SETTLING_GRACE_PERIOD_MS = 200;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
-const JITTER_CONFIRMATION_TIME_MS = 100; // Time-based window for jitter detection.
+const JITTER_CONFIRMATION_TIME_MS = 75; // Time-based window for jitter detection.
 
 // Increased from 45 to make correlation much more robust against player and creature movement.
-const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 150;
+const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 125;
 
 // Grace period to prevent target loss from single-frame detection failures.
-const TARGET_LOSS_GRACE_PERIOD_MS = 150;
+const TARGET_LOSS_GRACE_PERIOD_MS = 100;
 
 let currentState = null;
 let isInitialized = false;
