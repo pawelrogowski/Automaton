@@ -4,7 +4,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { CavebotLuaExecutor } from '../cavebotLuaExecutor.js';
 import { createLogger } from '../../utils/logger.js';
-import { config } from './config.js';
+import { config } from './config.js'; // Still need config for other values
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
 import {
@@ -72,7 +72,8 @@ function handleControlHandover() {
       currentWaypoint.id === waypointIdAtTargetingStart &&
       currentWaypoint.type === 'Node'
     ) {
-      const radius = config.waypointSkipRadius;
+      // Get nodeRange from Redux store
+      const radius = workerState.globalState.cavebot.nodeRange;
       const wasVisited = visitedTiles.some(
         (tile) =>
           tile.z === currentWaypoint.z &&
@@ -117,7 +118,7 @@ async function performOperation() {
       if (scriptContent && !scriptContent.includes('login(')) {
         workerState.logger(
           'warn',
-          '[Cavebot] Game world not visible. Terminating non-login script.'
+          '[Cavebot] Game world not visible. Terminating non-login script.',
         );
         workerState.luaExecutor.forceStop();
         resetInternalState(workerState, fsm);

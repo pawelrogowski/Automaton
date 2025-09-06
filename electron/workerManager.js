@@ -44,16 +44,9 @@ function quickHash(obj) {
 }
 
 const WORKER_STATE_DEPENDENCIES = {
-  cavebotWorker: [
-    'cavebot',
-    'global',
-    'regionCoordinates',
-    'targeting',
-    'settings',
-    'pathfinder',
-    'uiValues', // Add uiValues to ensure stamina and cap are updated
-    'gameState',
-  ],
+  // cavebotWorker needs the full state, so it's handled separately
+  // luaScriptWorker also needs the full state, handled separately
+
   targetingWorker: [
     'targeting',
     'global',
@@ -623,18 +616,19 @@ class WorkerManager {
     }
 
     for (const [name, workerEntry] of this.workers) {
-      if (
-        !workerEntry.worker ||
-        name === 'captureWorker' ||
-        (/^[0-9a-fA-F]{8}-/.test(name) &&
-          workerEntry.config?.type === 'oneshot')
-      )
-        continue;
+      if (!workerEntry.worker || name === 'captureWorker') continue;
 
-      if (!this.workerInitialized.get(name)) {
+      const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
+
+      if (!this.workerInitialized.get(name) || isLuaWorker) {
+        // For initial setup or Lua workers, always send the full state
         workerEntry.worker.postMessage(currentState);
         this.workerInitialized.set(name, true);
-        log('info', `[Worker Manager] Sent initial full state to ${name}.`);
+        if (isLuaWorker) {
+          // For Lua workers, we don't use state_diff, so clear cache
+          this.workerStateCache.delete(name);
+        }
+        log('info', `[Worker Manager] Sent full state to ${name}.`);
         continue;
       }
 

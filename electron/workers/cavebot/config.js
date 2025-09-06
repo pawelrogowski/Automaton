@@ -30,7 +30,6 @@ export const config = {
 
   // --- Gameplay Parameters ---
   teleportDistanceThreshold: 5,
-  waypointSkipRadius: 4,
   toolHotkeys: {
     rope: 'b',
     machete: 'n',

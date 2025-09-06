@@ -14,13 +14,19 @@ const StyledCavebot = styled.div`
     margin-bottom: 20px;
   }
 
+  .minimap-controls-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px; /* Space between minimap and the new control */
+    flex-shrink: 0; /* Prevent container from shrinking */
+  }
+
   .minimap-container {
     border: 1px solid #333;
     background-color: #1a1a1a;
     display: flex;
     justify-content: center;
     align-items: center;
-    /* Removed align-self: flex-end; as it's not needed with flex-direction: row and gap */
     overflow: hidden;
     flex-shrink: 0; /* Prevent minimap from shrinking */
   }

@@ -39,6 +39,7 @@ const initialState = {
   dynamicTarget: null,
   visitedTiles: [],
   waypointIdAtTargetingStart: null,
+  nodeRange: 4, // Initial value from electron/workers/cavebot/config.js
 };
 
 const cavebotSlice = createSlice({
@@ -63,7 +64,10 @@ const cavebotSlice = createSlice({
      */
     confirmTargetingControl: (state) => {
       // Allow taking control from a handover state OR from an idle/disabled cavebot.
-      if (state.controlState === 'HANDOVER_TO_TARGETING' || state.controlState === 'CAVEBOT') {
+      if (
+        state.controlState === 'HANDOVER_TO_TARGETING' ||
+        state.controlState === 'CAVEBOT'
+      ) {
         state.controlState = 'TARGETING';
       }
     },
@@ -308,6 +312,9 @@ const cavebotSlice = createSlice({
       state.isPausedByScript = action.payload.isPaused;
       state.pauseTimerId = action.payload.timerId;
     },
+    setNodeRange: (state, action) => {
+      state.nodeRange = action.payload;
+    },
   },
 });
 
@@ -338,6 +345,7 @@ export const {
   addVisitedTile,
   clearVisitedTiles, // Export the correctly named action
   setScriptPause,
+  setNodeRange,
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };
@@ -350,11 +358,15 @@ export const setWalkingPause = (ms) => (dispatch, getState) => {
 
   if (ms > 0) {
     const timerId = setTimeout(() => {
-      dispatch(cavebotSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+      dispatch(
+        cavebotSlice.actions.setScriptPause({ isPaused: false, timerId: null }),
+      );
     }, ms);
     dispatch(cavebotSlice.actions.setScriptPause({ isPaused: true, timerId }));
   } else {
-    dispatch(cavebotSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+    dispatch(
+      cavebotSlice.actions.setScriptPause({ isPaused: false, timerId: null }),
+    );
   }
 };
 
