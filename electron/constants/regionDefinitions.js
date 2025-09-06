@@ -769,9 +769,8 @@ const regionDefinitions = {
     type: 'boundingBox',
     start: {
       direction: 'horizontal',
-      offset: { x: 11, y: 17 },
+      offset: { x: -4, y: 4 },
       sequence: [
-        [135, 86, 41],
         [159, 136, 40],
         [75, 74, 55],
         [61, 61, 61],
@@ -781,12 +780,13 @@ const regionDefinitions = {
     },
     end: {
       direction: 'vertical',
-      offset: { x: 9, y: 7 },
+      offset: { x: -3, y: 12 },
       sequence: [
-        [159, 159, 159],
-        [160, 160, 160],
-        [104, 104, 104],
         [10, 10, 10],
+        [103, 103, 103],
+        [53, 53, 53],
+        [11, 11, 11],
+        [30, 30, 30],
       ],
     },
     children: {
@@ -802,8 +802,8 @@ const regionDefinitions = {
         ],
       },
     },
-    maxRight: 180,
-    maxDown: 1080,
+    maxRight: 168,
+    maxDown: 2000,
   },
   gameWorld: {
     ocrColors: [

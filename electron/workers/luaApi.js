@@ -10,6 +10,11 @@ import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTra
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
 
+const getNested = (obj, path) => {
+  if (path === null || path === undefined) return obj;
+  return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+};
+
 /**
  * Creates an object with getters for convenient, direct access to state in Lua.
  * This object will be exposed globally in Lua as `__BOT_STATE__`.
@@ -231,7 +236,7 @@ export const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
 export const createLuaApi = async (context) => {
-  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua } = context; // NEW: Destructure sharedLuaGlobals and lua VM
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua } = context;
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
@@ -248,9 +253,119 @@ export const createLuaApi = async (context) => {
     'dragAbsolute',
     'focusTab',
     'login',
+    'waitFor',
   ];
   const getWindowId = () => getState()?.global?.windowId;
   const getDisplay = () => getState()?.global?.display || ':0';
+
+  const waitFor = async (
+    path,
+    comparison = 'exists',
+    value = null,
+    timeout = 5000,
+    interval = 200,
+  ) => {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      await context.refreshLuaGlobalState();
+      const state = getState();
+      const actualValue = getNested(state, path);
+
+      let conditionMet = false;
+      switch (comparison) {
+        case 'equals':
+          conditionMet = actualValue === value;
+          break;
+        case 'notEquals':
+          conditionMet = actualValue !== value;
+          break;
+        case 'greaterThan':
+          conditionMet = actualValue > value;
+          break;
+        case 'lessThan':
+          conditionMet = actualValue < value;
+          break;
+        case 'exists':
+          conditionMet = actualValue !== undefined && actualValue !== null;
+          break;
+        case 'notExists':
+          conditionMet = actualValue === undefined || actualValue === null;
+          break;
+        default:
+          logger(
+            'warn',
+            `[Lua/${scriptName}] waitFor: unknown comparison '${comparison}'`,
+          );
+          return false;
+      }
+
+      if (conditionMet) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+    logger('info', `[Lua/${scriptName}] waitFor timed out for path: '${path}'`);
+    return false;
+  };
+
+  const closeAllModals = async (timeout = 10000) => {
+    const modalsToClose = [
+      { name: 'pleaseWaitModal' },
+      { name: 'ipChangedModal' },
+      { name: 'wrongPasswordModal' },
+      { name: 'connectionLostModal' },
+      { name: 'connectionFailedModal' },
+      { name: 'warningModal' },
+      { name: 'notLoggedInAnymoreModal' },
+    ];
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      await context.refreshLuaGlobalState();
+      const state = getState();
+      const regions = state.regionCoordinates?.regions;
+      if (!regions) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+
+      let foundModal = false;
+      for (const modalInfo of modalsToClose) {
+        const modal = regions[modalInfo.name];
+        const button =
+          modal?.children?.abort || modal?.children?.close || modal?.children?.ok;
+
+        if (button?.x && button?.y) {
+          logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
+          if (
+            modalInfo.name === 'ipChangedModal' ||
+            modalInfo.name === 'notLoggedInAnymoreModal'
+          ) {
+            await keyPress(getDisplay(), 'Escape');
+            await wait(500);
+            await keyPress(getDisplay(), 'Escape');
+            await wait(500);
+          } else {
+            mouseController.leftClick(
+              parseInt(String(getWindowId())),
+              button.x,
+              button.y,
+              getDisplay(),
+            );
+            await wait(500);
+          }
+          foundModal = true;
+          break; // Restart the scan for modals
+        }
+      }
+
+      if (!foundModal) {
+        return true; // No modals found, we are done.
+      }
+    }
+    logger('warn', `[Lua/${scriptName}] closeAllModals timed out.`);
+    return false; // Timed out
+  };
+
   const baseApi = {
     getDistanceTo: (x, y, z) => {
       const state = getState();
@@ -730,71 +845,29 @@ export const createLuaApi = async (context) => {
         logger('info', `[Lua/${scriptName}] Pausing targeting for ${duration}ms`);
       }
     },
+    waitFor,
     login: async (email, password, character) => {
       const windowId = String(getWindowId());
       const display = getDisplay();
-      await context.refreshLuaGlobalState();
-      let state = getState();
-      if (state.regionCoordinates?.regions?.onlineMarker) {
+
+      if (await waitFor('regionCoordinates.regions.onlineMarker', 'exists', null, 100)) {
         logger(
           'info',
-          `[Lua/${scriptName}] Player is already online, skipping login`,
+          `[Lua/${scriptName}] Player is already online, skipping login.`,
         );
         return false;
       }
 
-      const modalsToClose = [
-        { name: 'pleaseWaitModal' },
-        { name: 'ipChangedModal' },
-        { name: 'wrongPasswordModal' },
-        { name: 'connectionLostModal' },
-        { name: 'connectionFailedModal' },
-        { name: 'warningModal' },
-        { name: 'notLoggedInAnymoreModal' },
-      ];
-      let closedAModal;
-      do {
-        closedAModal = false;
-        await context.refreshLuaGlobalState();
-        state = getState();
-        const regions = state.regionCoordinates?.regions;
-        if (regions) {
-          for (const modalInfo of modalsToClose) {
-            const modal = regions[modalInfo.name];
-            const button =
-              modal?.children?.abort ||
-              modal?.children?.close ||
-              modal?.children?.ok;
-            if (button?.x && button?.y) {
-              logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
-              if (
-                modalInfo.name === 'ipChangedModal' ||
-                modalInfo.name === 'notLoggedInAnymoreModal'
-              ) {
-                await keyPress(display, 'Escape');
-                await wait(500);
-                await keyPress(display, 'Escape');
-                await wait(500);
-              } else {
-                mouseController.leftClick(
-                  parseInt(windowId),
-                  button.x,
-                  button.y,
-                  display,
-                );
-                await wait(500);
-              }
-              closedAModal = true;
-              break;
-            }
-          }
-        }
-      } while (closedAModal);
-      await context.refreshLuaGlobalState();
-      state = getState();
-      let selectCharacterModal =
-        state.regionCoordinates?.regions?.selectCharacterModal;
-      if (selectCharacterModal) {
+      await closeAllModals(15000);
+
+      const isAtCharSelect = await waitFor(
+        'regionCoordinates.regions.selectCharacterModal',
+        'exists',
+        null,
+        100,
+      );
+
+      if (isAtCharSelect) {
         logger(
           'info',
           `[Lua/${scriptName}] Already at character selection, skipping login form.`,
@@ -804,15 +877,26 @@ export const createLuaApi = async (context) => {
           'info',
           `[Lua/${scriptName}] Starting login process for character: ${character}`,
         );
-        const loginModal = state.regionCoordinates?.regions?.loginModal;
-        if (!loginModal) {
+
+        const loginModalExists = await waitFor(
+          'regionCoordinates.regions.loginModal',
+          'exists',
+          null,
+          1000,
+        );
+        if (!loginModalExists) {
           logger('warn', `[Lua/${scriptName}] loginModal not found`);
           return false;
         }
+
+        const state = getState(); // We know it exists now.
+        const loginModal = state.regionCoordinates.regions.loginModal;
+
         await keyPress(display, 'Escape');
         await wait(100);
         await keyPress(display, 'Escape');
         await wait(100);
+
         const emailInput = loginModal.children?.emailInput;
         if (!emailInput) {
           logger('warn', `[Lua/${scriptName}] emailInput not found`);
@@ -827,6 +911,7 @@ export const createLuaApi = async (context) => {
         await wait(50);
         await typeArray(display, [email], false);
         await wait(100);
+
         const passwordInput = loginModal.children?.passwordInput;
         if (!passwordInput) {
           logger('warn', `[Lua/${scriptName}] passwordInput not found`);
@@ -842,83 +927,57 @@ export const createLuaApi = async (context) => {
         await typeArray(display, [password], false);
         await wait(100);
         await keyPress(display, 'Enter');
-        await wait(200);
       }
-      await context.refreshLuaGlobalState();
-      let currentState = getState();
-      selectCharacterModal =
-        currentState.regionCoordinates?.regions?.selectCharacterModal;
-      const maxWaitForModal = 10000;
-      const modalCheckInterval = 500;
-      let modalWaitTime = 0;
-      let connectingModalWasSeen = false;
-      while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
-        await wait(modalCheckInterval);
-        modalWaitTime += modalCheckInterval;
-        await context.refreshLuaGlobalState();
-        currentState = getState();
-        const regions = currentState.regionCoordinates?.regions;
-        selectCharacterModal = regions?.selectCharacterModal;
-        const connectingModal = regions?.connectingModal;
-        if (connectingModal) {
-          connectingModalWasSeen = true;
-        }
-        if (
-          connectingModalWasSeen &&
-          !connectingModal &&
-          !selectCharacterModal
-        ) {
-          logger(
-            'warn',
-            `[Lua/${scriptName}] Connection stalled or failed. Aborting login.`,
-          );
-          for (let i = 0; i < 3; i++) {
-            await keyPress(display, 'Escape');
-            await wait(100);
-          }
-          return false;
-        }
-      }
-      if (!selectCharacterModal) {
+
+      const charSelectAppeared = await waitFor(
+        'regionCoordinates.regions.selectCharacterModal',
+        'exists',
+        null,
+        10000,
+      );
+
+      if (!charSelectAppeared) {
         logger(
           'warn',
-          `[Lua/${scriptName}] selectCharacterModal not found after login attempt (waited ${modalWaitTime}ms)`,
+          `[Lua/${scriptName}] selectCharacterModal not found after login attempt.`,
+        );
+        // Try to recover by closing any new modals
+        await closeAllModals(5000);
+        return false;
+      }
+
+      // Wait for character data to be parsed by OCR
+      const charDataExists = await waitFor(
+        'uiValues.selectCharacterModal.characters',
+        'exists',
+        null,
+        5000,
+      );
+      if (!charDataExists) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] No character data available for selection after 5s.`,
         );
         return false;
       }
-      await context.refreshLuaGlobalState();
-      const characterData = getState().uiValues?.selectCharacterModal;
-      if (!characterData || !characterData.characters) {
-        logger('warn', `[Lua/${scriptName}] No character data for selection`);
-        return false;
-      }
-      let characters = characterData.characters;
-      let characterNames = Object.keys(characters);
+
+      const characters = getState().uiValues.selectCharacterModal.characters;
+      const characterNames = Object.keys(characters);
       const targetCharacterLower = character.toLowerCase();
-      let targetCharacterFound = characterNames.find((name) =>
+      const targetCharacterFound = characterNames.find((name) =>
         name.toLowerCase().includes(targetCharacterLower),
       );
-      if (!targetCharacterFound) {
-        await wait(100);
-        await context.refreshLuaGlobalState();
-        const updatedState = getState();
-        const updatedCharacterData =
-          updatedState.uiValues?.selectCharacterModal;
-        if (updatedCharacterData && updatedCharacterData.characters) {
-          characters = updatedCharacterData.characters;
-          characterNames = Object.keys(characters);
-          targetCharacterFound = characterNames.find((name) =>
-            name.toLowerCase().includes(targetCharacterLower),
-          );
-        }
-      }
+
       if (!targetCharacterFound) {
         logger(
           'warn',
-          `[Lua/${scriptName}] Target character '${character}' not found in list`,
+          `[Lua/${scriptName}] Target character '${character}' not found in list: [${characterNames.join(
+            ', ',
+          )}]`,
         );
         return false;
       }
+
       const characterItem = characters[targetCharacterFound];
       if (!characterItem || !characterItem.position) {
         logger(
@@ -936,28 +995,27 @@ export const createLuaApi = async (context) => {
       );
       await wait(100);
       await keyPress(display, 'Enter');
-      const maxWaitTime = 10000;
-      const checkInterval = 200;
-      let elapsedTime = 0;
-      while (elapsedTime < maxWaitTime) {
-        await wait(checkInterval);
-        elapsedTime += checkInterval;
-        await context.refreshLuaGlobalState();
-        const finalState = getState();
-        if (!!finalState.regionCoordinates?.regions?.onlineMarker) {
-          logger(
-            'info',
-            `[Lua/${scriptName}] Login successful, player is online`,
-          );
-          return true;
-        }
-      }
 
-      logger(
-        'warn',
-        `[Lua/${scriptName}] Login timeout, player did not come online`,
+      const isOnline = await waitFor(
+        'regionCoordinates.regions.onlineMarker',
+        'exists',
+        null,
+        10000,
       );
-      return false;
+
+      if (isOnline) {
+        logger(
+          'info',
+          `[Lua/${scriptName}] Login successful, player is online.`,
+        );
+        return true;
+      } else {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Login timeout, player did not come online.`,
+        );
+        return false;
+      }
     },
   };
   let navigationApi = {};
