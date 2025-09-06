@@ -6,6 +6,7 @@ const initialState = {
   enabled: false, // State for Lua scripts enable/disable
   persistentScripts: [], // Array to hold persistent Lua script objects
   hotkeyScripts: [], // Array to hold hotkey Lua script objects
+  error: null,
   _lastEnabledChange: 0, // Internal timestamp for debouncing
   _lastScriptToggle: {}, // Internal timestamps for individual script debouncing
 };
@@ -14,6 +15,9 @@ const luaSlice = createSlice({
   name: 'lua',
   initialState,
   reducers: {
+    clearError: (state) => {
+      state.error = null;
+    },
     /**
      * Adds a new Lua script.
      * @param {object} state - The current state.
@@ -31,6 +35,18 @@ const luaSlice = createSlice({
         loopMax = 5000,
         hotkey = null,
       } = action.payload;
+
+      const nameExists =
+        state.persistentScripts.some((script) => script.name === name) ||
+        state.hotkeyScripts.some((script) => script.name === name);
+
+      if (nameExists) {
+        state.error = `Script with name \"${name}\" already exists.`;
+        console.warn(state.error);
+        return;
+      }
+      state.error = null; // Clear previous error
+
       const newScript = {
         id,
         name: name || 'New Script',
@@ -120,6 +136,22 @@ const luaSlice = createSlice({
      */
     updateScript: (state, action) => {
       const { id, updates } = action.payload;
+
+      if (updates.name) {
+        const nameExists = 
+          state.persistentScripts.some(
+            (script) => script.name === updates.name && script.id !== id,
+          ) ||
+          state.hotkeyScripts.some(
+            (script) => script.name === updates.name && script.id !== id,
+          );
+        if (nameExists) {
+          state.error = `Script with name \"${updates.name}\" already exists.`;
+          console.warn(state.error);
+          return;
+        }
+        state.error = null;
+      }
 
       const persistentIndex = state.persistentScripts.findIndex(
         (script) => script.id === id,
@@ -243,6 +275,7 @@ export const {
   updateScript,
   togglePersistentScript,
   setState,
+  clearError,
   clearScriptLog,
   setenabled,
   setScriptEnabledByName,

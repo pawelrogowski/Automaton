@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
@@ -26,8 +26,8 @@ const ModalContent = styled.div`
   color: #fafafa;
   border: 1px solid rgb(53, 53, 53);
   border-radius: 8px;
-  width: 70vw;
-  height: 80vh;
+  width: 80vw;
+  height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -85,7 +85,7 @@ const ModalBody = styled.div`
 `;
 
 const LogContainer = styled.div`
-  height: 150px; /* Fixed height for the log area */
+  height: 200px; /* Fixed height for the log area */
   overflow-y: auto; /* Add scroll if logs exceed height */
   background-color: #1e1e1e; /* Dark background for logs */
   border: 1px solid #555;
@@ -151,6 +151,16 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
   const [loopMin, setLoopMin] = useState(1000);
   const [loopMax, setLoopMax] = useState(5000);
   const logContainerRef = useRef(null);
+  const editorRef = useRef(null);
+
+  const scriptId = scriptData?.id;
+  const liveScript = useSelector((state) => {
+    if (!scriptId) return null;
+    return (
+      state.lua.persistentScripts.find((s) => s.id === scriptId) ||
+      state.lua.hotkeyScripts.find((s) => s.id === scriptId)
+    );
+  });
 
   useEffect(() => {
     if (scriptData) {
@@ -158,16 +168,23 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
       setCode(scriptData.code || '');
       setLoopMin(scriptData.loopMin !== undefined ? scriptData.loopMin : 1000);
       setLoopMax(scriptData.loopMax !== undefined ? scriptData.loopMax : 5000);
-      // Logs are read directly from scriptData.log
     }
-  }, [scriptData]); // Only depend on scriptData
+  }, [scriptData]);
 
-  // Scroll log to bottom on updates
+  useEffect(() => {
+    if (isOpen && editorRef.current) {
+      // Use a timeout to ensure the editor is fully rendered
+      setTimeout(() => {
+        editorRef.current.view.focus();
+      }, 100);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [scriptData?.log]); // Re-run when scriptData.log changes
+  }, [liveScript?.log]);
 
   const handleSave = useCallback(() => {
     if (scriptData) {
@@ -218,7 +235,7 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
   }
 
   return (
-    <ModalOverlay onClick={onClose}>
+    <ModalOverlay>
       <ModalContent onClick={(e) => e.stopPropagation()}>
         <ModalHeader>
           <ScriptNameInput type="text" value={scriptName} onChange={(e) => setScriptName(e.target.value)} />
@@ -233,6 +250,7 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
         </ModalHeader>
         <ModalBody>
           <CodeMirror
+            ref={editorRef}
             value={code}
             height="100%"
             theme={tokyoNight}
@@ -242,7 +260,7 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
           />
           <LogContainer ref={logContainerRef}>
             <h4>Script Output:</h4>
-            <pre>{scriptData?.log?.join('\n') || ''}</pre>
+            <pre>{liveScript?.log?.join('\n') || ''}</pre>
           </LogContainer>
         </ModalBody>
         <ModalFooter>
@@ -257,5 +275,6 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
     </ModalOverlay>
   );
 };
+
 
 export default ScriptEditorModal;

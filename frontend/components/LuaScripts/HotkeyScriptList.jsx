@@ -8,20 +8,31 @@ import ScriptTable from './ScriptTable.jsx';
 
 const HotkeyScriptList = () => {
   const dispatch = useDispatch();
-  const hotkey_scripts = useSelector((state) => state.lua.hotkeyScripts);
+  const { hotkey_scripts, persistent_scripts } = useSelector((state) => ({
+    hotkey_scripts: state.lua.hotkeyScripts,
+    persistent_scripts: state.lua.persistentScripts,
+  }));
   const [modalState, setModalState] = useState({ isOpen: false, script: null });
 
   const handleAddScript = useCallback(() => {
+    const all_scripts = [...persistent_scripts, ...hotkey_scripts];
+    let counter = 1;
+    let scriptName = `New Hotkey Script ${counter}`;
+    while (all_scripts.some((s) => s.name === scriptName)) {
+      counter++;
+      scriptName = `New Hotkey Script ${counter}`;
+    }
+
     const newScriptDetails = {
       id: uuidv4(),
-      name: `New Hotkey Script ${hotkey_scripts.length + 1}`,
+      name: scriptName,
       code: '-- Your Lua code here',
       type: 'hotkey',
       hotkey: null,
       log: [],
     };
     dispatch(addScript(newScriptDetails));
-  }, [dispatch, hotkey_scripts.length]);
+  }, [dispatch, persistent_scripts, hotkey_scripts]);
 
   const handleRemoveScript = useCallback(
     (id) => {
