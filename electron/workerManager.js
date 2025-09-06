@@ -458,6 +458,9 @@ class WorkerManager {
     } else if (message.type === 'lua-pause-targeting') {
       store.dispatch(setTargetingPause(message.payload));
       return;
+    } else if (message.type === 'lua_set_script_enabled') {
+      const { name, enabled } = message.payload;
+      setGlobalState('lua/setScriptEnabledByName', { name, enabled });
     }
   }
 

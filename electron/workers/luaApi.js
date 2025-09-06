@@ -83,9 +83,11 @@ export const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'monsterNum', {
-    get: () =>
-      getState().regionCoordinates.regions.battleList?.children?.entries?.list
-        ?.length,
+    get: () => getState().battleList.entries.length,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'playerNum', {
+    get: () => getState().uiValues.players.length,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'battleList', {
@@ -332,7 +334,9 @@ export const createLuaApi = async (context) => {
       for (const modalInfo of modalsToClose) {
         const modal = regions[modalInfo.name];
         const button =
-          modal?.children?.abort || modal?.children?.close || modal?.children?.ok;
+          modal?.children?.abort ||
+          modal?.children?.close ||
+          modal?.children?.ok;
 
         if (button?.x && button?.y) {
           logger('info', `[Lua/${scriptName}] Closing '${modalInfo.name}'`);
@@ -820,8 +824,7 @@ export const createLuaApi = async (context) => {
     isCreatureOnTile: (x, y, z) => {
       const creatures = getCreatures(getState);
       return creatures.some(
-        (creature) =>
-          creature.x === x && creature.y === y && creature.z === z,
+        (creature) => creature.x === x && creature.y === y && creature.z === z,
       );
     },
     setScripts: (enabled) => {
@@ -829,6 +832,17 @@ export const createLuaApi = async (context) => {
       logger(
         'info',
         `[Lua/${scriptName}] Scripts ${enabled ? 'enabled' : 'disabled'}`,
+      );
+    },
+    setScript: (name, status) => {
+      const enabled = status === 'enabled';
+      postSystemMessage({
+        type: 'lua_set_script_enabled',
+        payload: { name, enabled },
+      });
+      logger(
+        'info',
+        `[Lua/${scriptName}] Setting script "${name}" to ${status}`,
       );
     },
     pauseWalking: (ms) => {
@@ -842,7 +856,10 @@ export const createLuaApi = async (context) => {
       const duration = parseInt(ms, 10);
       if (!isNaN(duration)) {
         postSystemMessage({ type: 'lua-pause-targeting', payload: duration });
-        logger('info', `[Lua/${scriptName}] Pausing targeting for ${duration}ms`);
+        logger(
+          'info',
+          `[Lua/${scriptName}] Pausing targeting for ${duration}ms`,
+        );
       }
     },
     waitFor,
@@ -850,7 +867,14 @@ export const createLuaApi = async (context) => {
       const windowId = String(getWindowId());
       const display = getDisplay();
 
-      if (await waitFor('regionCoordinates.regions.onlineMarker', 'exists', null, 100)) {
+      if (
+        await waitFor(
+          'regionCoordinates.regions.onlineMarker',
+          'exists',
+          null,
+          100,
+        )
+      ) {
         logger(
           'info',
           `[Lua/${scriptName}] Player is already online, skipping login.`,

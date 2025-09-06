@@ -220,6 +220,19 @@ const luaSlice = createSlice({
       state.enabled = action.payload;
       state._lastEnabledChange = now;
     },
+
+    setScriptEnabledByName(state, action) {
+      const { name, enabled } = action.payload;
+      const script = state.persistentScripts.find((s) => s.name === name);
+      if (script) {
+        script.enabled = enabled;
+        const status = script.enabled ? 'Enabled' : 'Disabled';
+        if (!Array.isArray(script.log)) script.log = [];
+        script.log.push(`[Status] Script ${status} by API call`);
+      } else {
+        console.warn(`[luaSlice] setScriptEnabledByName: Script with name "${name}" not found.`);
+      }
+    },
   },
 });
 
@@ -232,6 +245,7 @@ export const {
   setState,
   clearScriptLog,
   setenabled,
+  setScriptEnabledByName,
 } = luaSlice.actions;
 
 export default luaSlice;

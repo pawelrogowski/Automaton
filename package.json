@@ -1,6 +1,6 @@
 {
-  "name": "standard-docker",
-  "version": "1.4.3",
+  "name": "hyper-docker",
+  "version": "1.4.4",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.standard-docker",
-    "productName": "Standard Docker",
+    "appId": "com.electron.hyper-docker",
+    "productName": "Hyper Docker",
     "directories": {
       "output": "dist",
       "buildResources": "build"
