@@ -171,6 +171,9 @@ const updateSABData = () => {
 };
 
 async function performTargeting() {
+  if (!globalState.regionCoordinates?.regions?.onlineMarker) {
+    return;
+  }
   if (
     !globalState.regionCoordinates ||
     !globalState.regionCoordinates.regions.gameWorld

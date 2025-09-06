@@ -106,6 +106,27 @@ async function performOperation() {
     return;
   }
 
+  if (!globalState.regionCoordinates?.regions?.onlineMarker) {
+    if (
+      workerState.fsmState === 'SCRIPT' &&
+      workerState.luaExecutor.isExecuting()
+    ) {
+      const scriptContent = workerState.luaExecutor.getCurrentScriptContent();
+      if (scriptContent && !scriptContent.includes('login(')) {
+        workerState.logger(
+          'warn',
+          '[Cavebot] Player is offline. Terminating non-login script.',
+        );
+        workerState.luaExecutor.forceStop();
+        resetInternalState(workerState, fsm);
+      }
+    } else if (workerState.fsmState !== 'IDLE') {
+      workerState.logger('info', '[Cavebot] Player is offline. Resetting cavebot state.');
+      resetInternalState(workerState, fsm);
+    }
+    return;
+  }
+
   if (
     !globalState.regionCoordinates ||
     !globalState.regionCoordinates.regions.gameWorld
