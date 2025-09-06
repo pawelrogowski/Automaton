@@ -733,6 +733,7 @@ export const createLuaApi = async (context) => {
     login: async (email, password, character) => {
       const windowId = String(getWindowId());
       const display = getDisplay();
+      await context.refreshLuaGlobalState();
       let state = getState();
       if (state.regionCoordinates?.regions?.onlineMarker) {
         logger(
@@ -754,6 +755,7 @@ export const createLuaApi = async (context) => {
       let closedAModal;
       do {
         closedAModal = false;
+        await context.refreshLuaGlobalState();
         state = getState();
         const regions = state.regionCoordinates?.regions;
         if (regions) {
@@ -770,9 +772,9 @@ export const createLuaApi = async (context) => {
                 modalInfo.name === 'notLoggedInAnymoreModal'
               ) {
                 await keyPress(display, 'Escape');
-                await wait(200);
+                await wait(500);
                 await keyPress(display, 'Escape');
-                await wait(200);
+                await wait(500);
               } else {
                 mouseController.leftClick(
                   parseInt(windowId),
@@ -780,7 +782,7 @@ export const createLuaApi = async (context) => {
                   button.y,
                   display,
                 );
-                await wait(200);
+                await wait(500);
               }
               closedAModal = true;
               break;
@@ -788,6 +790,7 @@ export const createLuaApi = async (context) => {
           }
         }
       } while (closedAModal);
+      await context.refreshLuaGlobalState();
       state = getState();
       let selectCharacterModal =
         state.regionCoordinates?.regions?.selectCharacterModal;
@@ -841,6 +844,7 @@ export const createLuaApi = async (context) => {
         await keyPress(display, 'Enter');
         await wait(200);
       }
+      await context.refreshLuaGlobalState();
       let currentState = getState();
       selectCharacterModal =
         currentState.regionCoordinates?.regions?.selectCharacterModal;
@@ -851,6 +855,7 @@ export const createLuaApi = async (context) => {
       while (!selectCharacterModal && modalWaitTime < maxWaitForModal) {
         await wait(modalCheckInterval);
         modalWaitTime += modalCheckInterval;
+        await context.refreshLuaGlobalState();
         currentState = getState();
         const regions = currentState.regionCoordinates?.regions;
         selectCharacterModal = regions?.selectCharacterModal;
@@ -881,7 +886,8 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      const characterData = currentState.uiValues?.selectCharacterModal;
+      await context.refreshLuaGlobalState();
+      const characterData = getState().uiValues?.selectCharacterModal;
       if (!characterData || !characterData.characters) {
         logger('warn', `[Lua/${scriptName}] No character data for selection`);
         return false;
@@ -894,6 +900,7 @@ export const createLuaApi = async (context) => {
       );
       if (!targetCharacterFound) {
         await wait(100);
+        await context.refreshLuaGlobalState();
         const updatedState = getState();
         const updatedCharacterData =
           updatedState.uiValues?.selectCharacterModal;
@@ -935,6 +942,7 @@ export const createLuaApi = async (context) => {
       while (elapsedTime < maxWaitTime) {
         await wait(checkInterval);
         elapsedTime += checkInterval;
+        await context.refreshLuaGlobalState();
         const finalState = getState();
         if (!!finalState.regionCoordinates?.regions?.onlineMarker) {
           logger(
