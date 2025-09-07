@@ -9,7 +9,6 @@ import hotkey from '../assets/hotkey.png';
 import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
 import ActionBarIcon from '../assets/action_bar.png';
-import battleSign from '../assets/battleSign.gif';
 import mageHat from '../assets/The_Epic_Wisdom.gif';
 import CustomRules from '../assets/cutomRules.png';
 import {
@@ -25,7 +24,6 @@ import { setenabled as setLuaEnabled } from '../redux/slices/luaSlice.js';
 import { setenabled as setTargetingEnabled } from '../redux/slices/targetingSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
-const { saveRules, loadRules } = window.electron;
 import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
 import SidebarButton from '../components/SidebarButton.js/SidebarButton.js';

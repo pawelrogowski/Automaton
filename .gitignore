@@ -70,3 +70,4 @@ nativeModules/*/binding.Makefile
 nativeModules/*/config.gypi
 nativeModules/*/*.target.mk
 nativeModules/*/Makefile
+scripts/combined_scripts.txt

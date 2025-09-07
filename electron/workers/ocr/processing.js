@@ -73,15 +73,17 @@ export async function processBattleListOcr(buffer, regions) {
         ocrConfig.allowedChars,
       ) || [];
 
-    // Create a simple array of names, sorted by their vertical position.
-    const creatureNames = ocrResults
+    // Create an array of objects with name and region, sorted by their vertical position.
+    const battleListEntries = ocrResults
       .sort((a, b) => a.y - b.y)
-      .map((result) => result.text.trim())
-      .filter(Boolean);
+      .map((result) => ({
+        name: result.text.trim(),
+        region: { x: result.x, y: result.y, width: result.width, height: result.height },
+      }))
+      .filter((entry) => Boolean(entry.name));
 
-    // --- CORRECTED ACTION TYPE ---
     // This now correctly matches the reducer in battleListSlice.js
-    postUpdateOnce('battleList/setBattleListEntries', creatureNames);
+    postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
   } catch (ocrError) {
     console.error(
       '[OcrProcessing] OCR failed for battleList region:',
