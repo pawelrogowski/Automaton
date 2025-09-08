@@ -118,6 +118,9 @@ export function createTargetingActions(workerContext) {
     if (targetableCreaturesFromMonitor.length === 0) {
       targetableCreaturesFromMonitor = reachableCreatures
         .map((creature) => {
+          const isInBattleList = battleList.some(entry => creature.name.startsWith(entry.name) || entry.name.startsWith(creature.name));
+          if (!isInBattleList) return null; // Skip if not in battle list
+
           const rule = targetingList.find(
             (r) =>
               r.name.startsWith(creature.name) &&
@@ -157,19 +160,31 @@ export function createTargetingActions(workerContext) {
           }
         }
 
-        // 3. Final Tie-Breaker: Distance (original logic)
-        if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
-          const distA = Math.max(
-            Math.abs(a.gameCoords.x - playerMinimapPosition.x),
-            Math.abs(a.gameCoords.y - playerMinimapPosition.y),
-          );
-          const distB = Math.max(
-            Math.abs(b.gameCoords.x - playerMinimapPosition.x),
-            Math.abs(b.gameCoords.y - playerMinimapPosition.y),
-          );
-          return distA - distB;
+        // --- MODIFIED DISTANCE TIE-BREAKER ---
+        // Only consider distance if at least one creature is NOT in melee range.
+        // If both are in melee range, distance is irrelevant for sorting.
+        if (!aIsInMelee || !bIsInMelee) {
+          if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
+            const distA = Math.max(
+              Math.abs(a.gameCoords.x - playerMinimapPosition.x),
+              Math.abs(a.gameCoords.y - playerMinimapPosition.y),
+            );
+            const distB = Math.max(
+              Math.abs(b.gameCoords.x - playerMinimapPosition.x),
+              Math.abs(b.gameCoords.y - playerMinimapPosition.y),
+            );
+            if (distA !== distB) {
+              return distA - distB;
+            }
+          } else if (a.distance !== b.distance) {
+            return a.distance - b.distance;
+          }
         }
-        return a.distance - b.distance;
+        // --- END MODIFIED DISTANCE TIE-BREAKER ---
+
+        // 4. Ultimate Tie-Breaker: Instance ID (stable sort)
+        // This ensures a consistent order when all other criteria are identical.
+        return a.instanceId - b.instanceId;
       });
       return targetableCreaturesFromMonitor[0];
     }

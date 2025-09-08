@@ -1,6 +1,6 @@
 {
-  "name": "hyper-docker",
-  "version": "1.4.4",
+  "name": "tusk-webtorrent",
+  "version": "1.4.5",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -18,8 +18,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.electron.hyper-docker",
-    "productName": "Hyper Docker",
+    "appId": "com.electron.tusk-webtorrent",
+    "productName": "Tusk Webtorrent",
     "directories": {
       "output": "dist",
       "buildResources": "build"

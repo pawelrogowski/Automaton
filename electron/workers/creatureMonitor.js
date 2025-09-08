@@ -524,6 +524,7 @@ async function performOperation() {
 
     let currentTarget = null;
     try {
+      //ultra fast, findTarget takes <2ms
       const targetRect = await findTarget.findTarget(
         sharedBufferView,
         gameWorld,
