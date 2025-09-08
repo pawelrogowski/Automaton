@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTable, useBlockLayout } from 'react-table';
 import styled from 'styled-components';
+import { Crosshair, Navigation } from 'react-feather';
 import StyledTargeting from './Targeting.styled.js';
 import TargetingTable from '../components/TargetingTable/TargetingTable.jsx';
 import SelectControl from '../components/NodeRangeControl/SelectControl.jsx';
@@ -16,7 +17,7 @@ const TargetingContainer = styled.div`
 `;
 
 const MainColumn = styled.div`
-  flex: 0 0 70%;
+  flex: 0 0 65%;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -24,7 +25,7 @@ const MainColumn = styled.div`
 `;
 
 const SideColumn = styled.div`
-  flex: 0 0 30%;
+  flex: 0 0 35%;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -32,29 +33,52 @@ const SideColumn = styled.div`
 `;
 
 const CreatureList = () => {
-  const { creatures } = useSelector((state) => state.targeting);
+  const { creatures, target } = useSelector((state) => state.targeting);
+  const { dynamicTarget } = useSelector((state) => state.cavebot);
+  const pathfindingTargetId = dynamicTarget?.targetInstanceId;
+  const currentTargetId = target?.instanceId;
 
-  const data = useMemo(() => creatures, [creatures]);
+  const data = useMemo(() => {
+    return [...creatures].sort((a, b) => a.instanceId - b.instanceId);
+  }, [creatures]);
 
   const columns = useMemo(
     () => [
       {
         Header: 'Name',
         accessor: 'name',
-        width: 150,
+        width: 100,
       },
       {
         Header: 'Health',
         accessor: 'healthTag',
-        width: 80,
+        width: 60,
       },
       {
         Header: 'Dist',
         accessor: 'distance',
-        width: 60,
+        width: 40,
+      },
+      {
+        Header: 'Targeted',
+        id: 'targeted',
+        width: 50,
+        Cell: ({ row }) => {
+          const isTargeted = row.original.instanceId === currentTargetId;
+          return isTargeted ? <Crosshair size={14} /> : null;
+        },
+      },
+      {
+        Header: 'Pathing',
+        id: 'pathing',
+        width: 50,
+        Cell: ({ row }) => {
+          const isPathingTarget = row.original.instanceId === pathfindingTargetId;
+          return isPathingTarget ? <Navigation size={14} /> : null;
+        },
       },
     ],
-    [],
+    [currentTargetId, pathfindingTargetId]
   );
 
   const { getTableProps, getTableBodyProps, headerGroups, rows, prepareRow } =
@@ -124,6 +148,8 @@ const Targeting = () => {
           <CreatureList />
         </SideColumn>
       </TargetingContainer>
+
+      
     </StyledTargeting>
   );
 };
