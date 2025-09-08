@@ -4,13 +4,12 @@ import { createLogger } from '../../utils/logger.js';
 
 // These constants are specific to the targeting logic.
 const MOVEMENT_COOLDOWN_MS = 50;
-const CLICK_POLL_INTERVAL_MS = 50;
+const CLICK_POLL_INTERVAL_MS = 5;
 const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
 const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
-const TARGET_CLICK_DELAY_MS = 400;
-const TARGET_CONFIRMATION_TIMEOUT_MS = 450;
-const SHORT_CLICK_DELAY_MS = 50;
+const TARGET_CLICK_DELAY_MS = 50;
+const TARGET_CONFIRMATION_TIMEOUT_MS = 375;
 const MELEE_DISTANCE_THRESHOLD = 1.5;
 
 /**
@@ -133,10 +132,33 @@ export function createTargetingActions(workerContext) {
       return null;
     }
 
+    const healthOrder = {
+      Critical: 0,
+      Low: 1,
+      Medium: 2,
+      High: 3,
+      Full: 4,
+    };
+
     targetableCreatures.sort((a, b) => {
+      // 1. Primary Sort: Priority
       if (a.effectivePriority !== b.effectivePriority) {
         return b.effectivePriority - a.effectivePriority;
       }
+
+      // 2. New Tie-Breaker: Health, if both creatures are in melee range
+      const aIsInMelee = a.distance <= MELEE_DISTANCE_THRESHOLD;
+      const bIsInMelee = b.distance <= MELEE_DISTANCE_THRESHOLD;
+
+      if (aIsInMelee && bIsInMelee) {
+        const healthA = healthOrder[a.healthTag] ?? 5;
+        const healthB = healthOrder[b.healthTag] ?? 5;
+        if (healthA !== healthB) {
+          return healthA - healthB; // Lower health wins
+        }
+      }
+
+      // 3. Final Tie-Breaker: Distance (original logic)
       if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
         const distA = Math.max(
           Math.abs(a.gameCoords.x - playerMinimapPosition.x),
@@ -176,7 +198,6 @@ export function createTargetingActions(workerContext) {
     }
 
     const battleList = globalState.battleList.entries;
-    const KEY_PRESS_LIMIT = 2;
 
     const logAcquisition = (startTime) => {
       const acquisitionTime = Date.now() - startTime;
@@ -188,112 +209,50 @@ export function createTargetingActions(workerContext) {
       avgAcquisitionTime = Math.round(sum / acquisitionTimes.length);
     };
 
-    const performActionAndWait = async (
-      action,
-      clickRegion = null,
-      presses = 1,
-    ) => {
-      let currentClickDelay = TARGET_CLICK_DELAY_MS;
-      let isMultiTabOrGrave = false;
+    const checkTargetAndAcceptSubstitute = () => {
+      const currentTarget = globalState.targeting.target;
+      if (!currentTarget) return false;
 
-      if (action === 'tab' || action === 'grave') {
-        if (presses > 1) {
-          isMultiTabOrGrave = true;
-        }
-      }
-
-      if (action === 'click' || isMultiTabOrGrave) {
-        currentClickDelay = SHORT_CLICK_DELAY_MS;
-      }
-
-      targetingContext.acquisitionUnlockTime = Date.now() + currentClickDelay;
-      const actionTriggerTime = Date.now();
-
-      const checkTargetAndAcceptSubstitute = () => {
-        const currentTarget = globalState.targeting.target;
-        if (!currentTarget) return false;
-
-        // 1. Check for perfect instanceId match
-        if (currentTarget.instanceId === pathfindingTarget.instanceId) {
-          return true;
-        }
-
-        // 2. Check for acceptable substitute (same name and is adjacent)
-        const isSameName =
-          currentTarget.name &&
-          pathfindingTarget.name &&
-          currentTarget.name.startsWith(pathfindingTarget.name);
-        const isAdjacent = currentTarget.distance < MELEE_DISTANCE_THRESHOLD;
-
-        if (isSameName && isAdjacent) {
-          logger(
-            'info',
-            `[Targeting] Original target not found, but accepted adjacent substitute: ${currentTarget.name}`,
-          );
-          // Update the main target to this new one to prevent re-targeting next tick.
-          targetingContext.pathfindingTarget = {
-            ...currentTarget,
-            rule: pathfindingTarget.rule, // Keep the original rule for stance, etc.
-          };
-          return true;
-        }
-        return false;
-      };
-
-      if (action === 'tab') {
-        await delay(50); // Delay before keypress
-        keypress.sendKey('tab', globalState.global.display);
-        await delay(50); // Delay after keypress
-      } else if (action === 'grave') {
-        await delay(50); // Delay before keypress
-        keypress.sendKey('`', globalState.global.display);
-        await delay(50); // Delay after keypress
-      } else if (action === 'click' && clickRegion) {
-        const clickX = clickRegion.x + 5;
-        const clickY = clickRegion.y + 2;
-        await delay(50); // Delay before mouse click
-        mouseController.leftClick(
-          parseInt(globalState.global.windowId),
-          clickX,
-          clickY,
-          globalState.global.display,
-        );
-        await delay(50); // Delay after mouse click
-      }
-
-      if (action === 'tab' && presses === 2) {
-        await delay(100); // Wait 100ms between clicks
-        keypress.sendKey('tab', globalState.global.display);
-        await delay(50); // Delay after second keypress
-      }
-
-      targetingContext.lastClickTime = Date.now();
-      await delay(50);
-
-      const startTime = Date.now();
-      while (Date.now() - startTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
-        if (checkTargetAndAcceptSubstitute()) {
-          logAcquisition(actionTriggerTime);
-          return true;
-        }
-        await delay(CLICK_POLL_INTERVAL_MS);
-      }
-
-      if (checkTargetAndAcceptSubstitute()) {
-        logAcquisition(actionTriggerTime);
+      if (currentTarget.instanceId === pathfindingTarget.instanceId) {
         return true;
       }
 
+      const isSameName =
+        currentTarget.name &&
+        pathfindingTarget.name &&
+        currentTarget.name.startsWith(pathfindingTarget.name);
+      const isAdjacent = currentTarget.distance < MELEE_DISTANCE_THRESHOLD;
+
+      if (isSameName && isAdjacent) {
+        logger(
+          'info',
+          `[Targeting] Accepted adjacent substitute: ${currentTarget.name}`,
+        );
+        targetingContext.pathfindingTarget = {
+          ...currentTarget,
+          rule: pathfindingTarget.rule,
+        };
+        return true;
+      }
       return false;
     };
 
     const currentIndex = battleList.findIndex((e) => e.isTarget);
     let bestKeyPlan = { action: null, presses: Infinity };
 
-    if (currentIndex !== -1) {
+    if (currentIndex === -1) {
+      const firstMatchIndex = battleList.findIndex((entry) =>
+        pathfindingTarget.name.startsWith(entry.name),
+      );
+
+      if (firstMatchIndex !== -1) {
+        bestKeyPlan = { action: 'tab', presses: firstMatchIndex + 1 };
+      }
+    } else {
       const potentialIndices = battleList
         .map((e, i) => i)
         .filter((i) => pathfindingTarget.name.startsWith(battleList[i].name));
+
       if (potentialIndices.length > 0) {
         for (const desiredIndex of potentialIndices) {
           const tabs =
@@ -312,95 +271,73 @@ export function createTargetingActions(workerContext) {
       }
     }
 
-    if (
-      bestKeyPlan.action &&
-      bestKeyPlan.presses <= KEY_PRESS_LIMIT &&
-      Math.random() > 0.05
-    ) {
+    // ====================== MODIFICATION START ======================
+    // New "Press and Poll" Logic
+    if (bestKeyPlan.action && bestKeyPlan.presses < Infinity) {
+      const key = bestKeyPlan.action === 'tab' ? 'tab' : '`';
+      const actionTriggerTime = Date.now();
+
       logger(
         'info',
-        `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`,
+        `[Targeting] Starting acquisition for ${pathfindingTarget.name}. Plan: ${bestKeyPlan.presses} '${key}' presses.`,
       );
-      const acquired = await performActionAndWait(
-        bestKeyPlan.action,
-        null,
-        bestKeyPlan.presses,
-      );
-      if (acquired) {
-        // F8 press removed as per new requirement
+
+      for (let i = 0; i < bestKeyPlan.presses; i++) {
+        // 1. Press the key ONCE
+        keypress.sendKey(key, globalState.global.display);
+        targetingContext.lastClickTime = Date.now();
+        targetingContext.acquisitionUnlockTime =
+          Date.now() + TARGET_CONFIRMATION_TIMEOUT_MS + 50;
+
+        // 2. Start the intelligent polling wait
+        const pollStartTime = Date.now();
+        let acquired = false;
+
+        while (Date.now() - pollStartTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
+          const currentTarget = globalState.targeting.target;
+
+          // Exit Condition 1: Target died or disappeared mid-press. Abort.
+          if (!currentTarget) {
+            logger(
+              'warn',
+              '[Targeting] Target disappeared during acquisition. Aborting.',
+            );
+            return;
+          }
+
+          // Exit Condition 2: Success! We targeted the correct creature.
+          if (checkTargetAndAcceptSubstitute()) {
+            logAcquisition(actionTriggerTime);
+            acquired = true;
+            break; // Exit the polling loop
+          }
+
+          await delay(CLICK_POLL_INTERVAL_MS);
+        }
+
+        // If we successfully acquired the target, the entire process is done.
+        if (acquired) {
+          logger(
+            'info',
+            `[Targeting] Successfully acquired ${pathfindingTarget.name}.`,
+          );
+          return;
+        }
+        // If we timed out, the loop will continue to the next key press.
       }
-      return;
-    } else if (bestKeyPlan.action && bestKeyPlan.presses <= KEY_PRESS_LIMIT) {
-      logger(
-        'info',
-        '[Targeting] Acquisition: Key plan was cheap, but using mouse click due to random chance (5%).',
-      );
-    }
 
-    if (currentIndex === -1) {
-      logger(
-        'info',
-        "[Targeting] Acquisition: No current target. Trying one 'tab' press.",
-      );
-      const acquired = await performActionAndWait('tab', null, 1);
-      if (acquired) {
-        // F8 press removed as per new requirement
-      }
-      return;
-    }
-
-    logger(
-      'info',
-      `[Targeting] Acquisition: Key plan too expensive (cost ${bestKeyPlan.presses}). Falling back to mouse clicks.`,
-    );
-    const potentialBLTargets = battleList
-      .map((entry, index) => ({ ...entry, index }))
-      .filter((entry) => pathfindingTarget.name.startsWith(entry.name));
-
-    if (potentialBLTargets.length === 0) {
+      // If the entire loop finishes and we never acquired the target, it's a failure.
       logger(
         'warn',
-        `[Targeting] Target ${pathfindingTarget.name} not found in battle list.`,
+        `[Targeting] Failed to acquire target ${pathfindingTarget.name} after ${bestKeyPlan.presses} presses.`,
       );
-      return;
-    }
-
-    let startClickIndex = 0;
-    const currentBLTarget = battleList[currentIndex];
-    if (
-      currentBLTarget &&
-      pathfindingTarget.name.startsWith(currentBLTarget.name)
-    ) {
-      const lastTryIndex = potentialBLTargets.findIndex(
-        (t) => t.index === currentIndex,
-      );
-      if (lastTryIndex !== -1) {
-        startClickIndex = (lastTryIndex + 1) % potentialBLTargets.length;
-      }
-    }
-
-    for (let i = 0; i < potentialBLTargets.length; i++) {
-      const targetToClick =
-        potentialBLTargets[(startClickIndex + i) % potentialBLTargets.length];
+    } else {
       logger(
-        'info',
-        `[Targeting] Acquisition: Attempting to click ${targetToClick.name} at index ${targetToClick.index}`,
+        'warn',
+        `[Targeting] Target ${pathfindingTarget.name} not found in battle list. Cannot acquire.`,
       );
-      const acquired = await performActionAndWait(
-        'click',
-        targetToClick.region,
-        1,
-      );
-      if (acquired) {
-        // F8 press removed as per new requirement
-        return;
-      }
     }
-
-    logger(
-      'error',
-      `[Targeting] Failed to acquire target ${pathfindingTarget.name} after trying all methods.`,
-    );
+    // ======================= MODIFICATION END =======================
   };
 
   const manageMovement = async (
@@ -410,6 +347,7 @@ export function createTargetingActions(workerContext) {
     path,
     pathfindingStatus,
     playerMinimapPosition,
+    isTargetInStableMelee, // New parameter
   ) => {
     if (
       !pathfindingTarget ||
@@ -424,8 +362,8 @@ export function createTargetingActions(workerContext) {
       return;
     }
 
-    // If the target is already adjacent, do not attempt to move.
-    if (pathfindingTarget.distance < MELEE_DISTANCE_THRESHOLD) {
+    // If the target is confirmed to be in stable melee range, do not move.
+    if (isTargetInStableMelee) {
       return;
     }
 

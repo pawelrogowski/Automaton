@@ -59,7 +59,8 @@ function getHealthTagFromColor(color) {
   if (!color) return 'Full';
   const { r, g, b } = color;
   if (r === 96 && g === 0 && b === 0) return 'Critical';
-  if (r === 192 && g === 0 && b === 0) return 'Low';
+  if ((r === 192 && g === 0 && b === 0) || (r === 192 && g === 48 && b === 48))
+    return 'Low';
   if (r === 192 && g === 192 && b === 0) return 'Medium';
   if (r === 96 && g === 192 && b === 96) return 'High';
   if (r === 0 && g === 192 && b === 0) return 'Full';

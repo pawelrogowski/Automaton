@@ -265,30 +265,31 @@ async function performTargeting() {
   const now = Date.now();
   const allCreatures = globalState.targeting.creatures || [];
 
-  // Melee Override Logic
-  const meleeConflict = Array.from(meleeRangeTimers.entries()).find(
-    ([instanceId, startTime]) =>
-      now - startTime > 100 && effectiveTarget?.instanceId !== instanceId,
-  );
-  if (meleeConflict) {
-    const [meleeInstanceId] = meleeConflict;
-    const blockingCreature = allCreatures.find(
-      (c) => c.instanceId === meleeInstanceId,
-    );
-    const blockingCreatureRule =
-      blockingCreature &&
-      globalState.targeting.targetingList?.find(
-        (r) =>
-          r.name.startsWith(blockingCreature.name) && r.action === 'Attack',
-      );
-    if (blockingCreature && blockingCreatureRule) {
-      logger(
-        'info',
-        `[Targeting] Overriding target ${effectiveTarget?.name || 'None'} to attack ${blockingCreature.name} in melee range.`,
-      );
-      effectiveTarget = { ...blockingCreature, rule: blockingCreatureRule };
+  // Update melee timers for all creatures based on their distance.
+  const MELEE_DISTANCE_THRESHOLD = 1.5; // From actions.js
+  const creaturesInMelee = new Set();
+  for (const creature of allCreatures) {
+    if (creature.distance < MELEE_DISTANCE_THRESHOLD) {
+      creaturesInMelee.add(creature.instanceId);
+      if (!meleeRangeTimers.has(creature.instanceId)) {
+        meleeRangeTimers.set(creature.instanceId, now);
+      }
     }
   }
+  // Remove creatures that are no longer in melee range.
+  for (const instanceId of meleeRangeTimers.keys()) {
+    if (!creaturesInMelee.has(instanceId)) {
+      meleeRangeTimers.delete(instanceId);
+    }
+  }
+
+  // Check if the CURRENT target is in STABLE melee range.
+  const targetInstanceId = effectiveTarget?.instanceId;
+  const targetMeleeStartTime = meleeRangeTimers.get(targetInstanceId);
+  const isTargetInStableMelee =
+    targetMeleeStartTime && now - targetMeleeStartTime > 100;
+
+  // Melee Override Logic remains REMOVED.
 
   await targetingActions.manageMovement(
     targetingContext,
@@ -297,6 +298,7 @@ async function performTargeting() {
     path,
     pathfindingStatus,
     playerMinimapPosition,
+    isTargetInStableMelee, // Pass the new flag to the action handler
   );
 
   const currentGameTarget = globalState.targeting.target;
