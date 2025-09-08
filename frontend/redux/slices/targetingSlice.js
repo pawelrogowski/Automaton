@@ -3,7 +3,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   enabled: false,
-  stickiness: 0,
+  useBattleList: true,
   // The shape of a creature object now includes instanceId and isReachable
   creatures: [], // [{ instanceId, name, healthTag, absoluteCoords, gameCoords, distance, isReachable }]
   target: null, // { instanceId, name, distanceFrom, ... }
@@ -109,19 +109,22 @@ const targetingSlice = createSlice({
       state.isPausedByScript = action.payload.isPaused;
       state.pauseTimerId = action.payload.timerId;
     },
+    setUseBattleList: (state, action) => {
+      state.useBattleList = action.payload;
+    },
   },
 });
 
 export const {
   setState,
   setenabled,
-  setStickiness,
   setEntities,
   setTarget,
   addCreatureToTargetingList,
   removeCreatureFromTargetingList,
   updateCreatureInTargetingList,
   setScriptPause,
+  setUseBattleList,
 } = targetingSlice.actions;
 
 export const setTargetingPause = (ms) => (dispatch, getState) => {
@@ -132,11 +135,20 @@ export const setTargetingPause = (ms) => (dispatch, getState) => {
 
   if (ms > 0) {
     const timerId = setTimeout(() => {
-      dispatch(targetingSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+      dispatch(
+        targetingSlice.actions.setScriptPause({
+          isPaused: false,
+          timerId: null,
+        }),
+      );
     }, ms);
-    dispatch(targetingSlice.actions.setScriptPause({ isPaused: true, timerId }));
+    dispatch(
+      targetingSlice.actions.setScriptPause({ isPaused: true, timerId }),
+    );
   } else {
-    dispatch(targetingSlice.actions.setScriptPause({ isPaused: false, timerId: null }));
+    dispatch(
+      targetingSlice.actions.setScriptPause({ isPaused: false, timerId: null }),
+    );
   }
 };
 
