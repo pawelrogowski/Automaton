@@ -57,17 +57,19 @@ export function createFsm(workerState, config) {
               }
               return 'PERFORMING_ACTION';
             }
+            // If not close enough, fall through to pathfinding logic
             break;
           case 'Node':
           case 'Walk':
             if (
-              playerPos.x === targetWaypoint.x &&
-              playerPos.y === targetWaypoint.y &&
+              typeof chebyshevDist === 'number' &&
+              chebyshevDist === 0 &&
               playerPos.z === targetWaypoint.z
             ) {
               await advanceToNextWaypoint(workerState, config);
               return 'IDLE';
             }
+            // If not at the waypoint, fall through to pathfinding logic
             break;
         }
 
