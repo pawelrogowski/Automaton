@@ -47,6 +47,57 @@ function getCoordsKey(coords) {
   return `${coords.x},${coords.y},${coords.z}`;
 }
 
+// New helper function for fuzzy matching creature names
+function findBestBattleListMatch(ocrName, battleListEntries, targetableNamesFromRules) {
+  let bestMatch = null;
+  let bestScore = -1; // Higher score is better
+
+  // Create a set of actual names present in the battle list for quick lookup
+  const battleListActualNames = new Set(battleListEntries.map(entry => entry.name));
+
+  // Combine targetable names with battle list names for a comprehensive list of known names
+  const knownNames = [...new Set([...targetableNamesFromRules, ...battleListActualNames])];
+
+  for (const knownName of knownNames) {
+    // Ensure this known name is actually present in the battle list to be considered a "source of truth"
+    // This prevents correcting to a name that isn't currently visible in the battle list.
+    if (!battleListActualNames.has(knownName)) {
+      continue;
+    }
+
+    let currentScore = 0;
+
+    // 1. Exact match (highest priority)
+    if (ocrName === knownName) {
+      return knownName; // Found the perfect match, return immediately
+    }
+
+    // 2. OCR name is a prefix of the known name (e.g., 'Emer' -> 'Emerald Damselfly')
+    if (knownName.startsWith(ocrName) && ocrName.length > 0) {
+      currentScore = ocrName.length * 2; // Give higher score for prefix match
+    }
+    // 3. Known name is a prefix of the OCR name (e.g., 'Emerald Damselfly' -> 'Emerald DamselflyEmerald Damselfly')
+    else if (ocrName.startsWith(knownName) && knownName.length > 0) {
+      currentScore = knownName.length * 1.5; // Slightly lower than OCR prefix, but still good
+    }
+    // 4. OCR name contains the known name (e.g., 'SalamandeSalamander' contains 'Salamander')
+    else if (ocrName.includes(knownName) && knownName.length > 0) {
+      currentScore = knownName.length;
+    }
+    // 5. Known name contains the OCR name (e.g., 'Emerald Damselfly' contains 'Damselfly')
+    else if (knownName.includes(ocrName) && ocrName.length > 0) {
+      currentScore = ocrName.length * 0.8;
+    }
+
+    if (currentScore > bestScore) {
+      bestScore = currentScore;
+      bestMatch = knownName;
+    }
+  }
+
+  return bestMatch;
+}
+
 // Timestamp for when the target is truly considered lost after disappearing.
 let targetLossGracePeriodEndTime = 0;
 
@@ -324,13 +375,31 @@ async function performOperation() {
 
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
     const ocrData = currentState.ocr.regions.gameWorld || [];
+    const battleListEntries = currentState.battleList?.entries || [];
+    const targetingList = currentState.targeting?.targetingList || [];
+
+    const targetableNamesFromRules = [
+      ...new Set(
+        targetingList
+          .filter((rule) => rule.action === 'Attack')
+          .map((rule) => rule.name),
+      ),
+    ];
 
     const preliminaryDetections = ocrData
-      .map((r) => ({
-        name: r.text,
-        absoluteCoords: { x: r.click.x, y: r.click.y },
-        r,
-      }))
+      .map((r) => {
+        const originalName = r.text;
+        const correctedName = findBestBattleListMatch(
+          originalName,
+          battleListEntries,
+          targetableNamesFromRules,
+        );
+        return {
+          name: correctedName || originalName,
+          absoluteCoords: { x: r.click.x, y: r.click.y },
+          r: { ...r, text: correctedName || originalName }, // Update the text in the original OCR data as well
+        };
+      })
       .filter(Boolean);
 
     const newActiveCreatures = new Map();
