@@ -66,6 +66,7 @@ const SPECIAL_AREA_TYPE_OPTIONS = [
 
 const WAYPOINT_TYPE_OPTIONS = [
   { value: 'Node', label: 'Node' },
+  { value: 'Walk', label: 'Walk' },
   { value: 'Stand', label: 'Stand' },
   { value: 'Shovel', label: 'Shovel' },
   { value: 'Rope', label: 'Rope' },

@@ -591,6 +591,7 @@ const WaypointTable = () => {
         Cell: EditableSelectCell,
         options: [
           'Node',
+          'Walk',
           'Stand',
           'Shovel',
           'Rope',
