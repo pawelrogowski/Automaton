@@ -48,15 +48,23 @@ function getCoordsKey(coords) {
 }
 
 // New helper function for fuzzy matching creature names
-function findBestBattleListMatch(ocrName, battleListEntries, targetableNamesFromRules) {
+function findBestBattleListMatch(
+  ocrName,
+  battleListEntries,
+  targetableNamesFromRules,
+) {
   let bestMatch = null;
   let bestScore = -1; // Higher score is better
 
   // Create a set of actual names present in the battle list for quick lookup
-  const battleListActualNames = new Set(battleListEntries.map(entry => entry.name));
+  const battleListActualNames = new Set(
+    battleListEntries.map((entry) => entry.name),
+  );
 
   // Combine targetable names with battle list names for a comprehensive list of known names
-  const knownNames = [...new Set([...targetableNamesFromRules, ...battleListActualNames])];
+  const knownNames = [
+    ...new Set([...targetableNamesFromRules, ...battleListActualNames]),
+  ];
 
   for (const knownName of knownNames) {
     // Ensure this known name is actually present in the battle list to be considered a "source of truth"

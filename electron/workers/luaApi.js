@@ -90,6 +90,10 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().uiValues.players.length,
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'npcNum', {
+    get: () => getState().uiValues.npcs.length,
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'battleList', {
     get: () => ({
       entries:
@@ -217,6 +221,10 @@ export const createStateShortcutObject = (getState, type) => {
   });
   Object.defineProperty(shortcuts, 'players', {
     get: () => getState().uiValues?.players || [],
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'npcs', {
+    get: () => getState().uiValues?.npcs || [],
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'standTime', {

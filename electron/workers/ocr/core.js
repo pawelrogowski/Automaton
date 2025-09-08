@@ -21,6 +21,7 @@ let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
 let lastProcessedFrameCounter = -1;
+let lastBattleListProcessTime = 0;
 let lastRegionHash = null;
 let oneTimeInitializedRegions = new Set();
 const pendingThrottledRegions = new Map();
@@ -106,12 +107,25 @@ async function performOperation() {
     // --- MODIFIED LOGIC ---
     // 1. Handle Battle List with its dedicated, specialized processor first.
     if (regions.battleList) {
-      const isDirty = dirtyRects.some((dirtyRect) =>
+      const now = Date.now();
+      const BATTLE_LIST_FORCE_UPDATE_INTERVAL_MS = 1000; // 1 second
+
+      let isDirtyForBattleList = dirtyRects.some((dirtyRect) =>
         rectsIntersect(regions.battleList, dirtyRect),
       );
-      if (isDirty || !oneTimeInitializedRegions.has('battleList')) {
+
+      // Force update if interval has passed or if it's the first time
+      if (
+        !lastBattleListProcessTime ||
+        (now - lastBattleListProcessTime > BATTLE_LIST_FORCE_UPDATE_INTERVAL_MS)
+      ) {
+        isDirtyForBattleList = true; // Force a re-scan
+      }
+
+      if (isDirtyForBattleList || !oneTimeInitializedRegions.has('battleList')) {
         processingTasks.push(processBattleListOcr(sharedBufferView, regions));
         oneTimeInitializedRegions.add('battleList');
+        lastBattleListProcessTime = now; // Update timestamp after processing
       }
     }
 

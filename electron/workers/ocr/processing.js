@@ -78,7 +78,12 @@ export async function processBattleListOcr(buffer, regions) {
       .sort((a, b) => a.y - b.y)
       .map((result) => ({
         name: result.text.trim(),
-        region: { x: result.x, y: result.y, width: result.width, height: result.height },
+        region: {
+          x: result.x,
+          y: result.y,
+          width: result.width,
+          height: result.height,
+        },
       }))
       .filter((entry) => Boolean(entry.name));
 
@@ -133,6 +138,44 @@ export async function processPlayerList(buffer, regions) {
   }
 }
 
+/**
+ * Processes the NPC list region to extract NPC names.
+ */
+export async function processNpcList(buffer, regions) {
+  const npcListRegion = regions.npcList;
+  if (
+    !npcListRegion ||
+    !npcListRegion.x ||
+    !npcListRegion.y ||
+    npcListRegion.width <= 0 ||
+    npcListRegion.height <= 0
+  ) {
+    postUpdateOnce('uiValues/setNpcs', []);
+    return;
+  }
+
+  try {
+    const npcOcrColors = regionDefinitions.npcList?.ocrColors || [];
+    const allowedCharsForNpcList = CHAR_PRESETS.ALPHA + ' ';
+
+    const ocrResults =
+      recognizeText(
+        buffer,
+        npcListRegion,
+        npcOcrColors,
+        allowedCharsForNpcList,
+      ) || [];
+
+    const npcNames = ocrResults
+      .map((result) => result.text.trim())
+      .filter((name) => name.length > 0);
+
+    postUpdateOnce('uiValues/setNpcs', npcNames);
+  } catch (ocrError) {
+    console.error('[OcrProcessing] OCR failed for npcList entries:', ocrError);
+  }
+}
+
 // --- GENERIC OCR REGION PROCESSING ---
 
 export async function processOcrRegions(buffer, regions, regionKeys) {
@@ -143,8 +186,12 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
     processingPromises.push(processPlayerList(buffer, regions));
   }
 
+  if (regionKeys.has('npcList')) {
+    processingPromises.push(processNpcList(buffer, regions));
+  }
+
   for (const regionKey of regionKeys) {
-    if (regionKey === 'playerList') continue;
+    if (regionKey === 'playerList' || regionKey === 'npcList') continue;
 
     const cfg = OCR_REGION_CONFIGS[regionKey];
     const region = regions[regionKey];

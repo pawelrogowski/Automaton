@@ -81,18 +81,18 @@ export function createTargetingActions(workerContext) {
     playerMinimapPosition,
   ) => {
     const { creatures, targetingList } = globalState.targeting;
-    if (
-      !creatures ||
-      creatures.length === 0 ||
-      !targetingList ||
-      targetingList.length === 0
-    ) {
+    const battleList = globalState.battleList.entries; // Get battle list entries
+
+    if (!targetingList || targetingList.length === 0) {
       return null;
     }
 
+    // --- Phase 1: Prioritize creatures detected by creatureMonitor (OCR/Red Box) ---
     const reachableCreatures = creatures.filter((c) => c.isReachable);
     const pathfinderTargetInstanceId =
       globalState.cavebot?.dynamicTarget?.targetInstanceId;
+
+    let targetableCreaturesFromMonitor = [];
 
     if (pathfinderTargetInstanceId) {
       const currentPathfinderTarget = reachableCreatures.find(
@@ -106,74 +106,121 @@ export function createTargetingActions(workerContext) {
         );
         if (rule) {
           const stickiness = rule.stickiness || 0;
-          return {
+          targetableCreaturesFromMonitor.push({
             ...currentPathfinderTarget,
             rule,
             effectivePriority: rule.priority + stickiness,
-          };
+          });
         }
       }
     }
 
-    const targetableCreatures = reachableCreatures
-      .map((creature) => {
+    if (targetableCreaturesFromMonitor.length === 0) {
+      targetableCreaturesFromMonitor = reachableCreatures
+        .map((creature) => {
+          const rule = targetingList.find(
+            (r) =>
+              r.name.startsWith(creature.name) &&
+              r.action === 'Attack' &&
+              (r.healthRange === 'Any' || r.healthRange === creature.healthTag),
+          );
+          if (!rule) return null;
+          return { ...creature, rule, effectivePriority: rule.priority };
+        })
+        .filter(Boolean);
+    }
+
+    if (targetableCreaturesFromMonitor.length > 0) {
+      const healthOrder = {
+        Critical: 0,
+        Low: 1,
+        Medium: 2,
+        High: 3,
+        Full: 4,
+      };
+
+      targetableCreaturesFromMonitor.sort((a, b) => {
+        // 1. Primary Sort: Priority
+        if (a.effectivePriority !== b.effectivePriority) {
+          return b.effectivePriority - a.effectivePriority;
+        }
+
+        // 2. New Tie-Breaker: Health, if both creatures are in melee range
+        const aIsInMelee = a.distance <= MELEE_DISTANCE_THRESHOLD;
+        const bIsInMelee = b.distance <= MELEE_DISTANCE_THRESHOLD;
+
+        if (aIsInMelee && bIsInMelee) {
+          const healthA = healthOrder[a.healthTag] ?? 5;
+          const healthB = healthOrder[b.healthTag] ?? 5;
+          if (healthA !== healthB) {
+            return healthA - healthB; // Lower health wins
+          }
+        }
+
+        // 3. Final Tie-Breaker: Distance (original logic)
+        if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
+          const distA = Math.max(
+            Math.abs(a.gameCoords.x - playerMinimapPosition.x),
+            Math.abs(a.gameCoords.y - playerMinimapPosition.y),
+          );
+          const distB = Math.max(
+            Math.abs(b.gameCoords.x - playerMinimapPosition.x),
+            Math.abs(b.gameCoords.y - playerMinimapPosition.y),
+          );
+          return distA - distB;
+        }
+        return a.distance - b.distance;
+      });
+      return targetableCreaturesFromMonitor[0];
+    }
+
+    // --- Phase 2: If no creature from creatureMonitor, look at Battle List as source of truth ---
+    // Find creatures in battle list that are targetable but NOT currently in creatureMonitor's list
+    const activeCreatureNames = new Set(creatures.map((c) => c.name));
+
+    const targetableCreaturesFromBattleList = battleList
+      .map((battleListEntry) => {
+        // Only consider if it's not already detected by creatureMonitor
+        if (activeCreatureNames.has(battleListEntry.name)) {
+          return null;
+        }
+
         const rule = targetingList.find(
           (r) =>
-            r.name.startsWith(creature.name) &&
-            r.action === 'Attack' &&
-            (r.healthRange === 'Any' || r.healthRange === creature.healthTag),
+            r.name.startsWith(battleListEntry.name) && r.action === 'Attack',
+          // We don't have healthTag for battle list entries here, so can't filter by healthRange
         );
         if (!rule) return null;
-        return { ...creature, rule, effectivePriority: rule.priority };
+
+        // Create a synthetic creature object.
+        // We don't have gameCoords or absoluteCoords yet, but manageTargetAcquisition can still work.
+        // These will be filled in once the red box target is detected by creatureMonitor.
+        return {
+          instanceId: `bl-${battleListEntry.name}-${battleListEntry.isTarget}`,
+          name: battleListEntry.name,
+          distance: Infinity, // Assume far until coordinates are known
+          isReachable: true, // Assume reachable if in battle list and targetable
+          gameCoords: null, // Will be filled by creatureMonitor once targeted
+          absoluteCoords: null, // Will be filled by creatureMonitor once targeted
+          rule,
+          effectivePriority: rule.priority,
+        };
       })
       .filter(Boolean);
 
-    if (targetableCreatures.length === 0) {
-      return null;
+    if (targetableCreaturesFromBattleList.length > 0) {
+      // Sort these battle list creatures by priority
+      targetableCreaturesFromBattleList.sort((a, b) => {
+        if (a.effectivePriority !== b.effectivePriority) {
+          return b.effectivePriority - a.effectivePriority;
+        }
+        // No distance or health to sort by here, so just use name as tie-breaker
+        return a.name.localeCompare(b.name);
+      });
+      return targetableCreaturesFromBattleList[0];
     }
 
-    const healthOrder = {
-      Critical: 0,
-      Low: 1,
-      Medium: 2,
-      High: 3,
-      Full: 4,
-    };
-
-    targetableCreatures.sort((a, b) => {
-      // 1. Primary Sort: Priority
-      if (a.effectivePriority !== b.effectivePriority) {
-        return b.effectivePriority - a.effectivePriority;
-      }
-
-      // 2. New Tie-Breaker: Health, if both creatures are in melee range
-      const aIsInMelee = a.distance <= MELEE_DISTANCE_THRESHOLD;
-      const bIsInMelee = b.distance <= MELEE_DISTANCE_THRESHOLD;
-
-      if (aIsInMelee && bIsInMelee) {
-        const healthA = healthOrder[a.healthTag] ?? 5;
-        const healthB = healthOrder[b.healthTag] ?? 5;
-        if (healthA !== healthB) {
-          return healthA - healthB; // Lower health wins
-        }
-      }
-
-      // 3. Final Tie-Breaker: Distance (original logic)
-      if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
-        const distA = Math.max(
-          Math.abs(a.gameCoords.x - playerMinimapPosition.x),
-          Math.abs(a.gameCoords.y - playerMinimapPosition.y),
-        );
-        const distB = Math.max(
-          Math.abs(b.gameCoords.x - playerMinimapPosition.x),
-          Math.abs(b.gameCoords.y - playerMinimapPosition.y),
-        );
-        return distA - distB;
-      }
-      return a.distance - b.distance;
-    });
-
-    return targetableCreatures[0];
+    return null; // No target found anywhere
   };
 
   const manageTargetAcquisition = async (

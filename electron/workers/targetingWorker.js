@@ -266,7 +266,7 @@ async function performTargeting() {
   const allCreatures = globalState.targeting.creatures || [];
 
   // Update melee timers for all creatures based on their distance.
-  const MELEE_DISTANCE_THRESHOLD = 1.5; // From actions.js
+  const MELEE_DISTANCE_THRESHOLD = 1.9; // From actions.js
   const creaturesInMelee = new Set();
   for (const creature of allCreatures) {
     if (creature.distance < MELEE_DISTANCE_THRESHOLD) {

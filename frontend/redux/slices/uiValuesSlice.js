@@ -60,6 +60,7 @@ const initialState = {
     lastUpdate: null,
   },
   players: [],
+  npcs: [],
   // REMOVED: battleListEntries is no longer part of this slice.
   // Its data now lives exclusively in the battleListSlice.
 };
@@ -76,6 +77,9 @@ const uiValuesSlice = createSlice({
     // REMOVED: setBattleListEntries reducer is gone.
     setPlayers: (state, action) => {
       state.players = action.payload;
+    },
+    setNpcs: (state, action) => {
+      state.npcs = action.payload;
     },
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;
@@ -118,6 +122,7 @@ export const {
   setSelectCharacterModal,
   setVipWidget,
   setPlayers,
+  setNpcs,
   resetUiValues,
   resetRegion,
   setState,
@@ -146,5 +151,6 @@ export const selectVipWidget = (state) => state.uiValues.vipWidget;
 export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
 export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
 export const selectPlayers = (state) => state.uiValues.players;
+export const selectNpcs = (state) => state.uiValues.npcs;
 
 export default uiValuesSlice;
