@@ -9,23 +9,67 @@
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
+      "libraries": [],
+      "cflags!": [ "-fno-exceptions" ],
+      "cflags_cc!": [ "-fno-exceptions" ],
       "conditions": [
-        ['OS=="linux"', {
-          "defines": [
-            "NODE_ADDON_API_DISABLE_CPP_EXCEPTIONS=1"
+        [ "OS==\"linux\"", {
+          "cflags": [
+            "-fPIC",
+            "-pthread"
           ],
           "cflags_cc": [
-            # --- Build Optimizations ---
-            "-O3",              # Maximum optimization level
-            "-std=c++17",       # Explicitly set the C++ standard for consistency
-            "-march=native",    # Generate code for the specific CPU it's compiled on
-            "-mtune=native",    # Tune instruction scheduling for the specific CPU
-            "-flto",            # Enable Link-Time Optimization
-            "-fno-exceptions",   # Disable C++ exceptions for smaller, faster code
+            "-std=c++17",
+            "-O3",
+            "-march=native",
+            "-mtune=native",
             "-mavx2",
-            "-fno-rtti"
+            "-mfma",
+            "-funroll-loops",
+            "-funroll-all-loops",
+            "-fpeel-loops",
+            "-fmove-loop-invariants",
+            "-ftree-vectorize",
+            "-fvect-cost-model=unlimited",
+            "-ffast-math",
+            "-funsafe-math-optimizations",
+            "-falign-functions=32",
+            "-falign-loops=32",
+            "-falign-jumps=32",
+            "-falign-labels=32",
+            "-fomit-frame-pointer",
+            "-fif-conversion",
+            "-fif-conversion2",
+            "-flto=auto",
+            "-fwhole-program",
+            "-fuse-linker-plugin",
+            "-fdevirtualize-at-ltrans",
+            "-fipa-pta",
+            "-fipa-icf",
+            "-fno-stack-protector",
+            "-fno-strict-aliasing",
+            "-DNDEBUG",
+            "-D_FORTIFY_SOURCE=0",
+            "-fprefetch-loop-arrays",
+
+
+            "-fprofile-use",
+            "-fprofile-correction",
+            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/fontOcr/pgo-data"
           ],
-          "ldflags": [ "-fopenmp" ]
+          "ldflags": [
+            "-flto=auto",
+            "-fuse-linker-plugin",
+            "-Wl,-O3",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-pthread",
+            "-s"
+
+          ],
+          "defines": [
+            "NAPI_DISABLE_CPP_EXCEPTIONS"
+          ]
         }]
       ]
     }

@@ -4,30 +4,74 @@
       "target_name": "x11RegionCapture",
       "sources": [ "./src/x11RegionCapture.cc" ],
       "include_dirs": [
-        "<!@(node -p \"require('node-addon-api').include\")",
-        "node_modules/node-addon-api"
+        "<!@(node -p \"require('node-addon-api').include\")"
       ],
-
-      "libraries": [
-        "-lxcb",
-        "-lxcb-shm",
-        "-lxcb-composite"
+      "dependencies": [
+        "<!(node -p \"require('node-addon-api').gyp\")"
       ],
+      "libraries": [],
+      "cflags!": [ "-fno-exceptions" ],
+      "cflags_cc!": [ "-fno-exceptions" ],
       "conditions": [
-        ['OS=="linux"', {
-          "cflags!": [ '-fno-exceptions' ],
-          "cflags_cc!": [ '-fno-exceptions'],
-          "cflags_cc+": [
+        [ "OS==\"linux\"", {
+          "cflags": [
+            "-fPIC",
+            "-pthread"
+          ],
+          "cflags_cc": [
+            "-std=c++17",
             "-O3",
-            "-mavx2",
-            "-mfma",
             "-march=native",
             "-mtune=native",
-            "-flto",
-            "-DAVX2"
+            "-mavx2",
+            "-mfma",
+            "-funroll-loops",
+            "-funroll-all-loops",
+            "-fpeel-loops",
+            "-fmove-loop-invariants",
+            "-ftree-vectorize",
+            "-fvect-cost-model=unlimited",
+            "-ffast-math",
+            "-funsafe-math-optimizations",
+            "-falign-functions=32",
+            "-falign-loops=32",
+            "-falign-jumps=32",
+            "-falign-labels=32",
+            "-fomit-frame-pointer",
+            "-fif-conversion",
+            "-fif-conversion2",
+            "-flto=auto",
+            "-fwhole-program",
+            "-fuse-linker-plugin",
+            "-fdevirtualize-at-ltrans",
+            "-fipa-pta",
+            "-fipa-icf",
+            "-fno-stack-protector",
+            "-fno-strict-aliasing",
+            "-DNDEBUG",
+            "-D_FORTIFY_SOURCE=0",
+            "-fprefetch-loop-arrays",
+
+
+            "-fprofile-generate",
+            "-fprofile-arcs",
+            "-ftest-coverage",
+            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/x11RegionCapture/pgo-data"
           ],
           "ldflags": [
-            "-flto"
+            "-flto=auto",
+            "-fuse-linker-plugin",
+            "-Wl,-O3",
+            "-Wl,--gc-sections",
+            "-Wl,--as-needed",
+            "-pthread",
+            "-s",
+            "-lgcov",
+            "-fprofile-generate",
+            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/x11RegionCapture/pgo-data"
+          ],
+          "defines": [
+            "NAPI_DISABLE_CPP_EXCEPTIONS"
           ]
         }]
       ]

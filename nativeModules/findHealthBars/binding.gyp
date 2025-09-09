@@ -25,49 +25,37 @@
             "-mtune=native",
             "-mavx2",
             "-mfma",
-
-
             "-funroll-loops",
             "-funroll-all-loops",
             "-fpeel-loops",
             "-fmove-loop-invariants",
-
-
             "-ftree-vectorize",
             "-fvect-cost-model=unlimited",
-
-
+            "-ffast-math",
+            "-funsafe-math-optimizations",
             "-falign-functions=32",
             "-falign-loops=32",
             "-falign-jumps=32",
             "-falign-labels=32",
             "-fomit-frame-pointer",
-
-
             "-fif-conversion",
             "-fif-conversion2",
-
-
-            "-ffast-math",
-            "-fno-math-errno",
-            "-funsafe-math-optimizations",
-            "-fno-rounding-math",
-            "-fno-signaling-nans",
-            "-fcx-limited-range",
-
-
             "-flto=auto",
             "-fwhole-program",
             "-fuse-linker-plugin",
             "-fdevirtualize-at-ltrans",
             "-fipa-pta",
             "-fipa-icf",
-
-
             "-fno-stack-protector",
             "-fno-strict-aliasing",
             "-DNDEBUG",
-            "-D_FORTIFY_SOURCE=0"
+            "-D_FORTIFY_SOURCE=0",
+            "-fprefetch-loop-arrays",
+
+
+            "-fprofile-use",
+            "-fprofile-correction",
+            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findHealthBars/pgo-data"
           ],
           "ldflags": [
             "-flto=auto",
@@ -77,37 +65,11 @@
             "-Wl,--as-needed",
             "-pthread",
             "-s"
+
           ],
           "defines": [
             "NAPI_DISABLE_CPP_EXCEPTIONS"
           ]
-        }],
-        [ "OS==\"win\"", {
-          "msvs_settings": {
-            "VCCLCompilerTool": {
-              "ExceptionHandling": 0,
-              "AdditionalOptions": [
-                "/std:c++17",
-                "/O2",
-                "/Oi",
-                "/Ot",
-                "/Oy",
-                "/GL",
-                "/arch:AVX2",
-                "/fp:fast",
-                "/Gw",
-                "/Gy",
-                "/Qpar",
-                "/favor:INTEL64"
-              ]
-            },
-            "VCLinkerTool": {
-              "LinkTimeCodeGeneration": 1,
-              "OptimizeReferences": 2,
-              "EnableCOMDATFolding": 2,
-              "AdditionalOptions": ["/LTCG:PGO"]
-            }
-          }
         }]
       ]
     }
