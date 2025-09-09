@@ -1,3 +1,4 @@
+// regionMonitor.js – CLEANED — NO BENCHMARKING
 import { parentPort, workerData } from 'worker_threads';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
@@ -7,7 +8,7 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
 const FULL_SCAN_INTERVAL_MS = 500;
-const MIN_LOOP_DELAY_MS = 200;
+const MIN_LOOP_DELAY_MS = 250;
 
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
@@ -201,8 +202,6 @@ async function findRegionsRecursive(
 
 /**
  * Processes special regions after the main recursive find.
- * This is now only responsible for calculating the tile size from the gameWorld region.
- * All battle list logic has been removed.
  */
 async function processSpecialRegions(buffer, regions, metadata) {
   if (regions.gameWorld?.endFound) {
@@ -230,7 +229,6 @@ async function performFullScan(buffer, metadata) {
 
 async function mainLoop() {
   while (!isShuttingDown) {
-    const loopStartTime = Date.now();
     try {
       if (isScanning) {
         await delay(MIN_LOOP_DELAY_MS);
@@ -289,8 +287,12 @@ async function mainLoop() {
       lastKnownRegions = {};
     }
 
-    const elapsedTime = Date.now() - loopStartTime;
-    const delayTime = Math.max(0, FULL_SCAN_INTERVAL_MS - elapsedTime);
+    // Respect timing logic
+    const elapsedTime = Date.now();
+    const delayTime = Math.max(
+      0,
+      FULL_SCAN_INTERVAL_MS - (Date.now() - elapsedTime),
+    );
     if (delayTime > 0) {
       await delay(delayTime);
     }

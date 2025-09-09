@@ -4,11 +4,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import * as config from './config.js';
-import {
-  rectsIntersect,
-  processOcrRegions,
-  processBattleListOcr, // Import the new dedicated function
-} from './processing.js';
+import { rectsIntersect, processOcrRegions } from './processing.js';
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
@@ -105,32 +101,10 @@ async function performOperation() {
     const immediateGenericRegions = new Set();
 
     // --- MODIFIED LOGIC ---
-    // 1. Handle Battle List with its dedicated, specialized processor first.
-    if (regions.battleList) {
-      const now = Date.now();
-      const BATTLE_LIST_FORCE_UPDATE_INTERVAL_MS = 1000; // 1 second
-
-      let isDirtyForBattleList = dirtyRects.some((dirtyRect) =>
-        rectsIntersect(regions.battleList, dirtyRect),
-      );
-
-      // Force update if interval has passed or if it's the first time
-      if (
-        !lastBattleListProcessTime ||
-        (now - lastBattleListProcessTime > BATTLE_LIST_FORCE_UPDATE_INTERVAL_MS)
-      ) {
-        isDirtyForBattleList = true; // Force a re-scan
-      }
-
-      if (isDirtyForBattleList || !oneTimeInitializedRegions.has('battleList')) {
-        processingTasks.push(processBattleListOcr(sharedBufferView, regions));
-        oneTimeInitializedRegions.add('battleList');
-        lastBattleListProcessTime = now; // Update timestamp after processing
-      }
-    }
 
     // 2. Handle all other generic OCR regions.
     for (const regionKey in config.OCR_REGION_CONFIGS) {
+      if (regionKey === 'gameWorld') continue;
       const region = regions[regionKey];
       if (!region) continue;
 

@@ -53,9 +53,8 @@
             "-fprefetch-loop-arrays",
 
 
-            "-fprofile-generate",
-            "-fprofile-arcs",
-            "-ftest-coverage",
+            "-fprofile-use",
+            "-fprofile-correction",
             "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/x11RegionCapture/pgo-data"
           ],
           "ldflags": [
@@ -65,10 +64,8 @@
             "-Wl,--gc-sections",
             "-Wl,--as-needed",
             "-pthread",
-            "-s",
-            "-lgcov",
-            "-fprofile-generate",
-            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/x11RegionCapture/pgo-data"
+            "-s"
+
           ],
           "defines": [
             "NAPI_DISABLE_CPP_EXCEPTIONS"

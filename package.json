@@ -76,6 +76,7 @@
     "compression-webpack-plugin": "^11.1.0",
     "copy-webpack-plugin": "^11.0.0",
     "find-sequences-native": "file:./nativeModules/findSequences",
+    "find-healthbars-native": "file:./nativeModules/findHealthBars",
     "find-target-native": "file:./nativeModules/findTarget",
     "font-ocr": "file:./nativeModules/fontOcr",
     "keypress-native": "file:./nativeModules/keypress",

@@ -47,55 +47,7 @@ function postUpdateOnce(type, payload) {
 
 // --- SPECIALIZED REGION PROCESSORS ---
 
-/**
- * Performs a single, bulk OCR scan on the battle list and dispatches the final
- * list of creature names directly to the battleList slice.
- */
-export async function processBattleListOcr(buffer, regions) {
-  const entriesRegion = regions.battleList?.children?.entries;
-  if (!entriesRegion || entriesRegion.height <= 0) {
-    // --- CORRECTED ACTION TYPE ---
-    postUpdateOnce('battleList/setBattleListEntries', []);
-    return;
-  }
 
-  try {
-    const ocrConfig = {
-      colors: regionDefinitions.battleList?.ocrColors || [],
-      allowedChars: CHAR_PRESETS.ALPHA + ' ',
-    };
-
-    const ocrResults =
-      recognizeText(
-        buffer,
-        entriesRegion,
-        ocrConfig.colors,
-        ocrConfig.allowedChars,
-      ) || [];
-
-    // Create an array of objects with name and region, sorted by their vertical position.
-    const battleListEntries = ocrResults
-      .sort((a, b) => a.y - b.y)
-      .map((result) => ({
-        name: result.text.trim(),
-        region: {
-          x: result.x,
-          y: result.y,
-          width: result.width,
-          height: result.height,
-        },
-      }))
-      .filter((entry) => Boolean(entry.name));
-
-    // This now correctly matches the reducer in battleListSlice.js
-    postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
-  } catch (ocrError) {
-    console.error(
-      '[OcrProcessing] OCR failed for battleList region:',
-      ocrError,
-    );
-  }
-}
 
 /**
  * Processes the player list region to extract player names.

@@ -23,6 +23,12 @@ const battleListSlice = createSlice({
     resetBattleList: (state) => {
       state.entries = initialState.entries;
     },
+    setTargetedCreature: (state, action) => {
+      const creatureName = action.payload;
+      state.entries.forEach((entry) => {
+        entry.isTarget = entry.name === creatureName;
+      });
+    },
     /**
      * Replaces the entire slice state. Use with caution.
      * @param {object} state - The current state.
@@ -34,7 +40,11 @@ const battleListSlice = createSlice({
   },
 });
 
-export const { setBattleListEntries, resetBattleList, setState } =
-  battleListSlice.actions;
+export const {
+  setBattleListEntries,
+  resetBattleList,
+  setState,
+  setTargetedCreature,
+} = battleListSlice.actions;
 
 export default battleListSlice;

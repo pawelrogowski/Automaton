@@ -1,12 +1,32 @@
 import { parentPort, workerData } from 'worker_threads';
 import findTarget from 'find-target-native';
+import findHealthBars from 'find-healthbars-native';
+import findSequences from 'find-sequences-native';
 import Pathfinder from 'pathfinder-native';
+import pkg from 'font-ocr';
+import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance } from '../utils/distance.js';
 import {
   getGameCoordinatesFromScreen,
   PLAYER_SCREEN_TILE_X,
   PLAYER_SCREEN_TILE_Y,
 } from '../utils/gameWorldClickTranslator.js';
+
+const { recognizeText } = pkg;
+
+const CHAR_PRESETS = {
+  LOWERCASE: 'abcdefghijklmnopqrstuvwxyz',
+  UPPERCASE: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  NUMERIC: '0123456789',
+  SPECIAL: `~!@#$%^&*()_+{}|":?><-=[];'./ `,
+};
+CHAR_PRESETS.ALL =
+  CHAR_PRESETS.LOWERCASE +
+  CHAR_PRESETS.NUMERIC +
+  CHAR_PRESETS.SPECIAL +
+  CHAR_PRESETS.UPPERCASE;
+CHAR_PRESETS.ALPHA = CHAR_PRESETS.LOWERCASE + CHAR_PRESETS.UPPERCASE;
+CHAR_PRESETS.ALPHANUMERIC = CHAR_PRESETS.ALPHA + CHAR_PRESETS.NUMERIC;
 
 let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
@@ -42,68 +62,68 @@ let lastSpecialAreasJson = '';
 let nextInstanceId = 0;
 let activeCreatures = new Map(); // Map<instanceId, creatureObject>
 let reachableTilesCache = new Map(); // Map<string, boolean>
+const lastPostedResults = new Map();
+
+function postUpdateOnce(type, payload) {
+  const key = type;
+  const prev = lastPostedResults.get(key);
+  const payloadString = JSON.stringify(payload);
+
+  if (prev === payloadString) return;
+
+  lastPostedResults.set(key, payloadString);
+  parentPort.postMessage({
+    storeUpdate: true,
+    type,
+    payload,
+  });
+}
+
+async function processBattleListOcr(buffer, regions) {
+  const entriesRegion = regions.battleList?.children?.entries;
+  if (
+    !entriesRegion ||
+    !entriesRegion.x ||
+    !entriesRegion.y ||
+    entriesRegion.width <= 0 ||
+    entriesRegion.height <= 0
+  ) {
+    postUpdateOnce('battleList/setBattleListEntries', []);
+    return [];
+  }
+
+  try {
+    const ocrResults =
+      recognizeText(
+        buffer,
+        entriesRegion,
+        regionDefinitions.battleList?.ocrColors || [],
+        CHAR_PRESETS.ALPHA + ' ',
+      ) || [];
+
+    const creatureNames = ocrResults
+      .map((result) => ({
+        name: result.text.trim(),
+        isTarget: false, // This will be updated by the creatureMonitor
+        x: result.x,
+        y: result.y,
+      }))
+      .filter((creature) => creature.name.length > 0);
+
+    // This now correctly matches the reducer in battleListSlice.js
+    postUpdateOnce('battleList/setBattleListEntries', creatureNames);
+    return creatureNames;
+  } catch (ocrError) {
+    console.error(
+      '[OcrProcessing] OCR failed for battleList region:',
+      ocrError,
+    );
+    return [];
+  }
+}
 
 function getCoordsKey(coords) {
   return `${coords.x},${coords.y},${coords.z}`;
-}
-
-// New helper function for fuzzy matching creature names
-function findBestBattleListMatch(
-  ocrName,
-  battleListEntries,
-  targetableNamesFromRules,
-) {
-  let bestMatch = null;
-  let bestScore = -1; // Higher score is better
-
-  // Create a set of actual names present in the battle list for quick lookup
-  const battleListActualNames = new Set(
-    battleListEntries.map((entry) => entry.name),
-  );
-
-  // Combine targetable names with battle list names for a comprehensive list of known names
-  const knownNames = [
-    ...new Set([...targetableNamesFromRules, ...battleListActualNames]),
-  ];
-
-  for (const knownName of knownNames) {
-    // Ensure this known name is actually present in the battle list to be considered a "source of truth"
-    // This prevents correcting to a name that isn't currently visible in the battle list.
-    if (!battleListActualNames.has(knownName)) {
-      continue;
-    }
-
-    let currentScore = 0;
-
-    // 1. Exact match (highest priority)
-    if (ocrName === knownName) {
-      return knownName; // Found the perfect match, return immediately
-    }
-
-    // 2. OCR name is a prefix of the known name (e.g., 'Emer' -> 'Emerald Damselfly')
-    if (knownName.startsWith(ocrName) && ocrName.length > 0) {
-      currentScore = ocrName.length * 2; // Give higher score for prefix match
-    }
-    // 3. Known name is a prefix of the OCR name (e.g., 'Emerald Damselfly' -> 'Emerald DamselflyEmerald Damselfly')
-    else if (ocrName.startsWith(knownName) && knownName.length > 0) {
-      currentScore = knownName.length * 1.5; // Slightly lower than OCR prefix, but still good
-    }
-    // 4. OCR name contains the known name (e.g., 'SalamandeSalamander' contains 'Salamander')
-    else if (ocrName.includes(knownName) && knownName.length > 0) {
-      currentScore = knownName.length;
-    }
-    // 5. Known name contains the OCR name (e.g., 'Emerald Damselfly' contains 'Damselfly')
-    else if (knownName.includes(ocrName) && ocrName.length > 0) {
-      currentScore = ocrName.length * 0.8;
-    }
-
-    if (currentScore > bestScore) {
-      bestScore = currentScore;
-      bestMatch = knownName;
-    }
-  }
-
-  return bestMatch;
 }
 
 // Timestamp for when the target is truly considered lost after disappearing.
@@ -113,18 +133,6 @@ let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let playerSettlingGracePeriodEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
-
-function getHealthTagFromColor(color) {
-  if (!color) return 'Full';
-  const { r, g, b } = color;
-  if (r === 96 && g === 0 && b === 0) return 'Critical';
-  if ((r === 192 && g === 0 && b === 0) || (r === 192 && g === 48 && b === 48))
-    return 'Low';
-  if (r === 192 && g === 192 && b === 0) return 'Medium';
-  if (r === 96 && g === 192 && b === 96) return 'High';
-  if (r === 0 && g === 192 && b === 0) return 'Full';
-  return 'Full';
-}
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
@@ -147,7 +155,6 @@ function deepCompareEntities(a, b) {
       const entityB = b[i];
       if (
         entityA.instanceId !== entityB.instanceId ||
-        entityA.name !== entityB.name ||
         entityA.healthTag !== entityB.healthTag ||
         entityA.isReachable !== entityB.isReachable ||
         !arePositionsEqual(entityA.gameCoords, entityB.gameCoords) ||
@@ -162,7 +169,6 @@ function deepCompareEntities(a, b) {
   if (typeof a === 'object' && typeof b === 'object') {
     return (
       a.instanceId === b.instanceId &&
-      a.name === b.name &&
       arePositionsEqual(a.gameCoordinates, b.gameCoordinates) &&
       areAbsoluteCoordsEqual(a.absoluteCoordinates, b.absoluteCoordinates)
     );
@@ -187,13 +193,9 @@ function updateCreatureState(
   isPlayerInAnimationFreeze,
 ) {
   const { gameWorld } = regions;
-  const { r } = detection;
-  const creatureName = r.text;
-  const creatureScreenX = r.click.x;
-  const NAMEPLATE_TEXT_HEIGHT = 10;
-  const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
-  const nameplateCenterY = r.y + textHeight / 2 + tileSize.height / 10;
-  const creatureScreenY = nameplateCenterY + tileSize.height / 1.4;
+  const { absoluteCoords, healthBarY } = detection;
+  const creatureScreenX = absoluteCoords.x;
+  const creatureScreenY = healthBarY + 14;
 
   let finalGameX,
     finalGameY,
@@ -306,8 +308,7 @@ function updateCreatureState(
   const dy_tiles = dy_pixels / tileSize.height;
   const distance = Math.sqrt(dx_tiles * dx_tiles + dy_tiles * dy_tiles);
 
-  creature.name = creatureName;
-  creature.healthTag = getHealthTagFromColor(r.color);
+  creature.healthTag = detection.healthTag;
   creature.absoluteCoords = {
     x: Math.round(creatureScreenX),
     y: Math.round(creatureScreenY),
@@ -382,33 +383,16 @@ async function performOperation() {
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
 
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
-    const ocrData = currentState.ocr.regions.gameWorld || [];
-    const battleListEntries = currentState.battleList?.entries || [];
-    const targetingList = currentState.targeting?.targetingList || [];
+    const healthBars = await findHealthBars.findHealthBars(
+      sharedBufferView,
+      gameWorld,
+    );
 
-    const targetableNamesFromRules = [
-      ...new Set(
-        targetingList
-          .filter((rule) => rule.action === 'Attack')
-          .map((rule) => rule.name),
-      ),
-    ];
-
-    const preliminaryDetections = ocrData
-      .map((r) => {
-        const originalName = r.text;
-        const correctedName = findBestBattleListMatch(
-          originalName,
-          battleListEntries,
-          targetableNamesFromRules,
-        );
-        return {
-          name: correctedName || originalName,
-          absoluteCoords: { x: r.click.x, y: r.click.y },
-          r: { ...r, text: correctedName || originalName }, // Update the text in the original OCR data as well
-        };
-      })
-      .filter(Boolean);
+    const preliminaryDetections = healthBars.map((healthBar) => ({
+      absoluteCoords: { x: healthBar.x, y: healthBar.y + 14 },
+      healthTag: healthBar.healthTag,
+      healthBarY: healthBar.y,
+    }));
 
     const newActiveCreatures = new Map();
     const matchedDetections = new Set();
@@ -419,7 +403,6 @@ async function performOperation() {
 
       for (const newDetection of preliminaryDetections) {
         if (matchedDetections.has(newDetection)) continue;
-        if (newDetection.name !== oldCreature.name) continue;
 
         const distance = screenDist(
           newDetection.absoluteCoords,
@@ -509,8 +492,7 @@ async function performOperation() {
     }
 
     detectedEntities.sort((a, b) => {
-      if (a.distance !== b.distance) return a.distance - b.distance;
-      return a.name.localeCompare(b.name);
+      return a.distance - b.distance;
     });
 
     if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
@@ -525,6 +507,7 @@ async function performOperation() {
     let currentTarget = null;
     try {
       //ultra fast, findTarget takes <2ms
+
       const targetRect = await findTarget.findTarget(
         sharedBufferView,
         gameWorld,
@@ -569,7 +552,6 @@ async function performOperation() {
             // The target object in Redux needs the instanceId for unique identification.
             currentTarget = {
               instanceId: closestCreature.instanceId,
-              name: closestCreature.name,
               distance: parseFloat(distanceFromPlayer.toFixed(1)),
               gameCoordinates: closestCreature.gameCoords,
               absoluteCoordinates: closestCreature.absoluteCoords,
@@ -598,6 +580,15 @@ async function performOperation() {
       console.error('[CreatureMonitor] Error finding target:', err);
     }
 
+    if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'targeting/setEntities',
+        payload: detectedEntities,
+      });
+      lastSentCreatures = detectedEntities;
+    }
+
     if (!deepCompareEntities(currentTarget, lastSentTarget)) {
       parentPort.postMessage({
         storeUpdate: true,
@@ -605,6 +596,51 @@ async function performOperation() {
         payload: currentTarget,
       });
       lastSentTarget = currentTarget;
+    }
+
+    const battleListRegion = currentState.regionCoordinates.regions.battleList;
+    if (battleListRegion) {
+      const battleListEntries = await processBattleListOcr(sharedBufferView, currentState.regionCoordinates.regions);
+      const redColor = [255, 0, 0];
+      const redBarSequence = new Array(5).fill(redColor);
+      const result = await findSequences.findSequencesNative(
+        sharedBufferView,
+        {
+          red_vertical_bar: {
+            sequence: redBarSequence,
+            direction: 'vertical',
+          },
+        },
+        battleListRegion,
+      );
+
+      if (result && result.red_vertical_bar) {
+        const markerY = result.red_vertical_bar.y;
+        let closestEntry = null;
+        let minDistance = Infinity;
+
+        for (const entry of battleListEntries) {
+          const distance = Math.abs(entry.y - markerY);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestEntry = entry;
+          }
+        }
+
+        if (closestEntry) {
+          parentPort.postMessage({
+            storeUpdate: true,
+            type: 'battleList/setTargetedCreature',
+            payload: closestEntry.name,
+          });
+        }
+      } else {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'battleList/setTargetedCreature',
+          payload: null,
+        });
+      }
     }
   } catch (error) {
     console.error('[CreatureMonitor] Error in operation:', error);
