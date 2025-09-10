@@ -31,6 +31,7 @@ const DEFAULT_WORKER_CONFIG = {
   pathfinderWorker: true,
   windowTitleMonitor: true,
   lootingWorker: true, // NEW: Add lootingWorker
+  inputOrchestrator: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -78,6 +79,7 @@ const WORKER_STATE_DEPENDENCIES = {
   captureWorker: ['global'],
   pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
   windowTitleMonitor: ['global', 'gameState'],
+  inputOrchestrator: ['global'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -317,6 +319,14 @@ class WorkerManager {
           type: 'state_snapshot',
           payload: store.getState(),
         });
+      }
+      return;
+    }
+
+    if (message.type === 'inputAction') {
+      const inputOrchestrator = this.workers.get('inputOrchestrator');
+      if (inputOrchestrator && inputOrchestrator.worker) {
+        inputOrchestrator.worker.postMessage(message);
       }
       return;
     }
@@ -621,7 +631,8 @@ class WorkerManager {
     for (const [name, workerEntry] of this.workers) {
       if (!workerEntry.worker || name === 'captureWorker') continue;
 
-      const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
+      const isLuaWorker =
+        /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
 
       if (!this.workerInitialized.get(name) || isLuaWorker) {
         // For initial setup or Lua workers, always send the full state
@@ -744,6 +755,11 @@ class WorkerManager {
           !this.workers.has('lootingWorker')
         )
           this.startWorker('lootingWorker');
+        if (
+          this.workerConfig.inputOrchestrator &&
+          !this.workers.has('inputOrchestrator')
+        )
+          this.startWorker('inputOrchestrator');
       } else {
         if (this.workers.size > 0) {
           log(

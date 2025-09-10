@@ -47,6 +47,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   logger: createLogger({ info: false, error: true, debug: false }),
+  parentPort: parentPort,
 };
 
 // --- Initialization ---

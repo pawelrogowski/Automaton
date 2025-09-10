@@ -27,7 +27,7 @@ let isInitialized = false;
 let hasScannedInitially = false;
 
 const cooldownManager = new CooldownManager();
-const ruleProcessorInstance = new RuleProcessor();
+const ruleProcessorInstance = new RuleProcessor(parentPort);
 const frameUpdateManager = new FrameUpdateManager();
 
 let lastCalculatedState = {

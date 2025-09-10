@@ -1,11 +1,3 @@
-import {
-  keyPress,
-  keyPressMultiple,
-  typeArray,
-  rotate,
-  getIsTyping,
-} from '../keyboardControll/keyPress.js';
-import mouseController from 'mouse-controller';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
@@ -246,7 +238,7 @@ export const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
 export const createLuaApi = async (context) => {
-  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua } = context;
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction } = context; // Added postInputAction
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
@@ -352,17 +344,33 @@ export const createLuaApi = async (context) => {
             modalInfo.name === 'ipChangedModal' ||
             modalInfo.name === 'notLoggedInAnymoreModal'
           ) {
-            await keyPress(getDisplay(), 'Escape');
+            postInputAction({
+              type: 'luaScript',
+              action: {
+                module: 'keypress',
+                method: 'sendKey',
+                args: ['Escape']
+              }
+            });
             await wait(500);
-            await keyPress(getDisplay(), 'Escape');
+            postInputAction({
+              type: 'luaScript',
+              action: {
+                module: 'keypress',
+                method: 'sendKey',
+                args: ['Escape']
+              }
+            });
             await wait(500);
           } else {
-            mouseController.leftClick(
-              parseInt(String(getWindowId())),
-              button.x,
-              button.y,
-              getDisplay(),
-            );
+            postInputAction({
+              type: 'luaScript',
+              action: {
+                module: 'mouseController',
+                method: 'leftClick',
+                args: [button.x, button.y]
+              }
+            });
             await wait(500);
           }
           foundModal = true;
@@ -465,15 +473,30 @@ export const createLuaApi = async (context) => {
     wait: (min_ms, max_ms) =>
       wait(min_ms, max_ms, context.refreshLuaGlobalState),
     keyPress: (key, modifier = null) =>
-      keyPress(getDisplay(), key, { modifier }),
-    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
-      keyPressMultiple(getDisplay(), key, {
-        count,
-        modifier,
-        delayMs,
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [key, modifier]
+        }
       }),
+    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) => {
+      for (let i = 0; i < count; i++) {
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: [key, modifier]
+          }
+        });
+        if (i < count - 1) {
+          wait(delayMs);
+        }
+      }
+    },
     typeText: async (...args) => {
-      const display = getDisplay();
       if (args.length === 0) {
         logger(
           'warn',
@@ -504,7 +527,15 @@ export const createLuaApi = async (context) => {
       }
 
       try {
-        await typeArray(display, stringArgs, startAndEndWithEnter);
+        // typeArray is a native function, so we need to send it as a single action
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [stringArgs, startAndEndWithEnter]
+          }
+        });
         return true;
       } catch (error) {
         logger(
@@ -516,16 +547,30 @@ export const createLuaApi = async (context) => {
     },
     typeSequence: async (texts, delayBetween = 100) => {
       for (const text of texts) {
-        await typeArray(getDisplay(), [text], true);
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[text], true] // typeArray expects an array of strings
+          }
+        });
         if (delayBetween > 0) {
           await wait(delayBetween);
         }
       }
     },
-    rotate: (direction) => rotate(getDisplay(), direction),
-    isTyping: () => getIsTyping(),
+    rotate: (direction) =>
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'keypress',
+          method: 'rotate',
+          args: [direction]
+        }
+      }),
+    isTyping: () => getState().gameState?.isTyping, // This state is read from Redux, not directly from input
     clickTile: async (button, x, y, position = 'center') => {
-      const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
@@ -554,35 +599,51 @@ export const createLuaApi = async (context) => {
       }
 
       if (button === 'right') {
-        mouseController.rightClick(
-          parseInt(windowId),
-          clickCoords.x,
-          clickCoords.y,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightClick',
+            args: [clickCoords.x, clickCoords.y]
+          }
+        });
       } else {
-        mouseController.leftClick(
-          parseInt(windowId),
-          clickCoords.x,
-          clickCoords.y,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [clickCoords.x, clickCoords.y]
+          }
+        });
       }
       await wait(100);
       return true;
     },
     clickAbsolute: async (button, x, y) => {
-      const windowId = String(getWindowId());
       if (button === 'right') {
-        mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightClick',
+            args: [x, y]
+          }
+        });
       } else {
-        mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [x, y]
+          }
+        });
       }
       await wait(100);
       return true;
     },
     mapClick: async (x, y, position = 'center') => {
-      const windowId = String(getWindowId());
       const state = getState();
       const minimapRegionDef = state.regionCoordinates?.regions?.minimapFull;
       const playerPos = state.gameState?.playerMinimapPosition;
@@ -606,17 +667,18 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      mouseController.leftClick(
-        parseInt(windowId),
-        clickCoords.x,
-        clickCoords.y,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [clickCoords.x, clickCoords.y]
+        }
+      });
       await wait(100);
       return true;
     },
     drag: async (startX, startY, endX, endY, button = 'left') => {
-      const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
@@ -651,87 +713,123 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      mouseController.mouseMove(
-        parseInt(windowId),
-        startCoords.x,
-        startCoords.y,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [startCoords.x, startCoords.y]
+        }
+      });
       await wait(50);
       if (button === 'right') {
-        mouseController.rightMouseDown(
-          parseInt(windowId),
-          startCoords.x,
-          startCoords.y,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseDown',
+            args: [startCoords.x, startCoords.y]
+          }
+        });
       } else {
-        mouseController.mouseDown(
-          parseInt(windowId),
-          startCoords.x,
-          startCoords.y,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseDown',
+            args: [startCoords.x, startCoords.y]
+          }
+        });
       }
       await wait(100);
-      mouseController.mouseMove(
-        parseInt(windowId),
-        endCoords.x,
-        endCoords.y,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [endCoords.x, endCoords.y]
+        }
+      });
       await wait(100);
       if (button === 'right') {
-        mouseController.rightMouseUp(
-          parseInt(windowId),
-          endCoords.x,
-          endCoords.y,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseUp',
+            args: [endCoords.x, endCoords.y]
+          }
+        });
       } else {
-        mouseController.mouseUp(
-          parseInt(windowId),
-          endCoords.x,
-          endCoords.y,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseUp',
+            args: [endCoords.x, endCoords.y]
+          }
+        });
       }
       await wait(100);
       return true;
     },
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
-      const windowId = String(getWindowId());
-      mouseController.mouseMove(
-        parseInt(windowId),
-        startX,
-        startY,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [startX, startY]
+        }
+      });
       await wait(50);
       if (button === 'right') {
-        mouseController.rightMouseDown(
-          parseInt(windowId),
-          startX,
-          startY,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseDown',
+            args: [startX, startY]
+          }
+        });
       } else {
-        mouseController.mouseDown(
-          parseInt(windowId),
-          startX,
-          startY,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseDown',
+            args: [startX, startY]
+          }
+        });
       }
       await wait(100);
-      mouseController.mouseMove(parseInt(windowId), endX, endY, getDisplay());
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [endX, endY]
+        }
+      });
       await wait(100);
       if (button === 'right') {
-        mouseController.rightMouseUp(
-          parseInt(windowId),
-          endX,
-          endY,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseUp',
+            args: [endX, endY]
+          }
+        });
       } else {
-        mouseController.mouseUp(parseInt(windowId), endX, endY, getDisplay());
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseUp',
+            args: [endX, endY]
+          }
+        });
       }
       await wait(100);
       return true;
@@ -800,9 +898,15 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      const windowId = String(getWindowId());
       const { x, y } = tab.tabPosition;
-      mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [x, y]
+        }
+      });
       await wait(100);
       return true;
     },
@@ -872,9 +976,6 @@ export const createLuaApi = async (context) => {
     },
     waitFor,
     login: async (email, password, character) => {
-      const windowId = String(getWindowId());
-      const display = getDisplay();
-
       if (
         await waitFor(
           'regionCoordinates.regions.onlineMarker',
@@ -924,9 +1025,23 @@ export const createLuaApi = async (context) => {
         const state = getState(); // We know it exists now.
         const loginModal = state.regionCoordinates.regions.loginModal;
 
-        await keyPress(display, 'Escape');
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Escape']
+          }
+        });
         await wait(100);
-        await keyPress(display, 'Escape');
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Escape']
+          }
+        });
         await wait(100);
 
         const emailInput = loginModal.children?.emailInput;
@@ -934,14 +1049,23 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] emailInput not found`);
           return false;
         }
-        mouseController.leftClick(
-          parseInt(windowId),
-          emailInput.x,
-          emailInput.y,
-          display,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [emailInput.x, emailInput.y]
+          }
+        });
         await wait(50);
-        await typeArray(display, [email], false);
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[email], false]
+          }
+        });
         await wait(100);
 
         const passwordInput = loginModal.children?.passwordInput;
@@ -949,16 +1073,32 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] passwordInput not found`);
           return false;
         }
-        mouseController.leftClick(
-          parseInt(windowId),
-          passwordInput.x,
-          passwordInput.y,
-          display,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [passwordInput.x, passwordInput.y]
+          }
+        });
         await wait(50);
-        await typeArray(display, [password], false);
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[password], false]
+          }
+        });
         await wait(100);
-        await keyPress(display, 'Enter');
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Enter']
+          }
+        });
       }
 
       const charSelectAppeared = await waitFor(
@@ -1019,14 +1159,23 @@ export const createLuaApi = async (context) => {
         return false;
       }
 
-      mouseController.leftClick(
-        parseInt(windowId),
-        characterItem.position.x,
-        characterItem.position.y,
-        display,
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [characterItem.position.x, characterItem.position.y]
+        }
+      });
       await wait(100);
-      await keyPress(display, 'Enter');
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: ['Enter']
+        }
+      });
 
       const isOnline = await waitFor(
         'regionCoordinates.regions.onlineMarker',
