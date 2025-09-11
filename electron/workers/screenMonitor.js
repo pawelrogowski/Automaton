@@ -1,5 +1,5 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/screenMonitor.js
-// --- CORRECTED ---
+// --- REFACTORED ---
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
@@ -8,6 +8,8 @@ import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
+import findSequences from 'find-sequences-native';
+import actionBarItems from '../constants/actionBarItems.js';
 
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
@@ -138,16 +140,47 @@ function calculateEquippedItems(amuletSlot, ringSlot, bootsSlot) {
     boots: getEquippedItem(bootsSlot),
   };
 }
-function calculateActiveActionItems(hotkeyBarRegion) {
-  return hotkeyBarRegion?.children
-    ? Object.fromEntries(
-        Object.entries(hotkeyBarRegion.children).map(([key, child]) => [
-          key,
-          child,
-        ]),
-      )
-    : {};
+
+async function findActionItemsInHotkeyBar(hotkeyBarRegion, buffer, metadata) {
+    if (!hotkeyBarRegion || !hotkeyBarRegion.width || !hotkeyBarRegion.height) {
+        return {};
+    }
+
+    const tasks = {};
+    for (const [key, value] of Object.entries(actionBarItems)) {
+        tasks[key] = {
+            sequences: { [key]: value },
+            searchArea: hotkeyBarRegion,
+            occurrence: "first",
+        };
+    }
+
+    const results = await findSequences.findSequencesNativeBatch(buffer, tasks);
+    const foundItems = {};
+    for (const [itemName, itemResult] of Object.entries(results)) {
+        if (itemResult[itemName]) {
+            const def = actionBarItems[itemName];
+            const result = itemResult[itemName];
+            foundItems[itemName] = {
+                x: result.x,
+                y: result.y,
+                width: def.direction === 'vertical' ? 1 : def.sequence.length,
+                height: def.direction === 'vertical' ? def.sequence.length : 1,
+                rawPos: {
+                    x: result.x - (def.offset?.x || 0),
+                    y: result.y - (def.offset?.y || 0),
+                },
+            };
+        }
+    }
+    return foundItems;
 }
+
+
+async function calculateActiveActionItems(hotkeyBarRegion, bufferToUse, metadata) {
+    return await findActionItemsInHotkeyBar(hotkeyBarRegion, bufferToUse, metadata);
+}
+
 function calculateWalkingState() {
   const { gameState } = currentState;
   if (!gameState?.playerMinimapPosition) return lastCalculatedState.isWalking;
@@ -213,8 +246,10 @@ async function processGameState() {
       regions.ringSlot,
       regions.bootsSlot,
     );
-    lastCalculatedState.activeActionItems = calculateActiveActionItems(
+    lastCalculatedState.activeActionItems = await calculateActiveActionItems(
       regions.hotkeyBar,
+      bufferToUse,
+      metadata
     );
 
     // This worker now ONLY READS the monster count from the state populated by the ocrWorker.

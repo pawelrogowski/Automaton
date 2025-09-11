@@ -626,23 +626,7 @@ const regionDefinitions = {
     },
     maxRight: 2000,
     maxDown: 110,
-    children: Object.fromEntries(
-      actionBarEntries.map(([key, value]) => {
-        const isVertical = value.direction === 'vertical';
-        const seqLen = value.sequence.length;
-        return [
-          key,
-          {
-            type: 'single',
-            direction: value.direction,
-            offset: value.offset,
-            sequence: value.sequence,
-            width: isVertical ? 1 : seqLen,
-            height: isVertical ? seqLen : 1,
-          },
-        ];
-      }),
-    ),
+    
   },
   battleList: {
     ocrColors: [
