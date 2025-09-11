@@ -344,7 +344,7 @@ class WorkerManager {
 
         const dependencies = WORKER_REGION_DEPENDENCIES[name];
 
-        // Special case for regionMonitor: it needs an update on any screen change.
+        // Special case for regionMonitor: it needs an update on ANY screen change.
         if (dependencies === null) {
           workerEntry.worker.postMessage(message);
           continue;
@@ -522,6 +522,15 @@ class WorkerManager {
         setTimeout(() => {
           worker.postMessage({ type: 'init', script: scriptConfig });
         }, 16);
+      }
+
+      // NEW: Immediately send global state to inputOrchestrator upon start
+      if (name === 'inputOrchestrator') {
+        const currentState = store.getState();
+        worker.postMessage({
+          type: 'state_full_sync',
+          payload: { global: currentState.global },
+        });
       }
 
       return worker;

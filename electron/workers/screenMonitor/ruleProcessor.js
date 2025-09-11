@@ -49,6 +49,7 @@ class RuleProcessor {
       'ultimateHealingRune',
       'intenseHealingRune',
     ]);
+    this.lastRuleExecutionTime = {}; // NEW: To track last execution time for each rule
   }
 
   async processRules(activePreset, gameState, globalConfig) {
@@ -68,7 +69,7 @@ class RuleProcessor {
       return;
     }
 
-    // --- ManaSync Processing ---
+    const now = performance.now();
     const attackCdChanged = this._handleAttackCooldownTransitions(
       now,
       gameState,
@@ -182,16 +183,6 @@ class RuleProcessor {
       return true;
     });
 
-    eligibleRules = this._filterRulesByBasicConditions(
-      eligibleRules,
-      gameState,
-    );
-
-    eligibleRules = this._filterRulesByItemAvailability(
-      eligibleRules,
-      gameState,
-    );
-
     eligibleRules = eligibleRules.filter((rule) => {
       /* Equip Rule Specifics */
       if (rule.id.startsWith(this.RULE_PREFIX.EQUIP)) {
@@ -249,6 +240,12 @@ class RuleProcessor {
       const ruleId = rule.id;
       const ruleDelay = rule.delay ?? 0;
       const category = rule.category;
+
+      // NEW: Rule-specific cooldown
+      const timeSinceLastRuleExecution = now - (this.lastRuleExecutionTime[ruleId] || 0);
+      if (timeSinceLastRuleExecution < 150) { // 150ms cooldown
+        return false;
+      }
 
       // INDIVIDUAL DELAY
       const timeSinceLastSuccessfulTrigger =
@@ -632,6 +629,7 @@ class RuleProcessor {
 
     if (actionSuccess) {
       this.lastSuccessfulRuleActionTime[ruleId] = now;
+      this.lastRuleExecutionTime[ruleId] = now; // NEW: Record rule execution time
 
       if (ruleToExecute.category && ruleId.startsWith(this.RULE_PREFIX.USER)) {
         this.lastCategoryExecutionTime[ruleToExecute.category] = now;
@@ -734,8 +732,7 @@ class RuleProcessor {
 
       if (actionSent) {
         this.lastKeypressTime = now;
-        this.effectiveCooldownEndTime =
-          now + (isPriorityRuleForCooldown ? 25 : this.KEYPRESS_COOLDOWN_MS);
+        this.effectiveCooldownEndTime = now + 150; // Changed from (isPriorityRuleForCooldown ? 25 : this.KEYPRESS_COOLDOWN_MS);
       }
       return actionSent;
     } catch (error) {

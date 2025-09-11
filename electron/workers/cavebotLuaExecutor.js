@@ -84,6 +84,7 @@ export class CavebotLuaExecutor {
         refreshLuaGlobalState: () => this._syncDynamicStateToLua(), // This now calls the lightweight sync
         sharedLuaGlobals: this.context.sharedLuaGlobals,
         lua: this.lua,
+        postInputAction: (action) => parentPort.postMessage({ type: 'inputAction', payload: action }),
       });
 
       this.asyncFunctionNames = newNames;

@@ -179,6 +179,7 @@ const initializeLuaApi = async () => {
       onAsyncEnd,
       sharedLuaGlobals: workerData.sharedLuaGlobals,
       lua: lua,
+      postInputAction: (action) => parentPort.postMessage({ type: 'inputAction', payload: action }),
     });
 
     asyncFunctionNames = newNames;

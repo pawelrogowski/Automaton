@@ -26,6 +26,17 @@ export function createTargetingActions(workerContext) {
   const logger = createLogger({ info: false, error: true, debug: false });
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Helper to post input actions to the main thread for orchestration
+  const postInputAction = (type, action) => {
+    parentPort.postMessage({
+      type: 'inputAction',
+      payload: {
+        type: type,
+        action: action,
+      },
+    });
+  };
+
   let acquisitionTimes = [];
   let maxAcquisitionTime = 0;
   let avgAcquisitionTime = 0;

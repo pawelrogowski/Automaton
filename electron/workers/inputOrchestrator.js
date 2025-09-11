@@ -12,6 +12,7 @@ const log = createLogger({
 const PRIORITY_MAP = {
   userRule: 0, // New highest priority
   hotkey: 1,
+  script: 1, // Inputs from scripts
   movement: 2,
   looting: 2, // Added looting priority
   default: 3,
@@ -31,6 +32,17 @@ async function processQueue() {
   if (isProcessing || eventQueue.length === 0) {
     isProcessing = false;
     return;
+  }
+
+  // NEW: Defer processing if globalState is not yet available
+  if (
+    !globalState ||
+    !globalState.global?.windowId ||
+    !globalState.global?.display
+  ) {
+    log('warn', '[InputOrchestrator] Deferring action processing: Missing windowId or display from globalState.');
+    isProcessing = false; // Allow other messages to be processed
+    return; // Exit and wait for state update
   }
 
   isProcessing = true;
@@ -104,6 +116,10 @@ async function processQueue() {
 parentPort.on('message', (message) => {
   if (message.type === 'state_full_sync' || message.type === 'state_diff') {
     globalState = message.payload;
+    // NEW: If state is updated, try processing the queue again
+    if (!isProcessing && eventQueue.length > 0) {
+      processQueue();
+    }
     return;
   }
 
