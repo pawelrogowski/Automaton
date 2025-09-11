@@ -10,15 +10,15 @@ const log = createLogger({
 });
 
 const PRIORITY_MAP = {
-  userRule: 0, // New highest priority
-  hotkey: 1,
-  script: 1, // Inputs from scripts
-  movement: 2,
-  looting: 2, // Added looting priority
-  default: 3,
+  userRule: 0,
+  looting: 1,
+  script: 2,
+  movement: 3,
+  hotkey: 4,
+  default: 10,
 };
 
-const MAX_DEFERRALS = 4; // Max times a lower priority item can be deferred
+const MAX_DEFERRALS = 4;
 
 let globalState = null;
 const eventQueue = [];
@@ -40,7 +40,10 @@ async function processQueue() {
     !globalState.global?.windowId ||
     !globalState.global?.display
   ) {
-    log('warn', '[InputOrchestrator] Deferring action processing: Missing windowId or display from globalState.');
+    log(
+      'warn',
+      '[InputOrchestrator] Deferring action processing: Missing windowId or display from globalState.',
+    );
     isProcessing = false; // Allow other messages to be processed
     return; // Exit and wait for state update
   }
@@ -51,11 +54,14 @@ async function processQueue() {
   // First, identify the highest priority currently in the queue
   let highestPriorityInQueue = Infinity;
   if (eventQueue.length > 0) {
-    highestPriorityInQueue = eventQueue.reduce((min, item) => Math.min(min, item.priority), Infinity);
+    highestPriorityInQueue = eventQueue.reduce(
+      (min, item) => Math.min(min, item.priority),
+      Infinity,
+    );
   }
 
   // Iterate through the queue to update deferral counts and elevate priority if needed
-  eventQueue.forEach(item => {
+  eventQueue.forEach((item) => {
     // Only increment deferral count if there's a higher priority item currently in the queue
     // and this item is not already at the highest possible priority (-1)
     if (item.priority > highestPriorityInQueue && item.priority !== -1) {
@@ -64,14 +70,24 @@ async function processQueue() {
         // Elevate priority to be higher than any existing priority, but lower than userRule (0)
         // Let's use -1 for anti-starvation priority.
         item.priority = -1;
-        log('warn', `[InputOrchestrator] Elevated priority for ${item.type} due to starvation (${item.deferralCount} deferrals).`);
+        log(
+          'warn',
+          `[InputOrchestrator] Elevated priority for ${item.type} due to starvation (${item.deferralCount} deferrals).`,
+        );
       }
     }
   });
   // --- End Starvation Prevention Logic ---
 
   eventQueue.sort((a, b) => a.priority - b.priority);
-  const { action, priority, type, originalPriority, deferralCount, insertionTime } = eventQueue.shift();
+  const {
+    action,
+    priority,
+    type,
+    originalPriority,
+    deferralCount,
+    insertionTime,
+  } = eventQueue.shift();
 
   try {
     if (
