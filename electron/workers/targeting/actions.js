@@ -1,5 +1,4 @@
-import keypress from 'keypress-native';
-import mouseController from 'mouse-controller';
+
 import { createLogger } from '../../utils/logger.js';
 
 // These constants are specific to the targeting logic.
@@ -357,7 +356,11 @@ export function createTargetingActions(workerContext) {
 
       for (let i = 0; i < bestKeyPlan.presses; i++) {
         // 1. Press the key ONCE
-        keypress.sendKey(key, globalState.global.display);
+        postInputAction('hotkey', {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [key, null],
+        });
         targetingContext.lastClickTime = Date.now();
         targetingContext.acquisitionUnlockTime =
           Date.now() + TARGET_CONFIRMATION_TIMEOUT_MS + 50;
@@ -493,7 +496,11 @@ export function createTargetingActions(workerContext) {
           ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
           : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
 
-        keypress.sendKey(dirKey, globalState.global.display);
+        postInputAction('targeting', {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [dirKey, null],
+        });
         targetingContext.lastMovementTime = now;
         try {
           await awaitWalkConfirmation(

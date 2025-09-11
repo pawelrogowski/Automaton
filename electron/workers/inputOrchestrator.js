@@ -13,9 +13,25 @@ const PRIORITY_MAP = {
   userRule: 0,
   looting: 1,
   script: 2,
-  movement: 3,
-  hotkey: 4,
+  targeting: 3,
+  movement: 4,
+  hotkey: 5,
   default: 10,
+};
+
+const DELAY_MAP = {
+  userRule: { min: 50, max: 75 },
+  looting: { min: 50, max: 150 },
+  script: { min: 50, max: 100 },
+  targeting: { min: 50, max: 200 },
+  movement: { min: 50, max: 100 },
+  hotkey: { min: 50, max: 200 },
+  default: { min: 50, max: 100 },
+};
+
+const getRandomDelay = (type) => {
+  const config = DELAY_MAP[type] || DELAY_MAP.default;
+  return Math.floor(Math.random() * (config.max - config.min + 1)) + config.min;
 };
 
 const MAX_DEFERRALS = 4;
@@ -108,7 +124,22 @@ async function processQueue() {
 
     switch (action.module) {
       case 'keypress':
-        await keypress[action.method](...action.args, display);
+        switch (action.method) {
+          case 'sendKey':
+          case 'keyDown':
+          case 'keyUp':
+            await keypress[action.method](action.args[0], display, action.args[1]);
+            break;
+          case 'typeArray':
+            await keypress.typeArray(action.args[0], display, action.args[1]);
+            break;
+          case 'rotate':
+            await keypress.rotate(display, action.args[0]);
+            break;
+          default:
+            await keypress[action.method](...action.args, display);
+            break;
+        }
         break;
       case 'mouseController':
         await mouseController[action.method](windowId, ...action.args, display);
@@ -119,11 +150,8 @@ async function processQueue() {
   } catch (error) {
     log('error', '[InputOrchestrator] Error executing action:', error);
   } finally {
-    // The item is already shifted out, so we don't need to reset its properties.
-    // The deferral count and priority are only relevant for items *waiting* in the queue.
-    // When an item is executed, its state is effectively "consumed".
-
-    await delay(50);
+    const delayMs = getRandomDelay(type);
+    await delay(delayMs);
     isProcessing = false;
     processQueue();
   }

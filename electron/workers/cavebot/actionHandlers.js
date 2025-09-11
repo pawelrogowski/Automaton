@@ -1,7 +1,8 @@
 // /workers/cavebot/actionHandlers.js
 
-import keypress from 'keypress-native';
-import mouseController from 'mouse-controller';
+import { parentPort } from 'worker_threads';
+import { keyPress } from '../../keyboardControll/keyPress.js';
+
 // ====================== MODIFICATION START ======================
 // Corrected paths to go up two directories to the electron root
 import useItemOnCoordinates from '../../mouseControll/useItemOnCoordinates.js';
@@ -17,6 +18,24 @@ import {
 } from './helpers/asyncUtils.js';
 import { advanceToNextWaypoint } from './helpers/navigation.js';
 
+const post = (payload) => {
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload,
+  });
+};
+
+const leftClick = (x, y, { type = 'default' } = {}) => {
+  post({
+    type,
+    action: {
+      module: 'mouseController',
+      method: 'leftClick',
+      args: [x, y],
+    },
+  });
+};
+
 async function performWalk(
   workerState,
   config,
@@ -29,7 +48,7 @@ async function performWalk(
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, targetPos);
   if (!dirKey) return;
 
-  keypress.sendKey(dirKey, workerState.globalState.global.display);
+  keyPress(dirKey, { type: 'movement' });
   await awaitWalkConfirmation(
     workerState,
     config,
@@ -63,7 +82,7 @@ export async function handleStandAction(workerState, config, targetWaypoint) {
   const dirKey = getDirectionKey(initialPos, targetWaypoint);
   if (!dirKey) return false;
 
-  keypress.sendKey(dirKey, workerState.globalState.global.display);
+  keyPress(dirKey, { type: 'movement' });
 
   try {
     const { finalPos } = await awaitStandConfirmation(
@@ -126,19 +145,13 @@ async function handleToolAction(
   const display = globalState.global.display || ':0';
 
   if (useType === 'ladder') {
-    mouseController.leftClick(windowId, clickCoords.x, clickCoords.y, display);
+    leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
   } else if (useType === 'rope') {
-    keypress.sendKey(hotkey, display);
+    keyPress(hotkey, { type: 'movement' });
     await delay(50); // Small delay between hotkey and click
-    mouseController.leftClick(windowId, clickCoords.x, clickCoords.y, display);
+    leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
   } else if (useType === 'shovel') {
-    useItemOnCoordinates(
-      windowId,
-      display,
-      clickCoords.x,
-      clickCoords.y,
-      hotkey,
-    );
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, { type: 'movement' });
   }
 
   const zChanged = await awaitZLevelChange(
@@ -230,13 +243,7 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
     }
 
     // Walk failed, use tool
-    useItemOnCoordinates(
-      windowId,
-      display,
-      clickCoords.x,
-      clickCoords.y,
-      hotkey,
-    );
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, { type: 'movement' });
     await delay(config.actionFailureRetryDelayMs);
 
     try {
@@ -305,12 +312,7 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
   const posCounterBeforeMove = workerState.lastPlayerPosCounter;
   const pathCounterBeforeMove = workerState.lastPathDataCounter;
 
-  mouseController.leftClick(
-    parseInt(globalState.global.windowId, 10),
-    clickCoords.x,
-    clickCoords.y,
-    globalState.global.display || ':0',
-  );
+  leftClick(clickCoords.x, clickCoords.y);
 
   try {
     await awaitWalkConfirmation(

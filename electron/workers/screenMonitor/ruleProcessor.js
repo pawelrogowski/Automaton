@@ -156,6 +156,11 @@ class RuleProcessor {
 
     eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
 
+    // ADDED FILTERS
+    eligibleRules = this._filterRulesByBasicConditions(eligibleRules, gameState);
+    eligibleRules = this._filterRulesByItemAvailability(eligibleRules, gameState);
+    // END ADDED FILTERS
+
     eligibleRules = eligibleRules.filter((rule) => {
       /* PartyHeal Interval Filter */
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {

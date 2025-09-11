@@ -1,6 +1,6 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
-import keypress from 'keypress-native';
+
 import { createLogger } from '../utils/logger.js';
 import { createTargetingActions } from './targeting/actions.js';
 import {

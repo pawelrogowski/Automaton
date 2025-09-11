@@ -1,18 +1,24 @@
-import mouseController from 'mouse-controller';
+import { parentPort } from 'worker_threads';
 import { keyPress } from '../keyboardControll/keyPress.js';
 
-function useItemOnCoordinates(targetWindowId, display, targetX, targetY, key) {
-  // Add display parameter
-  // First press the key
-  keyPress(display, key); // Pass display to keyPress
+const post = (payload) => {
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload,
+  });
+};
 
-  // Then perform left click on coordinates
-  mouseController.leftClick(
-    parseInt(targetWindowId),
-    parseInt(targetX),
-    parseInt(targetY),
-    display, // Pass display to mouseController
-  );
+function useItemOnCoordinates(targetX, targetY, key, { type = 'default' } = {}) {
+  keyPress(key, { type });
+
+  post({
+    type,
+    action: {
+      module: 'mouseController',
+      method: 'leftClick',
+      args: [parseInt(targetX), parseInt(targetY)],
+    },
+  });
 }
 
 export default useItemOnCoordinates;
