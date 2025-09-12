@@ -66,6 +66,21 @@ export const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
 
+  Object.defineProperty(shortcuts, 'lastSeenBattleListMs', {
+    get: () => getState().battleList?.lastSeenMs,
+    enumerable: true,
+  });
+
+  Object.defineProperty(shortcuts, 'lastSeenPlayerMs', {
+    get: () => getState().uiValues?.lastSeenPlayerMs,
+    enumerable: true,
+  });
+
+  Object.defineProperty(shortcuts, 'lastSeenNpcMs', {
+    get: () => getState().uiValues?.lastSeenNpcMs,
+    enumerable: true,
+  });
+
   Object.defineProperty(shortcuts, 'food', {
     get: () => getState().uiValues?.skillsWidget?.food,
     enumerable: true,
@@ -229,6 +244,46 @@ export const createStateShortcutObject = (getState, type) => {
     },
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'target', {
+    get: () => {
+      const state = getState();
+      const target = state.targeting?.target;
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+
+      if (!target || !playerPos || !gameWorld || !tileSize) {
+        return null;
+      }
+
+      const distance = Math.max(
+        Math.abs(playerPos.x - target.x),
+        Math.abs(playerPos.y - target.y),
+      );
+
+      const absCoords = getAbsoluteGameWorldClickCoordinates(
+        target.x,
+        target.y,
+        playerPos,
+        gameWorld,
+        tileSize,
+        'center', // Assuming 'center' for target coordinates
+      );
+
+      return {
+        name: target.name,
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        distance: distance,
+        abs: {
+          x: absCoords?.x || 0,
+          y: absCoords?.y || 0,
+        },
+      };
+    },
+    enumerable: true,
+  });
   return shortcuts;
 };
 
@@ -238,7 +293,8 @@ export const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
 export const createLuaApi = async (context) => {
-  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction } = context; // Added postInputAction
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction } =
+    context; // Added postInputAction
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
@@ -349,8 +405,8 @@ export const createLuaApi = async (context) => {
               action: {
                 module: 'keypress',
                 method: 'sendKey',
-                args: ['Escape']
-              }
+                args: ['Escape'],
+              },
             });
             await wait(500);
             postInputAction({
@@ -358,8 +414,8 @@ export const createLuaApi = async (context) => {
               action: {
                 module: 'keypress',
                 method: 'sendKey',
-                args: ['Escape']
-              }
+                args: ['Escape'],
+              },
             });
             await wait(500);
           } else {
@@ -368,8 +424,8 @@ export const createLuaApi = async (context) => {
               action: {
                 module: 'mouseController',
                 method: 'leftClick',
-                args: [button.x, button.y]
-              }
+                args: [button.x, button.y],
+              },
             });
             await wait(500);
           }
@@ -393,6 +449,11 @@ export const createLuaApi = async (context) => {
       if (!playerPos) return 9999;
       if (z !== undefined && playerPos.z !== z) return 9999;
       return Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
+    },
+    canUse: (itemName) => {
+      const state = getState();
+      const activeActionItems = state.gameState?.activeActionItems || {};
+      return !!activeActionItems[itemName];
     },
     isLocation: (range = 0) => {
       const state = getState();
@@ -447,6 +508,35 @@ export const createLuaApi = async (context) => {
       const dist = Math.max(Math.abs(px - tx), Math.abs(py - ty));
       return dist <= range;
     },
+    caround: (distance) => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const creatures = state.battleList?.entries || []; // Assuming creatures are in battleList.entries
+
+      if (
+        !playerPos ||
+        !creatures ||
+        !Number.isInteger(distance) ||
+        distance < 0
+      ) {
+        return -1;
+      }
+
+      let count = 0;
+      for (const creature of creatures) {
+        if (creature.x && creature.y && creature.z === playerPos.z) {
+          // Only count creatures on the same Z-level
+          const dist = Math.max(
+            Math.abs(playerPos.x - creature.x),
+            Math.abs(playerPos.y - creature.y),
+          );
+          if (dist <= distance) {
+            count++;
+          }
+        }
+      }
+      return count;
+    },
     log: (level, ...messages) =>
       logger(
         String(level).toLowerCase(),
@@ -478,8 +568,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'keypress',
           method: 'sendKey',
-          args: [key, modifier]
-        }
+          args: [key, modifier],
+        },
       }),
     keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) => {
       for (let i = 0; i < count; i++) {
@@ -488,8 +578,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'sendKey',
-            args: [key, modifier]
-          }
+            args: [key, modifier],
+          },
         });
         if (i < count - 1) {
           wait(delayMs);
@@ -533,8 +623,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'typeArray',
-            args: [stringArgs, startAndEndWithEnter]
-          }
+            args: [stringArgs, startAndEndWithEnter],
+          },
         });
         return true;
       } catch (error) {
@@ -552,8 +642,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'typeArray',
-            args: [[text], true] // typeArray expects an array of strings
-          }
+            args: [[text], true], // typeArray expects an array of strings
+          },
         });
         if (delayBetween > 0) {
           await wait(delayBetween);
@@ -566,8 +656,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'keypress',
           method: 'rotate',
-          args: [direction]
-        }
+          args: [direction],
+        },
       }),
     isTyping: () => getState().gameState?.isTyping, // This state is read from Redux, not directly from input
     clickTile: async (button, x, y, position = 'center') => {
@@ -604,8 +694,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'rightClick',
-            args: [clickCoords.x, clickCoords.y]
-          }
+            args: [clickCoords.x, clickCoords.y],
+          },
         });
       } else {
         postInputAction({
@@ -613,8 +703,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'leftClick',
-            args: [clickCoords.x, clickCoords.y]
-          }
+            args: [clickCoords.x, clickCoords.y],
+          },
         });
       }
       await wait(100);
@@ -627,8 +717,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'rightClick',
-            args: [x, y]
-          }
+            args: [x, y],
+          },
         });
       } else {
         postInputAction({
@@ -636,8 +726,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'leftClick',
-            args: [x, y]
-          }
+            args: [x, y],
+          },
         });
       }
       await wait(100);
@@ -672,8 +762,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'leftClick',
-          args: [clickCoords.x, clickCoords.y]
-        }
+          args: [clickCoords.x, clickCoords.y],
+        },
       });
       await wait(100);
       return true;
@@ -718,8 +808,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'mouseMove',
-          args: [startCoords.x, startCoords.y]
-        }
+          args: [startCoords.x, startCoords.y],
+        },
       });
       await wait(50);
       if (button === 'right') {
@@ -728,8 +818,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'rightMouseDown',
-            args: [startCoords.x, startCoords.y]
-          }
+            args: [startCoords.x, startCoords.y],
+          },
         });
       } else {
         postInputAction({
@@ -737,8 +827,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'mouseDown',
-            args: [startCoords.x, startCoords.y]
-          }
+            args: [startCoords.x, startCoords.y],
+          },
         });
       }
       await wait(100);
@@ -747,8 +837,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'mouseMove',
-          args: [endCoords.x, endCoords.y]
-        }
+          args: [endCoords.x, endCoords.y],
+        },
       });
       await wait(100);
       if (button === 'right') {
@@ -757,8 +847,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'rightMouseUp',
-            args: [endCoords.x, endCoords.y]
-          }
+            args: [endCoords.x, endCoords.y],
+          },
         });
       } else {
         postInputAction({
@@ -766,8 +856,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'mouseUp',
-            args: [endCoords.x, endCoords.y]
-          }
+            args: [endCoords.x, endCoords.y],
+          },
         });
       }
       await wait(100);
@@ -779,8 +869,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'mouseMove',
-          args: [startX, startY]
-        }
+          args: [startX, startY],
+        },
       });
       await wait(50);
       if (button === 'right') {
@@ -789,8 +879,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'rightMouseDown',
-            args: [startX, startY]
-          }
+            args: [startX, startY],
+          },
         });
       } else {
         postInputAction({
@@ -798,8 +888,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'mouseDown',
-            args: [startX, startY]
-          }
+            args: [startX, startY],
+          },
         });
       }
       await wait(100);
@@ -808,8 +898,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'mouseMove',
-          args: [endX, endY]
-        }
+          args: [endX, endY],
+        },
       });
       await wait(100);
       if (button === 'right') {
@@ -818,8 +908,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'rightMouseUp',
-            args: [endX, endY]
-          }
+            args: [endX, endY],
+          },
         });
       } else {
         postInputAction({
@@ -827,8 +917,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'mouseUp',
-            args: [endX, endY]
-          }
+            args: [endX, endY],
+          },
         });
       }
       await wait(100);
@@ -904,8 +994,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'leftClick',
-          args: [x, y]
-        }
+          args: [x, y],
+        },
       });
       await wait(100);
       return true;
@@ -934,9 +1024,13 @@ export const createLuaApi = async (context) => {
       );
     },
     isCreatureOnTile: (x, y, z) => {
-      const creatures = getCreatures(getState);
+      const state = getState();
+      const creatures = state.targeting?.creatures || [];
       return creatures.some(
-        (creature) => creature.x === x && creature.y === y && creature.z === z,
+        (creature) =>
+          creature.gameCoords.x === x &&
+          creature.gameCoords.y === y &&
+          creature.gameCoords.z === z,
       );
     },
     setScripts: (enabled) => {
@@ -1030,8 +1124,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'sendKey',
-            args: ['Escape']
-          }
+            args: ['Escape'],
+          },
         });
         await wait(100);
         postInputAction({
@@ -1039,8 +1133,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'sendKey',
-            args: ['Escape']
-          }
+            args: ['Escape'],
+          },
         });
         await wait(100);
 
@@ -1054,8 +1148,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'leftClick',
-            args: [emailInput.x, emailInput.y]
-          }
+            args: [emailInput.x, emailInput.y],
+          },
         });
         await wait(50);
         postInputAction({
@@ -1063,8 +1157,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'typeArray',
-            args: [[email], false]
-          }
+            args: [[email], false],
+          },
         });
         await wait(100);
 
@@ -1078,8 +1172,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'leftClick',
-            args: [passwordInput.x, passwordInput.y]
-          }
+            args: [passwordInput.x, passwordInput.y],
+          },
         });
         await wait(50);
         postInputAction({
@@ -1087,8 +1181,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'typeArray',
-            args: [[password], false]
-          }
+            args: [[password], false],
+          },
         });
         await wait(100);
         postInputAction({
@@ -1096,8 +1190,8 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'keypress',
             method: 'sendKey',
-            args: ['Enter']
-          }
+            args: ['Enter'],
+          },
         });
       }
 
@@ -1164,8 +1258,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'mouseController',
           method: 'leftClick',
-          args: [characterItem.position.x, characterItem.position.y]
-        }
+          args: [characterItem.position.x, characterItem.position.y],
+        },
       });
       await wait(100);
       postInputAction({
@@ -1173,8 +1267,8 @@ export const createLuaApi = async (context) => {
         action: {
           module: 'keypress',
           method: 'sendKey',
-          args: ['Enter']
-        }
+          args: ['Enter'],
+        },
       });
 
       const isOnline = await waitFor(

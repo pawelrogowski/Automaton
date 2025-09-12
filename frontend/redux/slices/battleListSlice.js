@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   entries: [], // Array of battle list entry objects
+  lastSeenMs: null,
 };
 
 const battleListSlice = createSlice({
@@ -16,6 +17,9 @@ const battleListSlice = createSlice({
      */
     setBattleListEntries: (state, action) => {
       state.entries = action.payload;
+      if (action.payload.length > 0) {
+        state.lastSeenMs = Date.now();
+      }
     },
     /**
      * Resets the battleList state to its initial empty state.

@@ -57,7 +57,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'regionCoordinates',
     'battleList',
   ],
-  lootingWorker: ['global', 'battleList'], // NEW: Add lootingWorker dependencies
+  lootingWorker: ['global', 'battleList', 'targeting'], // NEW: Add lootingWorker dependencies
   regionMonitor: ['global'],
   screenMonitor: [
     'global',

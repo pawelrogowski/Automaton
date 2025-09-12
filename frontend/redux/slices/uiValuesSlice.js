@@ -61,6 +61,8 @@ const initialState = {
   },
   players: [],
   npcs: [],
+  lastSeenPlayerMs: null,
+  lastSeenNpcMs: null,
   // REMOVED: battleListEntries is no longer part of this slice.
   // Its data now lives exclusively in the battleListSlice.
 };
@@ -75,11 +77,29 @@ const uiValuesSlice = createSlice({
       }
     },
     // REMOVED: setBattleListEntries reducer is gone.
+    /**
+     * Sets the array of player entities.
+     * @param {object} state - The current state.
+     * @param {object} action - The action object.
+     * @param {Array<string>} action.payload - An array of player names.
+     */
     setPlayers: (state, action) => {
       state.players = action.payload;
+      if (action.payload.length > 0) {
+        state.lastSeenPlayerMs = Date.now();
+      }
     },
+    /**
+     * Sets the array of NPC entities.
+     * @param {object} state - The current state.
+     * @param {object} action - The action object.
+     * @param {Array<object>} action.payload - An array of NPC objects, each including a `lastSeen` timestamp.
+     */
     setNpcs: (state, action) => {
       state.npcs = action.payload;
+      if (action.payload.length > 0) {
+        state.lastSeenNpcMs = Date.now();
+      }
     },
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;

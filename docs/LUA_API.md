@@ -38,6 +38,11 @@ end
 - `$players`: (Table) A list of other players visible on screen.
 - `$pk`: (Boolean) `true` if you have a player-killing skull.
 - `$activeTab`: (String) The name of the currently active chat tab.
+- `$target`: (Table) Information about the currently targeted creature, or `nil` if no target.
+  - `name`: (String) The name of the targeted creature.
+  - `x`, `y`, `z`: (Numbers) The game world coordinates of the target.
+  - `distance`: (Number) The distance (in tiles) from your character to the target.
+  - `abs.x`, `abs.y`: (Numbers) The absolute screen coordinates of the target.
 
 ### Character Status
 - A series of boolean flags for your character's status conditions are available (e.g., `$poisoned`, `$burning`, `$hasted`).
@@ -77,6 +82,108 @@ These functions are available globally in your Lua scripts.
 - **Parameters**:
   - `min_ms`: (Number) The minimum time to wait in milliseconds.
   - `max_ms`: (Number, optional) The maximum time to wait. If omitted, waits for exactly `min_ms`.
+
+`canUse(itemName)`
+- **Description**: Checks if a specific action item is currently visible and available on your hotkey bar.
+- **Parameters**:
+  - `itemName`: (String) The name of the action item to check.
+- **Returns**: (Boolean) `true` if the item is available, `false` otherwise.
+- **Available Action Items**:
+  - `exuraMaxVita`
+  - `exuraVita`
+  - `exuraGran`
+  - `exura`
+  - `exuraInfir`
+  - `utetaResVen`
+  - `cancelMagicShield`
+  - `curePoison`
+  - `exposeWeakness`
+  - `magicShield`
+  - `sapStrength`
+  - `utaniGranHur`
+  - `utaniHur`
+  - `ultimateManaPotion`
+  - `greatManaPotion`
+  - `strongManaPotion`
+  - `ManaPotion`
+  - `healthPotion`
+  - `supremeHealthPotion`
+  - `ultimateHealthPotion`
+  - `greatHealthPotion`
+  - `strongHealthPotion`
+  - `smallHealthPotion`
+  - `ultimateSpiritPotion`
+  - `greatSpiritPotion`
+  - `avalancheRune`
+  - `thunderstormRune`
+  - `greatFireballRune`
+  - `stoneShowerRune`
+  - `ultimateHealingRune`
+  - `suddenDeathRune`
+  - `intenseHealingRune`
+  - `explosionRune`
+  - `stoneSkinAmulet`
+  - `mightRing`
+  - `mastermindPotion`
+  - `bullseyePotion`
+  - `berserkPotion`
+  - `transcendencePotion`
+  - `magicShieldPotion`
+  - `createThunderstormRune`
+  - `createGreatFireballRune`
+  - `createSuddenDeathRune`
+  - `createMagicWallRune`
+  - `createExplosionRune`
+  - `energyRing`
+  - `lifeRing`
+  - `dwarvenRing`
+  - `axeRing`
+  - `clubRing`
+  - `powerRing`
+  - `stealthRing`
+  - `swordRing`
+  - `timeRing`
+  - `collarOfGreenPlasma`
+  - `collarOfOrangePlasma`
+  - `collarOfRedPlasma`
+  - `collarOfBluePlasma`
+  - `ringOfGreenPlasma`
+  - `ringOfRedPlasma`
+  - `ringOfOrangePlasma`
+  - `ringOfBluePlasma`
+  - `softBoots`
+  - `blankRune`
+  - `exuraSio`
+  - `exuraGranSio`
+  - `uturaMasSio`
+  - `utanaVid`
+  - `exuraGranMasRes`
+  - `exanaKor`
+  - `exanaFlam`
+  - `exanaVis`
+  - `exanaMort`
+  - `utevoLux`
+  - `utevoGranLux`
+  - `utevoVisLux`
+  - `exuraSan`
+  - `uturaGran`
+  - `exuraGranSan`
+  - `utetaResSac`
+  - `exanaIna`
+  - `utevoGravSan`
+  - `utamoMasSio`
+  - `utitoTempoSan`
+  - `utamoTempoSan`
+  - `exuraInfirIco`
+  - `exuraMedIco`
+  - `exuraGranIco`
+  - `woundCleansing`
+  - `utetaResEq`
+  - `utitoTempo`
+  - `utaniTempoHur`
+  - `utamoTempo`
+  - `utitoMasSio`
+  - `utetaResDru
 
 ### Movement & Position
 
@@ -178,14 +285,6 @@ These functions are available globally in your Lua scripts.
 `isCreatureOnTile(x, y, z)`
 - **Description**: Checks if a creature is on a specific tile.
 - **Returns**: (Boolean)
-
-`getCreatures()`
-- **Description**: Returns a list of all creatures currently visible on screen.
-- **Returns**: (Table) An array of creature objects.
-
-`getTarget()`
-- **Description**: Returns the currently targeted creature.
-- **Returns**: (Table) A creature object, or `nil`.
 
 ### UI & Login
 

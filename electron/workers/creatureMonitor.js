@@ -316,6 +316,7 @@ function updateCreatureState(
   };
   creature.gameCoords = { x: finalGameX, y: finalGameY, z: finalGameZ };
   creature.distance = parseFloat(distance.toFixed(1));
+  creature.lastSeen = now;
 
   return creature;
 }
