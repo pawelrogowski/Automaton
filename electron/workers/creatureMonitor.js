@@ -1,5 +1,6 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/creatureMonitor.js
 import { parentPort, workerData } from 'worker_threads';
+import { performance } from 'perf_hooks';
+import { createLogger } from '../utils/logger.js'; // Corrected import path
 import findTarget from 'find-target-native';
 import findHealthBars from 'find-healthbars-native';
 import findSequences from 'find-sequences-native';
@@ -8,10 +9,19 @@ import pkg from 'font-ocr';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance } from '../utils/distance.js';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
-
+import {
+  PLAYER_X_INDEX, // Corrected import path
+  PLAYER_Y_INDEX, // Corrected import path
+  PLAYER_Z_INDEX, // Corrected import path
+} from './sharedConstants.js';
+const logger = createLogger({ info: true, error: true, debug: false });
 const { recognizeText } = pkg;
 const CHAR_PRESETS = {
   ALPHA: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  BATTLE_LIST_NAMES:
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ., -0123456789()', // Added for battle list OCR
+  CREATURE_NAMES:
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ., -0123456789()', // Added for creature name OCR
 };
 
 let pathfinderInstance = null;
@@ -21,9 +31,10 @@ const { imageSAB, playerPosSAB } = sharedData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const sharedBufferView = Buffer.from(imageSAB);
 
-const PLAYER_X_INDEX = 0;
-const PLAYER_Y_INDEX = 1;
-const PLAYER_Z_INDEX = 2;
+// Moved to constants as they are used globally in this worker
+// const PLAYER_X_INDEX = 0;
+// const PLAYER_Y_INDEX = 1;
+// const PLAYER_Z_INDEX = 2;
 
 const PLAYER_ANIMATION_FREEZE_MS = 120;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
@@ -37,16 +48,56 @@ let isInitialized = false;
 let isShuttingDown = false;
 let lastSentCreatures = [];
 let lastSentTarget = null;
-let lastSpecialAreasJson = '';
-let nextInstanceId = 0;
+let lastSpecialAreasJson = null;
+let nextInstanceId = 1;
 let activeCreatures = new Map();
 let reachableTilesCache = new Map();
 const lastPostedResults = new Map();
+
+let previousTargetedCreatureNamesInBattleList = new Set();
+let lootingPauseTimerId = null;
+const LOOTING_PAUSE_DURATION_MS = 100;
 
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let targetLossGracePeriodEndTime = 0;
+
+// Implemented directly as positionUtils does not exist
+function arePositionsEqual(pos1, pos2) {
+  if (!pos1 || !pos2) return pos1 === pos2;
+  return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
+}
+
+// Helper function to check if a targeted creature is present in the battle list,
+// accounting for truncated names.
+function isCreaturePresent(targetingCreatureName, battleListEntries) {
+  for (const battleListEntry of battleListEntries) {
+    const battleListName = battleListEntry.name;
+
+    // Exact match
+    if (targetingCreatureName === battleListName) {
+      return true;
+    }
+
+    // Truncated match: battleListName ends with "..." and targetingCreatureName starts with the non-"..." part
+    if (
+      battleListName.endsWith('...') &&
+      targetingCreatureName.startsWith(battleListName.slice(0, -3))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function postLootingRequired(isLootingRequired) {
+  parentPort.postMessage({
+    storeUpdate: true,
+    type: 'cavebot/setLootingRequired',
+    payload: isLootingRequired,
+  });
+}
 
 function postUpdateOnce(type, payload) {
   const key = type;
@@ -60,7 +111,11 @@ function postUpdateOnce(type, payload) {
 async function processBattleListOcr(buffer, regions) {
   const entriesRegion = regions.battleList?.children?.entries;
   if (!entriesRegion) {
-    postUpdateOnce('battleList/setBattleListEntries', []);
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'battleList/setBattleListEntries',
+      payload: [],
+    });
     return [];
   }
   try {
@@ -69,27 +124,31 @@ async function processBattleListOcr(buffer, regions) {
         buffer,
         entriesRegion,
         regionDefinitions.battleList?.ocrColors || [],
-        CHAR_PRESETS.ALPHA + ' ',
+        CHAR_PRESETS.BATTLE_LIST_NAMES,
       ) || [];
     return ocrResults
       .map((result) => ({ name: result.text.trim(), x: result.x, y: result.y }))
       .filter((creature) => creature.name.length > 0);
   } catch (ocrError) {
-    console.error(
+    logger(
+      'error',
       '[CreatureMonitor] OCR failed for battleList region:',
       ocrError,
     );
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'battleList/setBattleListEntries',
+      payload: [],
+    });
     return [];
   }
 }
 
 function getCoordsKey(coords) {
+  if (!coords) return '';
   return `${coords.x},${coords.y},${coords.z}`;
 }
-function arePositionsEqual(pos1, pos2) {
-  if (!pos1 || !pos2) return pos1 === pos2;
-  return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
-}
+
 function deepCompareEntities(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -133,7 +192,9 @@ function updateCreatureState(
 ) {
   const { gameWorld } = regions;
   const creatureScreenX = detection.absoluteCoords.x;
-  const creatureScreenY = detection.healthBarY + 14;
+
+  const creatureScreenY = detection.healthBarY + 14 + tileSize.height / 2;
+
   const playerPosForCreatureCalc = isPlayerInAnimationFreeze
     ? lastStablePlayerMinimapPosition
     : currentPlayerMinimapPosition;
@@ -193,13 +254,11 @@ function updateCreatureState(
     finalGameCoords = creature.stableCoords;
   }
 
-  // --- THIS LINE IS RESTORED ---
   creature.absoluteCoords = {
     x: Math.round(creatureScreenX),
     y: Math.round(creatureScreenY),
     lastUpdate: now,
   };
-
   creature.gameCoords = {
     x: finalGameCoords.x,
     y: finalGameCoords.y,
@@ -224,6 +283,12 @@ async function performOperation() {
     const { regions } = currentState.regionCoordinates;
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
+
+    // --- NEW: Respect looting pause from Redux state ---
+    if (currentState.cavebot?.isLootingRequired) {
+      return; // Do not perform any targeting or creature detection if looting is required
+    }
+    // --- END NEW ---
 
     const currentPlayerMinimapPosition = {
       x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
@@ -426,13 +491,65 @@ async function performOperation() {
       'battleList/setBattleListEntries',
       battleListEntriesForStore,
     );
+
+    // --- NEW: Looting Detection and Action ---
+    const targetingList = currentState.targeting?.targetingList || [];
+
+    const currentTargetedCreatureNamesInBattleList = new Set();
+    for (const targetingCreature of targetingList) {
+      if (
+        isCreaturePresent(targetingCreature.name, battleListEntriesForStore)
+      ) {
+        currentTargetedCreatureNamesInBattleList.add(targetingCreature.name);
+      }
+    }
+
+    const disappearedCreatures = [
+      ...previousTargetedCreatureNamesInBattleList,
+    ].filter(
+      (creatureName) =>
+        !currentTargetedCreatureNamesInBattleList.has(creatureName),
+    );
+
+    if (disappearedCreatures.length > 0) {
+      logger(
+        'info',
+        `[CreatureMonitor] Targeted creatures disappeared from battle list: ${Array.from(disappearedCreatures).join(', ')}. Triggering looting pause.`,
+      );
+
+      // Send keypress for looting
+      parentPort.postMessage({
+        type: 'inputAction',
+        payload: {
+          type: 'looting',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['f8'],
+          },
+        },
+      });
+
+      // Start the looting pause via Redux state
+      if (lootingPauseTimerId) clearTimeout(lootingPauseTimerId);
+      const timerId = setTimeout(() => {
+        postLootingRequired(false); // End looting pause
+        lootingPauseTimerId = null;
+      }, LOOTING_PAUSE_DURATION_MS);
+      lootingPauseTimerId = timerId;
+      postLootingRequired(true); // Start looting pause
+    }
+    // Always update previousTargetedCreatureNamesInBattleList for the next cycle
+    previousTargetedCreatureNamesInBattleList =
+      currentTargetedCreatureNamesInBattleList;
+    // --- END NEW ---
   } catch (error) {
-    console.error('[CreatureMonitor] Error in operation:', error);
+    logger('error', '[CreatureMonitor] Error in operation:', error);
   }
 }
 
 async function initialize() {
-  console.log('[CreatureMonitor] Initializing Pathfinder instance...');
+  logger('info', '[CreatureMonitor] Initializing Pathfinder instance...');
   try {
     pathfinderInstance = new Pathfinder.Pathfinder();
     const fs = await import('fs/promises');
@@ -453,19 +570,22 @@ async function initialize() {
         mapDataForAddon[zLevel] = { ...metadata, grid };
       } catch (e) {
         if (e.code !== 'ENOENT')
-          console.warn(
+          logger(
+            'error',
             `[CreatureMonitor] Could not load path data for Z=${zLevel}: ${e.message}`,
           );
       }
     }
     pathfinderInstance.loadMapData(mapDataForAddon);
     if (pathfinderInstance.isLoaded)
-      console.log(
+      logger(
+        'info',
         '[CreatureMonitor] Pathfinder instance loaded map data successfully.',
       );
     else throw new Error('Pathfinder failed to load map data.');
   } catch (err) {
-    console.error(
+    logger(
+      'error',
       '[CreatureMonitor] FATAL: Could not initialize Pathfinder instance:',
       err,
     );
@@ -478,8 +598,14 @@ parentPort.on('message', (message) => {
   try {
     if (message.type === 'shutdown') {
       isShuttingDown = true;
+      if (pathfinderInstance) {
+        pathfinderInstance.destroy();
+      }
       return;
+    } else if (message.type === 'state_full_sync') {
+      currentState = message.payload;
     } else if (message.type === 'state_diff') {
+      // Apply diff to current state
       if (!currentState) currentState = {};
       Object.assign(currentState, message.payload);
     } else if (typeof message === 'object' && !message.type) {
@@ -499,11 +625,11 @@ parentPort.on('message', (message) => {
           }
         })
         .catch((err) =>
-          console.error('[CreatureMonitor] Initialization failed:', err),
+          logger('error', '[CreatureMonitor] Initialization failed:', err),
         );
     }
     performOperation();
   } catch (e) {
-    console.error('[CreatureMonitor] Error handling message:', e);
+    logger('error', '[CreatureMonitor] Error handling message:', e);
   }
 });

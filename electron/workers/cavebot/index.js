@@ -122,7 +122,10 @@ async function performOperation() {
         resetInternalState(workerState, fsm);
       }
     } else if (workerState.fsmState !== 'IDLE') {
-      workerState.logger('info', '[Cavebot] Player is offline. Resetting cavebot state.');
+      workerState.logger(
+        'info',
+        '[Cavebot] Player is offline. Resetting cavebot state.',
+      );
       resetInternalState(workerState, fsm);
     }
     return;
@@ -153,12 +156,20 @@ async function performOperation() {
     enabled: cavebotIsEnabled,
     controlState,
     isPausedByScript,
+    isLootingRequired,
   } = globalState.cavebot;
 
   if (isPausedByScript) {
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return;
   }
+
+  // --- NEW: Respect looting pause from Redux state ---
+  if (isLootingRequired) {
+    if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
+    return; // Do not perform any cavebot operations if looting is required
+  }
+  // --- END NEW ---
 
   if (!cavebotIsEnabled) {
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);

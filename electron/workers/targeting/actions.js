@@ -1,5 +1,9 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/targeting/actions.js
 import { createLogger } from '../../utils/logger.js';
+import {
+  PLAYER_POS_UPDATE_COUNTER_INDEX,
+  PATH_UPDATE_COUNTER_INDEX,
+} from '../sharedConstants.js';
 
 const MOVEMENT_COOLDOWN_MS = 50;
 const CLICK_POLL_INTERVAL_MS = 5;
@@ -41,9 +45,12 @@ export function createTargetingActions(workerContext) {
       }, timeoutMs);
       const intervalId = setInterval(() => {
         const posChanged =
-          playerPosArray && Atomics.load(playerPosArray, 3) > posCounter;
+          playerPosArray &&
+          Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
+            posCounter;
         const pathChanged =
-          pathDataArray && Atomics.load(pathDataArray, 4) > pathCounter;
+          pathDataArray &&
+          Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) > pathCounter;
         if (posChanged || pathChanged) {
           clearTimeout(timeoutId);
           clearInterval(intervalId);
@@ -54,45 +61,166 @@ export function createTargetingActions(workerContext) {
   };
 
   const findRuleForEntry = (entryName, targetingList) => {
-    if (!entryName || !targetingList) return null;
+    if (!entryName || !targetingList) {
+      logger(
+        'debug',
+        `[findRuleForEntry] Invalid input: entryName=${entryName}, targetingList=${!!targetingList}`,
+      );
+      return null;
+    }
     const cleanName = entryName.replace(/\.+$/, '').trim();
+    logger(
+      'debug',
+      `[findRuleForEntry] Looking for rules matching: "${cleanName}" (original: "${entryName}")`,
+    );
+
     const matchingRules = targetingList
-      .filter((r) => r.action === 'Attack' && r.name.startsWith(cleanName))
+      .filter((r) => {
+        // Check both directions: rule name starts with entry name OR entry name starts with rule name
+        // This handles cases where battle list might truncate names with "..."
+        const ruleStartsWithEntry = r.name.startsWith(cleanName);
+        const entryStartsWithRule = cleanName.startsWith(r.name);
+        const matches =
+          r.action === 'Attack' && (ruleStartsWithEntry || entryStartsWithRule);
+        logger(
+          'debug',
+          `[findRuleForEntry] Rule "${r.name}" (action: ${r.action}): ruleStartsWithEntry=${ruleStartsWithEntry}, entryStartsWithRule=${entryStartsWithRule}, matches=${matches}`,
+        );
+        return matches;
+      })
       .sort((a, b) => b.priority - a.priority);
-    return matchingRules.length > 0 ? matchingRules[0] : null;
+
+    const result = matchingRules.length > 0 ? matchingRules[0] : null;
+    logger(
+      'debug',
+      `[findRuleForEntry] Result for "${entryName}": ${result ? `${result.name} (priority ${result.priority})` : 'none'}`,
+    );
+    return result;
   };
 
+  // =================================================================================
+  // --- CORRECTED selectBestTarget FUNCTION ---
+  // =================================================================================
   const selectBestTarget = (globalState) => {
-    const { targetingList, target: currentTarget } = globalState.targeting;
+    const {
+      targetingList,
+      target: currentTarget,
+      creatures,
+    } = globalState.targeting;
     const battleListEntries = globalState.battleList.entries;
-    if (!targetingList?.length || !battleListEntries?.length) return null;
-    const currentRule = currentTarget
-      ? findRuleForEntry(currentTarget.name, targetingList)
-      : null;
-    const currentEffectivePriority = currentRule
-      ? currentRule.priority + currentRule.stickiness
-      : -1;
-    let bestAvailableTarget = null;
-    let bestAvailablePriority = -1;
-    for (const entry of battleListEntries) {
-      if (currentTarget && entry.name === currentTarget.name) continue;
-      const rule = findRuleForEntry(entry.name, targetingList);
-      if (rule && rule.priority > bestAvailablePriority) {
-        bestAvailablePriority = rule.priority;
-        bestAvailableTarget = { name: entry.name, rule };
+
+    logger(
+      'debug',
+      `[selectBestTarget] targetingList length: ${targetingList?.length || 0}, battleList length: ${battleListEntries?.length || 0}`,
+    );
+
+    if (!targetingList?.length || !battleListEntries?.length) {
+      logger(
+        'debug',
+        '[selectBestTarget] No targeting list or battle list entries, returning null',
+      );
+      return null;
+    }
+
+    // Step 1: Correctly identify the current target and its effective priority.
+    let currentEffectivePriority = -1;
+    let currentTargetRule = null;
+    if (currentTarget && currentTarget.name) {
+      // Find the full creature object to check if it's reachable.
+      const currentTargetDetails = creatures.find(
+        (c) => c.instanceId === currentTarget.instanceId,
+      );
+      if (currentTargetDetails && currentTargetDetails.isReachable) {
+        const rule = findRuleForEntry(currentTarget.name, targetingList);
+        if (rule) {
+          currentEffectivePriority = rule.priority + rule.stickiness;
+          currentTargetRule = rule;
+        }
       }
     }
-    if (bestAvailableTarget && bestAvailablePriority > currentEffectivePriority)
-      return bestAvailableTarget;
-    if (currentRule) return { name: currentTarget.name, rule: currentRule };
-    return bestAvailableTarget;
+
+    // Step 2: Find the best available alternative from the battle list.
+    let bestAlternative = null;
+    let bestAlternativePriority = -1;
+    logger(
+      'debug',
+      `[selectBestTarget] Scanning battle list entries: ${battleListEntries.map((e) => e.name).join(', ')}`,
+    );
+
+    for (const entry of battleListEntries) {
+      // Skip if this entry is our current target
+      if (
+        currentTarget &&
+        currentTarget.name &&
+        entry.name === currentTarget.name
+      ) {
+        logger(
+          'debug',
+          `[selectBestTarget] Skipping current target: ${entry.name}`,
+        );
+        continue;
+      }
+
+      const rule = findRuleForEntry(entry.name, targetingList);
+      logger(
+        'debug',
+        `[selectBestTarget] Entry: ${entry.name}, Rule found: ${rule ? `${rule.name} (priority ${rule.priority})` : 'none'}`,
+      );
+
+      if (rule && rule.priority > bestAlternativePriority) {
+        bestAlternativePriority = rule.priority;
+        bestAlternative = { name: entry.name, rule };
+        logger(
+          'debug',
+          `[selectBestTarget] New best alternative: ${entry.name} with priority ${rule.priority}`,
+        );
+      }
+    }
+
+    // Step 3: Make the decision.
+    logger(
+      'debug',
+      `[selectBestTarget] Decision: bestAlternative=${bestAlternative?.name}, bestPriority=${bestAlternativePriority}, currentEffective=${currentEffectivePriority}`,
+    );
+
+    if (bestAlternative && bestAlternativePriority > currentEffectivePriority) {
+      // A better target exists, so we must switch.
+      logger(
+        'info',
+        `[selectBestTarget] Switching to better target: ${bestAlternative.name}`,
+      );
+      return bestAlternative;
+    }
+
+    if (currentTargetRule) {
+      // No better target exists, and our current target is valid, so stick to it.
+      logger(
+        'debug',
+        `[selectBestTarget] Sticking with current target: ${currentTarget.name}`,
+      );
+      return { name: currentTarget.name, rule: currentTargetRule };
+    }
+
+    // Our current target is invalid (unreachable, etc.), so fall back to the best alternative.
+    logger(
+      'debug',
+      `[selectBestTarget] Falling back to best alternative: ${bestAlternative?.name || 'none'}`,
+    );
+    return bestAlternative;
   };
 
   const isDesiredTargetAcquired = (desiredRuleName, globalState) => {
     const currentTarget = globalState.targeting.target;
     if (!currentTarget || !currentTarget.name) return false;
     const cleanTargetedName = currentTarget.name.replace(/\.+$/, '').trim();
-    return desiredRuleName.startsWith(cleanTargetedName);
+    const cleanDesiredName = desiredRuleName.replace(/\.+$/, '').trim();
+
+    // Check for exact match or if the targeted name starts with the desired name
+    // This handles cases where battle list names might be truncated
+    return (
+      cleanTargetedName === cleanDesiredName ||
+      cleanTargetedName.startsWith(cleanDesiredName)
+    );
   };
 
   const manageTargetAcquisition = async (
@@ -100,11 +228,30 @@ export function createTargetingActions(workerContext) {
     globalState,
     pathfindingTarget,
   ) => {
-    if (
-      !pathfindingTarget ||
-      isDesiredTargetAcquired(pathfindingTarget.rule.name, globalState)
-    )
+    if (!pathfindingTarget) {
+      logger(
+        'debug',
+        '[manageTargetAcquisition] No pathfinding target, returning',
+      );
       return;
+    }
+
+    const isAlreadyAcquired = isDesiredTargetAcquired(
+      pathfindingTarget.rule.name,
+      globalState,
+    );
+    logger(
+      'debug',
+      `[manageTargetAcquisition] Target: ${pathfindingTarget.name}, Rule: ${pathfindingTarget.rule.name}, Already acquired: ${isAlreadyAcquired}`,
+    );
+
+    if (isAlreadyAcquired) {
+      logger(
+        'debug',
+        '[manageTargetAcquisition] Target already acquired, returning',
+      );
+      return;
+    }
     const now = Date.now();
     if (now - targetingContext.lastClickTime < TARGET_CLICK_DELAY_MS) return;
     const battleList = globalState.battleList.entries;
@@ -121,28 +268,87 @@ export function createTargetingActions(workerContext) {
           battleList[i].name.replace(/\.+$/, '').trim(),
         ),
       );
+
+    logger(
+      'debug',
+      `[manageTargetAcquisition] Battle list: ${battleList.map((e, i) => `${i}:${e.name}`).join(', ')}`,
+    );
+    logger(
+      'debug',
+      `[manageTargetAcquisition] Current index: ${currentIndex}, Potential indices: ${potentialIndices.join(', ')}`,
+    );
+    logger(
+      'debug',
+      `[manageTargetAcquisition] Looking for rule: ${pathfindingTarget.rule.name}`,
+    );
     if (potentialIndices.length > 0) {
       for (const desiredIndex of potentialIndices) {
         let tabs, graves;
         if (currentIndex === -1) {
+          // When no target is selected, we need to press tab (desiredIndex + 1) times
+          // to reach the desired target (0-based index becomes 1-based for key presses)
           tabs = desiredIndex + 1;
+          // For graves, we'd need to go backwards from the end
           graves = battleList.length - desiredIndex;
         } else {
+          // Calculate forward distance (tabs)
           tabs =
             (desiredIndex - currentIndex + battleList.length) %
             battleList.length;
+          if (tabs === 0) tabs = battleList.length; // Full circle
+
+          // Calculate backward distance (graves)
           graves =
             (currentIndex - desiredIndex + battleList.length) %
             battleList.length;
+          if (graves === 0) graves = battleList.length; // Full circle
         }
-        if (tabs > 0 && tabs < bestKeyPlan.presses)
+
+        logger(
+          'debug',
+          `[manageTargetAcquisition] For desiredIndex ${desiredIndex}: tabs=${tabs}, graves=${graves}`,
+        );
+
+        // When currentIndex is -1, prefer tabs since it's more intuitive
+        // Only consider reasonable distances (prevent excessive key presses)
+        if (tabs > 0 && tabs <= 20 && tabs < bestKeyPlan.presses) {
           bestKeyPlan = { action: 'tab', presses: tabs };
-        if (graves > 0 && graves < bestKeyPlan.presses)
+          logger(
+            'debug',
+            `[manageTargetAcquisition] New best plan: ${tabs} tabs`,
+          );
+        }
+        // Only consider graves if it's significantly better than tabs
+        if (graves > 0 && graves <= 20 && graves < bestKeyPlan.presses - 2) {
           bestKeyPlan = { action: 'grave', presses: graves };
+          logger(
+            'debug',
+            `[manageTargetAcquisition] New best plan: ${graves} graves`,
+          );
+        }
       }
+    } else {
+      logger(
+        'warn',
+        '[manageTargetAcquisition] No potential indices found for targeting',
+      );
     }
-    if (bestKeyPlan.action && bestKeyPlan.presses < Infinity) {
+    logger(
+      'debug',
+      `[manageTargetAcquisition] Final key plan: action=${bestKeyPlan.action}, presses=${bestKeyPlan.presses}`,
+    );
+
+    if (
+      bestKeyPlan.action &&
+      bestKeyPlan.presses < Infinity &&
+      bestKeyPlan.presses <= 10
+    ) {
       const key = bestKeyPlan.action === 'tab' ? 'tab' : 'grave';
+      logger(
+        'info',
+        `[manageTargetAcquisition] Pressing ${key} ${bestKeyPlan.presses} times to acquire ${pathfindingTarget.name}`,
+      );
+
       for (let i = 0; i < bestKeyPlan.presses; i++) {
         postInputAction('hotkey', {
           module: 'keypress',
@@ -152,6 +358,10 @@ export function createTargetingActions(workerContext) {
         targetingContext.lastClickTime = now;
         targetingContext.acquisitionUnlockTime =
           now + TARGET_CONFIRMATION_TIMEOUT_MS + 50;
+
+        // Small delay between key presses to prevent overwhelming the game
+        await delay(50);
+
         const pollStartTime = Date.now();
         let acquired = false;
         while (Date.now() - pollStartTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
@@ -163,8 +373,23 @@ export function createTargetingActions(workerContext) {
           }
           await delay(CLICK_POLL_INTERVAL_MS);
         }
-        if (acquired) return;
+        if (acquired) {
+          logger(
+            'info',
+            `[manageTargetAcquisition] Successfully acquired target: ${pathfindingTarget.name}`,
+          );
+          return;
+        }
       }
+      logger(
+        'warn',
+        `[manageTargetAcquisition] Failed to acquire target after ${bestKeyPlan.presses} key presses`,
+      );
+    } else {
+      logger(
+        'warn',
+        `[manageTargetAcquisition] No valid key plan found for target: ${pathfindingTarget.name}`,
+      );
     }
   };
 
@@ -209,22 +434,17 @@ export function createTargetingActions(workerContext) {
   ) => {
     const { target: currentTarget, creatures } = globalState.targeting;
     if (!currentTarget || !currentTarget.name) return;
-
-    // --- NEW ADJACENCY CHECK ---
-    // Find the full creature object from the creatures list to get its `isAdjacent` status.
     const currentTargetCreature = creatures.find(
       (c) => c.instanceId === currentTarget.instanceId,
     );
     if (currentTargetCreature && currentTargetCreature.isAdjacent) {
-      return; // Target is adjacent, so we stop all movement.
+      return;
     }
-
     const rule = findRuleForEntry(
       currentTarget.name,
       globalState.targeting.targetingList,
     );
     if (!rule) return;
-
     if (
       !targetingContext.lastDispatchedVisitedTile ||
       targetingContext.lastDispatchedVisitedTile.x !==
@@ -240,7 +460,6 @@ export function createTargetingActions(workerContext) {
       });
       targetingContext.lastDispatchedVisitedTile = { ...playerMinimapPosition };
     }
-
     const now = Date.now();
     if (
       pathfindingStatus !== 1 ||
@@ -250,17 +469,22 @@ export function createTargetingActions(workerContext) {
     ) {
       return;
     }
-
     const nextStep = path[1];
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
     if (dirKey) {
-      const posCounter = Atomics.load(playerPosArray, 3);
-      const pathCounter = Atomics.load(pathDataArray, 4);
+      const posCounter = Atomics.load(
+        playerPosArray,
+        PLAYER_POS_UPDATE_COUNTER_INDEX,
+      );
+      const pathCounter = Atomics.load(
+        pathDataArray,
+        PATH_UPDATE_COUNTER_INDEX,
+      );
       const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
       const timeout = isDiagonal
         ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
         : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
-      postInputAction('targeting', {
+      postInputAction('movement', {
         module: 'keypress',
         method: 'sendKey',
         args: [dirKey, null],

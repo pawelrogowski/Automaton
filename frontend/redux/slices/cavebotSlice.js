@@ -39,7 +39,8 @@ const initialState = {
   dynamicTarget: null,
   visitedTiles: [],
   waypointIdAtTargetingStart: null,
-  nodeRange: 4, // Initial value from electron/workers/cavebot/config.js
+  isLootingRequired: false,
+  lootingPauseTimerId: null,
 };
 
 const cavebotSlice = createSlice({
@@ -312,6 +313,9 @@ const cavebotSlice = createSlice({
       state.isPausedByScript = action.payload.isPaused;
       state.pauseTimerId = action.payload.timerId;
     },
+    setLootingRequired: (state, action) => {
+      state.isLootingRequired = action.payload;
+    },
     setNodeRange: (state, action) => {
       state.nodeRange = action.payload;
     },
@@ -346,6 +350,7 @@ export const {
   clearVisitedTiles, // Export the correctly named action
   setScriptPause,
   setNodeRange,
+  setLootingRequired,
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };

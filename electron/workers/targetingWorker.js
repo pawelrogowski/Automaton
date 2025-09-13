@@ -1,4 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { createTargetingActions } from './targeting/actions.js';
@@ -16,6 +15,7 @@ import {
 } from './sharedConstants.js';
 
 const logger = createLogger({ info: true, error: true, debug: false });
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let isInitialized = false;
 let globalState = null;
@@ -45,6 +45,7 @@ let lastPlayerPosKey = null;
 let lastControlState = 'CAVEBOT';
 let lastTargetingEnabled = false;
 let lastCavebotEnabled = false;
+let lastIsLootingRequired = false; // New: To track the previous state of isLootingRequired
 
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
@@ -161,6 +162,16 @@ async function performTargeting() {
   if (globalState.targeting?.isPausedByScript) return;
   if (justGainedControl) justGainedControl = false;
 
+  // --- NEW: Respect global looting required flag ---
+  if (globalState.cavebot?.isLootingRequired) {
+    logger(
+      'debug',
+      '[TargetingWorker] Looting is required, pausing targeting actions.',
+    );
+    return; // Pause all targeting actions until looting is complete
+  }
+  // --- END NEW ---
+
   if (!globalState.targeting?.enabled) {
     if (globalState.cavebot?.controlState === 'TARGETING') {
       parentPort.postMessage({
@@ -249,7 +260,12 @@ parentPort.on('message', (message) => {
         logger('info', '[TargetingWorker] Initial state received.');
       }
     }
-    if (isProcessing || !globalState) return;
+    if (!globalState) return;
+
+    // Prevent concurrent processing
+    if (isProcessing) {
+      return;
+    }
 
     const newBattleListHash = JSON.stringify(globalState.battleList?.entries);
     const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures);
@@ -263,6 +279,8 @@ parentPort.on('message', (message) => {
     const newControlState = globalState.cavebot?.controlState;
     const newTargetingEnabled = globalState.targeting?.enabled;
     const newCavebotEnabled = globalState.cavebot?.enabled;
+    const newIsLootingRequired =
+      globalState.cavebot?.isLootingRequired || false; // Read current looting state
 
     const shouldProcess =
       newBattleListHash !== lastBattleListHash ||
@@ -272,10 +290,11 @@ parentPort.on('message', (message) => {
       newPlayerPosKey !== lastPlayerPosKey ||
       newControlState !== lastControlState ||
       newTargetingEnabled !== lastTargetingEnabled ||
-      newCavebotEnabled !== lastCavebotEnabled;
+      newCavebotEnabled !== lastCavebotEnabled ||
+      newIsLootingRequired !== lastIsLootingRequired; // Trigger if looting state changes
 
     if (shouldProcess) {
-      isProcessing = true;
+      isProcessing = true; // Set processing flag
       if (
         (newControlState === 'TARGETING' && lastControlState !== 'TARGETING') ||
         (newControlState === 'HANDOVER_TO_TARGETING' &&
@@ -292,16 +311,18 @@ parentPort.on('message', (message) => {
       lastControlState = newControlState;
       lastTargetingEnabled = newTargetingEnabled;
       lastCavebotEnabled = newCavebotEnabled;
+      lastIsLootingRequired = newIsLootingRequired; // Update last known looting state
+
       performTargeting()
         .catch((err) =>
           logger('error', '[TargetingWorker] Unhandled error:', err),
         )
         .finally(() => {
-          isProcessing = false;
+          isProcessing = false; // Reset processing flag
         });
     }
   } catch (error) {
     logger('error', '[TargetingWorker] Error handling message:', error);
-    isProcessing = false;
+    isProcessing = false; // Ensure isProcessing is reset even if an error occurs outside performTargeting
   }
 });
