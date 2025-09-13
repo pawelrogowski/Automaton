@@ -20,6 +20,7 @@ const parseLegacyCoordinates = (payload) => {
 
 const initialState = {
   enabled: false,
+  nodeRange: 4,
   wptId: 'null',
   wptSelection: null,
   currentSection: 'default',

@@ -64,6 +64,23 @@ async function performWalk(
 export async function handleWalkAction(workerState, config) {
   if (!workerState.path || workerState.path.length < 2) return;
 
+  // Additional safety check: verify path starts from current position
+  const pathStart = workerState.path[0];
+  const currentPos = workerState.playerMinimapPosition;
+  if (
+    !pathStart ||
+    !currentPos ||
+    pathStart.x !== currentPos.x ||
+    pathStart.y !== currentPos.y ||
+    pathStart.z !== currentPos.z
+  ) {
+    workerState.logger(
+      'warn',
+      '[handleWalkAction] Path does not start from current position, aborting movement',
+    );
+    return;
+  }
+
   const nextStep = workerState.path[1];
 
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, nextStep);
@@ -79,6 +96,22 @@ export async function handleWalkAction(workerState, config) {
 
 export async function handleStandAction(workerState, config, targetWaypoint) {
   const initialPos = { ...workerState.playerMinimapPosition };
+
+  // Safety check: Don't attempt action if there's no valid path and we're not on the waypoint
+  if (
+    initialPos.x !== targetWaypoint.x ||
+    initialPos.y !== targetWaypoint.y ||
+    initialPos.z !== targetWaypoint.z
+  ) {
+    if (!workerState.path || workerState.path.length === 0) {
+      workerState.logger(
+        'warn',
+        `[handleStandAction] No valid path to waypoint and not on waypoint. Aborting action.`,
+      );
+      return false;
+    }
+  }
+
   const dirKey = getDirectionKey(initialPos, targetWaypoint);
   if (!dirKey) return false;
 
@@ -151,7 +184,9 @@ async function handleToolAction(
     await delay(50); // Small delay between hotkey and click
     leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
   } else if (useType === 'shovel') {
-    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, { type: 'movement' });
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
+      type: 'movement',
+    });
   }
 
   const zChanged = await awaitZLevelChange(
@@ -243,7 +278,9 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
     }
 
     // Walk failed, use tool
-    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, { type: 'movement' });
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
+      type: 'movement',
+    });
     await delay(config.actionFailureRetryDelayMs);
 
     try {

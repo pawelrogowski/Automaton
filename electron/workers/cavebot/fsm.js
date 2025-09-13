@@ -36,6 +36,7 @@ export function createFsm(workerState, config) {
       execute: async (context) => {
         const { playerPos, targetWaypoint, status, chebyshevDist } = context;
 
+        // Check waypoint type first - handle each type appropriately
         switch (targetWaypoint.type) {
           case 'Script':
             return 'EXECUTING_SCRIPT';
@@ -73,6 +74,7 @@ export function createFsm(workerState, config) {
             break;
         }
 
+        // Check pathfinding status waypoint reached signal
         if (status === PATH_STATUS_WAYPOINT_REACHED) {
           logger('debug', '[FSM] Waypoint reached per pathfinder. Advancing.');
           await advanceToNextWaypoint(workerState, config);
@@ -80,23 +82,38 @@ export function createFsm(workerState, config) {
         }
 
         switch (status) {
-          case PATH_STATUS_PATH_FOUND:
-            if (workerState.path.length > 1) {
-              // Path has player position and at least one step, it's walkable.
-              return 'WALKING';
-            }
-            // Path is empty or only contains the player's position, re-evaluate.
-            return 'EVALUATING_WAYPOINT';
           case PATH_STATUS_NO_PATH_FOUND:
           case PATH_STATUS_NO_VALID_START_OR_END:
           case PATH_STATUS_ERROR:
           case PATH_STATUS_DIFFERENT_FLOOR:
             logger(
               'warn',
-              `[FSM] Unreachable waypoint due to path status: ${status}. Skipping.`,
+              `[FSM] Unreachable waypoint ${targetWaypoint.id} (${targetWaypoint.type}) due to path status: ${status}. Skipping to next waypoint.`,
             );
             await advanceToNextWaypoint(workerState, config);
             return 'IDLE';
+          case PATH_STATUS_PATH_FOUND:
+            // More thorough validation before entering WALKING state
+            if (workerState.path && workerState.path.length > 1) {
+              // Verify that the path is valid and starts from current position
+              const pathStart = workerState.path[0];
+              const currentPos = context.playerPos;
+              if (
+                pathStart &&
+                currentPos &&
+                pathStart.x === currentPos.x &&
+                pathStart.y === currentPos.y &&
+                pathStart.z === currentPos.z
+              ) {
+                return 'WALKING';
+              } else {
+                // Path doesn't start from current position, request new path
+                workerState.shouldRequestNewPath = true;
+                return 'EVALUATING_WAYPOINT';
+              }
+            }
+            // Path is empty or only contains the player's position, re-evaluate.
+            return 'EVALUATING_WAYPOINT';
           case PATH_STATUS_IDLE:
           default:
             return 'EVALUATING_WAYPOINT'; // Waiting for pathfinder

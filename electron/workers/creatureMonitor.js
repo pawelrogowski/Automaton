@@ -41,6 +41,7 @@ const STICKY_SNAP_THRESHOLD_TILES = 0.5;
 const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 125;
 const TARGET_LOSS_GRACE_PERIOD_MS = 100;
+const CREATURE_FLICKER_GRACE_PERIOD_MS = 175;
 const ADJACENT_DISTANCE_THRESHOLD = 1.6;
 
 let currentState = null;
@@ -344,8 +345,40 @@ async function performOperation() {
           now,
           isPlayerInAnimationFreeze,
         );
-        if (updated) newActiveCreatures.set(id, updated);
+        if (updated) {
+          // Clear flicker grace period since creature was found
+          if (updated.flickerGracePeriodEndTime) {
+            logger(
+              'debug',
+              `[CreatureMonitor] Creature ${updated.instanceId} reappeared, clearing flicker grace period`,
+            );
+            delete updated.flickerGracePeriodEndTime;
+          }
+          newActiveCreatures.set(id, updated);
+        }
         matchedDetections.add(bestMatch);
+      } else {
+        // Creature not found in current detections - check flicker grace period
+        if (!oldCreature.flickerGracePeriodEndTime) {
+          // Start grace period
+          oldCreature.flickerGracePeriodEndTime =
+            now + CREATURE_FLICKER_GRACE_PERIOD_MS;
+          logger(
+            'debug',
+            `[CreatureMonitor] Creature ${oldCreature.instanceId} disappeared, starting flicker grace period (${CREATURE_FLICKER_GRACE_PERIOD_MS}ms)`,
+          );
+        }
+
+        if (now < oldCreature.flickerGracePeriodEndTime) {
+          // Still within grace period - keep the creature
+          newActiveCreatures.set(id, oldCreature);
+        } else {
+          logger(
+            'debug',
+            `[CreatureMonitor] Creature ${oldCreature.instanceId} flicker grace period expired, removing creature`,
+          );
+        }
+        // If grace period expired, creature is not added to newActiveCreatures (removed)
       }
     }
     for (const detection of detections) {

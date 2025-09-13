@@ -111,13 +111,16 @@ export const updateSABData = (workerState, config) => {
             pathStart.z !== workerState.playerMinimapPosition.z
           ) {
             workerState.path = []; // Invalidate path
+            // Also invalidate the pathfinding status when path is invalidated
+            workerState.pathfindingStatus = PATH_STATUS_IDLE;
           } else {
             workerState.path = tempPath;
+            workerState.pathfindingStatus = tempPathfindingStatus;
           }
         } else {
           workerState.path = tempPath;
+          workerState.pathfindingStatus = tempPathfindingStatus;
         }
-        workerState.pathfindingStatus = tempPathfindingStatus;
         workerState.pathChebyshevDistance = tempPathChebyshevDistance;
         workerState.lastPathDataCounter = counterAfterRead;
       } else {

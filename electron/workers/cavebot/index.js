@@ -239,10 +239,6 @@ async function performOperation() {
   if (stateLogic) {
     const nextState = await stateLogic.execute(context);
     if (nextState && nextState !== workerState.fsmState) {
-      workerState.logger(
-        'debug',
-        `[FSM] State transition: ${workerState.fsmState} -> ${nextState}`,
-      );
       workerState.lastFsmState = workerState.fsmState;
       workerState.fsmState = nextState;
       const newStateLogic = fsm[workerState.fsmState];
