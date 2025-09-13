@@ -7,12 +7,12 @@ import { createLogger } from '../../utils/logger.js';
 import { config } from './config.js'; // Still need config for other values
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
+import { SABStateManager } from '../sabStateManager.js';
 import {
   postStoreUpdate,
   postGlobalVarUpdate,
   getFreshState,
   updateSABData,
-  isLootingRequired,
 } from './helpers/communication.js';
 import {
   findCurrentWaypoint,
@@ -59,9 +59,17 @@ if (workerData.playerPosSAB) {
 if (workerData.pathDataSAB) {
   workerState.pathDataArray = new Int32Array(workerData.pathDataSAB);
 }
-if (workerData.lootingSAB) {
-  workerState.lootingArray = new Int32Array(workerData.lootingSAB);
-}
+
+// Initialize SAB state manager
+workerState.sabStateManager = new SABStateManager({
+  playerPosSAB: workerData.playerPosSAB,
+  battleListSAB: workerData.battleListSAB,
+  creaturesSAB: workerData.creaturesSAB,
+  lootingSAB: workerData.lootingSAB,
+  targetingListSAB: workerData.targetingListSAB,
+  targetSAB: workerData.targetSAB,
+  pathDataSAB: workerData.pathDataSAB,
+});
 
 // --- Main Loop & Orchestration ---
 
@@ -167,11 +175,7 @@ async function performOperation() {
     return;
   }
 
-  // Check SAB looting state first for immediate response
-  const sabLootingRequired = isLootingRequired(workerState.lootingArray);
-  const reduxLootingRequired = globalState.cavebot?.isLootingRequired;
-
-  if (sabLootingRequired || reduxLootingRequired) {
+  if (workerState.sabStateManager.isLootingRequired()) {
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return; // Do not perform any cavebot operations if looting is required
   }

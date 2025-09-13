@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { createTargetingActions } from './targeting/actions.js';
+import { SABStateManager } from './sabStateManager.js';
 import {
   PLAYER_POS_UPDATE_COUNTER_INDEX,
   PATH_UPDATE_COUNTER_INDEX,
@@ -45,23 +46,26 @@ let lastPlayerPosKey = null;
 let lastControlState = 'CAVEBOT';
 let lastTargetingEnabled = false;
 let lastCavebotEnabled = false;
-let lastIsLootingRequired = false; // New: To track the previous state of isLootingRequired
 
-const { playerPosSAB, pathDataSAB, battleListSAB, creaturesSAB, lootingSAB } =
-  workerData;
+const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
-const battleListArray = battleListSAB ? new Int32Array(battleListSAB) : null;
-const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
-const lootingArray = lootingSAB ? new Int32Array(lootingSAB) : null;
+
+const sabStateManager = new SABStateManager({
+  playerPosSAB: workerData.playerPosSAB,
+  battleListSAB: workerData.battleListSAB,
+  creaturesSAB: workerData.creaturesSAB,
+  lootingSAB: workerData.lootingSAB,
+  targetingListSAB: workerData.targetingListSAB,
+  targetSAB: workerData.targetSAB,
+  pathDataSAB: workerData.pathDataSAB,
+});
 
 const targetingActions = createTargetingActions({
   playerPosArray,
   pathDataArray,
   parentPort,
-  battleListArray,
-  creaturesArray,
-  lootingArray,
+  sabStateManager,
 });
 
 const updateSABData = () => {
@@ -169,13 +173,7 @@ async function performTargeting() {
   if (globalState.targeting?.isPausedByScript) return;
   if (justGainedControl) justGainedControl = false;
 
-  // Check SAB looting state first for immediate response
-  const sabLootingRequired = lootingArray
-    ? Atomics.load(lootingArray, 0) === 1
-    : false;
-  const reduxLootingRequired = globalState.cavebot?.isLootingRequired;
-
-  if (sabLootingRequired || reduxLootingRequired) {
+  if (sabStateManager.isLootingRequired()) {
     return; // Pause all targeting actions until looting is complete
   }
 
@@ -286,8 +284,6 @@ parentPort.on('message', (message) => {
     const newControlState = globalState.cavebot?.controlState;
     const newTargetingEnabled = globalState.targeting?.enabled;
     const newCavebotEnabled = globalState.cavebot?.enabled;
-    const newIsLootingRequired =
-      globalState.cavebot?.isLootingRequired || false; // Read current looting state
 
     const shouldProcess =
       newBattleListHash !== lastBattleListHash ||
@@ -297,8 +293,7 @@ parentPort.on('message', (message) => {
       newPlayerPosKey !== lastPlayerPosKey ||
       newControlState !== lastControlState ||
       newTargetingEnabled !== lastTargetingEnabled ||
-      newCavebotEnabled !== lastCavebotEnabled ||
-      newIsLootingRequired !== lastIsLootingRequired; // Trigger if looting state changes
+      newCavebotEnabled !== lastCavebotEnabled;
 
     if (shouldProcess) {
       isProcessing = true; // Set processing flag
@@ -318,7 +313,6 @@ parentPort.on('message', (message) => {
       lastControlState = newControlState;
       lastTargetingEnabled = newTargetingEnabled;
       lastCavebotEnabled = newCavebotEnabled;
-      lastIsLootingRequired = newIsLootingRequired; // Update last known looting state
 
       performTargeting()
         .catch((err) =>

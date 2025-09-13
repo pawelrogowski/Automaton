@@ -14,8 +14,6 @@ import {
   PATHFINDING_STATUS_INDEX,
   PATH_STATUS_IDLE,
   MAX_PATH_WAYPOINTS,
-  LOOTING_REQUIRED_INDEX,
-  LOOTING_UPDATE_COUNTER_INDEX,
 } from '../../sharedConstants.js';
 
 export const postStoreUpdate = (type, payload) =>
@@ -39,11 +37,6 @@ export const getFreshState = () =>
     parentPort.on('message', onSnap);
     parentPort.postMessage({ type: 'request_state_snapshot' });
   });
-
-export const isLootingRequired = (lootingArray) => {
-  if (!lootingArray) return false;
-  return Atomics.load(lootingArray, LOOTING_REQUIRED_INDEX) === 1;
-};
 
 export const updateSABData = (workerState, config) => {
   if (workerState.playerPosArray) {

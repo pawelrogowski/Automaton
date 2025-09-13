@@ -49,6 +49,26 @@ export const LOOTING_REQUIRED_INDEX = 0;
 export const LOOTING_UPDATE_COUNTER_INDEX = 1;
 export const LOOTING_SAB_SIZE = 2;
 
+// --- SharedArrayBuffer (SAB) Indices for Targeting List ---
+export const TARGETING_LIST_COUNT_INDEX = 0;
+export const TARGETING_LIST_UPDATE_COUNTER_INDEX = 1;
+export const TARGETING_LIST_DATA_START_INDEX = 2;
+export const MAX_TARGETING_RULES = 50;
+export const TARGETING_RULE_SIZE = 40; // name(32) + action(4) + priority(1) + stickiness(1) + stance(1) + distance(1)
+export const TARGETING_LIST_SAB_SIZE =
+  TARGETING_LIST_DATA_START_INDEX + MAX_TARGETING_RULES * TARGETING_RULE_SIZE;
+
+// --- SharedArrayBuffer (SAB) Indices for Current Target ---
+export const TARGET_INSTANCE_ID_INDEX = 0;
+export const TARGET_X_INDEX = 1;
+export const TARGET_Y_INDEX = 2;
+export const TARGET_Z_INDEX = 3;
+export const TARGET_DISTANCE_INDEX = 4; // multiplied by 100
+export const TARGET_IS_REACHABLE_INDEX = 5;
+export const TARGET_NAME_START_INDEX = 6;
+export const TARGET_UPDATE_COUNTER_INDEX = 38; // 32 chars for name + 6 data fields
+export const TARGET_SAB_SIZE = 39;
+
 // --- Pathfinder Status Codes ---
 export const PATH_STATUS_IDLE = 0;
 export const PATH_STATUS_PATH_FOUND = 1;

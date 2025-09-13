@@ -18,6 +18,8 @@ import {
   BATTLE_LIST_SAB_SIZE,
   CREATURES_SAB_SIZE,
   LOOTING_SAB_SIZE,
+  TARGETING_LIST_SAB_SIZE,
+  TARGET_SAB_SIZE,
 } from './workers/sharedConstants.js';
 
 const log = createLogger();
@@ -261,6 +263,12 @@ class WorkerManager {
     const lootingSAB = new SharedArrayBuffer(
       LOOTING_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
+    const targetingListSAB = new SharedArrayBuffer(
+      TARGETING_LIST_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
+    const targetSAB = new SharedArrayBuffer(
+      TARGET_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
 
     this.sharedData = {
       imageSAB,
@@ -270,6 +278,8 @@ class WorkerManager {
       battleListSAB,
       creaturesSAB,
       lootingSAB,
+      targetingListSAB,
+      targetSAB,
     };
     log('info', '[Worker Manager] Created SharedArrayBuffers.');
   }
@@ -528,6 +538,15 @@ class WorkerManager {
         'cavebotWorker',
         'targetingWorker',
       ].includes(name);
+      const needsTargetingListSAB = [
+        'creatureMonitor',
+        'targetingWorker',
+      ].includes(name);
+      const needsTargetSAB = [
+        'creatureMonitor',
+        'cavebotWorker',
+        'targetingWorker',
+      ].includes(name);
 
       const workerData = {
         paths: paths || this.paths,
@@ -539,6 +558,10 @@ class WorkerManager {
           : null,
         creaturesSAB: needsCreaturesSAB ? this.sharedData.creaturesSAB : null,
         lootingSAB: needsLootingSAB ? this.sharedData.lootingSAB : null,
+        targetingListSAB: needsTargetingListSAB
+          ? this.sharedData.targetingListSAB
+          : null,
+        targetSAB: needsTargetSAB ? this.sharedData.targetSAB : null,
         sharedLuaGlobals: this.sharedLuaGlobals, // NEW: Pass the shared Lua globals object
         enableMemoryLogging: true,
       };
@@ -655,7 +678,21 @@ class WorkerManager {
     return hasChanges ? changedSlices : null;
   }
 
+  syncReduxToSAB(currentState) {
+    // Sync targeting list to SAB for creatureMonitor
+    const creatureMonitorEntry = this.workers.get('creatureMonitor');
+    if (creatureMonitorEntry && currentState.targeting?.targetingList) {
+      creatureMonitorEntry.worker.postMessage({
+        type: 'sab_sync_targeting_list',
+        payload: currentState.targeting.targetingList,
+      });
+    }
+  }
+
   broadcastStateUpdate(changedSlices, currentState) {
+    // Sync specific Redux data to SAB before broadcasting
+    this.syncReduxToSAB(currentState);
+
     this.precalculatedWorkerPayloads.clear();
     for (const workerName in WORKER_STATE_DEPENDENCIES) {
       const workerDeps = WORKER_STATE_DEPENDENCIES[workerName];
