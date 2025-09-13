@@ -3,6 +3,13 @@ import { createLogger } from '../../utils/logger.js';
 import {
   PLAYER_POS_UPDATE_COUNTER_INDEX,
   PATH_UPDATE_COUNTER_INDEX,
+  BATTLE_LIST_COUNT_INDEX,
+  BATTLE_LIST_ENTRIES_START_INDEX,
+  BATTLE_LIST_ENTRY_SIZE,
+  CREATURES_COUNT_INDEX,
+  CREATURES_DATA_START_INDEX,
+  CREATURE_DATA_SIZE,
+  LOOTING_REQUIRED_INDEX,
 } from '../sharedConstants.js';
 
 const MOVEMENT_COOLDOWN_MS = 50;
@@ -14,8 +21,59 @@ const TARGET_CLICK_DELAY_MS = 50;
 const TARGET_CONFIRMATION_TIMEOUT_MS = 375;
 
 export function createTargetingActions(workerContext) {
-  const { playerPosArray, pathDataArray, parentPort } = workerContext;
+  const {
+    playerPosArray,
+    pathDataArray,
+    parentPort,
+    battleListArray,
+    creaturesArray,
+    lootingArray,
+  } = workerContext;
   const logger = createLogger({ info: true, error: true, debug: false });
+
+  const readBattleListFromSAB = () => {
+    if (!battleListArray) return [];
+    const count = Atomics.load(battleListArray, BATTLE_LIST_COUNT_INDEX);
+    const entries = [];
+    for (let i = 0; i < count; i++) {
+      const startIdx =
+        BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
+      let name = '';
+      for (let j = 0; j < BATTLE_LIST_ENTRY_SIZE; j++) {
+        const charCode = Atomics.load(battleListArray, startIdx + j);
+        if (charCode === 0) break;
+        name += String.fromCharCode(charCode);
+      }
+      if (name) entries.push({ name });
+    }
+    return entries;
+  };
+
+  const readCreaturesFromSAB = () => {
+    if (!creaturesArray) return [];
+    const count = Atomics.load(creaturesArray, CREATURES_COUNT_INDEX);
+    const creatures = [];
+    for (let i = 0; i < count; i++) {
+      const startIdx = CREATURES_DATA_START_INDEX + i * CREATURE_DATA_SIZE;
+      creatures.push({
+        instanceId: Atomics.load(creaturesArray, startIdx + 0),
+        gameCoords: {
+          x: Atomics.load(creaturesArray, startIdx + 1),
+          y: Atomics.load(creaturesArray, startIdx + 2),
+          z: Atomics.load(creaturesArray, startIdx + 3),
+        },
+        isReachable: Atomics.load(creaturesArray, startIdx + 4) === 1,
+        isAdjacent: Atomics.load(creaturesArray, startIdx + 5) === 1,
+        distance: Atomics.load(creaturesArray, startIdx + 6) / 100,
+      });
+    }
+    return creatures;
+  };
+
+  const isLootingRequiredSAB = () => {
+    if (!lootingArray) return false;
+    return Atomics.load(lootingArray, LOOTING_REQUIRED_INDEX) === 1;
+  };
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const postInputAction = (type, action) =>
@@ -102,12 +160,15 @@ export function createTargetingActions(workerContext) {
   // --- CORRECTED selectBestTarget FUNCTION ---
   // =================================================================================
   const selectBestTarget = (globalState) => {
-    const {
-      targetingList,
-      target: currentTarget,
-      creatures,
-    } = globalState.targeting;
-    const battleListEntries = globalState.battleList.entries;
+    const { targetingList, target: currentTarget } = globalState.targeting;
+    const battleListEntries =
+      readBattleListFromSAB().length > 0
+        ? readBattleListFromSAB()
+        : globalState.battleList.entries;
+    const creatures =
+      readCreaturesFromSAB().length > 0
+        ? readCreaturesFromSAB()
+        : globalState.targeting.creatures;
 
     logger(
       'debug',
@@ -432,8 +493,13 @@ export function createTargetingActions(workerContext) {
     pathfindingStatus,
     playerMinimapPosition,
   ) => {
-    const { target: currentTarget, creatures } = globalState.targeting;
+    const { target: currentTarget } = globalState.targeting;
+    const creatures =
+      readCreaturesFromSAB().length > 0
+        ? readCreaturesFromSAB()
+        : globalState.targeting.creatures;
     if (!currentTarget || !currentTarget.name) return;
+    if (isLootingRequiredSAB()) return;
     const currentTargetCreature = creatures.find(
       (c) => c.instanceId === currentTarget.instanceId,
     );

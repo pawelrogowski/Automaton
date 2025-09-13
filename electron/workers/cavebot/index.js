@@ -12,6 +12,7 @@ import {
   postGlobalVarUpdate,
   getFreshState,
   updateSABData,
+  isLootingRequired,
 } from './helpers/communication.js';
 import {
   findCurrentWaypoint,
@@ -57,6 +58,9 @@ if (workerData.playerPosSAB) {
 }
 if (workerData.pathDataSAB) {
   workerState.pathDataArray = new Int32Array(workerData.pathDataSAB);
+}
+if (workerData.lootingSAB) {
+  workerState.lootingArray = new Int32Array(workerData.lootingSAB);
 }
 
 // --- Main Loop & Orchestration ---
@@ -156,7 +160,6 @@ async function performOperation() {
     enabled: cavebotIsEnabled,
     controlState,
     isPausedByScript,
-    isLootingRequired,
   } = globalState.cavebot;
 
   if (isPausedByScript) {
@@ -164,12 +167,14 @@ async function performOperation() {
     return;
   }
 
-  // --- NEW: Respect looting pause from Redux state ---
-  if (isLootingRequired) {
+  // Check SAB looting state first for immediate response
+  const sabLootingRequired = isLootingRequired(workerState.lootingArray);
+  const reduxLootingRequired = globalState.cavebot?.isLootingRequired;
+
+  if (sabLootingRequired || reduxLootingRequired) {
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return; // Do not perform any cavebot operations if looting is required
   }
-  // --- END NEW ---
 
   if (!cavebotIsEnabled) {
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);

@@ -47,14 +47,21 @@ let lastTargetingEnabled = false;
 let lastCavebotEnabled = false;
 let lastIsLootingRequired = false; // New: To track the previous state of isLootingRequired
 
-const { playerPosSAB, pathDataSAB } = workerData;
+const { playerPosSAB, pathDataSAB, battleListSAB, creaturesSAB, lootingSAB } =
+  workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
+const battleListArray = battleListSAB ? new Int32Array(battleListSAB) : null;
+const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
+const lootingArray = lootingSAB ? new Int32Array(lootingSAB) : null;
 
 const targetingActions = createTargetingActions({
   playerPosArray,
   pathDataArray,
   parentPort,
+  battleListArray,
+  creaturesArray,
+  lootingArray,
 });
 
 const updateSABData = () => {
@@ -162,15 +169,15 @@ async function performTargeting() {
   if (globalState.targeting?.isPausedByScript) return;
   if (justGainedControl) justGainedControl = false;
 
-  // --- NEW: Respect global looting required flag ---
-  if (globalState.cavebot?.isLootingRequired) {
-    logger(
-      'debug',
-      '[TargetingWorker] Looting is required, pausing targeting actions.',
-    );
+  // Check SAB looting state first for immediate response
+  const sabLootingRequired = lootingArray
+    ? Atomics.load(lootingArray, 0) === 1
+    : false;
+  const reduxLootingRequired = globalState.cavebot?.isLootingRequired;
+
+  if (sabLootingRequired || reduxLootingRequired) {
     return; // Pause all targeting actions until looting is complete
   }
-  // --- END NEW ---
 
   if (!globalState.targeting?.enabled) {
     if (globalState.cavebot?.controlState === 'TARGETING') {

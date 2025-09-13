@@ -13,6 +13,18 @@ import {
   PLAYER_X_INDEX, // Corrected import path
   PLAYER_Y_INDEX, // Corrected import path
   PLAYER_Z_INDEX, // Corrected import path
+  BATTLE_LIST_COUNT_INDEX,
+  BATTLE_LIST_UPDATE_COUNTER_INDEX,
+  BATTLE_LIST_ENTRIES_START_INDEX,
+  MAX_BATTLE_LIST_ENTRIES,
+  BATTLE_LIST_ENTRY_SIZE,
+  CREATURES_COUNT_INDEX,
+  CREATURES_UPDATE_COUNTER_INDEX,
+  CREATURES_DATA_START_INDEX,
+  MAX_CREATURES,
+  CREATURE_DATA_SIZE,
+  LOOTING_REQUIRED_INDEX,
+  LOOTING_UPDATE_COUNTER_INDEX,
 } from './sharedConstants.js';
 const logger = createLogger({ info: true, error: true, debug: false });
 const { recognizeText } = pkg;
@@ -25,10 +37,14 @@ const CHAR_PRESETS = {
 };
 
 let pathfinderInstance = null;
-const { sharedData, paths } = workerData;
+const { sharedData, paths, battleListSAB, creaturesSAB, lootingSAB } =
+  workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
 const { imageSAB, playerPosSAB } = sharedData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
+const battleListArray = battleListSAB ? new Int32Array(battleListSAB) : null;
+const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
+const lootingArray = lootingSAB ? new Int32Array(lootingSAB) : null;
 const sharedBufferView = Buffer.from(imageSAB);
 
 // Moved to constants as they are used globally in this worker
@@ -93,6 +109,14 @@ function isCreaturePresent(targetingCreatureName, battleListEntries) {
 }
 
 function postLootingRequired(isLootingRequired) {
+  if (lootingArray) {
+    Atomics.store(
+      lootingArray,
+      LOOTING_REQUIRED_INDEX,
+      isLootingRequired ? 1 : 0,
+    );
+    Atomics.add(lootingArray, LOOTING_UPDATE_COUNTER_INDEX, 1);
+  }
   parentPort.postMessage({
     storeUpdate: true,
     type: 'cavebot/setLootingRequired',
@@ -127,9 +151,12 @@ async function processBattleListOcr(buffer, regions) {
         regionDefinitions.battleList?.ocrColors || [],
         CHAR_PRESETS.BATTLE_LIST_NAMES,
       ) || [];
-    return ocrResults
+    const entries = ocrResults
       .map((result) => ({ name: result.text.trim(), x: result.x, y: result.y }))
       .filter((creature) => creature.name.length > 0);
+
+    writeBattleListToSAB(entries);
+    return entries;
   } catch (ocrError) {
     logger(
       'error',
@@ -143,6 +170,53 @@ async function processBattleListOcr(buffer, regions) {
     });
     return [];
   }
+}
+
+function writeBattleListToSAB(entries) {
+  if (!battleListArray) return;
+
+  const count = Math.min(entries.length, MAX_BATTLE_LIST_ENTRIES);
+  Atomics.store(battleListArray, BATTLE_LIST_COUNT_INDEX, count);
+
+  for (let i = 0; i < count; i++) {
+    const name = entries[i].name;
+    const startIdx =
+      BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
+
+    for (let j = 0; j < BATTLE_LIST_ENTRY_SIZE; j++) {
+      const charCode = j < name.length ? name.charCodeAt(j) : 0;
+      Atomics.store(battleListArray, startIdx + j, charCode);
+    }
+  }
+
+  Atomics.add(battleListArray, BATTLE_LIST_UPDATE_COUNTER_INDEX, 1);
+}
+
+function writeCreaturesToSAB(creatures) {
+  if (!creaturesArray) return;
+
+  const count = Math.min(creatures.length, MAX_CREATURES);
+  Atomics.store(creaturesArray, CREATURES_COUNT_INDEX, count);
+
+  for (let i = 0; i < count; i++) {
+    const creature = creatures[i];
+    const startIdx = CREATURES_DATA_START_INDEX + i * CREATURE_DATA_SIZE;
+
+    Atomics.store(creaturesArray, startIdx + 0, creature.instanceId || 0);
+    Atomics.store(creaturesArray, startIdx + 1, creature.gameCoords?.x || 0);
+    Atomics.store(creaturesArray, startIdx + 2, creature.gameCoords?.y || 0);
+    Atomics.store(creaturesArray, startIdx + 3, creature.gameCoords?.z || 0);
+    Atomics.store(creaturesArray, startIdx + 4, creature.isReachable ? 1 : 0);
+    Atomics.store(creaturesArray, startIdx + 5, creature.isAdjacent ? 1 : 0);
+    Atomics.store(
+      creaturesArray,
+      startIdx + 6,
+      Math.floor((creature.distance || 0) * 100),
+    );
+    Atomics.store(creaturesArray, startIdx + 7, 0); // reserved
+  }
+
+  Atomics.add(creaturesArray, CREATURES_UPDATE_COUNTER_INDEX, 1);
 }
 
 function getCoordsKey(coords) {
@@ -285,11 +359,15 @@ async function performOperation() {
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
 
-    // --- NEW: Respect looting pause from Redux state ---
-    if (currentState.cavebot?.isLootingRequired) {
+    // Check SAB looting state first for immediate response
+    const sabLootingRequired = lootingArray
+      ? Atomics.load(lootingArray, LOOTING_REQUIRED_INDEX) === 1
+      : false;
+    const reduxLootingRequired = currentState.cavebot?.isLootingRequired;
+
+    if (sabLootingRequired || reduxLootingRequired) {
       return; // Do not perform any targeting or creature detection if looting is required
     }
-    // --- END NEW ---
 
     const currentPlayerMinimapPosition = {
       x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
@@ -419,6 +497,7 @@ async function performOperation() {
     }
 
     if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
+      writeCreaturesToSAB(detectedEntities);
       postUpdateOnce('targeting/setEntities', detectedEntities);
       lastSentCreatures = detectedEntities;
     }

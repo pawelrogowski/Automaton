@@ -131,7 +131,6 @@ function handleMessage(message) {
       pathDataArray,
       throttleReduxUpdate,
     });
-
   } catch (error) {
     logger(
       'error',

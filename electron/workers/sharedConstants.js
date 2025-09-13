@@ -25,6 +25,30 @@ export const PATH_DATA_SAB_SIZE =
 
 // --- REMOVED: All constants related to creaturePosSAB are gone ---
 
+// --- SharedArrayBuffer (SAB) Indices for Battle List ---
+export const BATTLE_LIST_COUNT_INDEX = 0;
+export const BATTLE_LIST_UPDATE_COUNTER_INDEX = 1;
+export const BATTLE_LIST_ENTRIES_START_INDEX = 2;
+export const MAX_BATTLE_LIST_ENTRIES = 50;
+export const BATTLE_LIST_ENTRY_SIZE = 32; // 32 chars max per name
+export const BATTLE_LIST_SAB_SIZE =
+  BATTLE_LIST_ENTRIES_START_INDEX +
+  MAX_BATTLE_LIST_ENTRIES * BATTLE_LIST_ENTRY_SIZE;
+
+// --- SharedArrayBuffer (SAB) Indices for Creatures ---
+export const CREATURES_COUNT_INDEX = 0;
+export const CREATURES_UPDATE_COUNTER_INDEX = 1;
+export const CREATURES_DATA_START_INDEX = 2;
+export const MAX_CREATURES = 100;
+export const CREATURE_DATA_SIZE = 8; // instanceId, x, y, z, isReachable, isAdjacent, distance, reserved
+export const CREATURES_SAB_SIZE =
+  CREATURES_DATA_START_INDEX + MAX_CREATURES * CREATURE_DATA_SIZE;
+
+// --- SharedArrayBuffer (SAB) Indices for Looting State ---
+export const LOOTING_REQUIRED_INDEX = 0;
+export const LOOTING_UPDATE_COUNTER_INDEX = 1;
+export const LOOTING_SAB_SIZE = 2;
+
 // --- Pathfinder Status Codes ---
 export const PATH_STATUS_IDLE = 0;
 export const PATH_STATUS_PATH_FOUND = 1;

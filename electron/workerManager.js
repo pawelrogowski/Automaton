@@ -15,6 +15,9 @@ import { deepHash } from './utils/deepHash.js'; // Import deepHash
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
+  BATTLE_LIST_SAB_SIZE,
+  CREATURES_SAB_SIZE,
+  LOOTING_SAB_SIZE,
 } from './workers/sharedConstants.js';
 
 const log = createLogger();
@@ -249,12 +252,24 @@ class WorkerManager {
     const pathDataSAB = new SharedArrayBuffer(
       PATH_DATA_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
+    const battleListSAB = new SharedArrayBuffer(
+      BATTLE_LIST_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
+    const creaturesSAB = new SharedArrayBuffer(
+      CREATURES_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
+    const lootingSAB = new SharedArrayBuffer(
+      LOOTING_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
+    );
 
     this.sharedData = {
       imageSAB,
       syncSAB,
       playerPosSAB,
       pathDataSAB,
+      battleListSAB,
+      creaturesSAB,
+      lootingSAB,
     };
     log('info', '[Worker Manager] Created SharedArrayBuffers.');
   }
@@ -498,12 +513,32 @@ class WorkerManager {
         'cavebotWorker',
         'targetingWorker',
       ].includes(name);
+      const needsBattleListSAB = [
+        'creatureMonitor',
+        'cavebotWorker',
+        'targetingWorker',
+      ].includes(name);
+      const needsCreaturesSAB = [
+        'creatureMonitor',
+        'cavebotWorker',
+        'targetingWorker',
+      ].includes(name);
+      const needsLootingSAB = [
+        'creatureMonitor',
+        'cavebotWorker',
+        'targetingWorker',
+      ].includes(name);
 
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedData : null,
         playerPosSAB: needsPlayerPosSAB ? this.sharedData.playerPosSAB : null,
         pathDataSAB: needsPathDataSAB ? this.sharedData.pathDataSAB : null,
+        battleListSAB: needsBattleListSAB
+          ? this.sharedData.battleListSAB
+          : null,
+        creaturesSAB: needsCreaturesSAB ? this.sharedData.creaturesSAB : null,
+        lootingSAB: needsLootingSAB ? this.sharedData.lootingSAB : null,
         sharedLuaGlobals: this.sharedLuaGlobals, // NEW: Pass the shared Lua globals object
         enableMemoryLogging: true,
       };
