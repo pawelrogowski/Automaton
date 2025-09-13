@@ -1,7 +1,8 @@
+// /home/feiron/Dokumenty/Automaton/frontend/redux/slices/battleListSlice.js
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  entries: [], // Array of battle list entry objects
+  entries: [], // Shape: [{ name, x, y }] - No longer tracks 'isTarget'
   lastSeenMs: null,
 };
 
@@ -11,8 +12,6 @@ const battleListSlice = createSlice({
   reducers: {
     /**
      * Sets the entire battle list entries array.
-     * @param {object} state - The current state.
-     * @param {object} action - The action object.
      * @param {Array<object>} action.payload - An array of battle list entry objects.
      */
     setBattleListEntries: (state, action) => {
@@ -27,16 +26,8 @@ const battleListSlice = createSlice({
     resetBattleList: (state) => {
       state.entries = initialState.entries;
     },
-    setTargetedCreature: (state, action) => {
-      const creatureName = action.payload;
-      state.entries.forEach((entry) => {
-        entry.isTarget = entry.name === creatureName;
-      });
-    },
     /**
      * Replaces the entire slice state. Use with caution.
-     * @param {object} state - The current state.
-     * @param {object} action - The action containing the new state.
      */
     setState: (state, action) => {
       return action.payload;
@@ -44,11 +35,7 @@ const battleListSlice = createSlice({
   },
 });
 
-export const {
-  setBattleListEntries,
-  resetBattleList,
-  setState,
-  setTargetedCreature,
-} = battleListSlice.actions;
+export const { setBattleListEntries, resetBattleList, setState } =
+  battleListSlice.actions;
 
 export default battleListSlice;

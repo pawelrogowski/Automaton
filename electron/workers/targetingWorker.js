@@ -1,27 +1,22 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
-
 import { createLogger } from '../utils/logger.js';
 import { createTargetingActions } from './targeting/actions.js';
 import {
-  PLAYER_X_INDEX,
-  PLAYER_Y_INDEX,
-  PLAYER_Z_INDEX,
   PLAYER_POS_UPDATE_COUNTER_INDEX,
-  PATH_LENGTH_INDEX,
   PATH_UPDATE_COUNTER_INDEX,
   PATH_WAYPOINTS_START_INDEX,
   PATH_WAYPOINT_SIZE,
-  PATH_START_X_INDEX,
-  PATH_START_Y_INDEX,
-  PATH_START_Z_INDEX,
+  PATH_LENGTH_INDEX,
   PATHFINDING_STATUS_INDEX,
+  PLAYER_X_INDEX,
+  PLAYER_Y_INDEX,
+  PLAYER_Z_INDEX,
   PATH_STATUS_IDLE,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: false });
 
-// --- Worker State ---
 let isInitialized = false;
 let globalState = null;
 let isShuttingDown = false;
@@ -31,23 +26,17 @@ let path = [];
 let pathfindingStatus = 0;
 let lastPlayerPosCounter = -1;
 let lastPathDataCounter = -1;
-const meleeRangeTimers = new Map();
 let shouldRequestNewPath = false;
 let justGainedControl = false;
 
-// --- Targeting State & Context ---
-// This object holds state that is mutated by the targeting actions module.
 const targetingContext = {
   pathfindingTarget: null,
-  lastPathfindingTargetSwitchTime: 0,
   acquisitionUnlockTime: 0,
   lastMovementTime: 0,
   lastDispatchedVisitedTile: null,
   lastClickTime: 0,
-  lastClickedBattleListIndex: -1,
 };
 
-// --- Change Detection State ---
 let lastBattleListHash = null;
 let lastCreaturesHash = null;
 let lastTargetInstanceId = null;
@@ -61,14 +50,11 @@ const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
-// --- Factory for Modularized Actions ---
 const targetingActions = createTargetingActions({
   playerPosArray,
   pathDataArray,
   parentPort,
 });
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const updateSABData = () => {
   if (playerPosArray) {
@@ -85,6 +71,7 @@ const updateSABData = () => {
       lastPlayerPosCounter = newPlayerPosCounter;
     }
   }
+
   if (pathDataArray) {
     if (shouldRequestNewPath) {
       path = [];
@@ -103,24 +90,10 @@ const updateSABData = () => {
       );
       if (counterBeforeRead === lastPathDataCounter) return;
 
-      const pathStartX = Atomics.load(pathDataArray, PATH_START_X_INDEX);
-      const pathStartY = Atomics.load(pathDataArray, PATH_START_Y_INDEX);
-      const pathStartZ = Atomics.load(pathDataArray, PATH_START_Z_INDEX);
-
-      if (
-        !playerMinimapPosition ||
-        playerMinimapPosition.x !== pathStartX ||
-        playerMinimapPosition.y !== pathStartY ||
-        playerMinimapPosition.z !== pathStartZ
-      ) {
-        lastPathDataCounter = counterBeforeRead;
-        return;
-      }
-
-      pathfindingStatus = Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX);
       const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
       const tempPath = [];
-      const safePathLength = Math.min(pathLength, 50); // MAX_PATH_WAYPOINTS
+      const safePathLength = Math.min(pathLength, 50);
+
       for (let i = 0; i < safePathLength; i++) {
         const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
         tempPath.push({
@@ -134,32 +107,39 @@ const updateSABData = () => {
         pathDataArray,
         PATH_UPDATE_COUNTER_INDEX,
       );
+
       if (counterAfterRead === counterBeforeRead) {
+        pathfindingStatus = Atomics.load(
+          pathDataArray,
+          PATHFINDING_STATUS_INDEX,
+        );
+
+        // =================================================================================
+        // --- NEW, RELAXED PATH VALIDATION LOGIC ---
+        // =================================================================================
         if (tempPath.length > 0) {
           const pathStart = tempPath[0];
-          const pathEnd = tempPath[tempPath.length - 1];
-          const target = targetingContext.pathfindingTarget;
 
+          // We ONLY check if the path starts at the player's current position.
+          // We no longer care if the end position matches the target, as the target
+          // may have moved. This allows for smoother pursuit.
           if (
+            !playerMinimapPosition ||
             pathStart.x !== playerMinimapPosition.x ||
             pathStart.y !== playerMinimapPosition.y ||
             pathStart.z !== playerMinimapPosition.z
           ) {
-            path = []; // Invalidate: Path doesn't start at player's current position.
-          } else if (
-            target &&
-            target.gameCoords &&
-            (pathEnd.x !== target.gameCoords.x ||
-              pathEnd.y !== target.gameCoords.y ||
-              pathEnd.z !== target.gameCoords.z)
-          ) {
-            path = []; // Invalidate: Path doesn't end at the intended target.
+            path = []; // Invalidate: Path is for a previous player position.
           } else {
-            path = tempPath; // Path is valid.
+            path = tempPath; // The path is valid enough to continue walking.
           }
         } else {
-          path = tempPath; // Path is empty, accept it as is.
+          // An empty path is always a valid state.
+          path = [];
         }
+        // =================================================================================
+        // --- END OF VALIDATION LOGIC ---
+        // =================================================================================
 
         lastPathDataCounter = counterBeforeRead;
         consistentRead = true;
@@ -171,31 +151,18 @@ const updateSABData = () => {
 };
 
 async function performTargeting() {
-  if (!globalState.regionCoordinates?.regions?.onlineMarker) {
-    return;
-  }
   if (
-    !globalState.regionCoordinates ||
-    !globalState.regionCoordinates.regions.gameWorld
-  ) {
-    // If gameWorld is not visible, do nothing.
+    isShuttingDown ||
+    !isInitialized ||
+    !globalState?.global?.display ||
+    !globalState.regionCoordinates?.regions?.gameWorld
+  )
     return;
-  }
-  if (isShuttingDown || !isInitialized || !globalState?.global?.display) {
-    return;
-  }
-
-  if (globalState.targeting?.isPausedByScript) {
-    return;
-  }
-
-  if (justGainedControl) {
-    justGainedControl = false;
-  }
+  if (globalState.targeting?.isPausedByScript) return;
+  if (justGainedControl) justGainedControl = false;
 
   if (!globalState.targeting?.enabled) {
     if (globalState.cavebot?.controlState === 'TARGETING') {
-      // F8 press removed as per new requirement
       parentPort.postMessage({
         storeUpdate: true,
         type: 'cavebot/releaseTargetingControl',
@@ -205,7 +172,6 @@ async function performTargeting() {
   }
 
   const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
-
   if (!cavebotIsEnabled && controlState !== 'TARGETING') {
     parentPort.postMessage({
       storeUpdate: true,
@@ -214,27 +180,8 @@ async function performTargeting() {
     return;
   }
 
-  // Throttle how often the main target can change.
-  const newPathfindingTarget = targetingActions.selectBestTargetFromGameWorld(
-    globalState,
-    playerMinimapPosition,
-  );
-
-  if (!newPathfindingTarget) {
-    // If no target is found, clear it immediately.
-    targetingContext.pathfindingTarget = null;
-  } else if (
-    newPathfindingTarget.instanceId !==
-    targetingContext.pathfindingTarget?.instanceId
-  ) {
-    // A switch between two different valid targets is requested.
-    const now = Date.now();
-    targetingContext.pathfindingTarget = newPathfindingTarget;
-    targetingContext.lastPathfindingTargetSwitchTime = now;
-  } else {
-    // It's the same target instance, just update its data.
-    targetingContext.pathfindingTarget = newPathfindingTarget;
-  }
+  targetingContext.pathfindingTarget =
+    targetingActions.selectBestTarget(globalState);
 
   if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
     if (targetingContext.pathfindingTarget) {
@@ -245,7 +192,6 @@ async function performTargeting() {
     }
     return;
   }
-
   if (controlState === 'HANDOVER_TO_TARGETING') {
     parentPort.postMessage({
       storeUpdate: true,
@@ -253,80 +199,42 @@ async function performTargeting() {
     });
     return;
   }
-
-  if (globalState.cavebot.controlState !== 'TARGETING') {
-    return;
-  }
+  if (controlState !== 'TARGETING') return;
 
   updateSABData();
   if (!playerMinimapPosition) return;
 
-  let effectiveTarget = targetingContext.pathfindingTarget;
-  const now = Date.now();
-  const allCreatures = globalState.targeting.creatures || [];
-
-  // Update melee timers for all creatures based on their distance.
-  const MELEE_DISTANCE_THRESHOLD = 1.9; // From actions.js
-  const creaturesInMelee = new Set();
-  for (const creature of allCreatures) {
-    if (creature.distance < MELEE_DISTANCE_THRESHOLD) {
-      creaturesInMelee.add(creature.instanceId);
-      if (!meleeRangeTimers.has(creature.instanceId)) {
-        meleeRangeTimers.set(creature.instanceId, now);
-      }
-    }
-  }
-  // Remove creatures that are no longer in melee range.
-  for (const instanceId of meleeRangeTimers.keys()) {
-    if (!creaturesInMelee.has(instanceId)) {
-      meleeRangeTimers.delete(instanceId);
-    }
+  if (
+    targetingContext.pathfindingTarget &&
+    Date.now() > targetingContext.acquisitionUnlockTime
+  ) {
+    await targetingActions.manageTargetAcquisition(
+      targetingContext,
+      globalState,
+      targetingContext.pathfindingTarget,
+    );
   }
 
-  // Check if the CURRENT target is in STABLE melee range.
-  const targetInstanceId = effectiveTarget?.instanceId;
-  const targetMeleeStartTime = meleeRangeTimers.get(targetInstanceId);
-  const isTargetInStableMelee =
-    targetMeleeStartTime && now - targetMeleeStartTime > 100;
-
-  // Melee Override Logic remains REMOVED.
+  targetingActions.updateDynamicTarget(globalState);
 
   await targetingActions.manageMovement(
     targetingContext,
     globalState,
-    effectiveTarget,
     path,
     pathfindingStatus,
     playerMinimapPosition,
-    isTargetInStableMelee, // Pass the new flag to the action handler
   );
 
-  const currentGameTarget = globalState.targeting.target;
-  if (effectiveTarget) {
-    if (Date.now() > targetingContext.acquisitionUnlockTime) {
-      targetingActions.manageTargetAcquisition(
-        targetingContext,
-        globalState,
-        effectiveTarget,
-        currentGameTarget,
-      );
-    }
-  } else {
-    if (cavebotIsEnabled) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/releaseTargetingControl',
-      });
-    }
+  if (!targetingContext.pathfindingTarget && cavebotIsEnabled) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/releaseTargetingControl',
+    });
   }
-  // Update lastEffectiveTarget for the next cycle
-  targetingContext.lastEffectiveTarget = effectiveTarget;
 }
 
-// --- Main Worker Loop ---
 parentPort.on('message', (message) => {
   if (isShuttingDown) return;
-
   try {
     if (message.type === 'shutdown') {
       isShuttingDown = true;
@@ -338,13 +246,9 @@ parentPort.on('message', (message) => {
       globalState = message;
       if (!isInitialized) {
         isInitialized = true;
-        logger(
-          'info',
-          '[TargetingWorker] Initial state received. Worker is now active.',
-        );
+        logger('info', '[TargetingWorker] Initial state received.');
       }
     }
-
     if (isProcessing || !globalState) return;
 
     const newBattleListHash = JSON.stringify(globalState.battleList?.entries);
@@ -372,7 +276,6 @@ parentPort.on('message', (message) => {
 
     if (shouldProcess) {
       isProcessing = true;
-
       if (
         (newControlState === 'TARGETING' && lastControlState !== 'TARGETING') ||
         (newControlState === 'HANDOVER_TO_TARGETING' &&
@@ -381,7 +284,6 @@ parentPort.on('message', (message) => {
         shouldRequestNewPath = true;
         justGainedControl = true;
       }
-
       lastBattleListHash = newBattleListHash;
       lastCreaturesHash = newCreaturesHash;
       lastTargetInstanceId = newTargetInstanceId;
@@ -390,14 +292,9 @@ parentPort.on('message', (message) => {
       lastControlState = newControlState;
       lastTargetingEnabled = newTargetingEnabled;
       lastCavebotEnabled = newCavebotEnabled;
-
       performTargeting()
         .catch((err) =>
-          logger(
-            'error',
-            '[TargetingWorker] Unhandled error in performTargeting:',
-            err,
-          ),
+          logger('error', '[TargetingWorker] Unhandled error:', err),
         )
         .finally(() => {
           isProcessing = false;

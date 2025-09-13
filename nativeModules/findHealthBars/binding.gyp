@@ -50,12 +50,7 @@
             "-fno-strict-aliasing",
             "-DNDEBUG",
             "-D_FORTIFY_SOURCE=0",
-            "-fprefetch-loop-arrays",
-
-
-            "-fprofile-use",
-            "-fprofile-correction",
-            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findHealthBars/pgo-data"
+            "-fprefetch-loop-arrays"
           ],
           "ldflags": [
             "-flto=auto",
@@ -65,7 +60,6 @@
             "-Wl,--as-needed",
             "-pthread",
             "-s"
-
           ],
           "defines": [
             "NAPI_DISABLE_CPP_EXCEPTIONS"

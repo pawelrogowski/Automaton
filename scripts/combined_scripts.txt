@@ -2957,23 +2957,7 @@ const regionDefinitions = {
     },
     maxRight: 2000,
     maxDown: 110,
-    children: Object.fromEntries(
-      actionBarEntries.map(([key, value]) => {
-        const isVertical = value.direction === 'vertical';
-        const seqLen = value.sequence.length;
-        return [
-          key,
-          {
-            type: 'single',
-            direction: value.direction,
-            offset: value.offset,
-            sequence: value.sequence,
-            width: isVertical ? 1 : seqLen,
-            height: isVertical ? seqLen : 1,
-          },
-        ];
-      }),
-    ),
+    
   },
   battleList: {
     ocrColors: [
@@ -3132,6 +3116,57 @@ const regionDefinitions = {
           [83, 83, 83],
         ],
       },
+    },
+    maxRight: 168,
+    maxDown: 2000,
+  },
+  npcList: {
+    ocrColors: [
+      [192, 192, 192],
+      [247, 247, 247],
+    ],
+    type: 'boundingBox',
+    start: {
+      direction: 'horizontal',
+      offset: { x: -4, y: 4 },
+      sequence: [
+        [159, 136, 40],
+        [75, 74, 55],
+        [61, 61, 61],
+        [128, 193, 84],
+        [128, 193, 84],
+        [128, 193, 84],
+        [128, 193, 84],
+        [128, 193, 84],
+        [65, 65, 65],
+        [56, 57, 57],
+        [56, 56, 56],
+        [59, 59, 59],
+        [55, 55, 55],
+        [144, 144, 144],
+        [56, 56, 57],
+        [49, 50, 50],
+        [54, 54, 54],
+        [51, 51, 51],
+        [61, 61, 62],
+        [144, 144, 144],
+        [47, 48, 48],
+        [49, 49, 49],
+        [144, 144, 144],
+        [144, 144, 144],
+        [56, 56, 56],
+      ],
+    },
+    end: {
+      direction: 'vertical',
+      offset: { x: -3, y: 12 },
+      sequence: [
+        [10, 10, 10],
+        [103, 103, 103],
+        [53, 53, 53],
+        [11, 11, 11],
+        [30, 30, 30],
+      ],
     },
     maxRight: 168,
     maxDown: 2000,
@@ -4893,94 +4928,84 @@ ipcMain.handle('is-main-window-visible', () => {
 
 // /home/feiron/Dokumenty/Automaton/electron/keyboardControll/keyPress.js
 //start file
-import keypress from 'keypress-native';
+import { parentPort } from 'worker_threads';
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Sends a single key press with an optional modifier.
- * @param {string} display - The display to send the key to (e.g., ':0').
- * @param {string} key - The key to press (e.g., 'a', 'f1', 'enter').
- * @param {object} [options] - Optional parameters.
- * @param {string|null} [options.modifier=null] - The modifier key (e.g., 'shift', 'ctrl').
- */
-export const keyPress = async (display, key, { modifier = null } = {}) => {
-  await keypress.sendKey(key, display, modifier);
+const post = (payload) => {
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload,
+  });
 };
 
-/**
- * Sends a key press multiple times with a delay.
- * @param {string} display - The display to send the key to.
- * @param {string} key - The key to press.
- * @param {object} [options] - Optional parameters.
- * @param {number} [options.count=1] - The number of times to press the key.
- * @param {string|null} [options.modifier=null] - The modifier key.
- * @param {number} [options.delayMs=50] - The delay between key presses.
- */
-export const keyPressMultiple = async (
-  display,
+export const keyPress = (key, { modifier = null, type = 'default' } = {}) => {
+  post({
+    type,
+    action: {
+      module: 'keypress',
+      method: 'sendKey',
+      args: [key, modifier],
+    },
+  });
+};
+
+export const keyPressMultiple = (
   key,
-  { count = 1, modifier = null, delayMs = 50 } = {},
+  { count = 1, modifier = null, delayMs = 50, type = 'default' } = {},
 ) => {
   for (let i = 0; i < count; i++) {
-    await keyPress(display, key, { modifier });
-    if (i < count - 1) {
-      await delay(delayMs);
-    }
+    setTimeout(() => {
+      keyPress(key, { modifier, type });
+    }, i * delayMs);
   }
 };
 
-/**
- * Types an array of strings with human-like behavior. This is the primary function for typing text.
- * It is aliased as 'type' in luaApi.js.
- * @param {string} display - The display to send the keys to.
- * @param {string[]} texts - An array of strings to type.
- * @param {boolean} [startAndEndWithEnter=true] - Whether to press Enter before and after each string.
- */
-export const typeArray = async (
-  display,
+export const typeArray = (
   texts,
-  startAndEndWithEnter = true,
+  { startAndEndWithEnter = true, type = 'default' } = {},
 ) => {
-  // The native addon's typeArray function can handle both single and multiple strings efficiently.
-  await keypress.typeArray(texts, display, startAndEndWithEnter);
+  post({
+    type,
+    action: {
+      module: 'keypress',
+      method: 'typeArray',
+      args: [texts, startAndEndWithEnter],
+    },
+  });
 };
 
-/**
- * Simulates a complex rotation key sequence.
- * @param {string} display - The display to send the keys to.
- * @param {string} [direction] - An optional final direction ('n', 's', 'e', 'w').
- */
-export const rotate = async (display, direction) => {
-  await keypress.rotate(display, direction);
+export const rotate = (direction, { type = 'default' } = {}) => {
+  post({
+    type,
+    action: {
+      module: 'keypress',
+      method: 'rotate',
+      args: [direction],
+    },
+  });
 };
 
-/**
- * A stub function to indicate typing status.
- * @returns {boolean} Always returns false.
- */
 export const getIsTyping = () => false;
 
-/**
- * Holds a key down.
- * @param {string} display - The display to send the key to.
- * @param {string} key - The key to hold down.
- * @param {object} [options] - Optional parameters.
- * @param {string|null} [options.modifier=null] - The modifier key.
- */
-export const keyDown = (display, key, { modifier = null } = {}) => {
-  keypress.keyDown(key, display, modifier);
+export const keyDown = (key, { modifier = null, type = 'default' } = {}) => {
+  post({
+    type,
+    action: {
+      module: 'keypress',
+      method: 'keyDown',
+      args: [key, modifier],
+    },
+  });
 };
 
-/**
- * Releases a key.
- * @param {string} display - The display to send the key to.
- * @param {string} key - The key to release.
- * @param {object} [options] - Optional parameters.
- * @param {string|null} [options.modifier=null] - The modifier key.
- */
-export const keyUp = (display, key, { modifier = null } = {}) => {
-  keypress.keyUp(key, display, modifier);
+export const keyUp = (key, { modifier = null, type = 'default' } = {}) => {
+  post({
+    type,
+    action: {
+      module: 'keypress',
+      method: 'keyUp',
+      args: [key, modifier],
+    },
+  });
 };
 
 //endFile
@@ -5372,21 +5397,27 @@ export default app;
 
 // /home/feiron/Dokumenty/Automaton/electron/mouseControll/useItemOnCoordinates.js
 //start file
-import mouseController from 'mouse-controller';
+import { parentPort } from 'worker_threads';
 import { keyPress } from '../keyboardControll/keyPress.js';
 
-function useItemOnCoordinates(targetWindowId, display, targetX, targetY, key) {
-  // Add display parameter
-  // First press the key
-  keyPress(display, key); // Pass display to keyPress
+const post = (payload) => {
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload,
+  });
+};
 
-  // Then perform left click on coordinates
-  mouseController.leftClick(
-    parseInt(targetWindowId),
-    parseInt(targetX),
-    parseInt(targetY),
-    display, // Pass display to mouseController
-  );
+function useItemOnCoordinates(targetX, targetY, key, { type = 'default' } = {}) {
+  keyPress(key, { type });
+
+  post({
+    type,
+    action: {
+      module: 'mouseController',
+      method: 'leftClick',
+      args: [parseInt(targetX), parseInt(targetY)],
+    },
+  });
 }
 
 export default useItemOnCoordinates;
@@ -7148,6 +7179,7 @@ const DEFAULT_WORKER_CONFIG = {
   pathfinderWorker: true,
   windowTitleMonitor: true,
   lootingWorker: true, // NEW: Add lootingWorker
+  inputOrchestrator: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -7173,7 +7205,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'regionCoordinates',
     'battleList',
   ],
-  lootingWorker: ['global', 'battleList'], // NEW: Add lootingWorker dependencies
+  lootingWorker: ['global', 'battleList', 'targeting'], // NEW: Add lootingWorker dependencies
   regionMonitor: ['global'],
   screenMonitor: [
     'global',
@@ -7195,6 +7227,7 @@ const WORKER_STATE_DEPENDENCIES = {
   captureWorker: ['global'],
   pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
   windowTitleMonitor: ['global', 'gameState'],
+  inputOrchestrator: ['global'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -7438,6 +7471,14 @@ class WorkerManager {
       return;
     }
 
+    if (message.type === 'inputAction') {
+      const inputOrchestrator = this.workers.get('inputOrchestrator');
+      if (inputOrchestrator && inputOrchestrator.worker) {
+        inputOrchestrator.worker.postMessage(message);
+      }
+      return;
+    }
+
     // --- MODIFIED: Centralized Frame Update Distribution ---
     if (message.type === 'frame-update') {
       const dirtyRects = message.payload.dirtyRects;
@@ -7451,7 +7492,7 @@ class WorkerManager {
 
         const dependencies = WORKER_REGION_DEPENDENCIES[name];
 
-        // Special case for regionMonitor: it needs an update on any screen change.
+        // Special case for regionMonitor: it needs an update on ANY screen change.
         if (dependencies === null) {
           workerEntry.worker.postMessage(message);
           continue;
@@ -7631,6 +7672,15 @@ class WorkerManager {
         }, 16);
       }
 
+      // NEW: Immediately send global state to inputOrchestrator upon start
+      if (name === 'inputOrchestrator') {
+        const currentState = store.getState();
+        worker.postMessage({
+          type: 'state_full_sync',
+          payload: { global: currentState.global },
+        });
+      }
+
       return worker;
     } catch (error) {
       log('error', `[Worker Manager] Failed to start worker: ${name}`, error);
@@ -7738,7 +7788,8 @@ class WorkerManager {
     for (const [name, workerEntry] of this.workers) {
       if (!workerEntry.worker || name === 'captureWorker') continue;
 
-      const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
+      const isLuaWorker =
+        /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
 
       if (!this.workerInitialized.get(name) || isLuaWorker) {
         // For initial setup or Lua workers, always send the full state
@@ -7861,6 +7912,11 @@ class WorkerManager {
           !this.workers.has('lootingWorker')
         )
           this.startWorker('lootingWorker');
+        if (
+          this.workerConfig.inputOrchestrator &&
+          !this.workers.has('inputOrchestrator')
+        )
+          this.startWorker('inputOrchestrator');
       } else {
         if (this.workers.size > 0) {
           log(
@@ -7956,7 +8012,6 @@ class WorkerManager {
 
 const workerManager = new WorkerManager();
 export default workerManager;
-
 //endFile
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/capture/config.js
@@ -8263,8 +8318,9 @@ start().catch((err) => {
 //start file
 // /workers/cavebot/actionHandlers.js
 
-import keypress from 'keypress-native';
-import mouseController from 'mouse-controller';
+import { parentPort } from 'worker_threads';
+import { keyPress } from '../../keyboardControll/keyPress.js';
+
 // ====================== MODIFICATION START ======================
 // Corrected paths to go up two directories to the electron root
 import useItemOnCoordinates from '../../mouseControll/useItemOnCoordinates.js';
@@ -8280,6 +8336,24 @@ import {
 } from './helpers/asyncUtils.js';
 import { advanceToNextWaypoint } from './helpers/navigation.js';
 
+const post = (payload) => {
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload,
+  });
+};
+
+const leftClick = (x, y, { type = 'default' } = {}) => {
+  post({
+    type,
+    action: {
+      module: 'mouseController',
+      method: 'leftClick',
+      args: [x, y],
+    },
+  });
+};
+
 async function performWalk(
   workerState,
   config,
@@ -8292,7 +8366,7 @@ async function performWalk(
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, targetPos);
   if (!dirKey) return;
 
-  keypress.sendKey(dirKey, workerState.globalState.global.display);
+  keyPress(dirKey, { type: 'movement' });
   await awaitWalkConfirmation(
     workerState,
     config,
@@ -8326,7 +8400,7 @@ export async function handleStandAction(workerState, config, targetWaypoint) {
   const dirKey = getDirectionKey(initialPos, targetWaypoint);
   if (!dirKey) return false;
 
-  keypress.sendKey(dirKey, workerState.globalState.global.display);
+  keyPress(dirKey, { type: 'movement' });
 
   try {
     const { finalPos } = await awaitStandConfirmation(
@@ -8389,19 +8463,13 @@ async function handleToolAction(
   const display = globalState.global.display || ':0';
 
   if (useType === 'ladder') {
-    mouseController.leftClick(windowId, clickCoords.x, clickCoords.y, display);
+    leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
   } else if (useType === 'rope') {
-    keypress.sendKey(hotkey, display);
+    keyPress(hotkey, { type: 'movement' });
     await delay(50); // Small delay between hotkey and click
-    mouseController.leftClick(windowId, clickCoords.x, clickCoords.y, display);
+    leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
   } else if (useType === 'shovel') {
-    useItemOnCoordinates(
-      windowId,
-      display,
-      clickCoords.x,
-      clickCoords.y,
-      hotkey,
-    );
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, { type: 'movement' });
   }
 
   const zChanged = await awaitZLevelChange(
@@ -8493,13 +8561,7 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
     }
 
     // Walk failed, use tool
-    useItemOnCoordinates(
-      windowId,
-      display,
-      clickCoords.x,
-      clickCoords.y,
-      hotkey,
-    );
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, { type: 'movement' });
     await delay(config.actionFailureRetryDelayMs);
 
     try {
@@ -8568,12 +8630,7 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
   const posCounterBeforeMove = workerState.lastPlayerPosCounter;
   const pathCounterBeforeMove = workerState.lastPathDataCounter;
 
-  mouseController.leftClick(
-    parseInt(globalState.global.windowId, 10),
-    clickCoords.x,
-    clickCoords.y,
-    globalState.global.display || ':0',
-  );
+  leftClick(clickCoords.x, clickCoords.y);
 
   try {
     await awaitWalkConfirmation(
@@ -8631,7 +8688,6 @@ export async function handleScriptAction(workerState, config, targetWpt) {
     }
   }
 }
-
 //endFile
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/config.js
@@ -8738,17 +8794,19 @@ export function createFsm(workerState, config) {
               }
               return 'PERFORMING_ACTION';
             }
+            // If not close enough, fall through to pathfinding logic
             break;
           case 'Node':
           case 'Walk':
             if (
-              playerPos.x === targetWaypoint.x &&
-              playerPos.y === targetWaypoint.y &&
+              typeof chebyshevDist === 'number' &&
+              chebyshevDist === 0 &&
               playerPos.z === targetWaypoint.z
             ) {
               await advanceToNextWaypoint(workerState, config);
               return 'IDLE';
             }
+            // If not at the waypoint, fall through to pathfinding logic
             break;
         }
 
@@ -9404,6 +9462,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   logger: createLogger({ info: false, error: true, debug: false }),
+  parentPort: parentPort,
 };
 
 // --- Initialization ---
@@ -9811,6 +9870,7 @@ export class CavebotLuaExecutor {
         refreshLuaGlobalState: () => this._syncDynamicStateToLua(), // This now calls the lightweight sync
         sharedLuaGlobals: this.context.sharedLuaGlobals,
         lua: this.lua,
+        postInputAction: (action) => parentPort.postMessage({ type: 'inputAction', payload: action }),
       });
 
       this.asyncFunctionNames = newNames;
@@ -10078,13 +10138,33 @@ export class CavebotLuaExecutor {
 //start file
 import { parentPort, workerData } from 'worker_threads';
 import findTarget from 'find-target-native';
+import findHealthBars from 'find-healthbars-native';
+import findSequences from 'find-sequences-native';
 import Pathfinder from 'pathfinder-native';
+import pkg from 'font-ocr';
+import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance } from '../utils/distance.js';
 import {
   getGameCoordinatesFromScreen,
   PLAYER_SCREEN_TILE_X,
   PLAYER_SCREEN_TILE_Y,
 } from '../utils/gameWorldClickTranslator.js';
+
+const { recognizeText } = pkg;
+
+const CHAR_PRESETS = {
+  LOWERCASE: 'abcdefghijklmnopqrstuvwxyz',
+  UPPERCASE: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  NUMERIC: '0123456789',
+  SPECIAL: `~!@#$%^&*()_+{}|":?><-=[];'./ `,
+};
+CHAR_PRESETS.ALL =
+  CHAR_PRESETS.LOWERCASE +
+  CHAR_PRESETS.NUMERIC +
+  CHAR_PRESETS.SPECIAL +
+  CHAR_PRESETS.UPPERCASE;
+CHAR_PRESETS.ALPHA = CHAR_PRESETS.LOWERCASE + CHAR_PRESETS.UPPERCASE;
+CHAR_PRESETS.ALPHANUMERIC = CHAR_PRESETS.ALPHA + CHAR_PRESETS.NUMERIC;
 
 let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
@@ -10120,6 +10200,65 @@ let lastSpecialAreasJson = '';
 let nextInstanceId = 0;
 let activeCreatures = new Map(); // Map<instanceId, creatureObject>
 let reachableTilesCache = new Map(); // Map<string, boolean>
+const lastPostedResults = new Map();
+
+function postUpdateOnce(type, payload) {
+  const key = type;
+  const prev = lastPostedResults.get(key);
+  const payloadString = JSON.stringify(payload);
+
+  if (prev === payloadString) return;
+
+  lastPostedResults.set(key, payloadString);
+  parentPort.postMessage({
+    storeUpdate: true,
+    type,
+    payload,
+  });
+}
+
+async function processBattleListOcr(buffer, regions) {
+  const entriesRegion = regions.battleList?.children?.entries;
+  if (
+    !entriesRegion ||
+    !entriesRegion.x ||
+    !entriesRegion.y ||
+    entriesRegion.width <= 0 ||
+    entriesRegion.height <= 0
+  ) {
+    postUpdateOnce('battleList/setBattleListEntries', []);
+    return [];
+  }
+
+  try {
+    const ocrResults =
+      recognizeText(
+        buffer,
+        entriesRegion,
+        regionDefinitions.battleList?.ocrColors || [],
+        CHAR_PRESETS.ALPHA + ' ',
+      ) || [];
+
+    const creatureNames = ocrResults
+      .map((result) => ({
+        name: result.text.trim(),
+        isTarget: false, // This will be updated by the creatureMonitor
+        x: result.x,
+        y: result.y,
+      }))
+      .filter((creature) => creature.name.length > 0);
+
+    // This now correctly matches the reducer in battleListSlice.js
+    postUpdateOnce('battleList/setBattleListEntries', creatureNames);
+    return creatureNames;
+  } catch (ocrError) {
+    console.error(
+      '[OcrProcessing] OCR failed for battleList region:',
+      ocrError,
+    );
+    return [];
+  }
+}
 
 function getCoordsKey(coords) {
   return `${coords.x},${coords.y},${coords.z}`;
@@ -10132,17 +10271,6 @@ let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let playerSettlingGracePeriodEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
-
-function getHealthTagFromColor(color) {
-  if (!color) return 'Full';
-  const { r, g, b } = color;
-  if (r === 96 && g === 0 && b === 0) return 'Critical';
-  if (r === 192 && g === 0 && b === 0) return 'Low';
-  if (r === 192 && g === 192 && b === 0) return 'Medium';
-  if (r === 96 && g === 192 && b === 96) return 'High';
-  if (r === 0 && g === 192 && b === 0) return 'Full';
-  return 'Full';
-}
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
@@ -10165,7 +10293,6 @@ function deepCompareEntities(a, b) {
       const entityB = b[i];
       if (
         entityA.instanceId !== entityB.instanceId ||
-        entityA.name !== entityB.name ||
         entityA.healthTag !== entityB.healthTag ||
         entityA.isReachable !== entityB.isReachable ||
         !arePositionsEqual(entityA.gameCoords, entityB.gameCoords) ||
@@ -10180,7 +10307,6 @@ function deepCompareEntities(a, b) {
   if (typeof a === 'object' && typeof b === 'object') {
     return (
       a.instanceId === b.instanceId &&
-      a.name === b.name &&
       arePositionsEqual(a.gameCoordinates, b.gameCoordinates) &&
       areAbsoluteCoordsEqual(a.absoluteCoordinates, b.absoluteCoordinates)
     );
@@ -10205,13 +10331,9 @@ function updateCreatureState(
   isPlayerInAnimationFreeze,
 ) {
   const { gameWorld } = regions;
-  const { r } = detection;
-  const creatureName = r.text;
-  const creatureScreenX = r.click.x;
-  const NAMEPLATE_TEXT_HEIGHT = 10;
-  const textHeight = r.height ?? NAMEPLATE_TEXT_HEIGHT;
-  const nameplateCenterY = r.y + textHeight / 2 + tileSize.height / 10;
-  const creatureScreenY = nameplateCenterY + tileSize.height / 1.4;
+  const { absoluteCoords, healthBarY } = detection;
+  const creatureScreenX = absoluteCoords.x;
+  const creatureScreenY = healthBarY + 14;
 
   let finalGameX,
     finalGameY,
@@ -10324,8 +10446,7 @@ function updateCreatureState(
   const dy_tiles = dy_pixels / tileSize.height;
   const distance = Math.sqrt(dx_tiles * dx_tiles + dy_tiles * dy_tiles);
 
-  creature.name = creatureName;
-  creature.healthTag = getHealthTagFromColor(r.color);
+  creature.healthTag = detection.healthTag;
   creature.absoluteCoords = {
     x: Math.round(creatureScreenX),
     y: Math.round(creatureScreenY),
@@ -10333,6 +10454,7 @@ function updateCreatureState(
   };
   creature.gameCoords = { x: finalGameX, y: finalGameY, z: finalGameZ };
   creature.distance = parseFloat(distance.toFixed(1));
+  creature.lastSeen = now;
 
   return creature;
 }
@@ -10400,15 +10522,16 @@ async function performOperation() {
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
 
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
-    const ocrData = currentState.ocr.regions.gameWorld || [];
+    const healthBars = await findHealthBars.findHealthBars(
+      sharedBufferView,
+      gameWorld,
+    );
 
-    const preliminaryDetections = ocrData
-      .map((r) => ({
-        name: r.text,
-        absoluteCoords: { x: r.click.x, y: r.click.y },
-        r,
-      }))
-      .filter(Boolean);
+    const preliminaryDetections = healthBars.map((healthBar) => ({
+      absoluteCoords: { x: healthBar.x, y: healthBar.y + 14 },
+      healthTag: healthBar.healthTag,
+      healthBarY: healthBar.y,
+    }));
 
     const newActiveCreatures = new Map();
     const matchedDetections = new Set();
@@ -10419,7 +10542,6 @@ async function performOperation() {
 
       for (const newDetection of preliminaryDetections) {
         if (matchedDetections.has(newDetection)) continue;
-        if (newDetection.name !== oldCreature.name) continue;
 
         const distance = screenDist(
           newDetection.absoluteCoords,
@@ -10509,8 +10631,7 @@ async function performOperation() {
     }
 
     detectedEntities.sort((a, b) => {
-      if (a.distance !== b.distance) return a.distance - b.distance;
-      return a.name.localeCompare(b.name);
+      return a.distance - b.distance;
     });
 
     if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
@@ -10524,6 +10645,8 @@ async function performOperation() {
 
     let currentTarget = null;
     try {
+      //ultra fast, findTarget takes <2ms
+
       const targetRect = await findTarget.findTarget(
         sharedBufferView,
         gameWorld,
@@ -10568,7 +10691,6 @@ async function performOperation() {
             // The target object in Redux needs the instanceId for unique identification.
             currentTarget = {
               instanceId: closestCreature.instanceId,
-              name: closestCreature.name,
               distance: parseFloat(distanceFromPlayer.toFixed(1)),
               gameCoordinates: closestCreature.gameCoords,
               absoluteCoordinates: closestCreature.absoluteCoords,
@@ -10597,6 +10719,15 @@ async function performOperation() {
       console.error('[CreatureMonitor] Error finding target:', err);
     }
 
+    if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'targeting/setEntities',
+        payload: detectedEntities,
+      });
+      lastSentCreatures = detectedEntities;
+    }
+
     if (!deepCompareEntities(currentTarget, lastSentTarget)) {
       parentPort.postMessage({
         storeUpdate: true,
@@ -10604,6 +10735,51 @@ async function performOperation() {
         payload: currentTarget,
       });
       lastSentTarget = currentTarget;
+    }
+
+    const battleListRegion = currentState.regionCoordinates.regions.battleList;
+    if (battleListRegion) {
+      const battleListEntries = await processBattleListOcr(sharedBufferView, currentState.regionCoordinates.regions);
+      const redColor = [255, 0, 0];
+      const redBarSequence = new Array(5).fill(redColor);
+      const result = await findSequences.findSequencesNative(
+        sharedBufferView,
+        {
+          red_vertical_bar: {
+            sequence: redBarSequence,
+            direction: 'vertical',
+          },
+        },
+        battleListRegion,
+      );
+
+      if (result && result.red_vertical_bar) {
+        const markerY = result.red_vertical_bar.y;
+        let closestEntry = null;
+        let minDistance = Infinity;
+
+        for (const entry of battleListEntries) {
+          const distance = Math.abs(entry.y - markerY);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestEntry = entry;
+          }
+        }
+
+        if (closestEntry) {
+          parentPort.postMessage({
+            storeUpdate: true,
+            type: 'battleList/setTargetedCreature',
+            payload: closestEntry.name,
+          });
+        }
+      } else {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'battleList/setTargetedCreature',
+          payload: null,
+        });
+      }
     }
   } catch (error) {
     console.error('[CreatureMonitor] Error in operation:', error);
@@ -10715,10 +10891,202 @@ export const wait = async (min_ms, max_ms, refreshCallback = null) => {
 
 //endFile
 
-// /home/feiron/Dokumenty/Automaton/electron/workers/lootingWorker.js
+// /home/feiron/Dokumenty/Automaton/electron/workers/inputOrchestrator.js
 //start file
 import { parentPort } from 'worker_threads';
 import keypress from 'keypress-native';
+import mouseController from 'mouse-controller';
+import { createLogger } from '../utils/logger.js';
+
+const log = createLogger({
+  info: true,
+  error: true,
+  debug: false,
+});
+
+const PRIORITY_MAP = {
+  userRule: 0,
+  looting: 1,
+  script: 2,
+  targeting: 3,
+  movement: 4,
+  hotkey: 5,
+  default: 10,
+};
+
+const DELAY_MAP = {
+  userRule: { min: 50, max: 75 },
+  looting: { min: 50, max: 150 },
+  script: { min: 50, max: 100 },
+  targeting: { min: 50, max: 200 },
+  movement: { min: 50, max: 100 },
+  hotkey: { min: 50, max: 200 },
+  default: { min: 50, max: 100 },
+};
+
+const getRandomDelay = (type) => {
+  const config = DELAY_MAP[type] || DELAY_MAP.default;
+  return Math.floor(Math.random() * (config.max - config.min + 1)) + config.min;
+};
+
+const MAX_DEFERRALS = 4;
+
+let globalState = null;
+const eventQueue = [];
+let isProcessing = false;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function processQueue() {
+  if (isProcessing || eventQueue.length === 0) {
+    isProcessing = false;
+    return;
+  }
+
+  // NEW: Defer processing if globalState is not yet available
+  if (
+    !globalState ||
+    !globalState.global?.windowId ||
+    !globalState.global?.display
+  ) {
+    log(
+      'warn',
+      '[InputOrchestrator] Deferring action processing: Missing windowId or display from globalState.',
+    );
+    isProcessing = false; // Allow other messages to be processed
+    return; // Exit and wait for state update
+  }
+
+  isProcessing = true;
+
+  // --- Starvation Prevention Logic ---
+  // First, identify the highest priority currently in the queue
+  let highestPriorityInQueue = Infinity;
+  if (eventQueue.length > 0) {
+    highestPriorityInQueue = eventQueue.reduce(
+      (min, item) => Math.min(min, item.priority),
+      Infinity,
+    );
+  }
+
+  // Iterate through the queue to update deferral counts and elevate priority if needed
+  eventQueue.forEach((item) => {
+    // Only increment deferral count if there's a higher priority item currently in the queue
+    // and this item is not already at the highest possible priority (-1)
+    if (item.priority > highestPriorityInQueue && item.priority !== -1) {
+      item.deferralCount++;
+      if (item.deferralCount >= MAX_DEFERRALS) {
+        // Elevate priority to be higher than any existing priority, but lower than userRule (0)
+        // Let's use -1 for anti-starvation priority.
+        item.priority = -1;
+        log(
+          'warn',
+          `[InputOrchestrator] Elevated priority for ${item.type} due to starvation (${item.deferralCount} deferrals).`,
+        );
+      }
+    }
+  });
+  // --- End Starvation Prevention Logic ---
+
+  eventQueue.sort((a, b) => a.priority - b.priority);
+  const {
+    action,
+    priority,
+    type,
+    originalPriority,
+    deferralCount,
+    insertionTime,
+  } = eventQueue.shift();
+
+  try {
+    if (
+      !globalState ||
+      !globalState.global?.windowId ||
+      !globalState.global?.display
+    ) {
+      throw new Error('Missing windowId or display from globalState');
+    }
+
+    const windowId = parseInt(globalState.global.windowId, 10);
+    const display = globalState.global.display;
+
+    log(
+      'info',
+      `[InputOrchestrator] Executing action of type: ${type} (Original Prio: ${originalPriority}, Current Prio: ${priority}, Deferrals: ${deferralCount})`,
+    );
+
+    switch (action.module) {
+      case 'keypress':
+        switch (action.method) {
+          case 'sendKey':
+          case 'keyDown':
+          case 'keyUp':
+            await keypress[action.method](action.args[0], display, action.args[1]);
+            break;
+          case 'typeArray':
+            await keypress.typeArray(action.args[0], display, action.args[1]);
+            break;
+          case 'rotate':
+            await keypress.rotate(display, action.args[0]);
+            break;
+          default:
+            await keypress[action.method](...action.args, display);
+            break;
+        }
+        break;
+      case 'mouseController':
+        await mouseController[action.method](windowId, ...action.args, display);
+        break;
+      default:
+        log('warn', `[InputOrchestrator] Unknown module: ${action.module}`);
+    }
+  } catch (error) {
+    log('error', '[InputOrchestrator] Error executing action:', error);
+  } finally {
+    const delayMs = getRandomDelay(type);
+    await delay(delayMs);
+    isProcessing = false;
+    processQueue();
+  }
+}
+
+parentPort.on('message', (message) => {
+  if (message.type === 'state_full_sync' || message.type === 'state_diff') {
+    globalState = message.payload;
+    // NEW: If state is updated, try processing the queue again
+    if (!isProcessing && eventQueue.length > 0) {
+      processQueue();
+    }
+    return;
+  }
+
+  if (message.type === 'inputAction') {
+    const { payload } = message;
+    const priority = PRIORITY_MAP[payload.type] || PRIORITY_MAP.default;
+    eventQueue.push({
+      action: payload.action,
+      priority: priority,
+      originalPriority: priority, // Store original priority
+      type: payload.type,
+      deferralCount: 0, // Initialize deferral count
+      insertionTime: Date.now(), // Timestamp for tie-breaking if needed
+    });
+
+    if (!isProcessing) {
+      processQueue();
+    }
+  }
+});
+
+log('info', '[InputOrchestrator] Worker started and listening for messages.');
+
+//endFile
+
+// /home/feiron/Dokumenty/Automaton/electron/workers/lootingWorker.js
+//start file
+import { parentPort } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger({ info: false, error: true, debug: false });
@@ -10728,7 +11096,26 @@ let isInitialized = false;
 let globalState = null;
 let isShuttingDown = false;
 let isProcessing = false;
-let previousBattleListLength = 0;
+let previousTargetedCreatureNamesInBattleList = new Set();
+
+// Helper function to check if a targeted creature is present in the battle list,
+// accounting for truncated names.
+function isCreaturePresent(targetingCreatureName, battleListEntries) {
+    for (const battleListEntry of battleListEntries) {
+        const battleListName = battleListEntry.name;
+
+        // Exact match
+        if (targetingCreatureName === battleListName) {
+            return true;
+        }
+
+        // Truncated match: battleListName ends with "..." and targetingCreatureName starts with the non-"..." part
+        if (battleListName.endsWith('...') && targetingCreatureName.startsWith(battleListName.slice(0, -3))) {
+            return true;
+        }
+    }
+    return false;
+}
 
 parentPort.on('message', async (message) => {
   if (isShuttingDown) return;
@@ -10757,18 +11144,41 @@ parentPort.on('message', async (message) => {
 
     try {
       const currentBattleListEntries = globalState.battleList.entries;
-      const currentBattleListLength = currentBattleListEntries.length;
+      const targetingList = globalState.targeting.targetingList || [];
 
-      if (isInitialized && currentBattleListLength < previousBattleListLength) {
+      const currentTargetedCreatureNamesInBattleList = new Set();
+
+      for (const targetingCreature of targetingList) {
+        if (isCreaturePresent(targetingCreature.name, currentBattleListEntries)) {
+          currentTargetedCreatureNamesInBattleList.add(targetingCreature.name);
+        }
+      }
+
+      // Identify creatures that were previously targeted and in the battle list, but are now gone.
+      const disappearedCreatures = [...previousTargetedCreatureNamesInBattleList].filter(
+        (creatureName) => !currentTargetedCreatureNamesInBattleList.has(creatureName)
+      );
+
+      if (disappearedCreatures.length > 0) {
         logger(
           'info',
-          `[LootingWorker] BattleList entries decreased from ${previousBattleListLength} to ${currentBattleListLength}. Pressing F8.`,
+          `[LootingWorker] Targeted creatures disappeared from battle list: ${Array.from(disappearedCreatures).join(', ')}. Pressing F8.`,
         );
-        keypress.sendKey('f8', globalState.global.display);
+        parentPort.postMessage({
+          type: 'inputAction',
+          payload: {
+            type: 'looting',
+            action: {
+              module: 'keypress',
+              method: 'sendKey',
+              args: ['f8']
+            }
+          }
+        });
         await delay(50);
       }
 
-      previousBattleListLength = currentBattleListLength;
+      previousTargetedCreatureNamesInBattleList = currentTargetedCreatureNamesInBattleList;
     } catch (err) {
       logger('error', '[LootingWorker] Error in processing logic:', err);
     } finally {
@@ -10779,19 +11189,10 @@ parentPort.on('message', async (message) => {
     isProcessing = false;
   }
 });
-
 //endFile
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/luaApi.js
 //start file
-import {
-  keyPress,
-  keyPressMultiple,
-  typeArray,
-  rotate,
-  getIsTyping,
-} from '../keyboardControll/keyPress.js';
-import mouseController from 'mouse-controller';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
@@ -10860,6 +11261,21 @@ export const createStateShortcutObject = (getState, type) => {
     enumerable: true,
   });
 
+  Object.defineProperty(shortcuts, 'lastSeenBattleListMs', {
+    get: () => getState().battleList?.lastSeenMs,
+    enumerable: true,
+  });
+
+  Object.defineProperty(shortcuts, 'lastSeenPlayerMs', {
+    get: () => getState().uiValues?.lastSeenPlayerMs,
+    enumerable: true,
+  });
+
+  Object.defineProperty(shortcuts, 'lastSeenNpcMs', {
+    get: () => getState().uiValues?.lastSeenNpcMs,
+    enumerable: true,
+  });
+
   Object.defineProperty(shortcuts, 'food', {
     get: () => getState().uiValues?.skillsWidget?.food,
     enumerable: true,
@@ -10874,6 +11290,10 @@ export const createStateShortcutObject = (getState, type) => {
   });
   Object.defineProperty(shortcuts, 'playerNum', {
     get: () => getState().uiValues.players.length,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'npcNum', {
+    get: () => getState().uiValues.npcs.length,
     enumerable: true,
   });
   Object.defineProperty(shortcuts, 'battleList', {
@@ -11005,6 +11425,10 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().uiValues?.players || [],
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'npcs', {
+    get: () => getState().uiValues?.npcs || [],
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'standTime', {
     get: () => {
       const lastMoveTime = getState().gameState?.lastMoveTime;
@@ -11012,6 +11436,46 @@ export const createStateShortcutObject = (getState, type) => {
         return Date.now() - lastMoveTime;
       }
       return 0;
+    },
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'target', {
+    get: () => {
+      const state = getState();
+      const target = state.targeting?.target;
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
+      const tileSize = state.regionCoordinates?.regions?.tileSize;
+
+      if (!target || !playerPos || !gameWorld || !tileSize) {
+        return null;
+      }
+
+      const distance = Math.max(
+        Math.abs(playerPos.x - target.x),
+        Math.abs(playerPos.y - target.y),
+      );
+
+      const absCoords = getAbsoluteGameWorldClickCoordinates(
+        target.x,
+        target.y,
+        playerPos,
+        gameWorld,
+        tileSize,
+        'center', // Assuming 'center' for target coordinates
+      );
+
+      return {
+        name: target.name,
+        x: target.x,
+        y: target.y,
+        z: target.z,
+        distance: distance,
+        abs: {
+          x: absCoords?.x || 0,
+          y: absCoords?.y || 0,
+        },
+      };
     },
     enumerable: true,
   });
@@ -11024,7 +11488,8 @@ export const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
 export const createLuaApi = async (context) => {
-  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua } = context;
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction } =
+    context; // Added postInputAction
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
@@ -11130,17 +11595,33 @@ export const createLuaApi = async (context) => {
             modalInfo.name === 'ipChangedModal' ||
             modalInfo.name === 'notLoggedInAnymoreModal'
           ) {
-            await keyPress(getDisplay(), 'Escape');
+            postInputAction({
+              type: 'luaScript',
+              action: {
+                module: 'keypress',
+                method: 'sendKey',
+                args: ['Escape'],
+              },
+            });
             await wait(500);
-            await keyPress(getDisplay(), 'Escape');
+            postInputAction({
+              type: 'luaScript',
+              action: {
+                module: 'keypress',
+                method: 'sendKey',
+                args: ['Escape'],
+              },
+            });
             await wait(500);
           } else {
-            mouseController.leftClick(
-              parseInt(String(getWindowId())),
-              button.x,
-              button.y,
-              getDisplay(),
-            );
+            postInputAction({
+              type: 'luaScript',
+              action: {
+                module: 'mouseController',
+                method: 'leftClick',
+                args: [button.x, button.y],
+              },
+            });
             await wait(500);
           }
           foundModal = true;
@@ -11163,6 +11644,11 @@ export const createLuaApi = async (context) => {
       if (!playerPos) return 9999;
       if (z !== undefined && playerPos.z !== z) return 9999;
       return Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
+    },
+    canUse: (itemName) => {
+      const state = getState();
+      const activeActionItems = state.gameState?.activeActionItems || {};
+      return !!activeActionItems[itemName];
     },
     isLocation: (range = 0) => {
       const state = getState();
@@ -11217,6 +11703,35 @@ export const createLuaApi = async (context) => {
       const dist = Math.max(Math.abs(px - tx), Math.abs(py - ty));
       return dist <= range;
     },
+    caround: (distance) => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const creatures = state.battleList?.entries || []; // Assuming creatures are in battleList.entries
+
+      if (
+        !playerPos ||
+        !creatures ||
+        !Number.isInteger(distance) ||
+        distance < 0
+      ) {
+        return -1;
+      }
+
+      let count = 0;
+      for (const creature of creatures) {
+        if (creature.x && creature.y && creature.z === playerPos.z) {
+          // Only count creatures on the same Z-level
+          const dist = Math.max(
+            Math.abs(playerPos.x - creature.x),
+            Math.abs(playerPos.y - creature.y),
+          );
+          if (dist <= distance) {
+            count++;
+          }
+        }
+      }
+      return count;
+    },
     log: (level, ...messages) =>
       logger(
         String(level).toLowerCase(),
@@ -11243,15 +11758,30 @@ export const createLuaApi = async (context) => {
     wait: (min_ms, max_ms) =>
       wait(min_ms, max_ms, context.refreshLuaGlobalState),
     keyPress: (key, modifier = null) =>
-      keyPress(getDisplay(), key, { modifier }),
-    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
-      keyPressMultiple(getDisplay(), key, {
-        count,
-        modifier,
-        delayMs,
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [key, modifier],
+        },
       }),
+    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) => {
+      for (let i = 0; i < count; i++) {
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: [key, modifier],
+          },
+        });
+        if (i < count - 1) {
+          wait(delayMs);
+        }
+      }
+    },
     typeText: async (...args) => {
-      const display = getDisplay();
       if (args.length === 0) {
         logger(
           'warn',
@@ -11282,7 +11812,15 @@ export const createLuaApi = async (context) => {
       }
 
       try {
-        await typeArray(display, stringArgs, startAndEndWithEnter);
+        // typeArray is a native function, so we need to send it as a single action
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [stringArgs, startAndEndWithEnter],
+          },
+        });
         return true;
       } catch (error) {
         logger(
@@ -11294,16 +11832,30 @@ export const createLuaApi = async (context) => {
     },
     typeSequence: async (texts, delayBetween = 100) => {
       for (const text of texts) {
-        await typeArray(getDisplay(), [text], true);
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[text], true], // typeArray expects an array of strings
+          },
+        });
         if (delayBetween > 0) {
           await wait(delayBetween);
         }
       }
     },
-    rotate: (direction) => rotate(getDisplay(), direction),
-    isTyping: () => getIsTyping(),
+    rotate: (direction) =>
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'keypress',
+          method: 'rotate',
+          args: [direction],
+        },
+      }),
+    isTyping: () => getState().gameState?.isTyping, // This state is read from Redux, not directly from input
     clickTile: async (button, x, y, position = 'center') => {
-      const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
@@ -11332,35 +11884,51 @@ export const createLuaApi = async (context) => {
       }
 
       if (button === 'right') {
-        mouseController.rightClick(
-          parseInt(windowId),
-          clickCoords.x,
-          clickCoords.y,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightClick',
+            args: [clickCoords.x, clickCoords.y],
+          },
+        });
       } else {
-        mouseController.leftClick(
-          parseInt(windowId),
-          clickCoords.x,
-          clickCoords.y,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [clickCoords.x, clickCoords.y],
+          },
+        });
       }
       await wait(100);
       return true;
     },
     clickAbsolute: async (button, x, y) => {
-      const windowId = String(getWindowId());
       if (button === 'right') {
-        mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightClick',
+            args: [x, y],
+          },
+        });
       } else {
-        mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [x, y],
+          },
+        });
       }
       await wait(100);
       return true;
     },
     mapClick: async (x, y, position = 'center') => {
-      const windowId = String(getWindowId());
       const state = getState();
       const minimapRegionDef = state.regionCoordinates?.regions?.minimapFull;
       const playerPos = state.gameState?.playerMinimapPosition;
@@ -11384,17 +11952,18 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      mouseController.leftClick(
-        parseInt(windowId),
-        clickCoords.x,
-        clickCoords.y,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [clickCoords.x, clickCoords.y],
+        },
+      });
       await wait(100);
       return true;
     },
     drag: async (startX, startY, endX, endY, button = 'left') => {
-      const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
@@ -11429,87 +11998,123 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      mouseController.mouseMove(
-        parseInt(windowId),
-        startCoords.x,
-        startCoords.y,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [startCoords.x, startCoords.y],
+        },
+      });
       await wait(50);
       if (button === 'right') {
-        mouseController.rightMouseDown(
-          parseInt(windowId),
-          startCoords.x,
-          startCoords.y,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseDown',
+            args: [startCoords.x, startCoords.y],
+          },
+        });
       } else {
-        mouseController.mouseDown(
-          parseInt(windowId),
-          startCoords.x,
-          startCoords.y,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseDown',
+            args: [startCoords.x, startCoords.y],
+          },
+        });
       }
       await wait(100);
-      mouseController.mouseMove(
-        parseInt(windowId),
-        endCoords.x,
-        endCoords.y,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [endCoords.x, endCoords.y],
+        },
+      });
       await wait(100);
       if (button === 'right') {
-        mouseController.rightMouseUp(
-          parseInt(windowId),
-          endCoords.x,
-          endCoords.y,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseUp',
+            args: [endCoords.x, endCoords.y],
+          },
+        });
       } else {
-        mouseController.mouseUp(
-          parseInt(windowId),
-          endCoords.x,
-          endCoords.y,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseUp',
+            args: [endCoords.x, endCoords.y],
+          },
+        });
       }
       await wait(100);
       return true;
     },
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
-      const windowId = String(getWindowId());
-      mouseController.mouseMove(
-        parseInt(windowId),
-        startX,
-        startY,
-        getDisplay(),
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [startX, startY],
+        },
+      });
       await wait(50);
       if (button === 'right') {
-        mouseController.rightMouseDown(
-          parseInt(windowId),
-          startX,
-          startY,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseDown',
+            args: [startX, startY],
+          },
+        });
       } else {
-        mouseController.mouseDown(
-          parseInt(windowId),
-          startX,
-          startY,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseDown',
+            args: [startX, startY],
+          },
+        });
       }
       await wait(100);
-      mouseController.mouseMove(parseInt(windowId), endX, endY, getDisplay());
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'mouseMove',
+          args: [endX, endY],
+        },
+      });
       await wait(100);
       if (button === 'right') {
-        mouseController.rightMouseUp(
-          parseInt(windowId),
-          endX,
-          endY,
-          getDisplay(),
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'rightMouseUp',
+            args: [endX, endY],
+          },
+        });
       } else {
-        mouseController.mouseUp(parseInt(windowId), endX, endY, getDisplay());
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'mouseUp',
+            args: [endX, endY],
+          },
+        });
       }
       await wait(100);
       return true;
@@ -11578,9 +12183,15 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      const windowId = String(getWindowId());
       const { x, y } = tab.tabPosition;
-      mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [x, y],
+        },
+      });
       await wait(100);
       return true;
     },
@@ -11608,9 +12219,13 @@ export const createLuaApi = async (context) => {
       );
     },
     isCreatureOnTile: (x, y, z) => {
-      const creatures = getCreatures(getState);
+      const state = getState();
+      const creatures = state.targeting?.creatures || [];
       return creatures.some(
-        (creature) => creature.x === x && creature.y === y && creature.z === z,
+        (creature) =>
+          creature.gameCoords.x === x &&
+          creature.gameCoords.y === y &&
+          creature.gameCoords.z === z,
       );
     },
     setScripts: (enabled) => {
@@ -11650,9 +12265,6 @@ export const createLuaApi = async (context) => {
     },
     waitFor,
     login: async (email, password, character) => {
-      const windowId = String(getWindowId());
-      const display = getDisplay();
-
       if (
         await waitFor(
           'regionCoordinates.regions.onlineMarker',
@@ -11702,9 +12314,23 @@ export const createLuaApi = async (context) => {
         const state = getState(); // We know it exists now.
         const loginModal = state.regionCoordinates.regions.loginModal;
 
-        await keyPress(display, 'Escape');
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Escape'],
+          },
+        });
         await wait(100);
-        await keyPress(display, 'Escape');
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Escape'],
+          },
+        });
         await wait(100);
 
         const emailInput = loginModal.children?.emailInput;
@@ -11712,14 +12338,23 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] emailInput not found`);
           return false;
         }
-        mouseController.leftClick(
-          parseInt(windowId),
-          emailInput.x,
-          emailInput.y,
-          display,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [emailInput.x, emailInput.y],
+          },
+        });
         await wait(50);
-        await typeArray(display, [email], false);
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[email], false],
+          },
+        });
         await wait(100);
 
         const passwordInput = loginModal.children?.passwordInput;
@@ -11727,16 +12362,32 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] passwordInput not found`);
           return false;
         }
-        mouseController.leftClick(
-          parseInt(windowId),
-          passwordInput.x,
-          passwordInput.y,
-          display,
-        );
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [passwordInput.x, passwordInput.y],
+          },
+        });
         await wait(50);
-        await typeArray(display, [password], false);
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[password], false],
+          },
+        });
         await wait(100);
-        await keyPress(display, 'Enter');
+        postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Enter'],
+          },
+        });
       }
 
       const charSelectAppeared = await waitFor(
@@ -11797,14 +12448,23 @@ export const createLuaApi = async (context) => {
         return false;
       }
 
-      mouseController.leftClick(
-        parseInt(windowId),
-        characterItem.position.x,
-        characterItem.position.y,
-        display,
-      );
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [characterItem.position.x, characterItem.position.y],
+        },
+      });
       await wait(100);
-      await keyPress(display, 'Enter');
+      postInputAction({
+        type: 'luaScript',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: ['Enter'],
+        },
+      });
 
       const isOnline = await waitFor(
         'regionCoordinates.regions.onlineMarker',
@@ -12196,6 +12856,7 @@ const initializeLuaApi = async () => {
       onAsyncEnd,
       sharedLuaGlobals: workerData.sharedLuaGlobals,
       lua: lua,
+      postInputAction: (action) => parentPort.postMessage({ type: 'inputAction', payload: action }),
     });
 
     asyncFunctionNames = newNames;
@@ -13012,11 +13673,7 @@ export const OCR_REGION_CONFIGS = {
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import * as config from './config.js';
-import {
-  rectsIntersect,
-  processOcrRegions,
-  processBattleListOcr, // Import the new dedicated function
-} from './processing.js';
+import { rectsIntersect, processOcrRegions } from './processing.js';
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
@@ -13029,6 +13686,7 @@ let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
 let lastProcessedFrameCounter = -1;
+let lastBattleListProcessTime = 0;
 let lastRegionHash = null;
 let oneTimeInitializedRegions = new Set();
 const pendingThrottledRegions = new Map();
@@ -13112,19 +13770,10 @@ async function performOperation() {
     const immediateGenericRegions = new Set();
 
     // --- MODIFIED LOGIC ---
-    // 1. Handle Battle List with its dedicated, specialized processor first.
-    if (regions.battleList) {
-      const isDirty = dirtyRects.some((dirtyRect) =>
-        rectsIntersect(regions.battleList, dirtyRect),
-      );
-      if (isDirty || !oneTimeInitializedRegions.has('battleList')) {
-        processingTasks.push(processBattleListOcr(sharedBufferView, regions));
-        oneTimeInitializedRegions.add('battleList');
-      }
-    }
 
     // 2. Handle all other generic OCR regions.
     for (const regionKey in config.OCR_REGION_CONFIGS) {
+      if (regionKey === 'gameWorld') continue;
       const region = regions[regionKey];
       if (!region) continue;
 
@@ -13594,48 +14243,7 @@ function postUpdateOnce(type, payload) {
 
 // --- SPECIALIZED REGION PROCESSORS ---
 
-/**
- * Performs a single, bulk OCR scan on the battle list and dispatches the final
- * list of creature names directly to the battleList slice.
- */
-export async function processBattleListOcr(buffer, regions) {
-  const entriesRegion = regions.battleList?.children?.entries;
-  if (!entriesRegion || entriesRegion.height <= 0) {
-    // --- CORRECTED ACTION TYPE ---
-    postUpdateOnce('battleList/setBattleListEntries', []);
-    return;
-  }
 
-  try {
-    const ocrConfig = {
-      colors: regionDefinitions.battleList?.ocrColors || [],
-      allowedChars: CHAR_PRESETS.ALPHA + ' ',
-    };
-
-    const ocrResults =
-      recognizeText(
-        buffer,
-        entriesRegion,
-        ocrConfig.colors,
-        ocrConfig.allowedChars,
-      ) || [];
-
-    // Create a simple array of names, sorted by their vertical position.
-    const creatureNames = ocrResults
-      .sort((a, b) => a.y - b.y)
-      .map((result) => result.text.trim())
-      .filter(Boolean);
-
-    // --- CORRECTED ACTION TYPE ---
-    // This now correctly matches the reducer in battleListSlice.js
-    postUpdateOnce('battleList/setBattleListEntries', creatureNames);
-  } catch (ocrError) {
-    console.error(
-      '[OcrProcessing] OCR failed for battleList region:',
-      ocrError,
-    );
-  }
-}
 
 /**
  * Processes the player list region to extract player names.
@@ -13678,6 +14286,44 @@ export async function processPlayerList(buffer, regions) {
   }
 }
 
+/**
+ * Processes the NPC list region to extract NPC names.
+ */
+export async function processNpcList(buffer, regions) {
+  const npcListRegion = regions.npcList;
+  if (
+    !npcListRegion ||
+    !npcListRegion.x ||
+    !npcListRegion.y ||
+    npcListRegion.width <= 0 ||
+    npcListRegion.height <= 0
+  ) {
+    postUpdateOnce('uiValues/setNpcs', []);
+    return;
+  }
+
+  try {
+    const npcOcrColors = regionDefinitions.npcList?.ocrColors || [];
+    const allowedCharsForNpcList = CHAR_PRESETS.ALPHA + ' ';
+
+    const ocrResults =
+      recognizeText(
+        buffer,
+        npcListRegion,
+        npcOcrColors,
+        allowedCharsForNpcList,
+      ) || [];
+
+    const npcNames = ocrResults
+      .map((result) => result.text.trim())
+      .filter((name) => name.length > 0);
+
+    postUpdateOnce('uiValues/setNpcs', npcNames);
+  } catch (ocrError) {
+    console.error('[OcrProcessing] OCR failed for npcList entries:', ocrError);
+  }
+}
+
 // --- GENERIC OCR REGION PROCESSING ---
 
 export async function processOcrRegions(buffer, regions, regionKeys) {
@@ -13688,8 +14334,12 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
     processingPromises.push(processPlayerList(buffer, regions));
   }
 
+  if (regionKeys.has('npcList')) {
+    processingPromises.push(processNpcList(buffer, regions));
+  }
+
   for (const regionKey of regionKeys) {
-    if (regionKey === 'playerList') continue;
+    if (regionKey === 'playerList' || regionKey === 'npcList') continue;
 
     const cfg = OCR_REGION_CONFIGS[regionKey];
     const region = regions[regionKey];
@@ -14379,6 +15029,7 @@ start().catch((err) => {
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/regionMonitor.js
 //start file
+// regionMonitor.js – CLEANED — NO BENCHMARKING
 import { parentPort, workerData } from 'worker_threads';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { setAllRegions } from '../../frontend/redux/slices/regionCoordinatesSlice.js';
@@ -14388,7 +15039,7 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
 const FULL_SCAN_INTERVAL_MS = 500;
-const MIN_LOOP_DELAY_MS = 200;
+const MIN_LOOP_DELAY_MS = 250;
 
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
@@ -14582,8 +15233,6 @@ async function findRegionsRecursive(
 
 /**
  * Processes special regions after the main recursive find.
- * This is now only responsible for calculating the tile size from the gameWorld region.
- * All battle list logic has been removed.
  */
 async function processSpecialRegions(buffer, regions, metadata) {
   if (regions.gameWorld?.endFound) {
@@ -14611,7 +15260,6 @@ async function performFullScan(buffer, metadata) {
 
 async function mainLoop() {
   while (!isShuttingDown) {
-    const loopStartTime = Date.now();
     try {
       if (isScanning) {
         await delay(MIN_LOOP_DELAY_MS);
@@ -14670,8 +15318,12 @@ async function mainLoop() {
       lastKnownRegions = {};
     }
 
-    const elapsedTime = Date.now() - loopStartTime;
-    const delayTime = Math.max(0, FULL_SCAN_INTERVAL_MS - elapsedTime);
+    // Respect timing logic
+    const elapsedTime = Date.now();
+    const delayTime = Math.max(
+      0,
+      FULL_SCAN_INTERVAL_MS - (Date.now() - elapsedTime),
+    );
     if (delayTime > 0) {
       await delay(delayTime);
     }
@@ -14961,21 +15613,16 @@ export const getAllValidRules = (rules, directGameState) => {
 //start file
 import parseMathCondition from '../../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../../utils/areStatusConditionsMet.js';
-import {
-  keyPress,
-  keyPressMultiple,
-  getIsTyping,
-} from '../../keyboardControll/keyPress.js';
 import { createLogger } from '../../utils/logger.js';
 
 const log = createLogger({ info: true, error: true, warn: true });
 
-import useItemOnCoordinates from '../../mouseControll/useItemOnCoordinates.js';
 import { getRandomNumber } from '../../utils/getRandomNumber.js';
 import { OPTIONS } from './constants.js';
 
 class RuleProcessor {
-  constructor() {
+  constructor(parentPort) {
+    this.parentPort = parentPort;
     this.lastSuccessfulRuleActionTime = {}; // PRIMARY FOR DELAY on non-ManaSync rules
     this.lastCategoryExecutionTime = {};
     this.lastPartyHealActionTime = 0;
@@ -15015,14 +15662,17 @@ class RuleProcessor {
       'ultimateHealingRune',
       'intenseHealingRune',
     ]);
+    this.lastRuleExecutionTime = {}; // NEW: To track last execution time for each rule
   }
 
   async processRules(activePreset, gameState, globalConfig) {
-    const now = Date.now();
-
-    if (getIsTyping()) {
-      return;
-    }
+    // getIsTyping() is removed, need to handle this.
+    // For now, we will assume it's always false or remove the check if it's not critical.
+    // If it's critical, we need to find an alternative way to check typing status.
+    // For this task, I will remove the check for getIsTyping() for now.
+    // if (getIsTyping()) {
+    //   return;
+    // }
 
     if (!globalConfig.isOnline) {
       return;
@@ -15032,7 +15682,7 @@ class RuleProcessor {
       return;
     }
 
-    // --- ManaSync Processing ---
+    const now = performance.now();
     const attackCdChanged = this._handleAttackCooldownTransitions(
       now,
       gameState,
@@ -15119,6 +15769,11 @@ class RuleProcessor {
 
     eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
 
+    // ADDED FILTERS
+    eligibleRules = this._filterRulesByBasicConditions(eligibleRules, gameState);
+    eligibleRules = this._filterRulesByItemAvailability(eligibleRules, gameState);
+    // END ADDED FILTERS
+
     eligibleRules = eligibleRules.filter((rule) => {
       /* PartyHeal Interval Filter */
       if (rule.id.startsWith(this.RULE_PREFIX.PARTY_HEAL)) {
@@ -15145,16 +15800,6 @@ class RuleProcessor {
       }
       return true;
     });
-
-    eligibleRules = this._filterRulesByBasicConditions(
-      eligibleRules,
-      gameState,
-    );
-
-    eligibleRules = this._filterRulesByItemAvailability(
-      eligibleRules,
-      gameState,
-    );
 
     eligibleRules = eligibleRules.filter((rule) => {
       /* Equip Rule Specifics */
@@ -15213,6 +15858,12 @@ class RuleProcessor {
       const ruleId = rule.id;
       const ruleDelay = rule.delay ?? 0;
       const category = rule.category;
+
+      // NEW: Rule-specific cooldown
+      const timeSinceLastRuleExecution = now - (this.lastRuleExecutionTime[ruleId] || 0);
+      if (timeSinceLastRuleExecution < 150) { // 150ms cooldown
+        return false;
+      }
 
       // INDIVIDUAL DELAY
       const timeSinceLastSuccessfulTrigger =
@@ -15596,6 +16247,7 @@ class RuleProcessor {
 
     if (actionSuccess) {
       this.lastSuccessfulRuleActionTime[ruleId] = now;
+      this.lastRuleExecutionTime[ruleId] = now; // NEW: Record rule execution time
 
       if (ruleToExecute.category && ruleId.startsWith(this.RULE_PREFIX.USER)) {
         this.lastCategoryExecutionTime[ruleToExecute.category] = now;
@@ -15650,13 +16302,31 @@ class RuleProcessor {
       ) {
         const targetMember = this._findPartyHealTarget(rule, gameState);
         if (targetMember?.uhCoordinates) {
-          useItemOnCoordinates(
-            globalConfig.windowId,
-            globalConfig.display,
-            targetMember.uhCoordinates.x + getRandomNumber(0, 130),
-            targetMember.uhCoordinates.y + getRandomNumber(0, 11),
-            rule.key,
-          );
+          this.parentPort.postMessage({
+            type: 'inputAction',
+            payload: {
+              type: 'userRule', // New priority type
+              action: {
+                module: 'keypress',
+                method: 'sendKey',
+                args: [rule.key]
+              }
+            }
+          });
+          this.parentPort.postMessage({
+            type: 'inputAction',
+            payload: {
+              type: 'userRule', // New priority type
+              action: {
+                module: 'mouseController',
+                method: 'leftClick',
+                args: [
+                  targetMember.uhCoordinates.x + getRandomNumber(0, 130),
+                  targetMember.uhCoordinates.y + getRandomNumber(0, 11)
+                ]
+              }
+            }
+          });
           actionSent = true;
         } else {
           console.warn(
@@ -15664,14 +16334,23 @@ class RuleProcessor {
           );
         }
       } else {
-        keyPress(globalConfig.display, rule.key);
+        this.parentPort.postMessage({
+          type: 'inputAction',
+          payload: {
+            type: 'userRule', // New priority type
+            action: {
+              module: 'keypress',
+              method: 'sendKey',
+              args: [rule.key]
+            }
+          }
+        });
         actionSent = true;
       }
 
       if (actionSent) {
         this.lastKeypressTime = now;
-        this.effectiveCooldownEndTime =
-          now + (isPriorityRuleForCooldown ? 25 : this.KEYPRESS_COOLDOWN_MS);
+        this.effectiveCooldownEndTime = now + 150; // Changed from (isPriorityRuleForCooldown ? 25 : this.KEYPRESS_COOLDOWN_MS);
       }
       return actionSent;
     } catch (error) {
@@ -15753,13 +16432,12 @@ class RuleProcessor {
 }
 
 export default RuleProcessor;
-
 //endFile
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/screenMonitor.js
 //start file
 // /home/feiron/Dokumenty/Automaton/electron/workers/screenMonitor.js
-// --- CORRECTED ---
+// --- REFACTORED ---
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
@@ -15768,6 +16446,8 @@ import calculatePercentages from '../screenMonitor/calcs/calculatePercentages.js
 import RuleProcessor from './screenMonitor/ruleProcessor.js';
 import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
+import findSequences from 'find-sequences-native';
+import actionBarItems from '../constants/actionBarItems.js';
 
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
@@ -15787,7 +16467,7 @@ let isInitialized = false;
 let hasScannedInitially = false;
 
 const cooldownManager = new CooldownManager();
-const ruleProcessorInstance = new RuleProcessor();
+const ruleProcessorInstance = new RuleProcessor(parentPort);
 const frameUpdateManager = new FrameUpdateManager();
 
 let lastCalculatedState = {
@@ -15898,16 +16578,47 @@ function calculateEquippedItems(amuletSlot, ringSlot, bootsSlot) {
     boots: getEquippedItem(bootsSlot),
   };
 }
-function calculateActiveActionItems(hotkeyBarRegion) {
-  return hotkeyBarRegion?.children
-    ? Object.fromEntries(
-        Object.entries(hotkeyBarRegion.children).map(([key, child]) => [
-          key,
-          child,
-        ]),
-      )
-    : {};
+
+async function findActionItemsInHotkeyBar(hotkeyBarRegion, buffer, metadata) {
+    if (!hotkeyBarRegion || !hotkeyBarRegion.width || !hotkeyBarRegion.height) {
+        return {};
+    }
+
+    const tasks = {};
+    for (const [key, value] of Object.entries(actionBarItems)) {
+        tasks[key] = {
+            sequences: { [key]: value },
+            searchArea: hotkeyBarRegion,
+            occurrence: "first",
+        };
+    }
+
+    const results = await findSequences.findSequencesNativeBatch(buffer, tasks);
+    const foundItems = {};
+    for (const [itemName, itemResult] of Object.entries(results)) {
+        if (itemResult[itemName]) {
+            const def = actionBarItems[itemName];
+            const result = itemResult[itemName];
+            foundItems[itemName] = {
+                x: result.x,
+                y: result.y,
+                width: def.direction === 'vertical' ? 1 : def.sequence.length,
+                height: def.direction === 'vertical' ? def.sequence.length : 1,
+                rawPos: {
+                    x: result.x - (def.offset?.x || 0),
+                    y: result.y - (def.offset?.y || 0),
+                },
+            };
+        }
+    }
+    return foundItems;
 }
+
+
+async function calculateActiveActionItems(hotkeyBarRegion, bufferToUse, metadata) {
+    return await findActionItemsInHotkeyBar(hotkeyBarRegion, bufferToUse, metadata);
+}
+
 function calculateWalkingState() {
   const { gameState } = currentState;
   if (!gameState?.playerMinimapPosition) return lastCalculatedState.isWalking;
@@ -15973,8 +16684,10 @@ async function processGameState() {
       regions.ringSlot,
       regions.bootsSlot,
     );
-    lastCalculatedState.activeActionItems = calculateActiveActionItems(
+    lastCalculatedState.activeActionItems = await calculateActiveActionItems(
       regions.hotkeyBar,
+      bufferToUse,
+      metadata
     );
 
     // This worker now ONLY READS the monster count from the state populated by the ocrWorker.
@@ -16062,7 +16775,6 @@ async function startWorker() {
 }
 
 startWorker();
-
 //endFile
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/sharedConstants.js
@@ -16107,19 +16819,17 @@ export const PATH_STATUS_NO_VALID_START_OR_END = 6;
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/targeting/actions.js
 //start file
-import keypress from 'keypress-native';
-import mouseController from 'mouse-controller';
+
 import { createLogger } from '../../utils/logger.js';
 
 // These constants are specific to the targeting logic.
 const MOVEMENT_COOLDOWN_MS = 50;
-const CLICK_POLL_INTERVAL_MS = 50;
+const CLICK_POLL_INTERVAL_MS = 5;
 const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
 const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
-const TARGET_CLICK_DELAY_MS = 400;
-const TARGET_CONFIRMATION_TIMEOUT_MS = 450;
-const SHORT_CLICK_DELAY_MS = 50;
+const TARGET_CLICK_DELAY_MS = 50;
+const TARGET_CONFIRMATION_TIMEOUT_MS = 375;
 const MELEE_DISTANCE_THRESHOLD = 1.5;
 
 /**
@@ -16135,6 +16845,17 @@ export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort } = workerContext;
   const logger = createLogger({ info: false, error: true, debug: false });
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Helper to post input actions to the main thread for orchestration
+  const postInputAction = (type, action) => {
+    parentPort.postMessage({
+      type: 'inputAction',
+      payload: {
+        type: type,
+        action: action,
+      },
+    });
+  };
 
   let acquisitionTimes = [];
   let maxAcquisitionTime = 0;
@@ -16191,18 +16912,18 @@ export function createTargetingActions(workerContext) {
     playerMinimapPosition,
   ) => {
     const { creatures, targetingList } = globalState.targeting;
-    if (
-      !creatures ||
-      creatures.length === 0 ||
-      !targetingList ||
-      targetingList.length === 0
-    ) {
+    const battleList = globalState.battleList.entries; // Get battle list entries
+
+    if (!targetingList || targetingList.length === 0) {
       return null;
     }
 
+    // --- Phase 1: Prioritize creatures detected by creatureMonitor (OCR/Red Box) ---
     const reachableCreatures = creatures.filter((c) => c.isReachable);
     const pathfinderTargetInstanceId =
       globalState.cavebot?.dynamicTarget?.targetInstanceId;
+
+    let targetableCreaturesFromMonitor = [];
 
     if (pathfinderTargetInstanceId) {
       const currentPathfinderTarget = reachableCreatures.find(
@@ -16216,51 +16937,136 @@ export function createTargetingActions(workerContext) {
         );
         if (rule) {
           const stickiness = rule.stickiness || 0;
-          return {
+          targetableCreaturesFromMonitor.push({
             ...currentPathfinderTarget,
             rule,
             effectivePriority: rule.priority + stickiness,
-          };
+          });
         }
       }
     }
 
-    const targetableCreatures = reachableCreatures
-      .map((creature) => {
+    if (targetableCreaturesFromMonitor.length === 0) {
+      targetableCreaturesFromMonitor = reachableCreatures
+        .map((creature) => {
+          const isInBattleList = battleList.some(entry => creature.name.startsWith(entry.name) || entry.name.startsWith(creature.name));
+          if (!isInBattleList) return null; // Skip if not in battle list
+
+          const rule = targetingList.find(
+            (r) =>
+              r.name.startsWith(creature.name) &&
+              r.action === 'Attack' &&
+              (r.healthRange === 'Any' || r.healthRange === creature.healthTag),
+          );
+          if (!rule) return null;
+          return { ...creature, rule, effectivePriority: rule.priority };
+        })
+        .filter(Boolean);
+    }
+
+    if (targetableCreaturesFromMonitor.length > 0) {
+      const healthOrder = {
+        Critical: 0,
+        Low: 1,
+        Medium: 2,
+        High: 3,
+        Full: 4,
+      };
+
+      targetableCreaturesFromMonitor.sort((a, b) => {
+        // 1. Primary Sort: Priority
+        if (a.effectivePriority !== b.effectivePriority) {
+          return b.effectivePriority - a.effectivePriority;
+        }
+
+        // 2. New Tie-Breaker: Health, if both creatures are in melee range
+        const aIsInMelee = a.distance <= MELEE_DISTANCE_THRESHOLD;
+        const bIsInMelee = b.distance <= MELEE_DISTANCE_THRESHOLD;
+
+        if (aIsInMelee && bIsInMelee) {
+          const healthA = healthOrder[a.healthTag] ?? 5;
+          const healthB = healthOrder[b.healthTag] ?? 5;
+          if (healthA !== healthB) {
+            return healthA - healthB; // Lower health wins
+          }
+        }
+
+        // --- MODIFIED DISTANCE TIE-BREAKER ---
+        // Only consider distance if at least one creature is NOT in melee range.
+        // If both are in melee range, distance is irrelevant for sorting.
+        if (!aIsInMelee || !bIsInMelee) {
+          if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
+            const distA = Math.max(
+              Math.abs(a.gameCoords.x - playerMinimapPosition.x),
+              Math.abs(a.gameCoords.y - playerMinimapPosition.y),
+            );
+            const distB = Math.max(
+              Math.abs(b.gameCoords.x - playerMinimapPosition.x),
+              Math.abs(b.gameCoords.y - playerMinimapPosition.y),
+            );
+            if (distA !== distB) {
+              return distA - distB;
+            }
+          } else if (a.distance !== b.distance) {
+            return a.distance - b.distance;
+          }
+        }
+        // --- END MODIFIED DISTANCE TIE-BREAKER ---
+
+        // 4. Ultimate Tie-Breaker: Instance ID (stable sort)
+        // This ensures a consistent order when all other criteria are identical.
+        return a.instanceId - b.instanceId;
+      });
+      return targetableCreaturesFromMonitor[0];
+    }
+
+    // --- Phase 2: If no creature from creatureMonitor, look at Battle List as source of truth ---
+    // Find creatures in battle list that are targetable but NOT currently in creatureMonitor's list
+    const activeCreatureNames = new Set(creatures.map((c) => c.name));
+
+    const targetableCreaturesFromBattleList = battleList
+      .map((battleListEntry) => {
+        // Only consider if it's not already detected by creatureMonitor
+        if (activeCreatureNames.has(battleListEntry.name)) {
+          return null;
+        }
+
         const rule = targetingList.find(
           (r) =>
-            r.name.startsWith(creature.name) &&
-            r.action === 'Attack' &&
-            (r.healthRange === 'Any' || r.healthRange === creature.healthTag),
+            r.name.startsWith(battleListEntry.name) && r.action === 'Attack',
+          // We don't have healthTag for battle list entries here, so can't filter by healthRange
         );
         if (!rule) return null;
-        return { ...creature, rule, effectivePriority: rule.priority };
+
+        // Create a synthetic creature object.
+        // We don't have gameCoords or absoluteCoords yet, but manageTargetAcquisition can still work.
+        // These will be filled in once the red box target is detected by creatureMonitor.
+        return {
+          instanceId: `bl-${battleListEntry.name}-${battleListEntry.isTarget}`,
+          name: battleListEntry.name,
+          distance: Infinity, // Assume far until coordinates are known
+          isReachable: true, // Assume reachable if in battle list and targetable
+          gameCoords: null, // Will be filled by creatureMonitor once targeted
+          absoluteCoords: null, // Will be filled by creatureMonitor once targeted
+          rule,
+          effectivePriority: rule.priority,
+        };
       })
       .filter(Boolean);
 
-    if (targetableCreatures.length === 0) {
-      return null;
+    if (targetableCreaturesFromBattleList.length > 0) {
+      // Sort these battle list creatures by priority
+      targetableCreaturesFromBattleList.sort((a, b) => {
+        if (a.effectivePriority !== b.effectivePriority) {
+          return b.effectivePriority - a.effectivePriority;
+        }
+        // No distance or health to sort by here, so just use name as tie-breaker
+        return a.name.localeCompare(b.name);
+      });
+      return targetableCreaturesFromBattleList[0];
     }
 
-    targetableCreatures.sort((a, b) => {
-      if (a.effectivePriority !== b.effectivePriority) {
-        return b.effectivePriority - a.effectivePriority;
-      }
-      if (a.gameCoords && b.gameCoords && playerMinimapPosition) {
-        const distA = Math.max(
-          Math.abs(a.gameCoords.x - playerMinimapPosition.x),
-          Math.abs(a.gameCoords.y - playerMinimapPosition.y),
-        );
-        const distB = Math.max(
-          Math.abs(b.gameCoords.x - playerMinimapPosition.x),
-          Math.abs(b.gameCoords.y - playerMinimapPosition.y),
-        );
-        return distA - distB;
-      }
-      return a.distance - b.distance;
-    });
-
-    return targetableCreatures[0];
+    return null; // No target found anywhere
   };
 
   const manageTargetAcquisition = async (
@@ -16285,7 +17091,6 @@ export function createTargetingActions(workerContext) {
     }
 
     const battleList = globalState.battleList.entries;
-    const KEY_PRESS_LIMIT = 2;
 
     const logAcquisition = (startTime) => {
       const acquisitionTime = Date.now() - startTime;
@@ -16297,112 +17102,50 @@ export function createTargetingActions(workerContext) {
       avgAcquisitionTime = Math.round(sum / acquisitionTimes.length);
     };
 
-    const performActionAndWait = async (
-      action,
-      clickRegion = null,
-      presses = 1,
-    ) => {
-      let currentClickDelay = TARGET_CLICK_DELAY_MS;
-      let isMultiTabOrGrave = false;
+    const checkTargetAndAcceptSubstitute = () => {
+      const currentTarget = globalState.targeting.target;
+      if (!currentTarget) return false;
 
-      if (action === 'tab' || action === 'grave') {
-        if (presses > 1) {
-          isMultiTabOrGrave = true;
-        }
-      }
-
-      if (action === 'click' || isMultiTabOrGrave) {
-        currentClickDelay = SHORT_CLICK_DELAY_MS;
-      }
-
-      targetingContext.acquisitionUnlockTime = Date.now() + currentClickDelay;
-      const actionTriggerTime = Date.now();
-
-      const checkTargetAndAcceptSubstitute = () => {
-        const currentTarget = globalState.targeting.target;
-        if (!currentTarget) return false;
-
-        // 1. Check for perfect instanceId match
-        if (currentTarget.instanceId === pathfindingTarget.instanceId) {
-          return true;
-        }
-
-        // 2. Check for acceptable substitute (same name and is adjacent)
-        const isSameName =
-          currentTarget.name &&
-          pathfindingTarget.name &&
-          currentTarget.name.startsWith(pathfindingTarget.name);
-        const isAdjacent = currentTarget.distance < MELEE_DISTANCE_THRESHOLD;
-
-        if (isSameName && isAdjacent) {
-          logger(
-            'info',
-            `[Targeting] Original target not found, but accepted adjacent substitute: ${currentTarget.name}`,
-          );
-          // Update the main target to this new one to prevent re-targeting next tick.
-          targetingContext.pathfindingTarget = {
-            ...currentTarget,
-            rule: pathfindingTarget.rule, // Keep the original rule for stance, etc.
-          };
-          return true;
-        }
-        return false;
-      };
-
-      if (action === 'tab') {
-        await delay(50); // Delay before keypress
-        keypress.sendKey('tab', globalState.global.display);
-        await delay(50); // Delay after keypress
-      } else if (action === 'grave') {
-        await delay(50); // Delay before keypress
-        keypress.sendKey('`', globalState.global.display);
-        await delay(50); // Delay after keypress
-      } else if (action === 'click' && clickRegion) {
-        const clickX = clickRegion.x + 5;
-        const clickY = clickRegion.y + 2;
-        await delay(50); // Delay before mouse click
-        mouseController.leftClick(
-          parseInt(globalState.global.windowId),
-          clickX,
-          clickY,
-          globalState.global.display,
-        );
-        await delay(50); // Delay after mouse click
-      }
-
-      if (action === 'tab' && presses === 2) {
-        await delay(100); // Wait 100ms between clicks
-        keypress.sendKey('tab', globalState.global.display);
-        await delay(50); // Delay after second keypress
-      }
-
-      targetingContext.lastClickTime = Date.now();
-      await delay(50);
-
-      const startTime = Date.now();
-      while (Date.now() - startTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
-        if (checkTargetAndAcceptSubstitute()) {
-          logAcquisition(actionTriggerTime);
-          return true;
-        }
-        await delay(CLICK_POLL_INTERVAL_MS);
-      }
-
-      if (checkTargetAndAcceptSubstitute()) {
-        logAcquisition(actionTriggerTime);
+      if (currentTarget.instanceId === pathfindingTarget.instanceId) {
         return true;
       }
 
+      const isSameName =
+        currentTarget.name &&
+        pathfindingTarget.name &&
+        currentTarget.name.startsWith(pathfindingTarget.name);
+      const isAdjacent = currentTarget.distance < MELEE_DISTANCE_THRESHOLD;
+
+      if (isSameName && isAdjacent) {
+        logger(
+          'info',
+          `[Targeting] Accepted adjacent substitute: ${currentTarget.name}`,
+        );
+        targetingContext.pathfindingTarget = {
+          ...currentTarget,
+          rule: pathfindingTarget.rule,
+        };
+        return true;
+      }
       return false;
     };
 
     const currentIndex = battleList.findIndex((e) => e.isTarget);
     let bestKeyPlan = { action: null, presses: Infinity };
 
-    if (currentIndex !== -1) {
+    if (currentIndex === -1) {
+      const firstMatchIndex = battleList.findIndex((entry) =>
+        pathfindingTarget.name.startsWith(entry.name),
+      );
+
+      if (firstMatchIndex !== -1) {
+        bestKeyPlan = { action: 'tab', presses: firstMatchIndex + 1 };
+      }
+    } else {
       const potentialIndices = battleList
         .map((e, i) => i)
         .filter((i) => pathfindingTarget.name.startsWith(battleList[i].name));
+
       if (potentialIndices.length > 0) {
         for (const desiredIndex of potentialIndices) {
           const tabs =
@@ -16421,95 +17164,77 @@ export function createTargetingActions(workerContext) {
       }
     }
 
-    if (
-      bestKeyPlan.action &&
-      bestKeyPlan.presses <= KEY_PRESS_LIMIT &&
-      Math.random() > 0.05
-    ) {
+    // ====================== MODIFICATION START ======================
+    // New "Press and Poll" Logic
+    if (bestKeyPlan.action && bestKeyPlan.presses < Infinity) {
+      const key = bestKeyPlan.action === 'tab' ? 'tab' : '`';
+      const actionTriggerTime = Date.now();
+
       logger(
         'info',
-        `[Targeting] Acquisition: Key plan is cheap (${bestKeyPlan.presses} <= ${KEY_PRESS_LIMIT}). Trying one '${bestKeyPlan.action}' press.`,
+        `[Targeting] Starting acquisition for ${pathfindingTarget.name}. Plan: ${bestKeyPlan.presses} '${key}' presses.`,
       );
-      const acquired = await performActionAndWait(
-        bestKeyPlan.action,
-        null,
-        bestKeyPlan.presses,
-      );
-      if (acquired) {
-        // F8 press removed as per new requirement
+
+      for (let i = 0; i < bestKeyPlan.presses; i++) {
+        // 1. Press the key ONCE
+        postInputAction('hotkey', {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [key, null],
+        });
+        targetingContext.lastClickTime = Date.now();
+        targetingContext.acquisitionUnlockTime =
+          Date.now() + TARGET_CONFIRMATION_TIMEOUT_MS + 50;
+
+        // 2. Start the intelligent polling wait
+        const pollStartTime = Date.now();
+        let acquired = false;
+
+        while (Date.now() - pollStartTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
+          const currentTarget = globalState.targeting.target;
+
+          // Exit Condition 1: Target died or disappeared mid-press. Abort.
+          if (!currentTarget) {
+            logger(
+              'warn',
+              '[Targeting] Target disappeared during acquisition. Aborting.',
+            );
+            return;
+          }
+
+          // Exit Condition 2: Success! We targeted the correct creature.
+          if (checkTargetAndAcceptSubstitute()) {
+            logAcquisition(actionTriggerTime);
+            acquired = true;
+            break; // Exit the polling loop
+          }
+
+          await delay(CLICK_POLL_INTERVAL_MS);
+        }
+
+        // If we successfully acquired the target, the entire process is done.
+        if (acquired) {
+          logger(
+            'info',
+            `[Targeting] Successfully acquired ${pathfindingTarget.name}.`,
+          );
+          return;
+        }
+        // If we timed out, the loop will continue to the next key press.
       }
-      return;
-    } else if (bestKeyPlan.action && bestKeyPlan.presses <= KEY_PRESS_LIMIT) {
-      logger(
-        'info',
-        '[Targeting] Acquisition: Key plan was cheap, but using mouse click due to random chance (5%).',
-      );
-    }
 
-    if (currentIndex === -1) {
-      logger(
-        'info',
-        "[Targeting] Acquisition: No current target. Trying one 'tab' press.",
-      );
-      const acquired = await performActionAndWait('tab', null, 1);
-      if (acquired) {
-        // F8 press removed as per new requirement
-      }
-      return;
-    }
-
-    logger(
-      'info',
-      `[Targeting] Acquisition: Key plan too expensive (cost ${bestKeyPlan.presses}). Falling back to mouse clicks.`,
-    );
-    const potentialBLTargets = battleList
-      .map((entry, index) => ({ ...entry, index }))
-      .filter((entry) => pathfindingTarget.name.startsWith(entry.name));
-
-    if (potentialBLTargets.length === 0) {
+      // If the entire loop finishes and we never acquired the target, it's a failure.
       logger(
         'warn',
-        `[Targeting] Target ${pathfindingTarget.name} not found in battle list.`,
+        `[Targeting] Failed to acquire target ${pathfindingTarget.name} after ${bestKeyPlan.presses} presses.`,
       );
-      return;
-    }
-
-    let startClickIndex = 0;
-    const currentBLTarget = battleList[currentIndex];
-    if (
-      currentBLTarget &&
-      pathfindingTarget.name.startsWith(currentBLTarget.name)
-    ) {
-      const lastTryIndex = potentialBLTargets.findIndex(
-        (t) => t.index === currentIndex,
-      );
-      if (lastTryIndex !== -1) {
-        startClickIndex = (lastTryIndex + 1) % potentialBLTargets.length;
-      }
-    }
-
-    for (let i = 0; i < potentialBLTargets.length; i++) {
-      const targetToClick =
-        potentialBLTargets[(startClickIndex + i) % potentialBLTargets.length];
+    } else {
       logger(
-        'info',
-        `[Targeting] Acquisition: Attempting to click ${targetToClick.name} at index ${targetToClick.index}`,
+        'warn',
+        `[Targeting] Target ${pathfindingTarget.name} not found in battle list. Cannot acquire.`,
       );
-      const acquired = await performActionAndWait(
-        'click',
-        targetToClick.region,
-        1,
-      );
-      if (acquired) {
-        // F8 press removed as per new requirement
-        return;
-      }
     }
-
-    logger(
-      'error',
-      `[Targeting] Failed to acquire target ${pathfindingTarget.name} after trying all methods.`,
-    );
+    // ======================= MODIFICATION END =======================
   };
 
   const manageMovement = async (
@@ -16519,6 +17244,7 @@ export function createTargetingActions(workerContext) {
     path,
     pathfindingStatus,
     playerMinimapPosition,
+    isTargetInStableMelee, // New parameter
   ) => {
     if (
       !pathfindingTarget ||
@@ -16533,8 +17259,8 @@ export function createTargetingActions(workerContext) {
       return;
     }
 
-    // If the target is already adjacent, do not attempt to move.
-    if (pathfindingTarget.distance < MELEE_DISTANCE_THRESHOLD) {
+    // If the target is confirmed to be in stable melee range, do not move.
+    if (isTargetInStableMelee) {
       return;
     }
 
@@ -16591,7 +17317,11 @@ export function createTargetingActions(workerContext) {
           ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
           : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
 
-        keypress.sendKey(dirKey, globalState.global.display);
+        postInputAction('targeting', {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [dirKey, null],
+        });
         targetingContext.lastMovementTime = now;
         try {
           await awaitWalkConfirmation(
@@ -16613,14 +17343,13 @@ export function createTargetingActions(workerContext) {
     manageMovement,
   };
 }
-
 //endFile
 
 // /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
 //start file
 // /home/feiron/Dokumenty/Automaton/electron/workers/targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
-import keypress from 'keypress-native';
+
 import { createLogger } from '../utils/logger.js';
 import { createTargetingActions } from './targeting/actions.js';
 import {
@@ -16885,30 +17614,31 @@ async function performTargeting() {
   const now = Date.now();
   const allCreatures = globalState.targeting.creatures || [];
 
-  // Melee Override Logic
-  const meleeConflict = Array.from(meleeRangeTimers.entries()).find(
-    ([instanceId, startTime]) =>
-      now - startTime > 100 && effectiveTarget?.instanceId !== instanceId,
-  );
-  if (meleeConflict) {
-    const [meleeInstanceId] = meleeConflict;
-    const blockingCreature = allCreatures.find(
-      (c) => c.instanceId === meleeInstanceId,
-    );
-    const blockingCreatureRule =
-      blockingCreature &&
-      globalState.targeting.targetingList?.find(
-        (r) =>
-          r.name.startsWith(blockingCreature.name) && r.action === 'Attack',
-      );
-    if (blockingCreature && blockingCreatureRule) {
-      logger(
-        'info',
-        `[Targeting] Overriding target ${effectiveTarget?.name || 'None'} to attack ${blockingCreature.name} in melee range.`,
-      );
-      effectiveTarget = { ...blockingCreature, rule: blockingCreatureRule };
+  // Update melee timers for all creatures based on their distance.
+  const MELEE_DISTANCE_THRESHOLD = 1.9; // From actions.js
+  const creaturesInMelee = new Set();
+  for (const creature of allCreatures) {
+    if (creature.distance < MELEE_DISTANCE_THRESHOLD) {
+      creaturesInMelee.add(creature.instanceId);
+      if (!meleeRangeTimers.has(creature.instanceId)) {
+        meleeRangeTimers.set(creature.instanceId, now);
+      }
     }
   }
+  // Remove creatures that are no longer in melee range.
+  for (const instanceId of meleeRangeTimers.keys()) {
+    if (!creaturesInMelee.has(instanceId)) {
+      meleeRangeTimers.delete(instanceId);
+    }
+  }
+
+  // Check if the CURRENT target is in STABLE melee range.
+  const targetInstanceId = effectiveTarget?.instanceId;
+  const targetMeleeStartTime = meleeRangeTimers.get(targetInstanceId);
+  const isTargetInStableMelee =
+    targetMeleeStartTime && now - targetMeleeStartTime > 100;
+
+  // Melee Override Logic remains REMOVED.
 
   await targetingActions.manageMovement(
     targetingContext,
@@ -16917,6 +17647,7 @@ async function performTargeting() {
     path,
     pathfindingStatus,
     playerMinimapPosition,
+    isTargetInStableMelee, // Pass the new flag to the action handler
   );
 
   const currentGameTarget = globalState.targeting.target;

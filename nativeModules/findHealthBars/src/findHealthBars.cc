@@ -10,6 +10,7 @@
 
 inline bool IsKnownBarColor(uint32_t c) {
     switch(c) {
+        case 0:          // 0x00000000 (Black - for empty bars)
         case 49152:      // 0x0000C000
         case 12582912:   // 0x00C00000
         case 6340704:    // 0x0060C060
@@ -52,7 +53,7 @@ inline bool ValidateRightBorder(const WorkerData& data, uint32_t x, uint32_t y) 
 }
 
 inline std::string GetHealthTagFromColor(uint32_t color) {
-    if (color == 0x600000) return "Critical";
+    if (color == 0x600000 || color == 0) return "Critical";
     if (color == 0xC00000 || color == 0xC03030) return "Low";
     if (color == 0xC0C000) return "Medium";
     if (color == 0x60C060) return "High";
