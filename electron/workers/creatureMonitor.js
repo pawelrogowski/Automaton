@@ -15,7 +15,8 @@ import {
   PLAYER_Y_INDEX, // Corrected import path
   PLAYER_Z_INDEX, // Corrected import path
 } from './sharedConstants.js';
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: true });
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
 const CHAR_PRESETS = {
   ALPHA: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
@@ -66,9 +67,9 @@ let activeCreatures = new Map();
 let reachableTilesCache = new Map();
 const lastPostedResults = new Map();
 
-let previousTargetedCreatureNamesInBattleList = new Set();
-let lootingPauseTimerId = null;
-const LOOTING_PAUSE_DURATION_MS = 100;
+let previousTargetedCreatureCounts = new Map();
+
+// Simple immediate looting
 
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
@@ -381,6 +382,7 @@ async function performOperation() {
           // Start grace period
           oldCreature.flickerGracePeriodEndTime =
             now + CREATURE_FLICKER_GRACE_PERIOD_MS;
+          oldCreature.flickerStartTime = now; // Track when flicker started
           logger(
             'debug',
             `[CreatureMonitor] Creature ${oldCreature.instanceId} disappeared, starting flicker grace period (${CREATURE_FLICKER_GRACE_PERIOD_MS}ms)`,
@@ -533,6 +535,10 @@ async function performOperation() {
         type: 'targeting/setTarget',
         payload: unifiedTarget,
       });
+      logger(
+        'debug',
+        `[CreatureMonitor] Target updated: ${unifiedTarget?.name || 'null'}`,
+      );
       lastSentTarget = unifiedTarget;
     }
 
@@ -545,59 +551,120 @@ async function performOperation() {
       battleListEntriesForStore,
     );
 
-    // --- NEW: Looting Detection and Action ---
+    // --- IMPROVED: Looting Detection and Action with Count-Based Tracking ---
     const targetingList = sabStateManager.getTargetingList();
 
-    const currentTargetedCreatureNamesInBattleList = new Set();
+    const currentTargetedCreatureCounts = new Map();
     for (const targetingCreature of targetingList) {
-      if (
-        isCreaturePresent(targetingCreature.name, battleListEntriesForStore)
-      ) {
-        currentTargetedCreatureNamesInBattleList.add(targetingCreature.name);
+      // Count how many of this creature type are present in battle list
+      const count = battleListEntriesForStore.filter((entry) => {
+        // Exact match
+        if (targetingCreature.name === entry.name) return true;
+
+        // Handle truncated names: if battle list entry ends with "..."
+        // check if targeting name starts with the truncated part
+        if (entry.name.endsWith('...')) {
+          const truncatedPart = entry.name.slice(0, -3);
+          return targetingCreature.name.startsWith(truncatedPart);
+        }
+
+        return false;
+      }).length;
+
+      if (count > 0) {
+        currentTargetedCreatureCounts.set(targetingCreature.name, count);
       }
     }
 
-    const disappearedCreatures = [
-      ...previousTargetedCreatureNamesInBattleList,
-    ].filter(
-      (creatureName) =>
-        !currentTargetedCreatureNamesInBattleList.has(creatureName),
-    );
+    // Check for creatures that died (count decreased)
+    const disappearedCreatures = [];
+    for (const [
+      creatureName,
+      previousCount,
+    ] of previousTargetedCreatureCounts) {
+      const currentCount = currentTargetedCreatureCounts.get(creatureName) || 0;
+      if (currentCount < previousCount) {
+        // This many creatures of this type died
+        const diedCount = previousCount - currentCount;
+        logger(
+          'info',
+          `[CreatureMonitor] DEATH DETECTED: ${creatureName}: ${previousCount} -> ${currentCount} (${diedCount} died)`,
+        );
+        for (let i = 0; i < diedCount; i++) {
+          disappearedCreatures.push(creatureName);
+        }
+      }
+    }
 
+    // Simple looting logic: if any creature died, loot immediately
     if (disappearedCreatures.length > 0) {
       logger(
         'info',
-        `[CreatureMonitor] Targeted creatures disappeared from battle list: ${Array.from(disappearedCreatures).join(', ')}. Triggering looting pause.`,
+        `[CreatureMonitor] Creature(s) died: ${disappearedCreatures.join(', ')} - triggering immediate looting`,
       );
 
-      // Send keypress for looting
-      parentPort.postMessage({
-        type: 'inputAction',
-        payload: {
-          type: 'looting',
-          action: {
-            module: 'keypress',
-            method: 'sendKey',
-            args: ['f8'],
-          },
-        },
-      });
-
-      // Start the looting pause via Redux state
-      if (lootingPauseTimerId) clearTimeout(lootingPauseTimerId);
-      const timerId = setTimeout(() => {
-        postLootingRequired(false); // End looting pause
-        lootingPauseTimerId = null;
-      }, LOOTING_PAUSE_DURATION_MS);
-      lootingPauseTimerId = timerId;
-      postLootingRequired(true); // Start looting pause
+      // Perform looting immediately
+      await performImmediateLooting();
     }
-    // Always update previousTargetedCreatureNamesInBattleList for the next cycle
-    previousTargetedCreatureNamesInBattleList =
-      currentTargetedCreatureNamesInBattleList;
+
+    // Always update previousTargetedCreatureCounts for the next cycle
+    previousTargetedCreatureCounts = new Map(currentTargetedCreatureCounts);
     // --- END NEW ---
   } catch (error) {
     logger('error', '[CreatureMonitor] Error in operation:', error);
+  }
+}
+
+async function performImmediateLooting() {
+  try {
+    logger('info', '[CreatureMonitor] Starting immediate looting action');
+
+    // Set looting flag in shared state
+    sabStateManager.setLootingRequired(true);
+
+    // Send looting required state update to Redux
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: true,
+    });
+
+    // Press F8 for looting
+    parentPort.postMessage({
+      type: 'inputAction',
+      payload: {
+        type: 'looting',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: ['f8'],
+        },
+      },
+    });
+
+    // Wait 200ms
+    await delay(200);
+
+    // Clear looting flag
+    sabStateManager.setLootingRequired(false);
+
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: false,
+    });
+
+    logger('info', '[CreatureMonitor] Immediate looting action completed');
+  } catch (error) {
+    logger('error', '[CreatureMonitor] Error during immediate looting:', error);
+
+    // Ensure flag is cleared on error
+    sabStateManager.setLootingRequired(false);
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: false,
+    });
   }
 }
 
@@ -646,7 +713,7 @@ async function initialize() {
   }
 }
 
-parentPort.on('message', (message) => {
+parentPort.on('message', async (message) => {
   if (isShuttingDown) return;
   try {
     if (message.type === 'shutdown') {
@@ -657,6 +724,10 @@ parentPort.on('message', (message) => {
       return;
     } else if (message.type === 'sab_sync_targeting_list') {
       sabStateManager.writeTargetingList(message.payload);
+      return;
+    } else if (message.type === 'manual_loot_trigger') {
+      logger('info', '[CreatureMonitor] Manual looting trigger received');
+      await performImmediateLooting();
       return;
     } else if (message.type === 'state_full_sync') {
       currentState = message.payload;

@@ -35,7 +35,6 @@ const DEFAULT_WORKER_CONFIG = {
   targetingWorker: true,
   pathfinderWorker: true,
   windowTitleMonitor: true,
-  lootingWorker: true, // NEW: Add lootingWorker
   inputOrchestrator: true,
   enableLuaScriptWorkers: true,
 };
@@ -62,7 +61,6 @@ const WORKER_STATE_DEPENDENCIES = {
     'regionCoordinates',
     'battleList',
   ],
-  lootingWorker: ['global', 'battleList', 'targeting'], // NEW: Add lootingWorker dependencies
   regionMonitor: ['global'],
   screenMonitor: [
     'global',
@@ -831,11 +829,7 @@ class WorkerManager {
           !this.workers.has('windowTitleMonitor')
         )
           this.startWorker('windowTitleMonitor');
-        if (
-          this.workerConfig.lootingWorker && // NEW: Start lootingWorker
-          !this.workers.has('lootingWorker')
-        )
-          this.startWorker('lootingWorker');
+
         if (
           this.workerConfig.inputOrchestrator &&
           !this.workers.has('inputOrchestrator')

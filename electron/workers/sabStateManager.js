@@ -75,7 +75,10 @@ export class SABStateManager {
   getPlayerPosition() {
     if (!this.playerPosArray) return null;
 
-    const counter = Atomics.load(this.playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
+    const counter = Atomics.load(
+      this.playerPosArray,
+      PLAYER_POS_UPDATE_COUNTER_INDEX,
+    );
     if (counter === this.lastCounters.playerPos) return null;
 
     this.lastCounters.playerPos = counter;
@@ -94,7 +97,8 @@ export class SABStateManager {
     const entries = [];
 
     for (let i = 0; i < count; i++) {
-      const startIdx = BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
+      const startIdx =
+        BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
       let name = '';
 
       for (let j = 0; j < BATTLE_LIST_ENTRY_SIZE; j++) {
@@ -117,7 +121,8 @@ export class SABStateManager {
 
     for (let i = 0; i < count; i++) {
       const name = entries[i].name;
-      const startIdx = BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
+      const startIdx =
+        BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
 
       for (let j = 0; j < BATTLE_LIST_ENTRY_SIZE; j++) {
         const charCode = j < name.length ? name.charCodeAt(j) : 0;
@@ -163,13 +168,41 @@ export class SABStateManager {
       const creature = creatures[i];
       const startIdx = CREATURES_DATA_START_INDEX + i * CREATURE_DATA_SIZE;
 
-      Atomics.store(this.creaturesArray, startIdx + 0, creature.instanceId || 0);
-      Atomics.store(this.creaturesArray, startIdx + 1, creature.gameCoords?.x || 0);
-      Atomics.store(this.creaturesArray, startIdx + 2, creature.gameCoords?.y || 0);
-      Atomics.store(this.creaturesArray, startIdx + 3, creature.gameCoords?.z || 0);
-      Atomics.store(this.creaturesArray, startIdx + 4, creature.isReachable ? 1 : 0);
-      Atomics.store(this.creaturesArray, startIdx + 5, creature.isAdjacent ? 1 : 0);
-      Atomics.store(this.creaturesArray, startIdx + 6, Math.floor((creature.distance || 0) * 100));
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 0,
+        creature.instanceId || 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 1,
+        creature.gameCoords?.x || 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 2,
+        creature.gameCoords?.y || 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 3,
+        creature.gameCoords?.z || 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 4,
+        creature.isReachable ? 1 : 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 5,
+        creature.isAdjacent ? 1 : 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + 6,
+        Math.floor((creature.distance || 0) * 100),
+      );
       Atomics.store(this.creaturesArray, startIdx + 7, 0); // reserved
     }
 
@@ -193,11 +226,15 @@ export class SABStateManager {
   getTargetingList() {
     if (!this.targetingListArray) return [];
 
-    const count = Atomics.load(this.targetingListArray, TARGETING_LIST_COUNT_INDEX);
+    const count = Atomics.load(
+      this.targetingListArray,
+      TARGETING_LIST_COUNT_INDEX,
+    );
     const rules = [];
 
     for (let i = 0; i < count; i++) {
-      const startIdx = TARGETING_LIST_DATA_START_INDEX + i * TARGETING_RULE_SIZE;
+      const startIdx =
+        TARGETING_LIST_DATA_START_INDEX + i * TARGETING_RULE_SIZE;
 
       // Read name (first 32 chars)
       let name = '';
@@ -241,7 +278,8 @@ export class SABStateManager {
 
     for (let i = 0; i < count; i++) {
       const rule = rules[i];
-      const startIdx = TARGETING_LIST_DATA_START_INDEX + i * TARGETING_RULE_SIZE;
+      const startIdx =
+        TARGETING_LIST_DATA_START_INDEX + i * TARGETING_RULE_SIZE;
 
       // Write name (32 chars)
       const name = rule.name || '';
@@ -259,13 +297,24 @@ export class SABStateManager {
 
       // Write numeric fields
       Atomics.store(this.targetingListArray, startIdx + 36, rule.priority || 0);
-      Atomics.store(this.targetingListArray, startIdx + 37, rule.stickiness || 0);
-      Atomics.store(this.targetingListArray, startIdx + 38,
-        rule.stance === 'Stand' ? 1 : rule.stance === 'Follow' ? 0 : 0);
+      Atomics.store(
+        this.targetingListArray,
+        startIdx + 37,
+        rule.stickiness || 0,
+      );
+      Atomics.store(
+        this.targetingListArray,
+        startIdx + 38,
+        rule.stance === 'Stand' ? 1 : rule.stance === 'Follow' ? 0 : 0,
+      );
       Atomics.store(this.targetingListArray, startIdx + 39, rule.distance || 1);
     }
 
-    Atomics.add(this.targetingListArray, TARGETING_LIST_UPDATE_COUNTER_INDEX, 1);
+    Atomics.add(
+      this.targetingListArray,
+      TARGETING_LIST_UPDATE_COUNTER_INDEX,
+      1,
+    );
   }
 
   // --- Current Target ---
@@ -277,7 +326,10 @@ export class SABStateManager {
 
     let name = '';
     for (let i = 0; i < 32; i++) {
-      const charCode = Atomics.load(this.targetArray, TARGET_NAME_START_INDEX + i);
+      const charCode = Atomics.load(
+        this.targetArray,
+        TARGET_NAME_START_INDEX + i,
+      );
       if (charCode === 0) break;
       name += String.fromCharCode(charCode);
     }
@@ -291,7 +343,8 @@ export class SABStateManager {
         z: Atomics.load(this.targetArray, TARGET_Z_INDEX),
       },
       distance: Atomics.load(this.targetArray, TARGET_DISTANCE_INDEX) / 100,
-      isReachable: Atomics.load(this.targetArray, TARGET_IS_REACHABLE_INDEX) === 1,
+      isReachable:
+        Atomics.load(this.targetArray, TARGET_IS_REACHABLE_INDEX) === 1,
     };
   }
 
@@ -304,12 +357,36 @@ export class SABStateManager {
       return;
     }
 
-    Atomics.store(this.targetArray, TARGET_INSTANCE_ID_INDEX, target.instanceId || 0);
-    Atomics.store(this.targetArray, TARGET_X_INDEX, target.gameCoordinates?.x || 0);
-    Atomics.store(this.targetArray, TARGET_Y_INDEX, target.gameCoordinates?.y || 0);
-    Atomics.store(this.targetArray, TARGET_Z_INDEX, target.gameCoordinates?.z || 0);
-    Atomics.store(this.targetArray, TARGET_DISTANCE_INDEX, Math.floor((target.distance || 0) * 100));
-    Atomics.store(this.targetArray, TARGET_IS_REACHABLE_INDEX, target.isReachable ? 1 : 0);
+    Atomics.store(
+      this.targetArray,
+      TARGET_INSTANCE_ID_INDEX,
+      target.instanceId || 0,
+    );
+    Atomics.store(
+      this.targetArray,
+      TARGET_X_INDEX,
+      target.gameCoordinates?.x || 0,
+    );
+    Atomics.store(
+      this.targetArray,
+      TARGET_Y_INDEX,
+      target.gameCoordinates?.y || 0,
+    );
+    Atomics.store(
+      this.targetArray,
+      TARGET_Z_INDEX,
+      target.gameCoordinates?.z || 0,
+    );
+    Atomics.store(
+      this.targetArray,
+      TARGET_DISTANCE_INDEX,
+      Math.floor((target.distance || 0) * 100),
+    );
+    Atomics.store(
+      this.targetArray,
+      TARGET_IS_REACHABLE_INDEX,
+      target.isReachable ? 1 : 0,
+    );
 
     // Write name
     const name = target.name || '';
@@ -323,11 +400,15 @@ export class SABStateManager {
 
   // --- Path Data ---
   getPath() {
-    if (!this.pathDataArray) return { path: [], status: 0, chebyshevDistance: 0 };
+    if (!this.pathDataArray)
+      return { path: [], status: 0, chebyshevDistance: 0 };
 
     const pathLength = Atomics.load(this.pathDataArray, PATH_LENGTH_INDEX);
     const status = Atomics.load(this.pathDataArray, PATHFINDING_STATUS_INDEX);
-    const chebyshevDistance = Atomics.load(this.pathDataArray, PATH_CHEBYSHEV_DISTANCE_INDEX);
+    const chebyshevDistance = Atomics.load(
+      this.pathDataArray,
+      PATH_CHEBYSHEV_DISTANCE_INDEX,
+    );
 
     const path = [];
     const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);

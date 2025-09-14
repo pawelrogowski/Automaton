@@ -448,19 +448,25 @@ export function createTargetingActions(workerContext) {
   ) => {
     const { target: currentTarget } = globalState.targeting;
     const creatures = sabStateManager.getCreatures();
+
+    // Early exit conditions
     if (!currentTarget || !currentTarget.name) return;
     if (sabStateManager.isLootingRequired()) return;
+
     const currentTargetCreature = creatures.find(
       (c) => c.instanceId === currentTarget.instanceId,
     );
     if (currentTargetCreature && currentTargetCreature.isAdjacent) {
       return;
     }
+
     const rule = findRuleForEntry(
       currentTarget.name,
       globalState.targeting.targetingList,
     );
     if (!rule) return;
+
+    // Track visited tiles for cavebot integration
     if (
       !targetingContext.lastDispatchedVisitedTile ||
       targetingContext.lastDispatchedVisitedTile.x !==
@@ -476,17 +482,37 @@ export function createTargetingActions(workerContext) {
       });
       targetingContext.lastDispatchedVisitedTile = { ...playerMinimapPosition };
     }
+
     const now = Date.now();
-    if (
-      pathfindingStatus !== 1 ||
-      path.length < 2 ||
-      now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS ||
-      rule.stance === 'Stand'
-    ) {
+
+    // Movement conditions check
+    if (pathfindingStatus !== 1 || path.length < 2 || rule.stance === 'Stand') {
       return;
     }
+
+    // Respect movement cooldown
+    if (now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS) {
+      return;
+    }
+
+    // Additional safety check: verify path starts from current position
+    const pathStart = path[0];
+    if (
+      !pathStart ||
+      pathStart.x !== playerMinimapPosition.x ||
+      pathStart.y !== playerMinimapPosition.y ||
+      pathStart.z !== playerMinimapPosition.z
+    ) {
+      logger(
+        'warn',
+        '[manageMovement] Path does not start from current position, aborting movement',
+      );
+      return;
+    }
+
     const nextStep = path[1];
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
+
     if (dirKey) {
       const posCounter = Atomics.load(
         playerPosArray,
@@ -500,17 +526,28 @@ export function createTargetingActions(workerContext) {
       const timeout = isDiagonal
         ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
         : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
+
+      logger(
+        'debug',
+        `[manageMovement] Moving ${dirKey} from ${playerMinimapPosition.x},${playerMinimapPosition.y} to ${nextStep.x},${nextStep.y}`,
+      );
+
       postInputAction('movement', {
         module: 'keypress',
         method: 'sendKey',
         args: [dirKey, null],
       });
       targetingContext.lastMovementTime = now;
+
       try {
         await awaitWalkConfirmation(posCounter, pathCounter, timeout);
         if (isDiagonal) await delay(MOVE_CONFIRM_GRACE_DIAGONAL_MS);
+        logger('debug', '[manageMovement] Movement confirmed successfully');
       } catch (error) {
-        /* Movement failed, loop will retry */
+        logger(
+          'debug',
+          `[manageMovement] Movement failed: ${error.message}, continuous loop will retry`,
+        );
       }
     }
   };

@@ -2,6 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { createTargetingActions } from './targeting/actions.js';
 import { SABStateManager } from './sabStateManager.js';
+import { performance } from 'perf_hooks';
 import {
   PLAYER_POS_UPDATE_COUNTER_INDEX,
   PATH_UPDATE_COUNTER_INDEX,
@@ -18,18 +19,29 @@ import {
 const logger = createLogger({ info: true, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-let isInitialized = false;
-let globalState = null;
-let isShuttingDown = false;
-let isProcessing = false;
-let playerMinimapPosition = null;
-let path = [];
-let pathfindingStatus = 0;
-let lastPlayerPosCounter = -1;
-let lastPathDataCounter = -1;
-let shouldRequestNewPath = false;
-let justGainedControl = false;
+// Core configuration
+const config = {
+  mainLoopIntervalMs: 25,
+  stateChangePollIntervalMs: 25,
+  mainLoopErrorDelayMs: 1000,
+};
 
+// Worker state management
+const workerState = {
+  globalState: null,
+  isInitialized: false,
+  isShuttingDown: false,
+  playerMinimapPosition: null,
+  path: [],
+  pathfindingStatus: 0,
+  lastPlayerPosCounter: -1,
+  lastPathDataCounter: -1,
+  shouldRequestNewPath: false,
+  justGainedControl: false,
+  logger: logger,
+};
+
+// Targeting context (preserved from original)
 const targetingContext = {
   pathfindingTarget: null,
   acquisitionUnlockTime: 0,
@@ -38,19 +50,17 @@ const targetingContext = {
   lastClickTime: 0,
 };
 
-let lastBattleListHash = null;
-let lastCreaturesHash = null;
-let lastTargetInstanceId = null;
-let lastTargetingListHash = null;
-let lastPlayerPosKey = null;
+// Control state tracking
 let lastControlState = 'CAVEBOT';
 let lastTargetingEnabled = false;
 let lastCavebotEnabled = false;
 
+// Initialize SharedArrayBuffer access
 const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
+// Initialize SAB state manager
 const sabStateManager = new SABStateManager({
   playerPosSAB: workerData.playerPosSAB,
   battleListSAB: workerData.battleListSAB,
@@ -61,6 +71,7 @@ const sabStateManager = new SABStateManager({
   pathDataSAB: workerData.pathDataSAB,
 });
 
+// Initialize targeting actions
 const targetingActions = createTargetingActions({
   playerPosArray,
   pathDataArray,
@@ -68,28 +79,29 @@ const targetingActions = createTargetingActions({
   sabStateManager,
 });
 
+// SAB data update function (now independent of Redux)
 const updateSABData = () => {
   if (playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
       playerPosArray,
       PLAYER_POS_UPDATE_COUNTER_INDEX,
     );
-    if (newPlayerPosCounter > lastPlayerPosCounter) {
-      playerMinimapPosition = {
+    if (newPlayerPosCounter > workerState.lastPlayerPosCounter) {
+      workerState.playerMinimapPosition = {
         x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
         y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
         z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
       };
-      lastPlayerPosCounter = newPlayerPosCounter;
+      workerState.lastPlayerPosCounter = newPlayerPosCounter;
     }
   }
 
   if (pathDataArray) {
-    if (shouldRequestNewPath) {
-      path = [];
-      pathfindingStatus = PATH_STATUS_IDLE;
-      lastPathDataCounter = -1;
-      shouldRequestNewPath = false;
+    if (workerState.shouldRequestNewPath) {
+      workerState.path = [];
+      workerState.pathfindingStatus = PATH_STATUS_IDLE;
+      workerState.lastPathDataCounter = -1;
+      workerState.shouldRequestNewPath = false;
       return;
     }
 
@@ -100,7 +112,7 @@ const updateSABData = () => {
         pathDataArray,
         PATH_UPDATE_COUNTER_INDEX,
       );
-      if (counterBeforeRead === lastPathDataCounter) return;
+      if (counterBeforeRead === workerState.lastPathDataCounter) return;
 
       const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
       const tempPath = [];
@@ -120,40 +132,29 @@ const updateSABData = () => {
         PATH_UPDATE_COUNTER_INDEX,
       );
 
-      if (counterAfterRead === counterBeforeRead) {
-        pathfindingStatus = Atomics.load(
+      if (counterBeforeRead === counterAfterRead) {
+        workerState.pathfindingStatus = Atomics.load(
           pathDataArray,
           PATHFINDING_STATUS_INDEX,
         );
 
-        // =================================================================================
-        // --- NEW, RELAXED PATH VALIDATION LOGIC ---
-        // =================================================================================
         if (tempPath.length > 0) {
           const pathStart = tempPath[0];
-
-          // We ONLY check if the path starts at the player's current position.
-          // We no longer care if the end position matches the target, as the target
-          // may have moved. This allows for smoother pursuit.
           if (
-            !playerMinimapPosition ||
-            pathStart.x !== playerMinimapPosition.x ||
-            pathStart.y !== playerMinimapPosition.y ||
-            pathStart.z !== playerMinimapPosition.z
+            !workerState.playerMinimapPosition ||
+            pathStart.x !== workerState.playerMinimapPosition.x ||
+            pathStart.y !== workerState.playerMinimapPosition.y ||
+            pathStart.z !== workerState.playerMinimapPosition.z
           ) {
-            path = []; // Invalidate: Path is for a previous player position.
+            workerState.path = [];
           } else {
-            path = tempPath; // The path is valid enough to continue walking.
+            workerState.path = tempPath;
           }
         } else {
-          // An empty path is always a valid state.
-          path = [];
+          workerState.path = [];
         }
-        // =================================================================================
-        // --- END OF VALIDATION LOGIC ---
-        // =================================================================================
 
-        lastPathDataCounter = counterBeforeRead;
+        workerState.lastPathDataCounter = counterBeforeRead;
         consistentRead = true;
       } else {
         attempts++;
@@ -162,19 +163,43 @@ const updateSABData = () => {
   }
 };
 
+// Core targeting logic (now continuous)
 async function performTargeting() {
+  // Always update SAB data first
+  updateSABData();
+
+  const { globalState, isInitialized } = workerState;
+
+  // Sync targeting list to SAB for consistent access
+  if (globalState?.targeting?.targetingList) {
+    try {
+      sabStateManager.writeTargetingList(globalState.targeting.targetingList);
+    } catch (error) {
+      logger(
+        'debug',
+        '[TargetingWorker] Failed to sync targeting list to SAB:',
+        error,
+      );
+    }
+  }
+
   if (
-    isShuttingDown ||
+    !globalState ||
     !isInitialized ||
     !globalState?.global?.display ||
     !globalState.regionCoordinates?.regions?.gameWorld
-  )
+  ) {
     return;
+  }
+
   if (globalState.targeting?.isPausedByScript) return;
-  if (justGainedControl) justGainedControl = false;
+
+  if (workerState.justGainedControl) {
+    workerState.justGainedControl = false;
+  }
 
   if (sabStateManager.isLootingRequired()) {
-    return; // Pause all targeting actions until looting is complete
+    return;
   }
 
   if (!globalState.targeting?.enabled) {
@@ -188,6 +213,7 @@ async function performTargeting() {
   }
 
   const { controlState, enabled: cavebotIsEnabled } = globalState.cavebot;
+
   if (!cavebotIsEnabled && controlState !== 'TARGETING') {
     parentPort.postMessage({
       storeUpdate: true,
@@ -196,6 +222,7 @@ async function performTargeting() {
     return;
   }
 
+  // Always evaluate target selection
   targetingContext.pathfindingTarget =
     targetingActions.selectBestTarget(globalState);
 
@@ -208,6 +235,7 @@ async function performTargeting() {
     }
     return;
   }
+
   if (controlState === 'HANDOVER_TO_TARGETING') {
     parentPort.postMessage({
       storeUpdate: true,
@@ -215,11 +243,12 @@ async function performTargeting() {
     });
     return;
   }
+
   if (controlState !== 'TARGETING') return;
 
-  updateSABData();
-  if (!playerMinimapPosition) return;
+  if (!workerState.playerMinimapPosition) return;
 
+  // Continuous target acquisition attempt
   if (
     targetingContext.pathfindingTarget &&
     Date.now() > targetingContext.acquisitionUnlockTime
@@ -231,16 +260,19 @@ async function performTargeting() {
     );
   }
 
+  // Always update dynamic target
   targetingActions.updateDynamicTarget(globalState);
 
+  // Continuous movement management
   await targetingActions.manageMovement(
     targetingContext,
     globalState,
-    path,
-    pathfindingStatus,
-    playerMinimapPosition,
+    workerState.path,
+    workerState.pathfindingStatus,
+    workerState.playerMinimapPosition,
   );
 
+  // Release control if no target
   if (!targetingContext.pathfindingTarget && cavebotIsEnabled) {
     parentPort.postMessage({
       storeUpdate: true,
@@ -249,81 +281,102 @@ async function performTargeting() {
   }
 }
 
+// Main continuous loop (like cavebot)
+async function mainLoop() {
+  logger('info', '[TargetingWorker] Starting continuous main loop...');
+
+  while (!workerState.isShuttingDown) {
+    const loopStart = performance.now();
+
+    try {
+      await performTargeting();
+    } catch (error) {
+      logger('error', '[TargetingWorker] Unhandled error in main loop:', error);
+      await delay(config.mainLoopErrorDelayMs);
+    }
+
+    const loopEnd = performance.now();
+    const elapsedTime = loopEnd - loopStart;
+    const delayTime = Math.max(0, config.mainLoopIntervalMs - elapsedTime);
+
+    if (delayTime > 0) {
+      await delay(delayTime);
+    }
+  }
+
+  logger('info', '[TargetingWorker] Main loop stopped.');
+}
+
+// Handle control state changes
+function handleControlStateChange(newControlState, oldControlState) {
+  if (
+    (newControlState === 'TARGETING' && oldControlState !== 'TARGETING') ||
+    (newControlState === 'HANDOVER_TO_TARGETING' &&
+      oldControlState !== 'HANDOVER_TO_TARGETING')
+  ) {
+    workerState.shouldRequestNewPath = true;
+    workerState.justGainedControl = true;
+    logger('debug', '[TargetingWorker] Gained control, requesting new path');
+  }
+}
+
+// Redux state management (non-blocking)
 parentPort.on('message', (message) => {
-  if (isShuttingDown) return;
+  if (workerState.isShuttingDown) return;
+
   try {
     if (message.type === 'shutdown') {
-      isShuttingDown = true;
+      workerState.isShuttingDown = true;
       return;
     } else if (message.type === 'state_diff') {
-      if (!globalState) globalState = {};
-      Object.assign(globalState, message.payload);
+      if (!workerState.globalState) workerState.globalState = {};
+      Object.assign(workerState.globalState, message.payload);
     } else if (typeof message === 'object' && !message.type) {
-      globalState = message;
-      if (!isInitialized) {
-        isInitialized = true;
-        logger('info', '[TargetingWorker] Initial state received.');
+      workerState.globalState = message;
+      if (!workerState.isInitialized) {
+        workerState.isInitialized = true;
+        logger(
+          'info',
+          '[TargetingWorker] Initial state received, starting main loop.',
+        );
+
+        // Start the continuous loop
+        mainLoop().catch((error) => {
+          logger('error', '[TargetingWorker] Fatal error in main loop:', error);
+          process.exit(1);
+        });
       }
     }
-    if (!globalState) return;
 
-    // Prevent concurrent processing
-    if (isProcessing) {
-      return;
-    }
+    // Handle control state changes
+    if (workerState.globalState) {
+      const newControlState = workerState.globalState.cavebot?.controlState;
+      const newTargetingEnabled = workerState.globalState.targeting?.enabled;
+      const newCavebotEnabled = workerState.globalState.cavebot?.enabled;
 
-    const newBattleListHash = JSON.stringify(globalState.battleList?.entries);
-    const newCreaturesHash = JSON.stringify(globalState.targeting?.creatures);
-    const newTargetInstanceId = globalState.targeting?.target?.instanceId;
-    const newTargetingListHash = JSON.stringify(
-      globalState.targeting?.targetingList,
-    );
-    const newPlayerPosKey = playerMinimapPosition
-      ? `${playerMinimapPosition.x},${playerMinimapPosition.y},${playerMinimapPosition.z}`
-      : null;
-    const newControlState = globalState.cavebot?.controlState;
-    const newTargetingEnabled = globalState.targeting?.enabled;
-    const newCavebotEnabled = globalState.cavebot?.enabled;
-
-    const shouldProcess =
-      newBattleListHash !== lastBattleListHash ||
-      newCreaturesHash !== lastCreaturesHash ||
-      newTargetInstanceId !== lastTargetInstanceId ||
-      newTargetingListHash !== lastTargetingListHash ||
-      newPlayerPosKey !== lastPlayerPosKey ||
-      newControlState !== lastControlState ||
-      newTargetingEnabled !== lastTargetingEnabled ||
-      newCavebotEnabled !== lastCavebotEnabled;
-
-    if (shouldProcess) {
-      isProcessing = true; // Set processing flag
-      if (
-        (newControlState === 'TARGETING' && lastControlState !== 'TARGETING') ||
-        (newControlState === 'HANDOVER_TO_TARGETING' &&
-          lastControlState !== 'HANDOVER_TO_TARGETING')
-      ) {
-        shouldRequestNewPath = true;
-        justGainedControl = true;
+      if (newControlState !== lastControlState) {
+        handleControlStateChange(newControlState, lastControlState);
+        lastControlState = newControlState;
       }
-      lastBattleListHash = newBattleListHash;
-      lastCreaturesHash = newCreaturesHash;
-      lastTargetInstanceId = newTargetInstanceId;
-      lastTargetingListHash = newTargetingListHash;
-      lastPlayerPosKey = newPlayerPosKey;
-      lastControlState = newControlState;
+
       lastTargetingEnabled = newTargetingEnabled;
       lastCavebotEnabled = newCavebotEnabled;
-
-      performTargeting()
-        .catch((err) =>
-          logger('error', '[TargetingWorker] Unhandled error:', err),
-        )
-        .finally(() => {
-          isProcessing = false; // Reset processing flag
-        });
     }
   } catch (error) {
     logger('error', '[TargetingWorker] Error handling message:', error);
-    isProcessing = false; // Ensure isProcessing is reset even if an error occurs outside performTargeting
   }
 });
+
+// Initialize worker
+function startWorker() {
+  if (!workerData) {
+    throw new Error('[TargetingWorker] Worker data not provided');
+  }
+
+  logger(
+    'info',
+    '[TargetingWorker] Worker initialized, waiting for initial state...',
+  );
+}
+
+startWorker();
