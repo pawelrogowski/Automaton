@@ -70,25 +70,26 @@ export function createTargetingActions(workerContext) {
       );
       return null;
     }
-    const cleanName = entryName.replace(/\.+$/, '').trim();
+
     logger(
       'debug',
-      `[findRuleForEntry] Looking for rules matching: "${cleanName}" (original: "${entryName}")`,
+      `[findRuleForEntry] Looking for rules matching: "${entryName}"`,
     );
 
     const matchingRules = targetingList
       .filter((r) => {
-        // Check both directions: rule name starts with entry name OR entry name starts with rule name
-        // This handles cases where battle list might truncate names with "..."
-        const ruleStartsWithEntry = r.name.startsWith(cleanName);
-        const entryStartsWithRule = cleanName.startsWith(r.name);
-        const matches =
-          r.action === 'Attack' && (ruleStartsWithEntry || entryStartsWithRule);
-        logger(
-          'debug',
-          `[findRuleForEntry] Rule "${r.name}" (action: ${r.action}): ruleStartsWithEntry=${ruleStartsWithEntry}, entryStartsWithRule=${entryStartsWithRule}, matches=${matches}`,
-        );
-        return matches;
+        if (r.action !== 'Attack') return false;
+
+        // Exact match
+        if (r.name === entryName) return true;
+
+        // Handle truncated names: if entryName ends with "..." check if rule name starts with the truncated part
+        if (entryName.endsWith('...')) {
+          const truncatedPart = entryName.slice(0, -3);
+          return r.name.startsWith(truncatedPart);
+        }
+
+        return false;
       })
       .sort((a, b) => b.priority - a.priority);
 
@@ -211,15 +212,19 @@ export function createTargetingActions(workerContext) {
   const isDesiredTargetAcquired = (desiredRuleName, globalState) => {
     const currentTarget = globalState.targeting.target;
     if (!currentTarget || !currentTarget.name) return false;
-    const cleanTargetedName = currentTarget.name.replace(/\.+$/, '').trim();
-    const cleanDesiredName = desiredRuleName.replace(/\.+$/, '').trim();
 
-    // Check for exact match or if the targeted name starts with the desired name
-    // This handles cases where battle list names might be truncated
-    return (
-      cleanTargetedName === cleanDesiredName ||
-      cleanTargetedName.startsWith(cleanDesiredName)
-    );
+    const targetedName = currentTarget.name;
+
+    // Exact match
+    if (targetedName === desiredRuleName) return true;
+
+    // Handle truncated names: if targeted name ends with "..." check if desired name starts with the truncated part
+    if (targetedName.endsWith('...')) {
+      const truncatedPart = targetedName.slice(0, -3);
+      return desiredRuleName.startsWith(truncatedPart);
+    }
+
+    return false;
   };
 
   const manageTargetAcquisition = async (
@@ -262,11 +267,21 @@ export function createTargetingActions(workerContext) {
     let bestKeyPlan = { action: null, presses: Infinity };
     const potentialIndices = battleList
       .map((e, i) => i)
-      .filter((i) =>
-        pathfindingTarget.rule.name.startsWith(
-          battleList[i].name.replace(/\.+$/, '').trim(),
-        ),
-      );
+      .filter((i) => {
+        const battleListName = battleList[i].name;
+        const ruleName = pathfindingTarget.rule.name;
+
+        // Exact match
+        if (battleListName === ruleName) return true;
+
+        // Handle truncated names: if battle list name ends with "..." check if rule name starts with the truncated part
+        if (battleListName.endsWith('...')) {
+          const truncatedPart = battleListName.slice(0, -3);
+          return ruleName.startsWith(truncatedPart);
+        }
+
+        return false;
+      });
 
     logger(
       'debug',

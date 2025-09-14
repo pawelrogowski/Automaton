@@ -82,7 +82,7 @@ function arePositionsEqual(pos1, pos2) {
 }
 
 // Helper function to check if a targeted creature is present in the battle list,
-// accounting for truncated names.
+// accounting for truncated names with ellipsis.
 function isCreaturePresent(targetingCreatureName, battleListEntries) {
   for (const battleListEntry of battleListEntries) {
     const battleListName = battleListEntry.name;
@@ -92,12 +92,12 @@ function isCreaturePresent(targetingCreatureName, battleListEntries) {
       return true;
     }
 
-    // Truncated match: battleListName ends with "..." and targetingCreatureName starts with the non-"..." part
-    if (
-      battleListName.endsWith('...') &&
-      targetingCreatureName.startsWith(battleListName.slice(0, -3))
-    ) {
-      return true;
+    // Handle truncated names: if battle list name ends with "..." check if targeting name starts with the truncated part
+    if (battleListName.endsWith('...')) {
+      const truncatedPart = battleListName.slice(0, -3);
+      if (targetingCreatureName.startsWith(truncatedPart)) {
+        return true;
+      }
     }
   }
   return false;
@@ -140,7 +140,12 @@ async function processBattleListOcr(buffer, regions) {
         CHAR_PRESETS.BATTLE_LIST_NAMES,
       ) || [];
     const entries = ocrResults
-      .map((result) => ({ name: result.text.trim(), x: result.x, y: result.y }))
+      .map((result) => {
+        const trimmedName = result.text.trim();
+        // Fix camelCase names like "FrostGiantess" into "Frost Giantess"
+        const fixedName = trimmedName.replace(/([a-z])([A-Z])/g, '$1 $2');
+        return { name: fixedName, x: result.x, y: result.y };
+      })
       .filter((creature) => creature.name.length > 0);
 
     sabStateManager.writeBattleList(entries);
