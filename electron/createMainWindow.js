@@ -286,8 +286,8 @@ export const createWidgetWindow = () => {
   }
 
   widgetWindow = new BrowserWindow({
-    width: 210,
-    height: 250,
+    width: 108,
+    height: 320,
     x: 100,
     y: 100,
     frame: false,

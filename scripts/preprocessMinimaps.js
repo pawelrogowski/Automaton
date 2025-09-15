@@ -100,7 +100,7 @@ async function preprocessMinimaps() {
     const intKey = (color.r << 16) | (color.g << 8) | color.b;
     colorToIndexMap.set(intKey, index);
   });
-  const noiseIndices = new Set([0, 14]);
+  const noiseIndices = new Set([0]);
 
   await fs.mkdir(RESOURCES_OUTPUT_DIR, { recursive: true });
   await fs.mkdir(PNG_ASSETS_DIR, { recursive: true });

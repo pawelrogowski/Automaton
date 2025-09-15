@@ -88,102 +88,36 @@ These functions are available globally in your Lua scripts.
 - **Parameters**:
   - `itemName`: (String) The name of the action item to check.
 - **Returns**: (Boolean) `true` if the item is available, `false` otherwise.
-- **Available Action Items**:
-  - `exuraMaxVita`
-  - `exuraVita`
-  - `exuraGran`
-  - `exura`
-  - `exuraInfir`
-  - `utetaResVen`
-  - `cancelMagicShield`
-  - `curePoison`
-  - `exposeWeakness`
-  - `magicShield`
-  - `sapStrength`
-  - `utaniGranHur`
-  - `utaniHur`
-  - `ultimateManaPotion`
-  - `greatManaPotion`
-  - `strongManaPotion`
-  - `ManaPotion`
-  - `healthPotion`
-  - `supremeHealthPotion`
-  - `ultimateHealthPotion`
-  - `greatHealthPotion`
-  - `strongHealthPotion`
-  - `smallHealthPotion`
-  - `ultimateSpiritPotion`
-  - `greatSpiritPotion`
-  - `avalancheRune`
-  - `thunderstormRune`
-  - `greatFireballRune`
-  - `stoneShowerRune`
-  - `ultimateHealingRune`
-  - `suddenDeathRune`
-  - `intenseHealingRune`
-  - `explosionRune`
-  - `stoneSkinAmulet`
-  - `mightRing`
-  - `mastermindPotion`
-  - `bullseyePotion`
-  - `berserkPotion`
-  - `transcendencePotion`
-  - `magicShieldPotion`
-  - `createThunderstormRune`
-  - `createGreatFireballRune`
-  - `createSuddenDeathRune`
-  - `createMagicWallRune`
-  - `createExplosionRune`
-  - `energyRing`
-  - `lifeRing`
-  - `dwarvenRing`
-  - `axeRing`
-  - `clubRing`
-  - `powerRing`
-  - `stealthRing`
-  - `swordRing`
-  - `timeRing`
-  - `collarOfGreenPlasma`
-  - `collarOfOrangePlasma`
-  - `collarOfRedPlasma`
-  - `collarOfBluePlasma`
-  - `ringOfGreenPlasma`
-  - `ringOfRedPlasma`
-  - `ringOfOrangePlasma`
-  - `ringOfBluePlasma`
-  - `softBoots`
-  - `blankRune`
-  - `exuraSio`
-  - `exuraGranSio`
-  - `uturaMasSio`
-  - `utanaVid`
-  - `exuraGranMasRes`
-  - `exanaKor`
-  - `exanaFlam`
-  - `exanaVis`
-  - `exanaMort`
-  - `utevoLux`
-  - `utevoGranLux`
-  - `utevoVisLux`
-  - `exuraSan`
-  - `uturaGran`
-  - `exuraGranSan`
-  - `utetaResSac`
-  - `exanaIna`
-  - `utevoGravSan`
-  - `utamoMasSio`
-  - `utitoTempoSan`
-  - `utamoTempoSan`
-  - `exuraInfirIco`
-  - `exuraMedIco`
-  - `exuraGranIco`
-  - `woundCleansing`
-  - `utetaResEq`
-  - `utitoTempo`
-  - `utaniTempoHur`
-  - `utamoTempo`
-  - `utitoMasSio`
-  - `utetaResDru
+
+`caround(distance)`
+- **Description**: Returns the number of creatures detected by the creature monitor. When no distance is specified, returns all detected creatures. When distance is specified, returns only creatures within that distance.
+- **Parameters**:
+  - `distance`: (Number, optional) The maximum distance in tiles. If omitted, returns all detected creatures.
+- **Returns**: (Number) The count of creatures within range (or all creatures if no distance specified), or 0 if none.
+
+`paround()`
+- **Description**: Returns the total number of players currently visible on screen.
+- **Returns**: (Number) The count of visible players, or 0 if none.
+
+`npcaround()`
+- **Description**: Returns the total number of NPCs currently visible on screen.
+- **Returns**: (Number) The count of visible NPCs, or 0 if none.
+
+`maround()`
+- **Description**: Returns the total number of battle list entries (monsters). Battle list entries don't have coordinate data, so no distance filtering is possible.
+- **Returns**: (Number) The count of all battle list entries, or 0 if none.
+
+`wptDistance()`
+- **Description**: Returns the chebyshev distance to the current waypoint. Returns 0 if standing on the exact tile, 1 if standing next to it.
+- **Returns**: (Number) The distance to the current waypoint in tiles, or 0 if no waypoint or same position.
+
+`isTileReachable(x, y, z)`
+- **Description**: Uses the actual pathfinder engine to check if the target coordinates can be reached. Returns false if the distance is greater than 50 tiles or if no valid path exists.
+- **Parameters**:
+  - `x`: (Number) The target X coordinate.
+  - `y`: (Number) The target Y coordinate.
+  - `z`: (Number) The target Z coordinate (floor level).
+- **Returns**: (Boolean) `true` if the tile is reachable via pathfinding, `false` otherwise.
 
 ### Movement & Position
 
@@ -198,6 +132,10 @@ These functions are available globally in your Lua scripts.
 - **Parameters**:
   - `range`: (Number, optional) The allowed distance from the waypoint.
 - **Returns**: (Boolean) `true` if you are at the location.
+
+`wptDistance()`
+- **Description**: Returns the chebyshev distance to the current waypoint. Returns 0 if standing on the exact tile, 1 if standing next to it.
+- **Returns**: (Number) The distance to the current waypoint in tiles, or 0 if no waypoint or same position.
 
 ### Input & Control
 
@@ -285,6 +223,32 @@ These functions are available globally in your Lua scripts.
 `isCreatureOnTile(x, y, z)`
 - **Description**: Checks if a creature is on a specific tile.
 - **Returns**: (Boolean)
+
+`caround(distance)`
+- **Description**: Returns the number of creatures detected by the creature monitor. When no distance is specified, returns all detected creatures. When distance is specified, returns only creatures within that distance.
+- **Parameters**:
+  - `distance`: (Number, optional) The maximum distance in tiles. If omitted, returns all detected creatures.
+- **Returns**: (Number) The count of creatures within range (or all creatures if no distance specified), or 0 if none.
+
+`paround()`
+- **Description**: Returns the total number of players currently visible on screen.
+- **Returns**: (Number) The count of visible players, or 0 if none.
+
+`npcaround()`
+- **Description**: Returns the total number of NPCs currently visible on screen.
+- **Returns**: (Number) The count of visible NPCs, or 0 if none.
+
+`maround()`
+- **Description**: Returns the total number of battle list entries (monsters). Battle list entries don't have coordinate data, so no distance filtering is possible.
+- **Returns**: (Number) The count of all battle list entries, or 0 if none.
+
+`isTileReachable(x, y, z)`
+- **Description**: Uses the actual pathfinder engine to check if the target coordinates can be reached. Returns false if the distance is greater than 50 tiles or if no valid path exists.
+- **Parameters**:
+  - `x`: (Number) The target X coordinate.
+  - `y`: (Number) The target Y coordinate.
+  - `z`: (Number) The target Z coordinate (floor level).
+- **Returns**: (Boolean) `true` if the tile is reachable via pathfinding, `false` otherwise.
 
 ### UI & Login
 

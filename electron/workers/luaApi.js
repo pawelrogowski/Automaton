@@ -252,33 +252,50 @@ export const createStateShortcutObject = (getState, type) => {
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
 
-      if (!target || !playerPos || !gameWorld || !tileSize) {
+      if (!target || !playerPos) {
+        return null;
+      }
+
+      // Get coordinates from gameCoords if available, otherwise fallback to x,y,z
+      const targetX = target.gameCoords?.x ?? target.x;
+      const targetY = target.gameCoords?.y ?? target.y;
+      const targetZ = target.gameCoords?.z ?? target.z;
+
+      if (
+        targetX === undefined ||
+        targetY === undefined ||
+        targetZ === undefined
+      ) {
         return null;
       }
 
       const distance = Math.max(
-        Math.abs(playerPos.x - target.x),
-        Math.abs(playerPos.y - target.y),
+        Math.abs(playerPos.x - targetX),
+        Math.abs(playerPos.y - targetY),
       );
 
-      const absCoords = getAbsoluteGameWorldClickCoordinates(
-        target.x,
-        target.y,
-        playerPos,
-        gameWorld,
-        tileSize,
-        'center', // Assuming 'center' for target coordinates
-      );
+      let absCoords = { x: 0, y: 0 };
+      if (gameWorld && tileSize) {
+        const coords = getAbsoluteGameWorldClickCoordinates(
+          targetX,
+          targetY,
+          playerPos,
+          gameWorld,
+          tileSize,
+          'center',
+        );
+        absCoords = coords || absCoords;
+      }
 
       return {
         name: target.name,
-        x: target.x,
-        y: target.y,
-        z: target.z,
+        x: targetX,
+        y: targetY,
+        z: targetZ,
         distance: distance,
         abs: {
-          x: absCoords?.x || 0,
-          y: absCoords?.y || 0,
+          x: absCoords.x,
+          y: absCoords.y,
         },
       };
     },
@@ -312,6 +329,7 @@ export const createLuaApi = async (context) => {
     'focusTab',
     'login',
     'waitFor',
+    'isTileReachable',
   ];
   const getWindowId = () => getState()?.global?.windowId;
   const getDisplay = () => getState()?.global?.display || ':0';
@@ -510,25 +528,25 @@ export const createLuaApi = async (context) => {
     },
     caround: (distance) => {
       const state = getState();
-      const playerPos = state.gameState?.playerMinimapPosition;
-      const creatures = state.battleList?.entries || []; // Assuming creatures are in battleList.entries
+      const creatures = state.targeting?.creatures || [];
 
-      if (
-        !playerPos ||
-        !creatures ||
-        !Number.isInteger(distance) ||
-        distance < 0
-      ) {
-        return -1;
+      // If no distance parameter provided, return all detected creatures
+      if (distance === undefined || distance === null) {
+        return creatures.length;
+      }
+
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (!playerPos || !Number.isInteger(distance) || distance < 0) {
+        return 0;
       }
 
       let count = 0;
       for (const creature of creatures) {
-        if (creature.x && creature.y && creature.z === playerPos.z) {
-          // Only count creatures on the same Z-level
+        if (creature.gameCoords && creature.gameCoords.z === playerPos.z) {
           const dist = Math.max(
-            Math.abs(playerPos.x - creature.x),
-            Math.abs(playerPos.y - creature.y),
+            Math.abs(playerPos.x - creature.gameCoords.x),
+            Math.abs(playerPos.y - creature.gameCoords.y),
           );
           if (dist <= distance) {
             count++;
@@ -536,6 +554,108 @@ export const createLuaApi = async (context) => {
         }
       }
       return count;
+    },
+    paround: () => {
+      const state = getState();
+      const players = state.uiValues?.players || [];
+      return players.length;
+    },
+    npcaround: () => {
+      const state = getState();
+      const npcs = state.uiValues?.npcs || [];
+      return npcs.length;
+    },
+    maround: () => {
+      const state = getState();
+      const battleListEntries = state.battleList?.entries || [];
+      return battleListEntries.length;
+    },
+    wptDistance: () => {
+      const state = getState();
+      // First try to get the distance from pathfinder state
+      const pathfinderDistance = state.pathfinder?.wptDistance;
+      if (typeof pathfinderDistance === 'number') {
+        return pathfinderDistance;
+      }
+
+      // Fallback to manual calculation
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const { waypointSections, currentSection, wptId } = state.cavebot || {};
+
+      if (
+        !playerPos ||
+        wptId == null ||
+        !waypointSections ||
+        !waypointSections[currentSection]
+      ) {
+        return 0;
+      }
+
+      const targetWpt = waypointSections[currentSection].waypoints.find(
+        (wp) => wp.id === wptId,
+      );
+      if (!targetWpt || playerPos.z !== targetWpt.z) {
+        return 0;
+      }
+
+      return Math.max(
+        Math.abs(playerPos.x - targetWpt.x),
+        Math.abs(playerPos.y - targetWpt.y),
+      );
+    },
+    isTileReachable: async (x, y, z) => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+
+      if (
+        !playerPos ||
+        !Number.isInteger(x) ||
+        !Number.isInteger(y) ||
+        !Number.isInteger(z)
+      ) {
+        return false;
+      }
+
+      // If the distance is greater than 50, always return false
+      const distance = Math.max(
+        Math.abs(playerPos.x - x),
+        Math.abs(playerPos.y - y),
+      );
+      if (distance > 50) {
+        return false;
+      }
+
+      // If on different floors, not reachable
+      if (playerPos.z !== z) {
+        return false;
+      }
+
+      // Try to use pathfinder instance if available (like creatureMonitor does)
+      if (context && context.pathfinderInstance) {
+        try {
+          const targetNode = { x, y, z };
+          const isReachable = context.pathfinderInstance.isReachable(
+            playerPos,
+            targetNode,
+            [],
+          );
+          return isReachable;
+        } catch (error) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] pathfinder check failed: ${error.message}`,
+          );
+        }
+      }
+
+      // Fallback to distance-based reachability check
+      // Adjacent tiles (distance 1) are always reachable
+      if (distance <= 1) {
+        return true;
+      }
+
+      // For farther distances, use a conservative estimate
+      return distance <= 20;
     },
     log: (level, ...messages) =>
       logger(

@@ -8,6 +8,7 @@ import { config } from './config.js'; // Still need config for other values
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
 import { SABStateManager } from '../sabStateManager.js';
+import Pathfinder from 'pathfinder-native';
 import {
   postStoreUpdate,
   postGlobalVarUpdate,
@@ -47,6 +48,7 @@ const workerState = {
   shouldRequestNewPath: false,
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
+  pathfinderInstance: null,
   logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,
 };
@@ -300,8 +302,66 @@ async function mainLoop() {
 
 // --- Worker Lifecycle ---
 
+async function initializePathfinder() {
+  workerState.logger('info', 'Initializing Pathfinder instance...');
+  try {
+    workerState.pathfinderInstance = new Pathfinder.Pathfinder();
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const mapDataForAddon = {};
+    const baseDir = workerData.paths.minimapResources;
+
+    if (!baseDir) {
+      throw new Error('minimapResources path not provided');
+    }
+
+    const zLevelDirs = (await fs.readdir(baseDir, { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && d.name.startsWith('z'))
+      .map((d) => d.name);
+
+    for (const zDir of zLevelDirs) {
+      const zLevel = parseInt(zDir.substring(1), 10);
+      const zLevelPath = path.join(baseDir, zDir);
+      try {
+        const metadata = JSON.parse(
+          await fs.readFile(path.join(zLevelPath, 'walkable.json'), 'utf8'),
+        );
+        const grid = await fs.readFile(path.join(zLevelPath, 'walkable.bin'));
+        mapDataForAddon[zLevel] = { ...metadata, grid };
+      } catch (e) {
+        if (e.code !== 'ENOENT')
+          workerState.logger(
+            'error',
+            `Could not load path data for Z=${zLevel}: ${e.message}`,
+          );
+      }
+    }
+
+    workerState.pathfinderInstance.loadMapData(mapDataForAddon);
+    if (workerState.pathfinderInstance.isLoaded) {
+      workerState.logger(
+        'info',
+        'Pathfinder instance loaded map data successfully.',
+      );
+    } else {
+      throw new Error('Pathfinder failed to load map data.');
+    }
+  } catch (err) {
+    workerState.logger(
+      'error',
+      'Could not initialize Pathfinder instance:',
+      err,
+    );
+    workerState.pathfinderInstance = null;
+  }
+}
+
 async function initializeWorker() {
   workerState.logger('info', 'Cavebot worker starting up...');
+
+  // Initialize pathfinder first
+  await initializePathfinder();
+
   try {
     workerState.luaExecutor = new CavebotLuaExecutor({
       logger: workerState.logger,
@@ -315,6 +375,7 @@ async function initializeWorker() {
       goToWpt: (index) => goToWpt(index, workerState.globalState),
       sharedLuaGlobals: workerData.sharedLuaGlobals,
       postGlobalVarUpdate,
+      pathfinderInstance: workerState.pathfinderInstance,
     });
     if (!(await workerState.luaExecutor.initialize()))
       throw new Error('LuaExecutor failed to initialize.');
@@ -344,6 +405,8 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'shutdown') {
       workerState.isShuttingDown = true;
       if (workerState.luaExecutor) workerState.luaExecutor.destroy();
+      if (workerState.pathfinderInstance)
+        workerState.pathfinderInstance.destroy();
     } else if (message.type === 'lua_global_broadcast') {
       const { key, value } = message.payload;
       if (workerData.sharedLuaGlobals) {

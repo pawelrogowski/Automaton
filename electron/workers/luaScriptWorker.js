@@ -9,6 +9,7 @@ import { createLogger } from '../utils/logger.js';
 import { createLuaApi } from './luaApi.js';
 import { createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
+import Pathfinder from 'pathfinder-native';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +22,7 @@ let loopInterval = null;
 let asyncFunctionNames = [];
 let keepAliveInterval = null;
 let apiInitialized = false;
+let pathfinderInstance = null;
 
 // --- State machine to prevent shutdown during init ---
 let workerState = 'pending'; // 'pending' | 'initializing' | 'running'
@@ -87,6 +89,17 @@ const cleanupAndExit = async () => {
     );
   }
 
+  if (pathfinderInstance) {
+    try {
+      pathfinderInstance.destroy();
+    } catch (e) {
+      log(
+        'error',
+        `[Lua Script Worker ${scriptConfig.id}] pathfinder cleanup error: ${e.message}`,
+      );
+    }
+  }
+
   if (lua) {
     try {
       lua.global.close();
@@ -110,14 +123,24 @@ const loadLuaLibraries = async () => {
         const filePath = path.join(libPath, file);
         const content = await fs.readFile(filePath, 'utf8');
         await lua.doString(content);
-        log('info', `[Lua Script Worker ${scriptConfig.id}] Loaded Lua library: ${file}`);
+        log(
+          'info',
+          `[Lua Script Worker ${scriptConfig.id}] Loaded Lua library: ${file}`,
+        );
       }
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {
-      log('error', `[Lua Script Worker ${scriptConfig.id}] Error loading Lua libraries:`, error);
+      log(
+        'error',
+        `[Lua Script Worker ${scriptConfig.id}] Error loading Lua libraries:`,
+        error,
+      );
     } else {
-      log('info', `[Lua Script Worker ${scriptConfig.id}] No Lua libraries found to load.`);
+      log(
+        'info',
+        `[Lua Script Worker ${scriptConfig.id}] No Lua libraries found to load.`,
+      );
     }
   }
 };
@@ -179,7 +202,9 @@ const initializeLuaApi = async () => {
       onAsyncEnd,
       sharedLuaGlobals: workerData.sharedLuaGlobals,
       lua: lua,
-      postInputAction: (action) => parentPort.postMessage({ type: 'inputAction', payload: action }),
+      postInputAction: (action) =>
+        parentPort.postMessage({ type: 'inputAction', payload: action }),
+      pathfinderInstance: pathfinderInstance,
     });
 
     asyncFunctionNames = newNames;
@@ -199,6 +224,63 @@ const initializeLuaApi = async () => {
       error,
     );
     throw error; // Re-throw to be caught by the init handler's try/catch
+  }
+};
+
+const initializePathfinder = async () => {
+  log(
+    'info',
+    `[Lua Script Worker ${scriptConfig.id}] Initializing Pathfinder instance...`,
+  );
+  try {
+    pathfinderInstance = new Pathfinder.Pathfinder();
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const mapDataForAddon = {};
+    const baseDir = workerData.paths?.minimapResources;
+
+    if (!baseDir) {
+      throw new Error('minimapResources path not provided');
+    }
+
+    const zLevelDirs = (await fs.readdir(baseDir, { withFileTypes: true }))
+      .filter((d) => d.isDirectory() && d.name.startsWith('z'))
+      .map((d) => d.name);
+
+    for (const zDir of zLevelDirs) {
+      const zLevel = parseInt(zDir.substring(1), 10);
+      const zLevelPath = path.join(baseDir, zDir);
+      try {
+        const metadata = JSON.parse(
+          await fs.readFile(path.join(zLevelPath, 'walkable.json'), 'utf8'),
+        );
+        const grid = await fs.readFile(path.join(zLevelPath, 'walkable.bin'));
+        mapDataForAddon[zLevel] = { ...metadata, grid };
+      } catch (e) {
+        if (e.code !== 'ENOENT')
+          log(
+            'error',
+            `[Lua Script Worker ${scriptConfig.id}] Could not load path data for Z=${zLevel}: ${e.message}`,
+          );
+      }
+    }
+
+    pathfinderInstance.loadMapData(mapDataForAddon);
+    if (pathfinderInstance.isLoaded) {
+      log(
+        'info',
+        `[Lua Script Worker ${scriptConfig.id}] Pathfinder instance loaded map data successfully.`,
+      );
+    } else {
+      throw new Error('Pathfinder failed to load map data.');
+    }
+  } catch (err) {
+    log(
+      'error',
+      `[Lua Script Worker ${scriptConfig.id}] Could not initialize Pathfinder instance:`,
+      err,
+    );
+    pathfinderInstance = null;
   }
 };
 
@@ -402,6 +484,7 @@ parentPort.on('message', async (message) => {
       return;
     }
 
+    await initializePathfinder();
     await initializeLuaApi();
     log('info', `[Lua Script Worker ${scriptConfig.id}] Lua API initialized.`);
 
