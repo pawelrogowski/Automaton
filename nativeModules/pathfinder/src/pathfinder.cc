@@ -179,8 +179,24 @@ namespace AStar {
 
                 if (isCreatureTile) continue;
 
+                // Add 3x3 creature avoidance cost
+                int creatureAvoidanceCost = 0;
+                for (const auto& creature : creaturePositions) {
+                    int creatureLocalX = creature.x - mapData.minX;
+                    int creatureLocalY = creature.y - mapData.minY;
+                    
+                    // Check if current tile is within 3x3 area around creature (distance of 1)
+                    int dx = std::abs(nx - creatureLocalX);
+                    int dy = std::abs(ny - creatureLocalY);
+                    
+                    if (dx <= 1 && dy <= 1 && creature.z == start.z) {
+                        creatureAvoidanceCost += BASE_MOVE_COST * 3; // Same as 3 straight moves
+                    }
+                }
+
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
+                addedCost += creatureAvoidanceCost;
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
                 int tentativeG = g + baseMoveCost + addedCost + creatureCost;
 

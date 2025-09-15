@@ -19,6 +19,9 @@ export function createTargetingActions(workerContext) {
     workerContext;
   const logger = createLogger({ info: true, error: true, debug: false });
 
+  // Track previous target selection to prevent spam logging
+  let previousSelectedTargetName = null;
+
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const postInputAction = (type, action) =>
     parentPort.postMessage({ type: 'inputAction', payload: { type, action } });
@@ -185,27 +188,46 @@ export function createTargetingActions(workerContext) {
 
     if (bestAlternative && bestAlternativePriority > currentEffectivePriority) {
       // A better target exists, so we must switch.
-      logger(
-        'info',
-        `[selectBestTarget] Switching to better target: ${bestAlternative.name}`,
-      );
+      // Only log if this is a different target than last time
+      if (
+        bestAlternative?.name &&
+        bestAlternative.name !== previousSelectedTargetName
+      ) {
+        logger(
+          'info',
+          `[selectBestTarget] Switching to better target: ${bestAlternative.name}`,
+        );
+        previousSelectedTargetName = bestAlternative.name;
+      }
       return bestAlternative;
     }
 
     if (currentTargetRule) {
       // No better target exists, and our current target is valid, so stick to it.
-      logger(
-        'debug',
-        `[selectBestTarget] Sticking with current target: ${currentTarget.name}`,
-      );
+      // Only log if this is a different decision than last time
+      if (
+        currentTarget?.name &&
+        currentTarget.name !== previousSelectedTargetName
+      ) {
+        logger(
+          'debug',
+          `[selectBestTarget] Sticking with current target: ${currentTarget.name}`,
+        );
+        previousSelectedTargetName = currentTarget.name;
+      }
       return { name: currentTarget.name, rule: currentTargetRule };
     }
 
     // Our current target is invalid (unreachable, etc.), so fall back to the best alternative.
-    logger(
-      'debug',
-      `[selectBestTarget] Falling back to best alternative: ${bestAlternative?.name || 'none'}`,
-    );
+    // Only log if this is a different decision than last time
+    const fallbackTargetName = bestAlternative?.name || 'none';
+    if (fallbackTargetName !== previousSelectedTargetName) {
+      logger(
+        'debug',
+        `[selectBestTarget] Falling back to best alternative: ${fallbackTargetName}`,
+      );
+      previousSelectedTargetName = fallbackTargetName;
+    }
     return bestAlternative;
   };
 
@@ -241,12 +263,12 @@ export function createTargetingActions(workerContext) {
     }
 
     const isAlreadyAcquired = isDesiredTargetAcquired(
-      pathfindingTarget.rule.name,
+      pathfindingTarget.rule?.name,
       globalState,
     );
     logger(
       'debug',
-      `[manageTargetAcquisition] Target: ${pathfindingTarget.name}, Rule: ${pathfindingTarget.rule.name}, Already acquired: ${isAlreadyAcquired}`,
+      `[manageTargetAcquisition] Target: ${pathfindingTarget.name || 'unknown'}, Rule: ${pathfindingTarget.rule?.name || 'unknown'}, Already acquired: ${isAlreadyAcquired}`,
     );
 
     if (isAlreadyAcquired) {

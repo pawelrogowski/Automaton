@@ -4,7 +4,7 @@ import mouseController from 'mouse-controller';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger({
-  info: true,
+  info: false,
   error: true,
   debug: false,
 });
@@ -128,7 +128,11 @@ async function processQueue() {
           case 'sendKey':
           case 'keyDown':
           case 'keyUp':
-            await keypress[action.method](action.args[0], display, action.args[1]);
+            await keypress[action.method](
+              action.args[0],
+              display,
+              action.args[1],
+            );
             break;
           case 'typeArray':
             await keypress.typeArray(action.args[0], display, action.args[1]);

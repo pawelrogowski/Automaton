@@ -16,6 +16,10 @@ const regionDefinitions = {
     ],
     width: 94,
     height: 14,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
   },
   manaBar: {
     type: 'single',
@@ -35,6 +39,10 @@ const regionDefinitions = {
     ],
     width: 94,
     height: 14,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
   },
   minimap: {
     type: 'single',
@@ -50,6 +58,10 @@ const regionDefinitions = {
     ],
     width: 106,
     height: 109,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
   },
   minimapFloorIndicatorColumn: {
     type: 'single',
@@ -65,6 +77,10 @@ const regionDefinitions = {
     ],
     width: 2,
     height: 63,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
   },
   minimapFull: {
     type: 'single',
@@ -80,6 +96,10 @@ const regionDefinitions = {
     ],
     width: 106,
     height: 109,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
   },
   cooldownBar: {
     type: 'single',
@@ -190,6 +210,10 @@ const regionDefinitions = {
     ],
     width: 104,
     height: 9,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
     children: {
       inRestingArea: {
         type: 'single',
@@ -409,6 +433,10 @@ const regionDefinitions = {
     ],
     width: 32,
     height: 32,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
     children: {
       emptyAmuletSlot: {
         type: 'single',
@@ -453,6 +481,10 @@ const regionDefinitions = {
     ],
     width: 32,
     height: 32,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
     children: {
       emptyRingSlot: {
         type: 'single',
@@ -517,6 +549,10 @@ const regionDefinitions = {
     ],
     width: 32,
     height: 32,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
     children: {
       emptyBootsSlot: {
         type: 'single',
@@ -626,6 +662,9 @@ const regionDefinitions = {
     },
     maxRight: 2000,
     maxDown: 110,
+    searchArea: {
+      type: 'bottomHalf',
+    },
   },
   battleList: {
     ocrColors: [
@@ -655,6 +694,10 @@ const regionDefinitions = {
     },
     maxRight: 165,
     maxDown: 9999,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 352,
+    },
     children: {
       entries: {
         type: 'boundingBox',
@@ -787,6 +830,10 @@ const regionDefinitions = {
     },
     maxRight: 168,
     maxDown: 2000,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 352,
+    },
   },
   npcList: {
     ocrColors: [
@@ -838,6 +885,10 @@ const regionDefinitions = {
     },
     maxRight: 168,
     maxDown: 2000,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 352,
+    },
   },
   gameWorld: {
     ocrColors: [
@@ -869,24 +920,9 @@ const regionDefinitions = {
     },
     end: {
       direction: 'horizontal',
-      offset: { x: 9, y: -1 },
-      sequence: [
-        [111, 111, 111],
-        [117, 117, 117],
-        [116, 116, 116],
-        [116, 116, 116],
-        [113, 113, 113],
-        [115, 115, 115],
-        [116, 116, 115],
-        [115, 115, 115],
-        [118, 118, 117],
-        [115, 115, 115],
-        [114, 114, 114],
-      ],
-      // 100%
-      // offset: { x: 11, y: -1 },
+      // 200%
+      // offset: { x: 9, y: -1 },
       // sequence: [
-      //   [109, 109, 109],
       //   [111, 111, 111],
       //   [117, 117, 117],
       //   [116, 116, 116],
@@ -897,9 +933,25 @@ const regionDefinitions = {
       //   [115, 115, 115],
       //   [118, 118, 117],
       //   [115, 115, 115],
-      //   [113, 113, 113],
-      //   [68, 68, 68],
+      //   [114, 114, 114],
       // ],
+      // 150%
+      offset: { x: 11, y: -1 },
+      sequence: [
+        [113, 113, 113],
+        [115, 115, 115],
+        [112, 112, 112],
+        [114, 114, 115],
+        [119, 119, 119],
+        [116, 116, 116],
+        [116, 116, 116],
+        [120, 120, 120],
+        [125, 125, 125],
+        [116, 116, 116],
+        [121, 121, 121],
+        [115, 115, 116],
+        [60, 60, 60],
+      ],
     },
     maxRight: 'fullWidth',
     maxDown: 'fullHeight',
@@ -961,6 +1013,9 @@ const regionDefinitions = {
       [160, 160, 255],
       [0, 240, 0],
     ],
+    searchArea: {
+      type: 'bottomHalf',
+    },
   },
   chatboxSecondary: {
     type: 'boundingBox',
@@ -1005,6 +1060,9 @@ const regionDefinitions = {
       [160, 160, 255],
       [0, 240, 0],
     ],
+    searchArea: {
+      type: 'bottomHalf',
+    },
   },
   chatBoxTabRow: {
     ocrColors: [
@@ -1067,6 +1125,9 @@ const regionDefinitions = {
     },
     maxRight: 1400,
     maxDown: 1000,
+    searchArea: {
+      type: 'bottomHalf',
+    },
   },
   skillsWidget: {
     type: 'boundingBox',
@@ -1093,6 +1154,10 @@ const regionDefinitions = {
     },
     maxRight: 170,
     maxDown: 1000,
+    searchArea: {
+      type: 'leftEdge',
+      maxFromLeft: 174,
+    },
     ocrColors: [
       [192, 192, 192],
       [68, 173, 37],
@@ -1126,6 +1191,9 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       emailInput: {
         type: 'fixed',
@@ -1185,6 +1253,9 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       ok: {
         type: 'fixed',
@@ -1211,6 +1282,9 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       abort: {
         type: 'fixed',
@@ -1235,6 +1309,9 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       ok: {
         type: 'fixed',
@@ -1276,6 +1353,9 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       ok: {
         type: 'fixed',
@@ -1319,6 +1399,9 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       cancel: {
         type: 'fixed',
@@ -1420,6 +1503,9 @@ const regionDefinitions = {
       [244, 244, 244],
       [192, 192, 192],
     ],
+    searchArea: {
+      type: 'center',
+    },
     children: {
       ok: {
         type: 'fixed',
@@ -1458,6 +1544,9 @@ const regionDefinitions = {
     ],
     width: 250,
     height: 157,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       abort: {
         type: 'fixed',
@@ -1499,6 +1588,9 @@ const regionDefinitions = {
     ],
     width: 470,
     height: 100,
+    searchArea: {
+      type: 'center',
+    },
     children: {
       ok: {
         type: 'fixed',
@@ -1517,6 +1609,9 @@ const regionDefinitions = {
     width: 125,
     height: 11,
     ocrColors: [[240, 240, 240]],
+    searchArea: {
+      type: 'bottomHalf',
+    },
   },
   onlineMarker: {
     type: 'single',
@@ -1530,6 +1625,10 @@ const regionDefinitions = {
     ],
     width: 1,
     height: 1,
+    searchArea: {
+      type: 'rightEdge',
+      maxFromRight: 174,
+    },
   },
   stowText: {
     type: 'single',
@@ -1583,6 +1682,10 @@ const regionDefinitions = {
     type: 'boundingBox',
     maxRight: 176,
     maxDown: 99999,
+    searchArea: {
+      type: 'leftEdge',
+      maxFromLeft: 176,
+    },
     ocrColors: [
       [248, 96, 96],
       [96, 248, 96],

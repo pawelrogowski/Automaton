@@ -25,7 +25,8 @@ const getPreprocessedBaseDir = () => {
   }
   return PREPROCESSED_BASE_DIR;
 };
-const LANDMARK_SIZE = 3;
+
+const LANDMARK_SIZE = 5;
 // The landmark pattern is now packed at 4-bits per pixel.
 // The C++ addon will now work with 25-byte keys instead of 49-byte keys.
 const LANDMARK_PATTERN_BYTES = Math.ceil((LANDMARK_SIZE * LANDMARK_SIZE) / 2); // 25

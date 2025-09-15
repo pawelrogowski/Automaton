@@ -30,6 +30,66 @@ const frameUpdateManager = new FrameUpdateManager();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Helper function to calculate constrained search area based on definition
+function calculateConstrainedSearchArea(def, fullSearchArea, metadata) {
+  if (!def.searchArea) return fullSearchArea;
+
+  const { searchArea } = def;
+  let constrainedArea = { ...fullSearchArea };
+
+  switch (searchArea.type) {
+    case 'rightEdge':
+      if (searchArea.maxFromRight) {
+        const minX = Math.max(0, metadata.width - searchArea.maxFromRight);
+        constrainedArea.x = Math.max(constrainedArea.x, minX);
+        constrainedArea.width = Math.min(
+          constrainedArea.width,
+          metadata.width - constrainedArea.x,
+        );
+      }
+      break;
+
+    case 'leftEdge':
+      if (searchArea.maxFromLeft) {
+        constrainedArea.width = Math.min(
+          constrainedArea.width,
+          searchArea.maxFromLeft,
+        );
+      }
+      break;
+
+    case 'bottomHalf':
+      const halfHeight = Math.floor(metadata.height / 2);
+      constrainedArea.y = Math.max(constrainedArea.y, halfHeight);
+      constrainedArea.height = Math.min(
+        constrainedArea.height,
+        metadata.height - constrainedArea.y,
+      );
+      break;
+
+    case 'center':
+      const centerX = Math.floor(metadata.width / 2);
+      const centerY = Math.floor(metadata.height / 2);
+      const quarterWidth = Math.floor(metadata.width / 4);
+      const quarterHeight = Math.floor(metadata.height / 4);
+
+      constrainedArea.x = Math.max(constrainedArea.x, centerX - quarterWidth);
+      constrainedArea.y = Math.max(constrainedArea.y, centerY - quarterHeight);
+      constrainedArea.width = Math.min(constrainedArea.width, quarterWidth * 2);
+      constrainedArea.height = Math.min(
+        constrainedArea.height,
+        quarterHeight * 2,
+      );
+      break;
+  }
+
+  // Ensure area is valid
+  constrainedArea.width = Math.max(0, constrainedArea.width);
+  constrainedArea.height = Math.max(0, constrainedArea.height);
+
+  return constrainedArea;
+}
+
 // --- Recursive Region Finding Logic ---
 async function findRegionsRecursive(
   buffer,
@@ -48,16 +108,26 @@ async function findRegionsRecursive(
   for (const [name, def] of defEntries) {
     switch (def.type) {
       case 'single':
+        const singleSearchArea = calculateConstrainedSearchArea(
+          def,
+          searchArea,
+          metadata,
+        );
         discoveryTasks[name] = {
           sequences: { [name]: def },
-          searchArea,
+          searchArea: singleSearchArea,
           occurrence: 'first',
         };
         break;
       case 'boundingBox':
+        const boundingBoxSearchArea = calculateConstrainedSearchArea(
+          def,
+          searchArea,
+          metadata,
+        );
         discoveryTasks[`${name}_start`] = {
           sequences: { [`${name}_start`]: def.start },
-          searchArea,
+          searchArea: boundingBoxSearchArea,
           occurrence: 'first',
         };
         boundingBoxDefs[name] = def;

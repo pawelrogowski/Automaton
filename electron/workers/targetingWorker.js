@@ -140,13 +140,62 @@ const updateSABData = () => {
 
         if (tempPath.length > 0) {
           const pathStart = tempPath[0];
+          const pathEnd = tempPath[tempPath.length - 1];
+
+          // Verify path starts from current player position
           if (
             !workerState.playerMinimapPosition ||
             pathStart.x !== workerState.playerMinimapPosition.x ||
             pathStart.y !== workerState.playerMinimapPosition.y ||
             pathStart.z !== workerState.playerMinimapPosition.z
           ) {
+            logger(
+              'debug',
+              '[TargetingWorker] Path does not start from current position, discarding',
+            );
             workerState.path = [];
+          } else if (targetingContext.pathfindingTarget) {
+            // Verify path ends at target creature position
+            const targetCreature = sabStateManager
+              .getCreatures()
+              .find(
+                (c) =>
+                  c.instanceId ===
+                    targetingContext.pathfindingTarget.rule?.targetInstanceId ||
+                  (c.gameCoords.x ===
+                    workerState.globalState?.cavebot?.dynamicTarget
+                      ?.targetCreaturePos?.x &&
+                    c.gameCoords.y ===
+                      workerState.globalState?.cavebot?.dynamicTarget
+                        ?.targetCreaturePos?.y &&
+                    c.gameCoords.z ===
+                      workerState.globalState?.cavebot?.dynamicTarget
+                        ?.targetCreaturePos?.z),
+              );
+
+            if (targetCreature) {
+              // Check if path ends near the target (within 1-2 tiles due to stance)
+              const distanceToTarget = Math.max(
+                Math.abs(pathEnd.x - targetCreature.gameCoords.x),
+                Math.abs(pathEnd.y - targetCreature.gameCoords.y),
+              );
+
+              if (
+                distanceToTarget <= 2 &&
+                pathEnd.z === targetCreature.gameCoords.z
+              ) {
+                workerState.path = tempPath;
+              } else {
+                logger(
+                  'debug',
+                  `[TargetingWorker] Path does not end near target creature (distance: ${distanceToTarget}), discarding`,
+                );
+                workerState.path = [];
+              }
+            } else {
+              // Target creature not found, use path anyway (creature might have moved/died)
+              workerState.path = tempPath;
+            }
           } else {
             workerState.path = tempPath;
           }
@@ -314,9 +363,16 @@ function handleControlStateChange(newControlState, oldControlState) {
     (newControlState === 'HANDOVER_TO_TARGETING' &&
       oldControlState !== 'HANDOVER_TO_TARGETING')
   ) {
+    // Clear path when gaining control
+    workerState.path = [];
+    workerState.pathfindingStatus = PATH_STATUS_IDLE;
+    workerState.lastPathDataCounter = -1;
     workerState.shouldRequestNewPath = true;
     workerState.justGainedControl = true;
-    logger('debug', '[TargetingWorker] Gained control, requesting new path');
+    logger(
+      'info',
+      '[TargetingWorker] Gained control, cleared path and requesting new pathfinding',
+    );
   }
 }
 

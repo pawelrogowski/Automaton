@@ -10,7 +10,7 @@ const SAVE_DEBUG_FULL_MAP_PNG = true;
 const SAVE_DEBUG_WAYPOINT_MAP_PNG = true;
 const PROCESS_WAYPOINT_MAPS = true;
 
-const LANDMARK_SIZE = 3;
+const LANDMARK_SIZE = 5;
 const LANDMARK_UNIQUENESS_THRESHOLD = 1;
 
 // --- Configuration for the robust coverage algorithm ---

@@ -15,7 +15,7 @@ import {
   PLAYER_Y_INDEX, // Corrected import path
   PLAYER_Z_INDEX, // Corrected import path
 } from './sharedConstants.js';
-const logger = createLogger({ info: true, error: true, debug: true });
+const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
 const CHAR_PRESETS = {
@@ -70,6 +70,8 @@ const lastPostedResults = new Map();
 let previousTargetedCreatureCounts = new Map();
 
 // Simple immediate looting
+let previousTargetName = null; // Track previous target name for stable detection
+let isLootingInProgress = false; // Lock to prevent multiple simultaneous looting
 
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
@@ -329,9 +331,16 @@ async function performOperation() {
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
 
+    // Create a constrained gameWorld region excluding top and bottom 14 pixels
+    const constrainedGameWorld = {
+      ...gameWorld,
+      y: gameWorld.y + 14,
+      height: Math.max(0, gameWorld.height - 28), // Ensure height doesn't go negative
+    };
+
     const healthBars = await findHealthBars.findHealthBars(
       sharedBufferView,
-      gameWorld,
+      constrainedGameWorld,
     );
     const detections = healthBars.map((hb) => ({
       absoluteCoords: { x: hb.x, y: hb.y },
@@ -382,7 +391,6 @@ async function performOperation() {
           // Start grace period
           oldCreature.flickerGracePeriodEndTime =
             now + CREATURE_FLICKER_GRACE_PERIOD_MS;
-          oldCreature.flickerStartTime = now; // Track when flicker started
           logger(
             'debug',
             `[CreatureMonitor] Creature ${oldCreature.instanceId} disappeared, starting flicker grace period (${CREATURE_FLICKER_GRACE_PERIOD_MS}ms)`,
@@ -535,10 +543,17 @@ async function performOperation() {
         type: 'targeting/setTarget',
         payload: unifiedTarget,
       });
-      logger(
-        'debug',
-        `[CreatureMonitor] Target updated: ${unifiedTarget?.name || 'null'}`,
-      );
+
+      // Only log when target name actually changes (reduce spam)
+      const newTargetName = unifiedTarget?.name || null;
+      const oldTargetName = lastSentTarget?.name || null;
+      if (newTargetName !== oldTargetName) {
+        logger(
+          'debug',
+          `[CreatureMonitor] Target switched: ${oldTargetName || 'none'} → ${newTargetName || 'none'}`,
+        );
+      }
+
       lastSentTarget = unifiedTarget;
     }
 
@@ -550,6 +565,46 @@ async function performOperation() {
       'battleList/setBattleListEntries',
       battleListEntriesForStore,
     );
+
+    // --- SEPARATE TARGET DEATH DETECTION (bypasses flicker detection) ---
+    const currentTarget = sabStateManager.getCurrentTarget();
+
+    // Check if our target disappeared (for immediate looting)
+    if (previousTargetName) {
+      let targetStillPresent = false;
+
+      // Check if previous target name is still in battle list
+      for (const battleListEntry of battleListEntriesForStore) {
+        const battleListName = battleListEntry.name;
+
+        // Exact match
+        if (previousTargetName === battleListName) {
+          targetStillPresent = true;
+          break;
+        }
+
+        // Handle truncated names
+        if (battleListName.endsWith('...')) {
+          const truncatedPart = battleListName.slice(0, -3);
+          if (previousTargetName.startsWith(truncatedPart)) {
+            targetStillPresent = true;
+            break;
+          }
+        }
+      }
+
+      // If target was present but is now gone, trigger immediate looting
+      if (!targetStillPresent && !isLootingInProgress) {
+        logger(
+          'info',
+          `[CreatureMonitor] Target '${previousTargetName}' disappeared from battle list - triggering immediate looting (bypassing flicker detection)`,
+        );
+        await performImmediateLooting();
+      }
+    }
+
+    // Update previous target name for next cycle
+    previousTargetName = currentTarget?.name || null;
 
     // --- IMPROVED: Looting Detection and Action with Count-Based Tracking ---
     const targetingList = sabStateManager.getTargetingList();
@@ -596,11 +651,16 @@ async function performOperation() {
       }
     }
 
-    // Simple looting logic: if any creature died, loot immediately
-    if (disappearedCreatures.length > 0) {
+    // Fallback looting logic: if any creature died and we haven't looted yet, loot
+    // (This covers cases where target detection might miss something)
+    if (
+      disappearedCreatures.length > 0 &&
+      !sabStateManager.isLootingRequired() &&
+      !isLootingInProgress
+    ) {
       logger(
         'info',
-        `[CreatureMonitor] Creature(s) died: ${disappearedCreatures.join(', ')} - triggering immediate looting`,
+        `[CreatureMonitor] Creature(s) died: ${disappearedCreatures.join(', ')} - triggering fallback looting`,
       );
 
       // Perform looting immediately
@@ -616,7 +676,13 @@ async function performOperation() {
 }
 
 async function performImmediateLooting() {
+  if (isLootingInProgress) {
+    logger('debug', '[CreatureMonitor] Looting already in progress, skipping');
+    return;
+  }
+
   try {
+    isLootingInProgress = true;
     logger('info', '[CreatureMonitor] Starting immediate looting action');
 
     // Set looting flag in shared state
@@ -665,6 +731,8 @@ async function performImmediateLooting() {
       type: 'cavebot/setLootingRequired',
       payload: false,
     });
+  } finally {
+    isLootingInProgress = false;
   }
 }
 

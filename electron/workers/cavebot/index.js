@@ -78,6 +78,17 @@ function handleControlHandover() {
     workerState.globalState.cavebot;
   let skippedWaypoint = false;
 
+  // Always clear path when gaining control
+  workerState.path = [];
+  workerState.pathfindingStatus = 0;
+  workerState.lastPathDataCounter = -1;
+  workerState.shouldRequestNewPath = true;
+
+  workerState.logger(
+    'info',
+    '[Cavebot] Gained control, cleared path and requesting new pathfinding',
+  );
+
   if (waypointIdAtTargetingStart && visitedTiles && visitedTiles.length > 0) {
     const currentWaypoint = findCurrentWaypoint(workerState.globalState);
     if (
@@ -108,9 +119,6 @@ function handleControlHandover() {
   }
 
   postStoreUpdate('cavebot/clearVisitedTiles');
-  if (!skippedWaypoint) {
-    workerState.shouldRequestNewPath = true;
-  }
 }
 
 async function performOperation() {
