@@ -138,6 +138,7 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().uiValues?.chatboxTabs?.activeTab || 'unknown',
     enumerable: true,
   });
+
   Object.defineProperty(shortcuts, 'actionItems', {
     get: () => {
       const hotkeyBarChildren =
@@ -249,54 +250,23 @@ export const createStateShortcutObject = (getState, type) => {
       const state = getState();
       const target = state.targeting?.target;
       const playerPos = state.gameState?.playerMinimapPosition;
-      const gameWorld = state.regionCoordinates?.regions?.gameWorld;
-      const tileSize = state.regionCoordinates?.regions?.tileSize;
 
-      if (!target || !playerPos) {
+      if (!target) {
         return null;
       }
 
       // Get coordinates from gameCoords if available, otherwise fallback to x,y,z
-      const targetX = target.gameCoords?.x ?? target.x;
-      const targetY = target.gameCoords?.y ?? target.y;
-      const targetZ = target.gameCoords?.z ?? target.z;
+      const targetX = target.gameCoordinatess?.x;
+      const targetY = target.gameCoordinates?.y;
+      const targetZ = target.gameCoordinatess?.z;
 
-      if (
-        targetX === undefined ||
-        targetY === undefined ||
-        targetZ === undefined
-      ) {
-        return null;
-      }
-
-      const distance = Math.max(
-        Math.abs(playerPos.x - targetX),
-        Math.abs(playerPos.y - targetY),
-      );
-
-      let absCoords = { x: 0, y: 0 };
-      if (gameWorld && tileSize) {
-        const coords = getAbsoluteGameWorldClickCoordinates(
-          targetX,
-          targetY,
-          playerPos,
-          gameWorld,
-          tileSize,
-          'center',
-        );
-        absCoords = coords || absCoords;
-      }
+      const distance = target.gameCoordinatess?.distance;
 
       return {
-        name: target.name,
         x: targetX,
         y: targetY,
         z: targetZ,
         distance: distance,
-        abs: {
-          x: absCoords.x,
-          y: absCoords.y,
-        },
       };
     },
     enumerable: true,
