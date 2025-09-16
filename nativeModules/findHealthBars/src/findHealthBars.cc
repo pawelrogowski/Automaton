@@ -1,4 +1,4 @@
-// findHealthBars.cc – EXTREME PERFORMANCE EDITION (WITH TOP BORDER VALIDATION)
+// findHealthBars.cc – EXTREME PERFORMANCE EDITION (FULL BORDER VALIDATION + NEW COLOR)
 #include <napi.h>
 #include <vector>
 #include <thread>
@@ -7,7 +7,7 @@
 #include <cmath>
 #include <immintrin.h>
 #include <array>
-#include <mutex> // Added for clarity, was implicitly included by <thread>
+#include <mutex>
 
 inline bool IsKnownBarColor(uint32_t c) {
     switch(c) {
@@ -18,6 +18,8 @@ inline bool IsKnownBarColor(uint32_t c) {
         case 12632064:   // 0x00C0C000
         case 12595248:   // 0x00C03030
         case 6291456:    // 0x00600000
+        // --- NEW COLOR ADDED ---
+        case 12632256:   // 0x00C0C0C0 (Gray [192, 192, 192])
             return true;
         default:
             return false;
@@ -53,17 +55,12 @@ inline bool ValidateRightBorder(const WorkerData& data, uint32_t x, uint32_t y) 
     return IsBlack(p0) && IsBlack(p1) && IsBlack(p2) && IsBlack(p3);
 }
 
-// NEW FUNCTION: Validates the top horizontal border of the health bar
-inline bool ValidateTopBorder(const WorkerData& data, uint32_t x, uint32_t y) {
-    // The top-left (x, y) and top-right (x+30, y) pixels are already known to be black
-    // from the initial vertical checks. We just need to check the 29 pixels in between.
-    const uint8_t* p = data.bgraData + (y * data.stride) + ((x + 1) * 4);
-
-    // We need to check 29 pixels. 29 = 3*8 + 5.
-    // We can use AVX2 for the first 24 pixels (3 chunks of 8).
+// Helper for horizontal border validation to avoid code duplication
+inline bool ValidateHorizontalBorder(const uint8_t* p) {
     const __m256i zero = _mm256_setzero_si256();
     const __m256i bgr_mask = _mm256_set1_epi32(0x00FFFFFF);
 
+    // Check 29 pixels = 3*8 + 5
     // Chunk 1 (pixels 1-8 of the inner border)
     __m256i chunk0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
     chunk0 = _mm256_and_si256(chunk0, bgr_mask);
@@ -92,10 +89,18 @@ inline bool ValidateTopBorder(const WorkerData& data, uint32_t x, uint32_t y) {
             return false;
         }
     }
-
     return true;
 }
 
+inline bool ValidateTopBorder(const WorkerData& data, uint32_t x, uint32_t y) {
+    const uint8_t* p = data.bgraData + (y * data.stride) + ((x + 1) * 4);
+    return ValidateHorizontalBorder(p);
+}
+
+inline bool ValidateBottomBorder(const WorkerData& data, uint32_t x, uint32_t y) {
+    const uint8_t* p = data.bgraData + ((y + 3) * data.stride) + ((x + 1) * 4);
+    return ValidateHorizontalBorder(p);
+}
 
 inline std::string GetHealthTagFromColor(uint32_t color) {
     if (color == 0x600000 || color == 0) return "Critical";
@@ -103,6 +108,8 @@ inline std::string GetHealthTagFromColor(uint32_t color) {
     if (color == 0xC0C000) return "Medium";
     if (color == 0x60C060) return "High";
     if (color == 0x00C000) return "Full";
+    // --- NEW TAG ADDED ---
+    if (color == 0xC0C0C0) return "Obstructed";
     return "Full";
 }
 
@@ -159,9 +166,8 @@ void HealthBarWorker(WorkerData data) {
                     uint32_t current_x = x + j;
 
                     if (!ValidateRightBorder(data, current_x, y)) continue;
-                    // --- MODIFICATION ---
                     if (!ValidateTopBorder(data, current_x, y)) continue;
-                    // --- END MODIFICATION ---
+                    if (!ValidateBottomBorder(data, current_x, y)) continue;
 
                     const uint8_t* innerPixelPtr = row1 + (current_x + 1) * 4;
                     uint32_t innerColor = (static_cast<uint32_t>(innerPixelPtr[2]) << 16) |
@@ -186,9 +192,8 @@ void HealthBarWorker(WorkerData data) {
             if (!IsBlack(row3 + x * 4)) continue;
 
             if (!ValidateRightBorder(data, x, y)) continue;
-            // --- MODIFICATION ---
             if (!ValidateTopBorder(data, x, y)) continue;
-            // --- END MODIFICATION ---
+            if (!ValidateBottomBorder(data, x, y)) continue;
 
             const uint8_t* innerPixelPtr = row1 + (x + 1) * 4;
             uint32_t innerColor = (static_cast<uint32_t>(innerPixelPtr[2]) << 16) |
@@ -210,8 +215,6 @@ void HealthBarWorker(WorkerData data) {
         data.globalResults->insert(data.globalResults->end(), tls_results.begin(), tls_results.end());
     }
 }
-
-// ... (The rest of the file, ClusterBars, FindHealthBars, Init, etc. remains unchanged) ...
 
 std::vector<FoundHealthBar> ClusterBars(std::vector<FoundHealthBar>& results) {
     if (results.empty()) return {};
