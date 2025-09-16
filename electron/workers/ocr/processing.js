@@ -82,6 +82,12 @@ export async function processPlayerList(buffer, regions) {
       .filter((name) => name.length > 0);
 
     postUpdateOnce('uiValues/setPlayers', playerNames);
+    if (playerNames.length > 0) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateLastSeenPlayerMs',
+      });
+    }
   } catch (ocrError) {
     console.error(
       '[OcrProcessing] OCR failed for playerList entries:',
@@ -123,6 +129,12 @@ export async function processNpcList(buffer, regions) {
       .filter((name) => name.length > 0);
 
     postUpdateOnce('uiValues/setNpcs', npcNames);
+    if (npcNames.length > 0) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateLastSeenNpcMs',
+      });
+    }
   } catch (ocrError) {
     console.error('[OcrProcessing] OCR failed for npcList entries:', ocrError);
   }

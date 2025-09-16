@@ -1,1 +1,0 @@
-console.log("hello from test2 in subfolder");

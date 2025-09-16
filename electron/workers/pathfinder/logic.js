@@ -19,6 +19,10 @@ import {
   PATH_STATUS_DIFFERENT_FLOOR,
   PATH_STATUS_ERROR,
   PATH_STATUS_NO_VALID_START_OR_END,
+  PATH_STATUS_BLOCKED_BY_CREATURE,
+  PATH_BLOCKING_CREATURE_X_INDEX,
+  PATH_BLOCKING_CREATURE_Y_INDEX,
+  PATH_BLOCKING_CREATURE_Z_INDEX,
 } from '../sharedConstants.js';
 
 let lastWrittenPathSignature = '';
@@ -234,6 +238,8 @@ export function runPathfindingLogic(context) {
 
     const rawPath = result.path || [];
     const statusString = result.reason;
+    const isBlocked = result.isBlocked || false;
+    const blockingCreatureCoords = result.blockingCreatureCoords || null;
 
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
     
@@ -242,6 +248,9 @@ export function runPathfindingLogic(context) {
     switch (statusString) {
       case 'PATH_FOUND':
         statusCode = PATH_STATUS_PATH_FOUND;
+        break;
+      case 'BLOCKED_BY_CREATURE':
+        statusCode = PATH_STATUS_BLOCKED_BY_CREATURE;
         break;
       case 'WAYPOINT_REACHED':
         statusCode = PATH_STATUS_WAYPOINT_REACHED;
@@ -285,6 +294,17 @@ export function runPathfindingLogic(context) {
         Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
         Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
         Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
+
+        if (isBlocked && blockingCreatureCoords) {
+          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, blockingCreatureCoords.x);
+          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX, blockingCreatureCoords.y);
+          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX, blockingCreatureCoords.z);
+        } else {
+          // Clear the coordinates if not blocked
+          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, 0);
+          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX, 0);
+          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX, 0);
+        }
 
         for (let i = 0; i < pathLength; i++) {
           const waypoint = normalizedPath[i];

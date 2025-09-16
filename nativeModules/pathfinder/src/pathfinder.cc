@@ -177,26 +177,8 @@ namespace AStar {
                     }
                 }
 
-                if (isCreatureTile) continue;
-
-                // Add 3x3 creature avoidance cost
-                int creatureAvoidanceCost = 0;
-                for (const auto& creature : creaturePositions) {
-                    int creatureLocalX = creature.x - mapData.minX;
-                    int creatureLocalY = creature.y - mapData.minY;
-                    
-                    // Check if current tile is within 3x3 area around creature (distance of 1)
-                    int dx = std::abs(nx - creatureLocalX);
-                    int dy = std::abs(ny - creatureLocalY);
-                    
-                    if (dx <= 1 && dy <= 1 && creature.z == start.z) {
-                        creatureAvoidanceCost += BASE_MOVE_COST * 3; // Same as 3 straight moves
-                    }
-                }
-
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
-                addedCost += creatureAvoidanceCost;
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
                 int tentativeG = g + baseMoveCost + addedCost + creatureCost;
 
@@ -519,6 +501,9 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
     Napi::Object result = Napi::Object::New(env);
     std::string searchStatus = "UNKNOWN";
     std::vector<Node> pathResult;
+    bool isBlockedByCreature = false;
+    Napi::Object blockingCreatureCoords = Napi::Object::New(env);
+
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         Napi::Error::New(env, "Map data for this Z-level is not loaded.").ThrowAsJavaScriptException();
@@ -532,19 +517,32 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
         searchStatus = "NO_VALID_START";
     } else {
         auto it_cache = this->cost_grid_cache.find(start.z);
-        if (it_cache != this->cost_grid_cache.end()) {
-            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, it_cache->second, creaturePositions, [](){});
-        } else {
-            std::vector<int> empty_costs;
-            pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, empty_costs, creaturePositions, [](){});
-        }
+        const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
+        pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, cost_grid, creaturePositions, [](){});
+
         if (!pathResult.empty()) {
             searchStatus = "PATH_FOUND";
+            int W = mapData.width;
+            int endIdx = localEnd.y * W + localEnd.x;
+            if (AStar::sb.gScore[endIdx] >= AStar::CREATURE_BLOCK_COST) {
+                isBlockedByCreature = true;
+                searchStatus = "BLOCKED_BY_CREATURE";
+                for (const auto& p : pathResult) {
+                    for (const auto& creature : creaturePositions) {
+                        if (p.x == creature.x - mapData.minX && p.y == creature.y - mapData.minY && p.z == creature.z) {
+                            blockingCreatureCoords.Set("x", creature.x);
+                            blockingCreatureCoords.Set("y", creature.y);
+                            blockingCreatureCoords.Set("z", creature.z);
+                            goto found_blocker; 
+                        }
+                    }
+                }
+                found_blocker:;
+            }
         } else {
             searchStatus = "NO_PATH_FOUND";
         }
     }
-
 
     auto endTime = std::chrono::high_resolution_clock::now();
     double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
@@ -552,6 +550,11 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
     performance.Set("totalTimeMs", Napi::Number::New(env, durationMs));
     result.Set("performance", performance);
     result.Set("reason", Napi::String::New(env, searchStatus));
+    result.Set("isBlocked", Napi::Boolean::New(env, isBlockedByCreature));
+    if (isBlockedByCreature) {
+        result.Set("blockingCreatureCoords", blockingCreatureCoords);
+    }
+
     if (!pathResult.empty()) {
         Napi::Array pathArray = Napi::Array::New(env, pathResult.size());
         for (size_t i = 0; i < pathResult.size(); ++i) {

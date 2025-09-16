@@ -15,7 +15,10 @@ export const PATH_START_Y_INDEX = 3;
 export const PATH_START_Z_INDEX = 4;
 export const PATHFINDING_STATUS_INDEX = 5;
 export const PATH_UPDATE_COUNTER_INDEX = 6;
-export const PATH_WAYPOINTS_START_INDEX = 7;
+export const PATH_BLOCKING_CREATURE_X_INDEX = 7;
+export const PATH_BLOCKING_CREATURE_Y_INDEX = 8;
+export const PATH_BLOCKING_CREATURE_Z_INDEX = 9;
+export const PATH_WAYPOINTS_START_INDEX = 10;
 
 // --- Path Data Configuration ---
 export const MAX_PATH_WAYPOINTS = 1000;
@@ -77,3 +80,4 @@ export const PATH_STATUS_NO_PATH_FOUND = 3;
 export const PATH_STATUS_DIFFERENT_FLOOR = 4;
 export const PATH_STATUS_ERROR = 5;
 export const PATH_STATUS_NO_VALID_START_OR_END = 6;
+export const PATH_STATUS_BLOCKED_BY_CREATURE = 7;

@@ -11,9 +11,14 @@ import { calculateDistance } from '../utils/distance.js';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
 import { SABStateManager } from './sabStateManager.js';
 import {
-  PLAYER_X_INDEX, // Corrected import path
-  PLAYER_Y_INDEX, // Corrected import path
-  PLAYER_Z_INDEX, // Corrected import path
+  PLAYER_X_INDEX,
+  PLAYER_Y_INDEX,
+  PLAYER_Z_INDEX,
+  PATHFINDING_STATUS_INDEX,
+  PATH_STATUS_BLOCKED_BY_CREATURE,
+  PATH_BLOCKING_CREATURE_X_INDEX,
+  PATH_BLOCKING_CREATURE_Y_INDEX,
+  PATH_BLOCKING_CREATURE_Z_INDEX,
 } from './sharedConstants.js';
 const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,8 +34,9 @@ const CHAR_PRESETS = {
 let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
-const { imageSAB, playerPosSAB } = sharedData;
+const { imageSAB, playerPosSAB, pathDataSAB } = sharedData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
+const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 const sharedBufferView = Buffer.from(imageSAB);
 
 // Initialize SAB state manager
@@ -428,6 +434,16 @@ async function performOperation() {
     activeCreatures = newActiveCreatures;
 
     let detectedEntities = Array.from(activeCreatures.values());
+
+    let blockingCreatureCoords = null;
+    if (pathDataArray && Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) === PATH_STATUS_BLOCKED_BY_CREATURE) {
+      blockingCreatureCoords = {
+        x: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX),
+        y: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX),
+        z: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX),
+      };
+    }
+
     if (detectedEntities.length > 0) {
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
@@ -442,7 +458,15 @@ async function performOperation() {
           reachableTilesCache.set(coordsKey, isReachable);
         }
         const isAdjacent = entity.rawDistance < ADJACENT_DISTANCE_THRESHOLD;
-        return { ...entity, isReachable, isAdjacent };
+        
+        let isBlockingPath = false;
+        if (blockingCreatureCoords && entity.gameCoords) {
+            isBlockingPath = entity.gameCoords.x === blockingCreatureCoords.x &&
+                             entity.gameCoords.y === blockingCreatureCoords.y &&
+                             entity.gameCoords.z === blockingCreatureCoords.z;
+        }
+
+        return { ...entity, isReachable, isAdjacent, isBlockingPath };
       });
     }
 
@@ -565,6 +589,13 @@ async function performOperation() {
       'battleList/setBattleListEntries',
       battleListEntriesForStore,
     );
+
+    if (battleListEntriesForStore.length > 0) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'battleList/updateLastSeenMs',
+      });
+    }
 
     // --- SEPARATE TARGET DEATH DETECTION (bypasses flicker detection) ---
     const currentTarget = sabStateManager.getCurrentTarget();

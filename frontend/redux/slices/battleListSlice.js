@@ -16,9 +16,9 @@ const battleListSlice = createSlice({
      */
     setBattleListEntries: (state, action) => {
       state.entries = action.payload;
-      if (action.payload.length > 0) {
-        state.lastSeenMs = Date.now();
-      }
+    },
+    updateLastSeenMs: (state) => {
+      state.lastSeenMs = Date.now();
     },
     /**
      * Resets the battleList state to its initial empty state.
@@ -35,7 +35,11 @@ const battleListSlice = createSlice({
   },
 });
 
-export const { setBattleListEntries, resetBattleList, setState } =
-  battleListSlice.actions;
+export const {
+  setBattleListEntries,
+  resetBattleList,
+  setState,
+  updateLastSeenMs,
+} = battleListSlice.actions;
 
 export default battleListSlice;

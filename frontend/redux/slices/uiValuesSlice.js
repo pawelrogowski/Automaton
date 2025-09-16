@@ -85,9 +85,9 @@ const uiValuesSlice = createSlice({
      */
     setPlayers: (state, action) => {
       state.players = action.payload;
-      if (action.payload.length > 0) {
-        state.lastSeenPlayerMs = Date.now();
-      }
+    },
+    updateLastSeenPlayerMs: (state) => {
+      state.lastSeenPlayerMs = Date.now();
     },
     /**
      * Sets the array of NPC entities.
@@ -97,9 +97,9 @@ const uiValuesSlice = createSlice({
      */
     setNpcs: (state, action) => {
       state.npcs = action.payload;
-      if (action.payload.length > 0) {
-        state.lastSeenNpcMs = Date.now();
-      }
+    },
+    updateLastSeenNpcMs: (state) => {
+      state.lastSeenNpcMs = Date.now();
     },
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;
@@ -143,6 +143,8 @@ export const {
   setVipWidget,
   setPlayers,
   setNpcs,
+  updateLastSeenPlayerMs,
+  updateLastSeenNpcMs,
   resetUiValues,
   resetRegion,
   setState,
