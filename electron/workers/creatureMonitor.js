@@ -25,11 +25,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
 const CHAR_PRESETS = {
   ALPHA: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
-  BATTLE_LIST_NAMES:
-    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ., -0123456789()', // Added for battle list OCR
-  CREATURE_NAMES:
-    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ., -0123456789()', // Added for creature name OCR
-};
+  };
 
 let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
@@ -146,7 +142,7 @@ async function processBattleListOcr(buffer, regions) {
         buffer,
         entriesRegion,
         regionDefinitions.battleList?.ocrColors || [],
-        CHAR_PRESETS.BATTLE_LIST_NAMES,
+        CHAR_PRESETS.ALPHA,
       ) || [];
     const entries = ocrResults
       .map((result) => {
@@ -189,6 +185,7 @@ function deepCompareEntities(a, b) {
         a[i].instanceId !== b[i].instanceId ||
         a[i].isReachable !== b[i].isReachable ||
         a[i].isAdjacent !== b[i].isAdjacent ||
+        a[i].hp !== b[i].hp ||
         !arePositionsEqual(a[i].gameCoords, b[i].gameCoords)
       )
         return false;
@@ -199,6 +196,7 @@ function deepCompareEntities(a, b) {
     return (
       a.instanceId === b.instanceId &&
       a.name === b.name &&
+      a.hp === b.hp &&
       arePositionsEqual(a.gameCoordinates, b.gameCoordinates)
     );
   }
@@ -299,6 +297,16 @@ function updateCreatureState(
     creature.gameCoords,
   );
   creature.lastSeen = now;
+
+  // Persist name if OCR fails temporarily
+  if (detection.name) {
+    creature.name = detection.name;
+  }
+
+  if (detection.hp) {
+    creature.hp = detection.hp;
+  }
+
   return creature;
 }
 
@@ -348,10 +356,53 @@ async function performOperation() {
       sharedBufferView,
       constrainedGameWorld,
     );
-    const detections = healthBars.map((hb) => ({
-      absoluteCoords: { x: hb.x, y: hb.y },
-      healthBarY: hb.y,
-    }));
+
+    let detections = [];
+    if (healthBars.length > 0) {
+      const minX = Math.min(...healthBars.map((hb) => hb.x)) - 120;
+      const maxX = Math.max(...healthBars.map((hb) => hb.x)) + 120;
+      const minY = Math.min(...healthBars.map((hb) => hb.y)) - 28;
+      const maxY = Math.max(...healthBars.map((hb) => hb.y));
+
+      const ocrRegion = {
+        x: Math.max(0, minX),
+        y: Math.max(0, minY),
+        width: maxX - minX,
+        height: maxY - minY,
+      };
+
+      const nameplateOcrResults =
+        recognizeText(
+          sharedBufferView,
+          ocrRegion,
+          regionDefinitions.gameWorld?.ocrColors || [], // Assuming same colors for now
+          CHAR_PRESETS.ALPHA,
+        ) || [];
+
+      detections = healthBars.map((hb) => {
+        let closestName = null;
+        let minDistance = Infinity;
+
+        for (const result of nameplateOcrResults) {
+          // Prioritize names that are close and above the health bar
+          const distance = Math.sqrt(
+            Math.pow(result.x - hb.x, 2) + Math.pow(result.y - (hb.y - 14), 2),
+          );
+
+          if (distance < minDistance && distance < 120) {
+            minDistance = distance;
+            closestName = result.text.trim().replace(/([a-z])([A-Z])/g, '$1 $2');
+          }
+        }
+
+        return {
+          absoluteCoords: { x: hb.x, y: hb.y },
+          healthBarY: hb.y,
+          name: closestName,
+          hp: hb.healthTag,
+        };
+      });
+    }
 
     const newActiveCreatures = new Map();
     const matchedDetections = new Set();
@@ -510,6 +561,8 @@ async function performOperation() {
         if (closestCreature) {
           gameWorldTarget = {
             instanceId: closestCreature.instanceId,
+            name: closestCreature.name || null, // Add name from OCR
+            hp: closestCreature.hp || null,
             distance: parseFloat(closestCreature.distance.toFixed(1)),
             gameCoordinates: closestCreature.gameCoords,
             isReachable: closestCreature.isReachable,
