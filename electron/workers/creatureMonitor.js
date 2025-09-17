@@ -189,6 +189,7 @@ function deepCompareEntities(a, b) {
         a[i].isReachable !== b[i].isReachable ||
         a[i].isAdjacent !== b[i].isAdjacent ||
         a[i].hp !== b[i].hp ||
+        a[i].distance !== b[i].distance ||
         !arePositionsEqual(a[i].gameCoords, b[i].gameCoords)
       )
         return false;
@@ -461,7 +462,15 @@ async function performOperation() {
         }
 
         if (now < oldCreature.flickerGracePeriodEndTime) {
-          // Still within grace period - keep the creature
+          // Still within grace period - keep the creature, but update its distance
+          oldCreature.distance = calculateDistance(
+            currentPlayerMinimapPosition,
+            oldCreature.gameCoords,
+          );
+          oldCreature.rawDistance = calculateDistance(
+            currentPlayerMinimapPosition,
+            oldCreature.gameCoords,
+          );
           newActiveCreatures.set(id, oldCreature);
         } else {
           logger(
@@ -524,7 +533,7 @@ async function performOperation() {
             threshold = ADJACENT_DISTANCE_THRESHOLD_DIAGONAL;
           }
 
-          if (threshold > 0 && entity.rawDistance <= threshold) {
+          if (threshold > 0 && entity.distance <= threshold) {
             if (!entity.adjacentSince) {
               entity.adjacentSince = now;
             }
