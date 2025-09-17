@@ -1,6 +1,7 @@
 // /workers/cavebot/helpers/communication.js
 
 import { parentPort } from 'worker_threads';
+import { findCurrentWaypoint } from './navigation.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -14,6 +15,12 @@ import {
   PATHFINDING_STATUS_INDEX,
   PATH_STATUS_IDLE,
   MAX_PATH_WAYPOINTS,
+  PATH_START_X_INDEX,
+  PATH_START_Y_INDEX,
+  PATH_START_Z_INDEX,
+  PATH_TARGET_X_INDEX,
+  PATH_TARGET_Y_INDEX,
+  PATH_TARGET_Z_INDEX,
 } from '../../sharedConstants.js';
 
 export const postStoreUpdate = (type, payload) =>
@@ -39,6 +46,7 @@ export const getFreshState = () =>
   });
 
 export const updateSABData = (workerState, config) => {
+  // Restore original player position reading logic for state consistency
   if (workerState.playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
       workerState.playerPosArray,
@@ -63,15 +71,27 @@ export const updateSABData = (workerState, config) => {
       return;
     }
 
-    let consistentRead = false;
-    let attempts = 0;
-    do {
-      const counterBeforeRead = Atomics.load(
+    const counterBeforeRead = Atomics.load(
+      workerState.pathDataArray,
+      PATH_UPDATE_COUNTER_INDEX,
+    );
+    // The stale path validation MUST run every tick, so we only check the counter
+    // to see if we need to read the path array again. The validation against player
+    // position happens below, regardless.
+    if (counterBeforeRead !== workerState.lastPathDataCounter) {
+      // Perform a direct, consistent read of all path data
+      const pathStartX = Atomics.load(
         workerState.pathDataArray,
-        PATH_UPDATE_COUNTER_INDEX,
+        PATH_START_X_INDEX,
       );
-      if (counterBeforeRead === workerState.lastPathDataCounter) return;
-
+      const pathStartY = Atomics.load(
+        workerState.pathDataArray,
+        PATH_START_Y_INDEX,
+      );
+      const pathStartZ = Atomics.load(
+        workerState.pathDataArray,
+        PATH_START_Z_INDEX,
+      );
       const tempPathfindingStatus = Atomics.load(
         workerState.pathDataArray,
         PATHFINDING_STATUS_INDEX,
@@ -101,31 +121,50 @@ export const updateSABData = (workerState, config) => {
       );
 
       if (counterBeforeRead === counterAfterRead) {
-        consistentRead = true;
-        if (tempPath.length > 0) {
-          const pathStart = tempPath[0];
-          if (
-            !workerState.playerMinimapPosition ||
-            pathStart.x !== workerState.playerMinimapPosition.x ||
-            pathStart.y !== workerState.playerMinimapPosition.y ||
-            pathStart.z !== workerState.playerMinimapPosition.z
-          ) {
-            workerState.path = []; // Invalidate path
-            // Also invalidate the pathfinding status when path is invalidated
-            workerState.pathfindingStatus = PATH_STATUS_IDLE;
-          } else {
-            workerState.path = tempPath;
-            workerState.pathfindingStatus = tempPathfindingStatus;
-          }
-        } else {
-          workerState.path = tempPath;
-          workerState.pathfindingStatus = tempPathfindingStatus;
-        }
-        workerState.pathChebyshevDistance = tempPathChebyshevDistance;
+        // Cache the read values
+        workerState.cachedPath = tempPath;
+        workerState.cachedPathStart = {
+          x: pathStartX,
+          y: pathStartY,
+          z: pathStartZ,
+        };
+        workerState.cachedPathTarget = {
+          x: Atomics.load(workerState.pathDataArray, PATH_TARGET_X_INDEX),
+          y: Atomics.load(workerState.pathDataArray, PATH_TARGET_Y_INDEX),
+          z: Atomics.load(workerState.pathDataArray, PATH_TARGET_Z_INDEX),
+        };
+        workerState.cachedPathStatus = tempPathfindingStatus;
+        workerState.cachedPathChebyshevDistance = tempPathChebyshevDistance;
         workerState.lastPathDataCounter = counterAfterRead;
-      } else {
-        attempts++;
       }
-    } while (!consistentRead && attempts < config.maxSABReadRetries);
+    }
+
+    // Always perform stale path validation against the latest cached path data
+    if (workerState.cachedPathStart) {
+      const currentWaypoint = workerState.globalState.cavebot
+        ? findCurrentWaypoint(workerState.globalState)
+        : null;
+
+      if (
+        !workerState.playerMinimapPosition ||
+        !currentWaypoint ||
+        // Check 1: Path must start from our current position
+        workerState.cachedPathStart.x !== workerState.playerMinimapPosition.x ||
+        workerState.cachedPathStart.y !== workerState.playerMinimapPosition.y ||
+        workerState.cachedPathStart.z !== workerState.playerMinimapPosition.z ||
+        // Check 2: Path must be for our current target waypoint
+        workerState.cachedPathTarget.x !== currentWaypoint.x ||
+        workerState.cachedPathTarget.y !== currentWaypoint.y ||
+        workerState.cachedPathTarget.z !== currentWaypoint.z
+      ) {
+        workerState.path = []; // Invalidate path
+        workerState.pathfindingStatus = PATH_STATUS_IDLE;
+      } else {
+        workerState.path = workerState.cachedPath;
+        workerState.pathfindingStatus = workerState.cachedPathStatus;
+        workerState.pathChebyshevDistance =
+          workerState.cachedPathChebyshevDistance;
+      }
+    }
   }
 };

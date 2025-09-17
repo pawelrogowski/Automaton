@@ -35,6 +35,9 @@ const workerState = {
   playerMinimapPosition: null,
   path: [],
   pathfindingStatus: 0,
+  cachedPath: [],
+  cachedPathStart: null,
+  cachedPathStatus: 0,
   lastPlayerPosCounter: -1,
   lastPathDataCounter: -1,
   lastWorldStateCounter: -1, // For tracking consistent world state
@@ -122,99 +125,44 @@ const updateSABData = () => {
       return;
     }
 
-    let consistentRead = false;
-    let attempts = 0;
-    do {
-      const counterBeforeRead = Atomics.load(
-        pathDataArray,
-        PATH_UPDATE_COUNTER_INDEX,
-      );
-      if (counterBeforeRead === workerState.lastPathDataCounter) return;
+    const counterBeforeRead = Atomics.load(
+      pathDataArray,
+      PATH_UPDATE_COUNTER_INDEX,
+    );
 
-      const pathLength = Atomics.load(pathDataArray, PATH_LENGTH_INDEX);
-      const tempPath = [];
-      const safePathLength = Math.min(pathLength, 50);
-
-      for (let i = 0; i < safePathLength; i++) {
-        const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-        tempPath.push({
-          x: Atomics.load(pathDataArray, offset + 0),
-          y: Atomics.load(pathDataArray, offset + 1),
-          z: Atomics.load(pathDataArray, offset + 2),
-        });
-      }
-
+    if (counterBeforeRead !== workerState.lastPathDataCounter) {
+      const {
+        path: tempPath,
+        status,
+        pathStart,
+      } = sabStateManager.getPath();
       const counterAfterRead = Atomics.load(
         pathDataArray,
         PATH_UPDATE_COUNTER_INDEX,
       );
 
       if (counterBeforeRead === counterAfterRead) {
-        workerState.pathfindingStatus = Atomics.load(
-          pathDataArray,
-          PATHFINDING_STATUS_INDEX,
-        );
-
-        if (tempPath.length > 0) {
-          const pathStart = tempPath[0];
-          const pathEnd = tempPath[tempPath.length - 1];
-
-          // Verify path starts from current player position
-          if (
-            !workerState.playerMinimapPosition ||
-            pathStart.x !== workerState.playerMinimapPosition.x ||
-            pathStart.y !== workerState.playerMinimapPosition.y ||
-            pathStart.z !== workerState.playerMinimapPosition.z
-          ) {
-            logger(
-              'debug',
-              '[TargetingWorker] Path does not start from current position, discarding',
-            );
-            workerState.path = [];
-          } else if (targetingContext.pathfindingTarget) {
-              if (targetingContext.pathfindingTarget) {
-                // Check if path ends near the target (within 1-2 tiles due to stance)
-                const distanceToTarget = Math.max(
-                  Math.abs(
-                    pathEnd.x -
-                      targetingContext.pathfindingTarget.gameCoords.x,
-                  ),
-                  Math.abs(
-                    pathEnd.y -
-                      targetingContext.pathfindingTarget.gameCoords.y,
-                  ),
-                );
-
-                if (
-                  distanceToTarget <= 2 &&
-                  pathEnd.z ===
-                    targetingContext.pathfindingTarget.gameCoords.z
-                ) {
-                  workerState.path = tempPath;
-                } else {
-                  logger(
-                    'debug',
-                    `[TargetingWorker] Path does not end near target creature (distance: ${distanceToTarget}), discarding`,
-                  );
-                  workerState.path = [];
-                }
-              } else {
-                // No specific target, so path is likely for general movement (e.g., cavebot)
-                workerState.path = tempPath;
-              }
-          } else {
-            workerState.path = tempPath;
-          }
-        } else {
-          workerState.path = [];
-        }
-
+        workerState.cachedPath = tempPath;
+        workerState.cachedPathStart = pathStart;
+        workerState.cachedPathStatus = status;
         workerState.lastPathDataCounter = counterBeforeRead;
-        consistentRead = true;
-      } else {
-        attempts++;
       }
-    } while (!consistentRead && attempts < 3);
+    }
+
+    if (workerState.cachedPathStart) {
+      if (
+        !workerState.playerMinimapPosition ||
+        workerState.cachedPathStart.x !== workerState.playerMinimapPosition.x ||
+        workerState.cachedPathStart.y !== workerState.playerMinimapPosition.y ||
+        workerState.cachedPathStart.z !== workerState.playerMinimapPosition.z
+      ) {
+        workerState.path = [];
+        workerState.pathfindingStatus = PATH_STATUS_IDLE;
+      } else {
+        workerState.path = workerState.cachedPath;
+        workerState.pathfindingStatus = workerState.cachedPathStatus;
+      }
+    }
   }
 };
 

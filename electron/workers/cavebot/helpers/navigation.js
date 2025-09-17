@@ -124,8 +124,17 @@ export const resetInternalState = (workerState, fsm) => {
     workerState.fsmState = 'IDLE';
     fsm.IDLE.enter();
   }
+  // Clear live path data
   workerState.path = [];
   workerState.pathfindingStatus = PATH_STATUS_IDLE;
+
+  // Crucially, also clear cached path data to force a fresh read
+  workerState.cachedPath = [];
+  workerState.cachedPathStart = null;
+  workerState.cachedPathStatus = PATH_STATUS_IDLE;
+
+  // Request a new path from the pathfinder
+  workerState.shouldRequestNewPath = true;
   workerState.lastPathDataCounter = -1;
   workerState.lastFsmState = null;
 };

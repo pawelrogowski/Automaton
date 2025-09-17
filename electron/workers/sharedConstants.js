@@ -18,7 +18,10 @@ export const PATH_UPDATE_COUNTER_INDEX = 6;
 export const PATH_BLOCKING_CREATURE_X_INDEX = 7;
 export const PATH_BLOCKING_CREATURE_Y_INDEX = 8;
 export const PATH_BLOCKING_CREATURE_Z_INDEX = 9;
-export const PATH_WAYPOINTS_START_INDEX = 10;
+export const PATH_TARGET_X_INDEX = 10;
+export const PATH_TARGET_Y_INDEX = 11;
+export const PATH_TARGET_Z_INDEX = 12;
+export const PATH_WAYPOINTS_START_INDEX = 13;
 
 // --- Path Data Configuration ---
 export const MAX_PATH_WAYPOINTS = 1000;

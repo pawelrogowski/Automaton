@@ -23,6 +23,9 @@ import {
   PATH_BLOCKING_CREATURE_X_INDEX,
   PATH_BLOCKING_CREATURE_Y_INDEX,
   PATH_BLOCKING_CREATURE_Z_INDEX,
+  PATH_TARGET_X_INDEX,
+  PATH_TARGET_Y_INDEX,
+  PATH_TARGET_Z_INDEX,
 } from '../sharedConstants.js';
 
 let lastWrittenPathSignature = '';
@@ -305,6 +308,25 @@ export function runPathfindingLogic(context) {
           Math.abs(y - targetY),
         );
 
+        // Get the definitive target coordinates for tagging
+        let pathTargetCoords = { x: 0, y: 0, z: 0 };
+        if (isTargetingMode) {
+          pathTargetCoords = cavebot.dynamicTarget.targetCreaturePos;
+        } else {
+          const { waypointSections, currentSection, wptId } = cavebot;
+          const targetWaypoint =
+            waypointSections[currentSection]?.waypoints.find(
+              (wp) => wp.id === wptId,
+            );
+          if (targetWaypoint) {
+            pathTargetCoords = {
+              x: targetWaypoint.x,
+              y: targetWaypoint.y,
+              z: targetWaypoint.z,
+            };
+          }
+        }
+
         Atomics.store(pathDataArray, PATH_LENGTH_INDEX, pathLength);
         Atomics.store(
           pathDataArray,
@@ -314,6 +336,21 @@ export function runPathfindingLogic(context) {
         Atomics.store(pathDataArray, PATH_START_X_INDEX, x);
         Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
         Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
+        Atomics.store(
+          pathDataArray,
+          PATH_TARGET_X_INDEX,
+          pathTargetCoords.x,
+        );
+        Atomics.store(
+          pathDataArray,
+          PATH_TARGET_Y_INDEX,
+          pathTargetCoords.y,
+        );
+        Atomics.store(
+          pathDataArray,
+          PATH_TARGET_Z_INDEX,
+          pathTargetCoords.z,
+        );
         Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
 
         if (isBlocked && blockingCreatureCoords) {
@@ -346,6 +383,7 @@ export function runPathfindingLogic(context) {
     throttleReduxUpdate({
       pathWaypoints: normalizedPath,
       wptDistance: distance,
+      routeSearchMs: result.performance?.totalTimeMs || 0,
       pathfindingStatus: statusString,
     });
 

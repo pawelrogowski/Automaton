@@ -36,87 +36,73 @@ export function createFsm(workerState, config) {
       execute: async (context) => {
         const { playerPos, targetWaypoint, status, chebyshevDist } = context;
 
-        // Check waypoint type first - handle each type appropriately
-        switch (targetWaypoint.type) {
-          case 'Script':
-            return 'EXECUTING_SCRIPT';
-          case 'Stand':
-          case 'Ladder':
-          case 'Rope':
-          case 'Shovel':
-          case 'Machete':
-          case 'Door':
-            if (typeof chebyshevDist === 'number' && chebyshevDist <= 1) {
-              if (
-                playerPos.x === targetWaypoint.x &&
-                playerPos.y === targetWaypoint.y
-              ) {
-                logger(
-                  'info',
-                  `[Cavebot] Player is on action waypoint ${targetWaypoint.type}. Performing action.`,
-                );
-              }
+        // Handle Script waypoints first, as they ignore pathfinding and position.
+        if (targetWaypoint.type === 'Script') {
+          return 'EXECUTING_SCRIPT';
+        }
+
+        // Case 1: We are already on the target waypoint.
+        const isOnWaypoint =
+          playerPos.x === targetWaypoint.x &&
+          playerPos.y === targetWaypoint.y &&
+          playerPos.z === targetWaypoint.z;
+
+        if (isOnWaypoint) {
+          switch (targetWaypoint.type) {
+            case 'Stand':
               return 'PERFORMING_ACTION';
-            }
-            // If not close enough, fall through to pathfinding logic
-            break;
-          case 'Node':
-          case 'Walk':
-            if (
-              typeof chebyshevDist === 'number' &&
-              chebyshevDist === 0 &&
-              playerPos.z === targetWaypoint.z
-            ) {
+            default: // For Ladder, Rope, Node, etc., being on the tile means we're done.
               await advanceToNextWaypoint(workerState, config);
               return 'IDLE';
-            }
-            // If not at the waypoint, fall through to pathfinding logic
-            break;
+          }
         }
 
-        // Check pathfinding status waypoint reached signal
-        if (status === PATH_STATUS_WAYPOINT_REACHED) {
-          logger('debug', '[FSM] Waypoint reached per pathfinder. Advancing.');
-          await advanceToNextWaypoint(workerState, config);
-          return 'IDLE';
-        }
-
+        // Case 2: We are not on the waypoint, so we must evaluate the path.
         switch (status) {
+          case PATH_STATUS_PATH_FOUND:
+            const isAdjacent =
+              typeof chebyshevDist === 'number' && chebyshevDist <= 1;
+            const isActionType = [
+              'Ladder',
+              'Rope',
+              'Shovel',
+              'Machete',
+              'Door',
+            ].includes(targetWaypoint.type);
+
+            if (isActionType && isAdjacent) {
+              return 'PERFORMING_ACTION';
+            }
+
+            // Path is valid and we're not performing a special action, so walk.
+            if (workerState.path && workerState.path.length > 1) {
+              return 'WALKING';
+            }
+            // If path is stale or invalid, wait for a new one.
+            workerState.shouldRequestNewPath = true;
+            return 'EVALUATING_WAYPOINT';
+
           case PATH_STATUS_NO_PATH_FOUND:
           case PATH_STATUS_NO_VALID_START_OR_END:
           case PATH_STATUS_ERROR:
           case PATH_STATUS_DIFFERENT_FLOOR:
             logger(
               'warn',
-              `[FSM] Unreachable waypoint ${targetWaypoint.id} (${targetWaypoint.type}) due to path status: ${status}. Skipping to next waypoint.`,
+              `[FSM] Unreachable waypoint ${targetWaypoint.id} (${targetWaypoint.type}) due to path status: ${status}. Skipping.`,
             );
             await advanceToNextWaypoint(workerState, config);
             return 'IDLE';
-          case PATH_STATUS_PATH_FOUND:
-            // More thorough validation before entering WALKING state
-            if (workerState.path && workerState.path.length > 1) {
-              // Verify that the path is valid and starts from current position
-              const pathStart = workerState.path[0];
-              const currentPos = context.playerPos;
-              if (
-                pathStart &&
-                currentPos &&
-                pathStart.x === currentPos.x &&
-                pathStart.y === currentPos.y &&
-                pathStart.z === currentPos.z
-              ) {
-                return 'WALKING';
-              } else {
-                // Path doesn't start from current position, request new path
-                workerState.shouldRequestNewPath = true;
-                return 'EVALUATING_WAYPOINT';
-              }
-            }
-            // Path is empty or only contains the player's position, re-evaluate.
-            return 'EVALUATING_WAYPOINT';
+
+          case PATH_STATUS_WAYPOINT_REACHED:
+            // Pathfinder says we're there, but we're not exactly on the tile.
+            // This is a success condition, so we advance.
+            await advanceToNextWaypoint(workerState, config);
+            return 'IDLE';
+
           case PATH_STATUS_IDLE:
           default:
-            return 'EVALUATING_WAYPOINT'; // Waiting for pathfinder
+            // Waiting for pathfinder.
+            return 'EVALUATING_WAYPOINT';
         }
       },
     },

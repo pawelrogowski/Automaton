@@ -64,23 +64,6 @@ async function performWalk(
 export async function handleWalkAction(workerState, config) {
   if (!workerState.path || workerState.path.length < 2) return;
 
-  // Additional safety check: verify path starts from current position
-  const pathStart = workerState.path[0];
-  const currentPos = workerState.playerMinimapPosition;
-  if (
-    !pathStart ||
-    !currentPos ||
-    pathStart.x !== currentPos.x ||
-    pathStart.y !== currentPos.y ||
-    pathStart.z !== currentPos.z
-  ) {
-    workerState.logger(
-      'warn',
-      '[handleWalkAction] Path does not start from current position, aborting movement',
-    );
-    return;
-  }
-
   const nextStep = workerState.path[1];
 
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, nextStep);

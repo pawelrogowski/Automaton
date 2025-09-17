@@ -262,7 +262,7 @@ export function createTargetingActions(workerContext) {
     if (sabStateManager.isLootingRequired()) return;
 
     const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
-    if (pathfindingTarget.distance <= desiredDistance) return;
+    if (pathfindingTarget.distance <= desiredDistance || pathfindingTarget.isAdjacent) return;
 
     if (rule.stance === 'Stand') return;
 

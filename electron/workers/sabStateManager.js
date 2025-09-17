@@ -43,6 +43,9 @@ import {
   PATH_WAYPOINTS_START_INDEX,
   PATH_WAYPOINT_SIZE,
   MAX_PATH_WAYPOINTS,
+  PATH_START_X_INDEX,
+  PATH_START_Y_INDEX,
+  PATH_START_Z_INDEX,
 } from './sharedConstants.js';
 
 const hpStringToCode = {
@@ -486,7 +489,7 @@ export class SABStateManager {
   // --- Path Data ---
   getPath() {
     if (!this.pathDataArray)
-      return { path: [], status: 0, chebyshevDistance: 0 };
+      return { path: [], status: 0, chebyshevDistance: 0, pathStart: null };
 
     const pathLength = Atomics.load(this.pathDataArray, PATH_LENGTH_INDEX);
     const status = Atomics.load(this.pathDataArray, PATHFINDING_STATUS_INDEX);
@@ -494,6 +497,11 @@ export class SABStateManager {
       this.pathDataArray,
       PATH_CHEBYSHEV_DISTANCE_INDEX,
     );
+    const pathStart = {
+      x: Atomics.load(this.pathDataArray, PATH_START_X_INDEX),
+      y: Atomics.load(this.pathDataArray, PATH_START_Y_INDEX),
+      z: Atomics.load(this.pathDataArray, PATH_START_Z_INDEX),
+    };
 
     const path = [];
     const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);
@@ -507,7 +515,7 @@ export class SABStateManager {
       });
     }
 
-    return { path, status, chebyshevDistance };
+    return { path, status, chebyshevDistance, pathStart };
   }
 
   // --- Utility Methods ---
