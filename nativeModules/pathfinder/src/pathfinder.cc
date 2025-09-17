@@ -457,12 +457,25 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(env, "Expected an array of special area objects and current Z-level").ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    this->cost_grid_cache.clear();
+
     Napi::Array areas_array = info[0].As<Napi::Array>();
-    int current_z = info[1].As<Napi::Number>().Int32Value();
-    std::vector<SpecialArea> areas_on_current_z;
+    int z_to_update = info[1].As<Napi::Number>().Int32Value();
+
+    auto it_map = this->allMapData.find(z_to_update);
+    if (it_map == this->allMapData.end()) {
+        return env.Undefined(); // No map for this Z-level, so we can't update its cost grid.
+    }
+    const MapData& mapData = it_map->second;
+
+    std::vector<int> cost_grid(mapData.width * mapData.height, 0);
+
     for (uint32_t i = 0; i < areas_array.Length(); ++i) {
         Napi::Object area_obj = areas_array.Get(i).As<Napi::Object>();
+        
+        if (area_obj.Get("z").As<Napi::Number>().Int32Value() != z_to_update) {
+            continue; // Ignore areas that are not for the z-level we are updating
+        }
+
         SpecialArea area;
         area.x = area_obj.Get("x").As<Napi::Number>().Int32Value();
         area.y = area_obj.Get("y").As<Napi::Number>().Int32Value();
@@ -470,17 +483,7 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
         area.avoidance = area_obj.Get("avoidance").As<Napi::Number>().Int32Value();
         area.width = area_obj.Get("width").As<Napi::Number>().Int32Value();
         area.height = area_obj.Get("height").As<Napi::Number>().Int32Value();
-        if (area.z == current_z) {
-            areas_on_current_z.push_back(area);
-        }
-    }
-    auto it_map = this->allMapData.find(current_z);
-    if (it_map == this->allMapData.end()) {
-        return env.Undefined();
-    }
-    const MapData& mapData = it_map->second;
-    std::vector<int> cost_grid(mapData.width * mapData.height, 0);
-    for (const auto& area : areas_on_current_z) {
+        
         int local_start_x = area.x - mapData.minX;
         int local_start_y = area.y - mapData.minY;
         for (int dx = 0; dx < area.width; ++dx) {
@@ -488,12 +491,13 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
                 int current_x = local_start_x + dx;
                 int current_y = local_start_y + dy;
                 if (current_x >= 0 && current_x < mapData.width && current_y >= 0 && current_y < mapData.height) {
-                    cost_grid[current_y * mapData.width + current_x] = std::max(cost_grid[current_y * mapData.width + current_x], area.avoidance);
+                    int index = current_y * mapData.width + current_x;
+                    cost_grid[index] = std::max(cost_grid[index], area.avoidance);
                 }
             }
         }
     }
-    this->cost_grid_cache[current_z] = std::move(cost_grid);
+    this->cost_grid_cache[z_to_update] = std::move(cost_grid);
     return env.Undefined();
 }
 Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions) {

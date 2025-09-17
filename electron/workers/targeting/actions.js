@@ -1,9 +1,9 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/targeting/actions.js
 import { createLogger } from '../../utils/logger.js';
-import { SABStateManager } from '../sabStateManager.js';
 import {
   PLAYER_POS_UPDATE_COUNTER_INDEX,
   PATH_UPDATE_COUNTER_INDEX,
+  PATH_STATUS_PATH_FOUND,
+  PATH_STATUS_WAYPOINT_REACHED,
 } from '../sharedConstants.js';
 
 const MOVEMENT_COOLDOWN_MS = 50;
@@ -11,20 +11,19 @@ const CLICK_POLL_INTERVAL_MS = 5;
 const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
 const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
-const TARGET_CLICK_DELAY_MS = 50;
-const TARGET_CONFIRMATION_TIMEOUT_MS = 375;
+const TARGET_ACQUISITION_COOLDOWN_MS = 250; // Cooldown between tab presses
 
 export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort, sabStateManager } =
     workerContext;
   const logger = createLogger({ info: true, error: true, debug: false });
 
-  // Track previous target selection to prevent spam logging
-  let previousSelectedTargetName = null;
+  let previousSelectedTargetId = null;
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const postInputAction = (type, action) =>
     parentPort.postMessage({ type: 'inputAction', payload: { type, action } });
+
   const getDirectionKey = (current, target) => {
     const dx = target.x - current.x;
     const dy = target.y - current.y;
@@ -42,6 +41,7 @@ export function createTargetingActions(workerContext) {
     }
     return null;
   };
+
   const awaitWalkConfirmation = (posCounter, pathCounter, timeoutMs) => {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -53,10 +53,8 @@ export function createTargetingActions(workerContext) {
           playerPosArray &&
           Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
             posCounter;
-        const pathChanged =
-          pathDataArray &&
-          Atomics.load(pathDataArray, PATH_UPDATE_COUNTER_INDEX) > pathCounter;
-        if (posChanged || pathChanged) {
+        
+        if (posChanged) {
           clearTimeout(timeoutId);
           clearInterval(intervalId);
           resolve(true);
@@ -65,373 +63,171 @@ export function createTargetingActions(workerContext) {
     });
   };
 
-  const findRuleForEntry = (entryName, targetingList) => {
-    if (!entryName || !targetingList) {
-      logger(
-        'debug',
-        `[findRuleForEntry] Invalid input: entryName=${entryName}, targetingList=${!!targetingList}`,
-      );
+  const awaitTargetConfirmation = (desiredTargetId, timeoutMs) => {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const intervalId = setInterval(() => {
+        const currentTarget = sabStateManager.getCurrentTarget();
+        const isTargetAcquired =
+          currentTarget && currentTarget.instanceId === desiredTargetId;
+        const isTimedOut = Date.now() - startTime > timeoutMs;
+
+        if (isTargetAcquired || isTimedOut) {
+          clearInterval(intervalId);
+          resolve(isTargetAcquired);
+        }
+      }, CLICK_POLL_INTERVAL_MS);
+    });
+  };
+
+  const findRuleForCreature = (creature, targetingList) => {
+    if (!creature || !creature.name || !targetingList) {
       return null;
     }
-
-    logger(
-      'debug',
-      `[findRuleForEntry] Looking for rules matching: "${entryName}"`,
+    const matchingRule = targetingList.find(
+      (r) => r.action === 'Attack' && r.name === creature.name,
     );
-
-    const matchingRules = targetingList
-      .filter((r) => {
-        if (r.action !== 'Attack') return false;
-
-        // Exact match
-        if (r.name === entryName) return true;
-
-        // Handle truncated names: if entryName ends with "..." check if rule name starts with the truncated part
-        if (entryName.endsWith('...')) {
-          const truncatedPart = entryName.slice(0, -3);
-          return r.name.startsWith(truncatedPart);
-        }
-
-        return false;
-      })
-      .sort((a, b) => b.priority - a.priority);
-
-    const result = matchingRules.length > 0 ? matchingRules[0] : null;
-    logger(
-      'debug',
-      `[findRuleForEntry] Result for "${entryName}": ${result ? `${result.name} (priority ${result.priority})` : 'none'}`,
-    );
-    return result;
+    return matchingRule || null;
   };
 
   // =================================================================================
-  // --- CORRECTED selectBestTarget FUNCTION ---
+  // --- FINAL selectBestTarget FUNCTION with TARGET SYNCHRONIZATION ---
   // =================================================================================
-  const selectBestTarget = (globalState) => {
-    const { targetingList, target: currentTarget } = globalState.targeting;
-    const battleListEntries = sabStateManager.getBattleList();
+  const selectBestTarget = (globalState, currentPathfindingTarget) => {
+    const { targetingList } = globalState.targeting;
     const creatures = sabStateManager.getCreatures();
+    const currentTarget = sabStateManager.getCurrentTarget();
 
-    logger(
-      'debug',
-      `[selectBestTarget] targetingList length: ${targetingList?.length || 0}, battleList length: ${battleListEntries?.length || 0}`,
-    );
-
-    if (!targetingList?.length || !battleListEntries?.length) {
-      logger(
-        'debug',
-        '[selectBestTarget] No targeting list or battle list entries, returning null',
-      );
-      return null;
+    if (!targetingList?.length || !creatures?.length) {
+      return { creature: null, rule: null };
     }
 
-    // Step 1: Correctly identify the current target and its effective priority.
-    let currentEffectivePriority = -1;
-    let currentTargetRule = null;
-    if (currentTarget && currentTarget.name) {
-      // Find the full creature object to check if it's reachable.
+    // --- TARGET SYNCHRONIZATION ---
+    // If we have a red-box target and it's a valid, reachable creature on our list,
+    // ALWAYS prioritize it. This forces pathfinding to sync with the actual target.
+    if (currentTarget) {
       const currentTargetDetails = creatures.find(
         (c) => c.instanceId === currentTarget.instanceId,
       );
       if (currentTargetDetails && currentTargetDetails.isReachable) {
-        const rule = findRuleForEntry(currentTarget.name, targetingList);
+        const rule = findRuleForCreature(currentTargetDetails, targetingList);
         if (rule) {
-          currentEffectivePriority = rule.priority + rule.stickiness;
-          currentTargetRule = rule;
+          // It's our confirmed, valid, in-game target. Stick to it.
+          return { creature: currentTargetDetails, rule: rule };
         }
       }
     }
 
-    // Step 2: Find the best available alternative from the battle list.
-    let bestAlternative = null;
-    let bestAlternativePriority = -1;
-    logger(
-      'debug',
-      `[selectBestTarget] Scanning battle list entries: ${battleListEntries.map((e) => e.name).join(', ')}`,
-    );
+    const validCandidates = creatures
+      .map((creature) => {
+        const rule = findRuleForCreature(creature, targetingList);
+        if (!creature.isReachable || !rule) {
+          return null;
+        }
 
-    for (const entry of battleListEntries) {
-      // Skip if this entry is our current target
-      if (
-        currentTarget &&
-        currentTarget.name &&
-        entry.name === currentTarget.name
-      ) {
-        logger(
-          'debug',
-          `[selectBestTarget] Skipping current target: ${entry.name}`,
-        );
-        continue;
+        // Calculate an evaluation score, lower is better.
+        let evaluationDistance = creature.distance;
+
+        // Apply stickiness bonus if this creature is the current target
+        if (
+          currentPathfindingTarget &&
+          creature.instanceId === currentPathfindingTarget.instanceId
+        ) {
+          // Stickiness from 1-10. Each point gives a 7.5% "distance reduction" for evaluation purposes.
+          // This creates a "gravity well" around the current target.
+          const stickinessFactor = 1.0 - (rule.stickiness || 1) * 0.075;
+          evaluationDistance *= stickinessFactor;
+        }
+
+        return {
+          creature,
+          rule,
+          evaluationDistance,
+        };
+      })
+      .filter(Boolean); // Remove null entries (creatures that weren't valid)
+
+    if (validCandidates.length === 0) {
+      if (previousSelectedTargetId !== null) {
+        logger('info', '[selectBestTarget] No valid targets found.');
+        previousSelectedTargetId = null;
       }
+      return { creature: null, rule: null };
+    }
 
-      const rule = findRuleForEntry(entry.name, targetingList);
+    // Sort by the calculated evaluation distance to find the best candidate
+    validCandidates.sort((a, b) => a.evaluationDistance - b.evaluationDistance);
+
+    const bestCandidate = validCandidates[0];
+    const bestTarget = bestCandidate.creature;
+    const bestRule = bestCandidate.rule;
+
+    if (bestTarget && bestTarget.instanceId !== previousSelectedTargetId) {
       logger(
-        'debug',
-        `[selectBestTarget] Entry: ${entry.name}, Rule found: ${rule ? `${rule.name} (priority ${rule.priority})` : 'none'}`,
+        'info',
+        `[selectBestTarget] New best target selected: ${bestTarget.name} (ID: ${bestTarget.instanceId})`,
       );
-
-      if (rule && rule.priority > bestAlternativePriority) {
-        bestAlternativePriority = rule.priority;
-        bestAlternative = { name: entry.name, rule };
-        logger(
-          'debug',
-          `[selectBestTarget] New best alternative: ${entry.name} with priority ${rule.priority}`,
-        );
-      }
+      previousSelectedTargetId = bestTarget.instanceId;
     }
 
-    // Step 3: Make the decision.
-    logger(
-      'debug',
-      `[selectBestTarget] Decision: bestAlternative=${bestAlternative?.name}, bestPriority=${bestAlternativePriority}, currentEffective=${currentEffectivePriority}`,
-    );
-
-    if (bestAlternative && bestAlternativePriority > currentEffectivePriority) {
-      // A better target exists, so we must switch.
-      // Only log if this is a different target than last time
-      if (
-        bestAlternative?.name &&
-        bestAlternative.name !== previousSelectedTargetName
-      ) {
-        logger(
-          'info',
-          `[selectBestTarget] Switching to better target: ${bestAlternative.name}`,
-        );
-        previousSelectedTargetName = bestAlternative.name;
-      }
-      return bestAlternative;
-    }
-
-    if (currentTargetRule) {
-      // No better target exists, and our current target is valid, so stick to it.
-      // Only log if this is a different decision than last time
-      if (
-        currentTarget?.name &&
-        currentTarget.name !== previousSelectedTargetName
-      ) {
-        logger(
-          'debug',
-          `[selectBestTarget] Sticking with current target: ${currentTarget.name}`,
-        );
-        previousSelectedTargetName = currentTarget.name;
-      }
-      return { name: currentTarget.name, rule: currentTargetRule };
-    }
-
-    // Our current target is invalid (unreachable, etc.), so fall back to the best alternative.
-    // Only log if this is a different decision than last time
-    const fallbackTargetName = bestAlternative?.name || 'none';
-    if (fallbackTargetName !== previousSelectedTargetName) {
-      logger(
-        'debug',
-        `[selectBestTarget] Falling back to best alternative: ${fallbackTargetName}`,
-      );
-      previousSelectedTargetName = fallbackTargetName;
-    }
-    return bestAlternative;
-  };
-
-  const isDesiredTargetAcquired = (desiredRuleName, globalState) => {
-    const currentTarget = globalState.targeting.target;
-    if (!currentTarget || !currentTarget.name) return false;
-
-    const targetedName = currentTarget.name;
-
-    // Exact match
-    if (targetedName === desiredRuleName) return true;
-
-    // Handle truncated names: if targeted name ends with "..." check if desired name starts with the truncated part
-    if (targetedName.endsWith('...')) {
-      const truncatedPart = targetedName.slice(0, -3);
-      return desiredRuleName.startsWith(truncatedPart);
-    }
-
-    return false;
+    return { creature: bestTarget, rule: bestRule };
   };
 
   const manageTargetAcquisition = async (
     targetingContext,
-    globalState,
     pathfindingTarget,
+    globalState,
   ) => {
-    if (!pathfindingTarget) {
-      logger(
-        'debug',
-        '[manageTargetAcquisition] No pathfinding target, returning',
-      );
-      return;
-    }
+    const currentTarget = sabStateManager.getCurrentTarget();
+    const { targetingList } = globalState.targeting;
 
-    const isAlreadyAcquired = isDesiredTargetAcquired(
-      pathfindingTarget.rule?.name,
-      globalState,
-    );
-    logger(
-      'debug',
-      `[manageTargetAcquisition] Target: ${pathfindingTarget.name || 'unknown'}, Rule: ${pathfindingTarget.rule?.name || 'unknown'}, Already acquired: ${isAlreadyAcquired}`,
-    );
+    // If there's no best target, do nothing.
+    if (!pathfindingTarget) return;
 
-    if (isAlreadyAcquired) {
-      logger(
-        'debug',
-        '[manageTargetAcquisition] Target already acquired, returning',
-      );
-      return;
-    }
-    const now = Date.now();
-    if (now - targetingContext.lastClickTime < TARGET_CLICK_DELAY_MS) return;
-    const battleList = globalState.battleList.entries;
-    const currentIndex = battleList.findIndex(
-      (e) =>
-        globalState.targeting.target &&
-        e.name === globalState.targeting.target.name,
-    );
-    let bestKeyPlan = { action: null, presses: Infinity };
-    const potentialIndices = battleList
-      .map((e, i) => i)
-      .filter((i) => {
-        const battleListName = battleList[i].name;
-        const ruleName = pathfindingTarget.rule.name;
-
-        // Exact match
-        if (battleListName === ruleName) return true;
-
-        // Handle truncated names: if battle list name ends with "..." check if rule name starts with the truncated part
-        if (battleListName.endsWith('...')) {
-          const truncatedPart = battleListName.slice(0, -3);
-          return ruleName.startsWith(truncatedPart);
-        }
-
-        return false;
-      });
-
-    logger(
-      'debug',
-      `[manageTargetAcquisition] Battle list: ${battleList.map((e, i) => `${i}:${e.name}`).join(', ')}`,
-    );
-    logger(
-      'debug',
-      `[manageTargetAcquisition] Current index: ${currentIndex}, Potential indices: ${potentialIndices.join(', ')}`,
-    );
-    logger(
-      'debug',
-      `[manageTargetAcquisition] Looking for rule: ${pathfindingTarget.rule.name}`,
-    );
-    if (potentialIndices.length > 0) {
-      for (const desiredIndex of potentialIndices) {
-        let tabs, graves;
-        if (currentIndex === -1) {
-          // When no target is selected, we need to press tab (desiredIndex + 1) times
-          // to reach the desired target (0-based index becomes 1-based for key presses)
-          tabs = desiredIndex + 1;
-          // For graves, we'd need to go backwards from the end
-          graves = battleList.length - desiredIndex;
-        } else {
-          // Calculate forward distance (tabs)
-          tabs =
-            (desiredIndex - currentIndex + battleList.length) %
-            battleList.length;
-          if (tabs === 0) tabs = battleList.length; // Full circle
-
-          // Calculate backward distance (graves)
-          graves =
-            (currentIndex - desiredIndex + battleList.length) %
-            battleList.length;
-          if (graves === 0) graves = battleList.length; // Full circle
-        }
-
-        logger(
-          'debug',
-          `[manageTargetAcquisition] For desiredIndex ${desiredIndex}: tabs=${tabs}, graves=${graves}`,
-        );
-
-        // When currentIndex is -1, prefer tabs since it's more intuitive
-        // Only consider reasonable distances (prevent excessive key presses)
-        if (tabs > 0 && tabs <= 20 && tabs < bestKeyPlan.presses) {
-          bestKeyPlan = { action: 'tab', presses: tabs };
-          logger(
-            'debug',
-            `[manageTargetAcquisition] New best plan: ${tabs} tabs`,
-          );
-        }
-        // Only consider graves if it's significantly better than tabs
-        if (graves > 0 && graves <= 20 && graves < bestKeyPlan.presses - 2) {
-          bestKeyPlan = { action: 'grave', presses: graves };
-          logger(
-            'debug',
-            `[manageTargetAcquisition] New best plan: ${graves} graves`,
-          );
-        }
-      }
-    } else {
-      logger(
-        'warn',
-        '[manageTargetAcquisition] No potential indices found for targeting',
-      );
-    }
-    logger(
-      'debug',
-      `[manageTargetAcquisition] Final key plan: action=${bestKeyPlan.action}, presses=${bestKeyPlan.presses}`,
-    );
-
+    // If we are already targeting the best creature, do nothing.
     if (
-      bestKeyPlan.action &&
-      bestKeyPlan.presses < Infinity &&
-      bestKeyPlan.presses <= 10
+      currentTarget &&
+      currentTarget.instanceId === pathfindingTarget.instanceId
     ) {
-      const key = bestKeyPlan.action === 'tab' ? 'tab' : 'grave';
-      logger(
-        'info',
-        `[manageTargetAcquisition] Pressing ${key} ${bestKeyPlan.presses} times to acquire ${pathfindingTarget.name}`,
-      );
-
-      for (let i = 0; i < bestKeyPlan.presses; i++) {
-        postInputAction('hotkey', {
-          module: 'keypress',
-          method: 'sendKey',
-          args: [key, null],
-        });
-        targetingContext.lastClickTime = now;
-        targetingContext.acquisitionUnlockTime =
-          now + TARGET_CONFIRMATION_TIMEOUT_MS + 50;
-
-        // Small delay between key presses to prevent overwhelming the game
-        await delay(50);
-
-        const pollStartTime = Date.now();
-        let acquired = false;
-        while (Date.now() - pollStartTime < TARGET_CONFIRMATION_TIMEOUT_MS) {
-          if (
-            isDesiredTargetAcquired(pathfindingTarget.rule.name, globalState)
-          ) {
-            acquired = true;
-            break;
-          }
-          await delay(CLICK_POLL_INTERVAL_MS);
-        }
-        if (acquired) {
-          logger(
-            'info',
-            `[manageTargetAcquisition] Successfully acquired target: ${pathfindingTarget.name}`,
-          );
-          return;
-        }
-      }
-      logger(
-        'warn',
-        `[manageTargetAcquisition] Failed to acquire target after ${bestKeyPlan.presses} key presses`,
-      );
-    } else {
-      logger(
-        'warn',
-        `[manageTargetAcquisition] No valid key plan found for target: ${pathfindingTarget.name}`,
-      );
+      return;
     }
+
+    // If we are targeting *something* and it's a valid creature from our list,
+    // be patient and don't press Tab. The selectBestTarget logic will now
+    // force the pathfinder to follow this creature.
+    if (currentTarget) {
+      const isCurrentTargetInList = targetingList.some(
+        (rule) => rule.name === currentTarget.name && rule.action === 'Attack',
+      );
+      if (isCurrentTargetInList) {
+        return;
+      }
+    }
+
+    // If we reach here, it means we either have no target, or our current target
+    // is not on our attack list. In either case, it's safe to press Tab to
+    // acquire a new, better target.
+    const now = Date.now();
+    if (now < targetingContext.acquisitionUnlockTime) return;
+    targetingContext.acquisitionUnlockTime =
+      now + TARGET_ACQUISITION_COOLDOWN_MS;
+
+    logger(
+      'info',
+      `[Targeting] Attempting to acquire target ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId}). Pressing Tab.`,
+    );
+    postInputAction('hotkey', {
+      module: 'keypress',
+      method: 'sendKey',
+      args: ['tab', null],
+    });
+
+    // Wait for the game to update the target, with a timeout.
+    await awaitTargetConfirmation(pathfindingTarget.instanceId, 400);
   };
 
-  const updateDynamicTarget = (globalState) => {
-    const { targetingList, target: currentTarget } = globalState.targeting;
-    if (!currentTarget || !currentTarget.name || !currentTarget.isReachable) {
+  const updateDynamicTarget = (pathfindingTarget, rule) => {
+    if (!pathfindingTarget || !rule) {
       parentPort.postMessage({
         storeUpdate: true,
         type: 'cavebot/setDynamicTarget',
@@ -439,21 +235,14 @@ export function createTargetingActions(workerContext) {
       });
       return;
     }
-    const rule = findRuleForEntry(currentTarget.name, targetingList);
-    if (!rule) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setDynamicTarget',
-        payload: null,
-      });
-      return;
-    }
+
     const dynamicGoal = {
       stance: rule.stance || 'Follow',
-      distance: rule.distance || 1,
-      targetCreaturePos: currentTarget.gameCoordinates,
-      targetInstanceId: currentTarget.instanceId,
+      distance: rule.distance ?? 1,
+      targetCreaturePos: pathfindingTarget.gameCoords,
+      targetInstanceId: pathfindingTarget.instanceId,
     };
+
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setDynamicTarget',
@@ -463,32 +252,20 @@ export function createTargetingActions(workerContext) {
 
   const manageMovement = async (
     targetingContext,
-    globalState,
     path,
     pathfindingStatus,
     playerMinimapPosition,
+    pathfindingTarget,
+    rule,
   ) => {
-    const { target: currentTarget } = globalState.targeting;
-    const creatures = sabStateManager.getCreatures();
-
-    // Early exit conditions
-    if (!currentTarget || !currentTarget.name) return;
+    if (!pathfindingTarget || !rule) return;
     if (sabStateManager.isLootingRequired()) return;
 
-    const currentTargetCreature = creatures.find(
-      (c) => c.instanceId === currentTarget.instanceId,
-    );
-    if (currentTargetCreature && currentTargetCreature.isAdjacent) {
-      return;
-    }
+    const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
+    if (pathfindingTarget.distance <= desiredDistance) return;
 
-    const rule = findRuleForEntry(
-      currentTarget.name,
-      globalState.targeting.targetingList,
-    );
-    if (!rule) return;
+    if (rule.stance === 'Stand') return;
 
-    // Track visited tiles for cavebot integration
     if (
       !targetingContext.lastDispatchedVisitedTile ||
       targetingContext.lastDispatchedVisitedTile.x !==
@@ -506,31 +283,14 @@ export function createTargetingActions(workerContext) {
     }
 
     const now = Date.now();
-
-    // Movement conditions check
-    if (pathfindingStatus !== 1 || path.length < 2 || rule.stance === 'Stand') {
-      return;
-    }
-
-    // Respect movement cooldown
-    if (now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS) {
-      return;
-    }
-
-    // Additional safety check: verify path starts from current position
-    const pathStart = path[0];
     if (
-      !pathStart ||
-      pathStart.x !== playerMinimapPosition.x ||
-      pathStart.y !== playerMinimapPosition.y ||
-      pathStart.z !== playerMinimapPosition.z
-    ) {
-      logger(
-        'warn',
-        '[manageMovement] Path does not start from current position, aborting movement',
-      );
+      ![PATH_STATUS_PATH_FOUND, PATH_STATUS_WAYPOINT_REACHED].includes(
+        pathfindingStatus,
+      ) ||
+      path.length < 2 ||
+      now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS
+    )
       return;
-    }
 
     const nextStep = path[1];
     const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
@@ -549,11 +309,6 @@ export function createTargetingActions(workerContext) {
         ? MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS
         : MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS;
 
-      logger(
-        'debug',
-        `[manageMovement] Moving ${dirKey} from ${playerMinimapPosition.x},${playerMinimapPosition.y} to ${nextStep.x},${nextStep.y}`,
-      );
-
       postInputAction('movement', {
         module: 'keypress',
         method: 'sendKey',
@@ -564,7 +319,6 @@ export function createTargetingActions(workerContext) {
       try {
         await awaitWalkConfirmation(posCounter, pathCounter, timeout);
         if (isDiagonal) await delay(MOVE_CONFIRM_GRACE_DIAGONAL_MS);
-        logger('debug', '[manageMovement] Movement confirmed successfully');
       } catch (error) {
         logger(
           'debug',

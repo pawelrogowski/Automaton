@@ -4,7 +4,7 @@ import mouseController from 'mouse-controller';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger({
-  info: false,
+  info: true,
   error: true,
   debug: false,
 });

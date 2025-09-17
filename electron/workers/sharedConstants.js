@@ -40,10 +40,39 @@ export const BATTLE_LIST_SAB_SIZE =
 
 // --- SharedArrayBuffer (SAB) Indices for Creatures ---
 export const CREATURES_COUNT_INDEX = 0;
-export const CREATURES_UPDATE_COUNTER_INDEX = 1;
-export const CREATURES_DATA_START_INDEX = 2;
+export const CREATURES_UPDATE_COUNTER_INDEX = 1; // Legacy counter for creature-specific updates
+export const WORLD_STATE_UPDATE_COUNTER_INDEX = 2; // Incremented after a consistent world state is written
+export const CREATURES_DATA_START_INDEX = 3;
 export const MAX_CREATURES = 100;
-export const CREATURE_DATA_SIZE = 8; // instanceId, x, y, z, isReachable, isAdjacent, distance, reserved
+
+// --- Creature Data Structure ---
+// We are allocating a fixed size for each creature's data in the SAB.
+// Numbers are stored directly. Strings are stored as character codes.
+// A mapping is used for HP status to save space.
+//
+// Each creature record contains:
+// - instanceId (1 int)
+// - x, y, z coordinates (3 ints)
+// - isReachable (1 int, boolean)
+// - isAdjacent (1 int, boolean)
+// - distance (1 int, float * 100)
+// - hp (1 int, mapped enum)
+// - name (32 ints, char codes)
+// Total size = 1+3+1+1+1+1+32 = 40
+export const CREATURE_DATA_SIZE = 40;
+
+// Indices within a single creature's data block
+export const CREATURE_INSTANCE_ID_OFFSET = 0;
+export const CREATURE_X_OFFSET = 1;
+export const CREATURE_Y_OFFSET = 2;
+export const CREATURE_Z_OFFSET = 3;
+export const CREATURE_IS_REACHABLE_OFFSET = 4;
+export const CREATURE_IS_ADJACENT_OFFSET = 5;
+export const CREATURE_DISTANCE_OFFSET = 6;
+export const CREATURE_HP_OFFSET = 7;
+export const CREATURE_NAME_START_OFFSET = 8;
+export const CREATURE_NAME_LENGTH = 32;
+
 export const CREATURES_SAB_SIZE =
   CREATURES_DATA_START_INDEX + MAX_CREATURES * CREATURE_DATA_SIZE;
 

@@ -10,6 +10,7 @@ import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance } from '../utils/distance.js';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
 import { SABStateManager } from './sabStateManager.js';
+import { findBestNameMatch } from '../utils/nameMatcher.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -153,7 +154,7 @@ async function processBattleListOcr(buffer, regions) {
       })
       .filter((creature) => creature.name.length > 0);
 
-    sabStateManager.writeBattleList(entries);
+    // sabStateManager.writeBattleList(entries); // Removed: Will be written in a batch update
     return entries;
   } catch (ocrError) {
     logger(
@@ -359,49 +360,51 @@ async function performOperation() {
 
     let detections = [];
     if (healthBars.length > 0) {
-      const minX = Math.min(...healthBars.map((hb) => hb.x)) - 120;
-      const maxX = Math.max(...healthBars.map((hb) => hb.x)) + 120;
-      const minY = Math.min(...healthBars.map((hb) => hb.y)) - 28;
-      const maxY = Math.max(...healthBars.map((hb) => hb.y));
+      const targetingList = sabStateManager.getTargetingList();
+      const canonicalNames = [
+        ...new Set(targetingList.map((rule) => rule.name)),
+      ];
 
-      const ocrRegion = {
-        x: Math.max(0, minX),
-        y: Math.max(0, minY),
-        width: maxX - minX,
-        height: maxY - minY,
-      };
+      const ocrPromises = healthBars.map(async (hb) => {
+        // Define a precise, individual OCR region for each health bar
+        const ocrRegion = {
+          x: Math.max(0, hb.x - tileSize.width / 2),
+          y: Math.max(0, hb.y - 16), // Shifted 2px down to better capture descenders (e.g., 'p', 'g')
+          width: tileSize.width,
+          height: 14,
+        };
 
-      const nameplateOcrResults =
-        recognizeText(
-          sharedBufferView,
-          ocrRegion,
-          regionDefinitions.gameWorld?.ocrColors || [], // Assuming same colors for now
-          CHAR_PRESETS.ALPHA,
-        ) || [];
+        const nameplateOcrResults =
+          recognizeText(
+            sharedBufferView,
+            ocrRegion,
+            regionDefinitions.gameWorld?.ocrColors || [],
+            CHAR_PRESETS.ALPHA,
+          ) || [];
 
-      detections = healthBars.map((hb) => {
-        let closestName = null;
-        let minDistance = Infinity;
+        // With a small region, we can be confident the first result is the correct one.
+        const rawOcrName =
+          nameplateOcrResults.length > 0
+            ? nameplateOcrResults[0].text
+                .trim()
+                .replace(/([a-z])([A-Z])/g, '$1 $2')
+            : null;
 
-        for (const result of nameplateOcrResults) {
-          // Prioritize names that are close and above the health bar
-          const distance = Math.sqrt(
-            Math.pow(result.x - hb.x, 2) + Math.pow(result.y - (hb.y - 14), 2),
-          );
-
-          if (distance < minDistance && distance < 120) {
-            minDistance = distance;
-            closestName = result.text.trim().replace(/([a-z])([A-Z])/g, '$1 $2');
-          }
-        }
+        const matchedName = findBestNameMatch(
+          rawOcrName,
+          canonicalNames,
+          logger,
+        );
 
         return {
           absoluteCoords: { x: hb.x, y: hb.y },
           healthBarY: hb.y,
-          name: closestName,
+          name: matchedName, // Use the matched name
           hp: hb.healthTag,
         };
       });
+
+      detections = await Promise.all(ocrPromises);
     }
 
     const newActiveCreatures = new Map();
@@ -521,9 +524,13 @@ async function performOperation() {
       });
     }
 
-    if (!deepCompareEntities(detectedEntities, lastSentCreatures)) {
-      sabStateManager.writeCreatures(detectedEntities);
-      postUpdateOnce('targeting/setEntities', detectedEntities);
+    // The deepCompare is still useful for deciding whether to send a Redux update,
+    // but the SAB write will happen regardless to ensure consistency.
+    const creaturesChanged = !deepCompareEntities(
+      detectedEntities,
+      lastSentCreatures,
+    );
+    if (creaturesChanged) {
       lastSentCreatures = detectedEntities;
     }
 
@@ -613,14 +620,8 @@ async function performOperation() {
       }
     }
 
-    if (!deepCompareEntities(unifiedTarget, lastSentTarget)) {
-      sabStateManager.writeCurrentTarget(unifiedTarget);
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'targeting/setTarget',
-        payload: unifiedTarget,
-      });
-
+    const targetChanged = !deepCompareEntities(unifiedTarget, lastSentTarget);
+    if (targetChanged) {
       // Only log when target name actually changes (reduce spam)
       const newTargetName = unifiedTarget?.name || null;
       const oldTargetName = lastSentTarget?.name || null;
@@ -638,6 +639,26 @@ async function performOperation() {
       sharedBufferView,
       currentState.regionCoordinates.regions,
     );
+
+    // --- ATOMIC STATE UPDATE ---
+    // Write the complete, consistent world state to the SABs at once.
+    sabStateManager.writeWorldState({
+      creatures: detectedEntities,
+      target: unifiedTarget,
+      battleList: battleListEntriesForStore,
+    });
+
+    // Post updates to the main thread for Redux/UI *after* the SAB is updated.
+    if (creaturesChanged) {
+      postUpdateOnce('targeting/setEntities', detectedEntities);
+    }
+    if (targetChanged) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'targeting/setTarget',
+        payload: unifiedTarget,
+      });
+    }
     postUpdateOnce(
       'battleList/setBattleListEntries',
       battleListEntriesForStore,

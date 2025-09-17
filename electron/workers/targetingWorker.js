@@ -14,6 +14,7 @@ import {
   PLAYER_Y_INDEX,
   PLAYER_Z_INDEX,
   PATH_STATUS_IDLE,
+  WORLD_STATE_UPDATE_COUNTER_INDEX,
 } from './sharedConstants.js';
 
 const logger = createLogger({ info: true, error: true, debug: false });
@@ -36,6 +37,7 @@ const workerState = {
   pathfindingStatus: 0,
   lastPlayerPosCounter: -1,
   lastPathDataCounter: -1,
+  lastWorldStateCounter: -1, // For tracking consistent world state
   shouldRequestNewPath: false,
   justGainedControl: false,
   logger: logger,
@@ -56,9 +58,10 @@ let lastTargetingEnabled = false;
 let lastCavebotEnabled = false;
 
 // Initialize SharedArrayBuffer access
-const { playerPosSAB, pathDataSAB } = workerData;
+const { playerPosSAB, pathDataSAB, creaturesSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
+const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
 
 // Initialize SAB state manager
 const sabStateManager = new SABStateManager({
@@ -81,6 +84,20 @@ const targetingActions = createTargetingActions({
 
 // SAB data update function (now independent of Redux)
 const updateSABData = () => {
+  // Check for a new, consistent world state first.
+  // The individual get methods in sabStateManager will read the latest data.
+  if (creaturesArray) {
+    const newWorldStateCounter = Atomics.load(
+      creaturesArray,
+      WORLD_STATE_UPDATE_COUNTER_INDEX,
+    );
+    if (newWorldStateCounter > workerState.lastWorldStateCounter) {
+      workerState.lastWorldStateCounter = newWorldStateCounter;
+      // We don't need to explicitly read data here. The get methods
+      // used in selectBestTarget will now see the consistent state.
+    }
+  }
+
   if (playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
       playerPosArray,
@@ -155,47 +172,36 @@ const updateSABData = () => {
             );
             workerState.path = [];
           } else if (targetingContext.pathfindingTarget) {
-            // Verify path ends at target creature position
-            const targetCreature = sabStateManager
-              .getCreatures()
-              .find(
-                (c) =>
-                  c.instanceId ===
-                    targetingContext.pathfindingTarget.rule?.targetInstanceId ||
-                  (c.gameCoords.x ===
-                    workerState.globalState?.cavebot?.dynamicTarget
-                      ?.targetCreaturePos?.x &&
-                    c.gameCoords.y ===
-                      workerState.globalState?.cavebot?.dynamicTarget
-                        ?.targetCreaturePos?.y &&
-                    c.gameCoords.z ===
-                      workerState.globalState?.cavebot?.dynamicTarget
-                        ?.targetCreaturePos?.z),
-              );
-
-            if (targetCreature) {
-              // Check if path ends near the target (within 1-2 tiles due to stance)
-              const distanceToTarget = Math.max(
-                Math.abs(pathEnd.x - targetCreature.gameCoords.x),
-                Math.abs(pathEnd.y - targetCreature.gameCoords.y),
-              );
-
-              if (
-                distanceToTarget <= 2 &&
-                pathEnd.z === targetCreature.gameCoords.z
-              ) {
-                workerState.path = tempPath;
-              } else {
-                logger(
-                  'debug',
-                  `[TargetingWorker] Path does not end near target creature (distance: ${distanceToTarget}), discarding`,
+              if (targetingContext.pathfindingTarget) {
+                // Check if path ends near the target (within 1-2 tiles due to stance)
+                const distanceToTarget = Math.max(
+                  Math.abs(
+                    pathEnd.x -
+                      targetingContext.pathfindingTarget.gameCoords.x,
+                  ),
+                  Math.abs(
+                    pathEnd.y -
+                      targetingContext.pathfindingTarget.gameCoords.y,
+                  ),
                 );
-                workerState.path = [];
+
+                if (
+                  distanceToTarget <= 2 &&
+                  pathEnd.z ===
+                    targetingContext.pathfindingTarget.gameCoords.z
+                ) {
+                  workerState.path = tempPath;
+                } else {
+                  logger(
+                    'debug',
+                    `[TargetingWorker] Path does not end near target creature (distance: ${distanceToTarget}), discarding`,
+                  );
+                  workerState.path = [];
+                }
+              } else {
+                // No specific target, so path is likely for general movement (e.g., cavebot)
+                workerState.path = tempPath;
               }
-            } else {
-              // Target creature not found, use path anyway (creature might have moved/died)
-              workerState.path = tempPath;
-            }
           } else {
             workerState.path = tempPath;
           }
@@ -272,8 +278,22 @@ async function performTargeting() {
   }
 
   // Always evaluate target selection
-  targetingContext.pathfindingTarget =
-    targetingActions.selectBestTarget(globalState);
+  const previousTargetId = targetingContext.pathfindingTarget?.instanceId;
+  const { creature, rule } =
+    targetingActions.selectBestTarget(
+      globalState,
+      targetingContext.pathfindingTarget,
+    ) || {};
+  targetingContext.pathfindingTarget = creature;
+
+  // If the target has changed, clear the old path immediately to prevent a stale move
+  if (creature?.instanceId !== previousTargetId) {
+    workerState.path = [];
+    workerState.lastPathDataCounter = -1; // Force a re-read of path data
+  }
+
+  // ALWAYS update the dynamic target so the pathfinder can start working immediately.
+  targetingActions.updateDynamicTarget(creature, rule);
 
   if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
     if (targetingContext.pathfindingTarget) {
@@ -298,27 +318,20 @@ async function performTargeting() {
   if (!workerState.playerMinimapPosition) return;
 
   // Continuous target acquisition attempt
-  if (
-    targetingContext.pathfindingTarget &&
-    Date.now() > targetingContext.acquisitionUnlockTime
-  ) {
-    await targetingActions.manageTargetAcquisition(
-      targetingContext,
-      globalState,
-      targetingContext.pathfindingTarget,
-    );
-  }
-
-  // Always update dynamic target
-  targetingActions.updateDynamicTarget(globalState);
+  await targetingActions.manageTargetAcquisition(
+    targetingContext,
+    targetingContext.pathfindingTarget,
+    globalState,
+  );
 
   // Continuous movement management
   await targetingActions.manageMovement(
     targetingContext,
-    globalState,
     workerState.path,
     workerState.pathfindingStatus,
     workerState.playerMinimapPosition,
+    targetingContext.pathfindingTarget,
+    rule,
   );
 
   // Release control if no target

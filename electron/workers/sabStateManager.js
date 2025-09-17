@@ -1,5 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/sabStateManager.js
-
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -13,6 +11,17 @@ import {
   CREATURES_UPDATE_COUNTER_INDEX,
   CREATURES_DATA_START_INDEX,
   CREATURE_DATA_SIZE,
+  CREATURE_INSTANCE_ID_OFFSET,
+  WORLD_STATE_UPDATE_COUNTER_INDEX,
+  CREATURE_X_OFFSET,
+  CREATURE_Y_OFFSET,
+  CREATURE_Z_OFFSET,
+  CREATURE_IS_REACHABLE_OFFSET,
+  CREATURE_IS_ADJACENT_OFFSET,
+  CREATURE_DISTANCE_OFFSET,
+  CREATURE_HP_OFFSET,
+  CREATURE_NAME_START_OFFSET,
+  CREATURE_NAME_LENGTH,
   LOOTING_REQUIRED_INDEX,
   LOOTING_UPDATE_COUNTER_INDEX,
   TARGETING_LIST_COUNT_INDEX,
@@ -35,6 +44,24 @@ import {
   PATH_WAYPOINT_SIZE,
   MAX_PATH_WAYPOINTS,
 } from './sharedConstants.js';
+
+const hpStringToCode = {
+  Full: 0,
+  High: 1,
+  Medium: 2,
+  Low: 3,
+  Critical: 4,
+  Obstructed: 5,
+};
+
+const hpCodeToString = [
+  'Full',
+  'High',
+  'Medium',
+  'Low',
+  'Critical',
+  'Obstructed',
+];
 
 export class SABStateManager {
   constructor(sabData) {
@@ -142,16 +169,49 @@ export class SABStateManager {
 
     for (let i = 0; i < count; i++) {
       const startIdx = CREATURES_DATA_START_INDEX + i * CREATURE_DATA_SIZE;
+
+      let name = '';
+      for (let j = 0; j < CREATURE_NAME_LENGTH; j++) {
+        const charCode = Atomics.load(
+          this.creaturesArray,
+          startIdx + CREATURE_NAME_START_OFFSET + j,
+        );
+        if (charCode === 0) break;
+        name += String.fromCharCode(charCode);
+      }
+
+      const hpCode = Atomics.load(
+        this.creaturesArray,
+        startIdx + CREATURE_HP_OFFSET,
+      );
+
       creatures.push({
-        instanceId: Atomics.load(this.creaturesArray, startIdx + 0),
+        instanceId: Atomics.load(
+          this.creaturesArray,
+          startIdx + CREATURE_INSTANCE_ID_OFFSET,
+        ),
+        name,
+        hp: hpCodeToString[hpCode] || 'Full',
         gameCoords: {
-          x: Atomics.load(this.creaturesArray, startIdx + 1),
-          y: Atomics.load(this.creaturesArray, startIdx + 2),
-          z: Atomics.load(this.creaturesArray, startIdx + 3),
+          x: Atomics.load(this.creaturesArray, startIdx + CREATURE_X_OFFSET),
+          y: Atomics.load(this.creaturesArray, startIdx + CREATURE_Y_OFFSET),
+          z: Atomics.load(this.creaturesArray, startIdx + CREATURE_Z_OFFSET),
         },
-        isReachable: Atomics.load(this.creaturesArray, startIdx + 4) === 1,
-        isAdjacent: Atomics.load(this.creaturesArray, startIdx + 5) === 1,
-        distance: Atomics.load(this.creaturesArray, startIdx + 6) / 100,
+        isReachable:
+          Atomics.load(
+            this.creaturesArray,
+            startIdx + CREATURE_IS_REACHABLE_OFFSET,
+          ) === 1,
+        isAdjacent:
+          Atomics.load(
+            this.creaturesArray,
+            startIdx + CREATURE_IS_ADJACENT_OFFSET,
+          ) === 1,
+        distance:
+          Atomics.load(
+            this.creaturesArray,
+            startIdx + CREATURE_DISTANCE_OFFSET,
+          ) / 100,
       });
     }
 
@@ -170,40 +230,54 @@ export class SABStateManager {
 
       Atomics.store(
         this.creaturesArray,
-        startIdx + 0,
+        startIdx + CREATURE_INSTANCE_ID_OFFSET,
         creature.instanceId || 0,
       );
       Atomics.store(
         this.creaturesArray,
-        startIdx + 1,
+        startIdx + CREATURE_X_OFFSET,
         creature.gameCoords?.x || 0,
       );
       Atomics.store(
         this.creaturesArray,
-        startIdx + 2,
+        startIdx + CREATURE_Y_OFFSET,
         creature.gameCoords?.y || 0,
       );
       Atomics.store(
         this.creaturesArray,
-        startIdx + 3,
+        startIdx + CREATURE_Z_OFFSET,
         creature.gameCoords?.z || 0,
       );
       Atomics.store(
         this.creaturesArray,
-        startIdx + 4,
+        startIdx + CREATURE_IS_REACHABLE_OFFSET,
         creature.isReachable ? 1 : 0,
       );
       Atomics.store(
         this.creaturesArray,
-        startIdx + 5,
+        startIdx + CREATURE_IS_ADJACENT_OFFSET,
         creature.isAdjacent ? 1 : 0,
       );
       Atomics.store(
         this.creaturesArray,
-        startIdx + 6,
+        startIdx + CREATURE_DISTANCE_OFFSET,
         Math.floor((creature.distance || 0) * 100),
       );
-      Atomics.store(this.creaturesArray, startIdx + 7, 0); // reserved
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + CREATURE_HP_OFFSET,
+        hpStringToCode[creature.hp] ?? 0,
+      );
+
+      const name = creature.name || '';
+      for (let j = 0; j < CREATURE_NAME_LENGTH; j++) {
+        const charCode = j < name.length ? name.charCodeAt(j) : 0;
+        Atomics.store(
+          this.creaturesArray,
+          startIdx + CREATURE_NAME_START_OFFSET + j,
+          charCode,
+        );
+      }
     }
 
     Atomics.add(this.creaturesArray, CREATURES_UPDATE_COUNTER_INDEX, 1);
@@ -262,7 +336,14 @@ export class SABStateManager {
         action,
         priority,
         stickiness,
-        stance: stance === 0 ? 'Follow' : stance === 1 ? 'Stand' : 'Follow',
+        stance:
+          stance === 0
+            ? 'Follow'
+            : stance === 1
+              ? 'Stand'
+              : stance === 2
+                ? 'Reach'
+                : 'Follow',
         distance,
       });
     }
@@ -305,9 +386,13 @@ export class SABStateManager {
       Atomics.store(
         this.targetingListArray,
         startIdx + 38,
-        rule.stance === 'Stand' ? 1 : rule.stance === 'Follow' ? 0 : 0,
+        rule.stance === 'Stand'
+          ? 1
+          : rule.stance === 'Reach'
+            ? 2
+            : 0,
       );
-      Atomics.store(this.targetingListArray, startIdx + 39, rule.distance || 1);
+      Atomics.store(this.targetingListArray, startIdx + 39, rule.distance || 0);
     }
 
     Atomics.add(
@@ -463,5 +548,20 @@ export class SABStateManager {
       currentTarget: this.getCurrentTarget(),
       pathData: this.getPath(),
     };
+  }
+
+  writeWorldState(state) {
+    if (!this.creaturesArray || !this.battleListArray || !this.targetArray) {
+      return;
+    }
+
+    // Write all the individual components of the state.
+    // Note: These methods already increment their own legacy counters, which is fine.
+    this.writeBattleList(state.battleList || []);
+    this.writeCreatures(state.creatures || []);
+    this.writeCurrentTarget(state.target || null);
+
+    // Atomically increment the main world state counter to signal a consistent write.
+    Atomics.add(this.creaturesArray, WORLD_STATE_UPDATE_COUNTER_INDEX, 1);
   }
 }

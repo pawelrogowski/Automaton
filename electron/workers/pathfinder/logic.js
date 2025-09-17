@@ -76,31 +76,52 @@ export function runPathfindingLogic(context) {
     // Instead of reading a mode flag, we infer the mode from the available data.
     // If a dynamicTarget exists, we are in 'targeting' mode. Otherwise, 'cavebot' mode.
     const isTargetingMode = !!cavebot.dynamicTarget;
-    const effectiveMode = isTargetingMode ? 'targeting' : 'cavebot';
 
     let result = null;
     let targetIdentifier = null;
 
     const allSpecialAreas = state.cavebot?.specialAreas || [];
-    const activeSpecialAreas = allSpecialAreas.filter((area) => {
-      if (!area.enabled) return false;
-      // 'all' type areas are always active.
-      // Otherwise, the area type must match the current effective mode.
-      return area.type === 'all' || area.type === effectiveMode;
-    });
+    const activeSpecialAreas = allSpecialAreas.filter((area) => area.enabled);
 
-    const currentJson = JSON.stringify(activeSpecialAreas);
-    if (currentJson !== logicContext.lastJsonForType.get(effectiveMode)) {
-      const areasForNative = activeSpecialAreas.map((area) => ({
-        x: area.x,
-        y: area.y,
-        z: area.z,
-        avoidance: area.avoidance,
-        width: area.sizeX,
-        height: area.sizeY,
-      }));
-      pathfinderInstance.updateSpecialAreas(areasForNative, z);
-      logicContext.lastJsonForType.set(effectiveMode, currentJson);
+    const activeAreasJson = JSON.stringify(activeSpecialAreas);
+
+    if (activeAreasJson !== logicContext.lastActiveAreasJson) {
+      logger('info', 'Special areas have changed, updating pathfinder cache.');
+      const newAreasByZ = {};
+      for (const area of activeSpecialAreas) {
+        if (!newAreasByZ[area.z]) {
+          newAreasByZ[area.z] = [];
+        }
+        newAreasByZ[area.z].push(area);
+      }
+
+      const oldAreasByZ = logicContext.lastAreasByZ || {};
+      const allZLevels = new Set([
+        ...Object.keys(newAreasByZ),
+        ...Object.keys(oldAreasByZ),
+      ]);
+
+      for (const zStr of allZLevels) {
+        const z = parseInt(zStr, 10);
+        const newAreasJson = JSON.stringify(newAreasByZ[z] || []);
+        const oldAreasJson = JSON.stringify(oldAreasByZ[z] || []);
+
+        if (newAreasJson !== oldAreasJson) {
+          logger('debug', `Updating special areas for z-level ${z}`);
+          const areasForNative = (newAreasByZ[z] || []).map((area) => ({
+            x: area.x,
+            y: area.y,
+            z: area.z,
+            avoidance: area.avoidance,
+            width: area.sizeX,
+            height: area.sizeY,
+          }));
+          pathfinderInstance.updateSpecialAreas(areasForNative, z);
+        }
+      }
+
+      logicContext.lastActiveAreasJson = activeAreasJson;
+      logicContext.lastAreasByZ = newAreasByZ;
     }
 
     if (isTargetingMode) {
