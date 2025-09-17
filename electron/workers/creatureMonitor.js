@@ -57,7 +57,9 @@ const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 125;
 const TARGET_LOSS_GRACE_PERIOD_MS = 100;
 const CREATURE_FLICKER_GRACE_PERIOD_MS = 175;
-const ADJACENT_DISTANCE_THRESHOLD = 1.6;
+const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
+const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
+const ADJACENT_TIME_THRESHOLD_MS = 150;
 
 let currentState = null;
 let isInitialized = false;
@@ -507,7 +509,34 @@ async function performOperation() {
         const coordsKey = getCoordsKey(entity.gameCoords);
         const pathLength = reachableTiles[coordsKey];
         const isReachable = typeof pathLength !== 'undefined';
-        const isAdjacent = entity.rawDistance < ADJACENT_DISTANCE_THRESHOLD;
+        
+        let isAdjacent = false;
+        if (entity.gameCoords) {
+          const deltaX = Math.abs(currentPlayerMinimapPosition.x - entity.gameCoords.x);
+          const deltaY = Math.abs(currentPlayerMinimapPosition.y - entity.gameCoords.y);
+          const isStraight = (deltaX === 1 && deltaY === 0) || (deltaX === 0 && deltaY === 1);
+          const isDiagonal = deltaX === 1 && deltaY === 1;
+
+          let threshold = 0;
+          if (isStraight) {
+            threshold = ADJACENT_DISTANCE_THRESHOLD_STRAIGHT;
+          } else if (isDiagonal) {
+            threshold = ADJACENT_DISTANCE_THRESHOLD_DIAGONAL;
+          }
+
+          if (threshold > 0 && entity.rawDistance <= threshold) {
+            if (!entity.adjacentSince) {
+              entity.adjacentSince = now;
+            }
+            if (now - entity.adjacentSince >= ADJACENT_TIME_THRESHOLD_MS) {
+              isAdjacent = true;
+            }
+          } else {
+            entity.adjacentSince = null;
+          }
+        } else {
+          entity.adjacentSince = null;
+        }
         
         let isBlockingPath = false;
         if (blockingCreatureCoords && entity.gameCoords) {
