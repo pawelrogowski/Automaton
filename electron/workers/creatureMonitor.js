@@ -7,7 +7,7 @@ import findSequences from 'find-sequences-native';
 import Pathfinder from 'pathfinder-native';
 import pkg from 'font-ocr';
 import regionDefinitions from '../constants/regionDefinitions.js';
-import { calculateDistance } from '../utils/distance.js';
+import { calculateDistance, chebyshevDistance } from '../utils/distance.js';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
 import { SABStateManager } from './sabStateManager.js';
 import { findBestNameMatch } from '../utils/nameMatcher.js';
@@ -59,7 +59,7 @@ const TARGET_LOSS_GRACE_PERIOD_MS = 100;
 const CREATURE_FLICKER_GRACE_PERIOD_MS = 175;
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
 const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
-const ADJACENT_TIME_THRESHOLD_MS = 150;
+const ADJACENT_TIME_THRESHOLD_MS = 450;
 
 let currentState = null;
 let isInitialized = false;
@@ -296,7 +296,7 @@ function updateCreatureState(
     y: finalGameCoords.y,
     z: finalGameCoords.z,
   };
-  creature.distance = calculateDistance(
+  creature.distance = chebyshevDistance(
     currentPlayerMinimapPosition,
     creature.gameCoords,
   );
@@ -462,15 +462,8 @@ async function performOperation() {
         }
 
         if (now < oldCreature.flickerGracePeriodEndTime) {
-          // Still within grace period - keep the creature, but update its distance
-          oldCreature.distance = calculateDistance(
-            currentPlayerMinimapPosition,
-            oldCreature.gameCoords,
-          );
-          oldCreature.rawDistance = calculateDistance(
-            currentPlayerMinimapPosition,
-            oldCreature.gameCoords,
-          );
+          // Still within grace period - keep the creature without updating its distance,
+          // to prevent jitter from resetting the adjacency timer.
           newActiveCreatures.set(id, oldCreature);
         } else {
           logger(
@@ -533,7 +526,7 @@ async function performOperation() {
             threshold = ADJACENT_DISTANCE_THRESHOLD_DIAGONAL;
           }
 
-          if (threshold > 0 && entity.distance <= threshold) {
+          if (threshold > 0 && entity.rawDistance <= threshold) {
             if (!entity.adjacentSince) {
               entity.adjacentSince = now;
             }
@@ -709,110 +702,67 @@ async function performOperation() {
       });
     }
 
-    // --- SEPARATE TARGET DEATH DETECTION (bypasses flicker detection) ---
+    // --- UNIFIED DEATH DETECTION & LOOTING ---
     const currentTarget = sabStateManager.getCurrentTarget();
-
-    // Check if our target disappeared (for immediate looting)
-    if (previousTargetName) {
-      let targetStillPresent = false;
-
-      // Check if previous target name is still in battle list
-      for (const battleListEntry of battleListEntriesForStore) {
-        const battleListName = battleListEntry.name;
-
-        // Exact match
-        if (previousTargetName === battleListName) {
-          targetStillPresent = true;
-          break;
-        }
-
-        // Handle truncated names
-        if (battleListName.endsWith('...')) {
-          const truncatedPart = battleListName.slice(0, -3);
-          if (previousTargetName.startsWith(truncatedPart)) {
-            targetStillPresent = true;
-            break;
-          }
-        }
-      }
-
-      // If target was present but is now gone, trigger immediate looting
-      if (!targetStillPresent && !isLootingInProgress) {
-        logger(
-          'info',
-          `[CreatureMonitor] Target '${previousTargetName}' disappeared from battle list - triggering immediate looting (bypassing flicker detection)`,
-        );
-        await performImmediateLooting();
-      }
-    }
-
-    // Update previous target name for next cycle
-    previousTargetName = currentTarget?.name || null;
-
-    // --- IMPROVED: Looting Detection and Action with Count-Based Tracking ---
     const targetingList = sabStateManager.getTargetingList();
+    let lootReason = '';
 
+    // 1. Check for decrease in creature counts
     const currentTargetedCreatureCounts = new Map();
     for (const targetingCreature of targetingList) {
-      // Count how many of this creature type are present in battle list
       const count = battleListEntriesForStore.filter((entry) => {
-        // Exact match
         if (targetingCreature.name === entry.name) return true;
-
-        // Handle truncated names: if battle list entry ends with "..."
-        // check if targeting name starts with the truncated part
         if (entry.name.endsWith('...')) {
           const truncatedPart = entry.name.slice(0, -3);
           return targetingCreature.name.startsWith(truncatedPart);
         }
-
         return false;
       }).length;
-
       if (count > 0) {
         currentTargetedCreatureCounts.set(targetingCreature.name, count);
       }
     }
 
-    // Check for creatures that died (count decreased)
-    const disappearedCreatures = [];
-    for (const [
-      creatureName,
-      previousCount,
-    ] of previousTargetedCreatureCounts) {
+    const disappearedCreatures = new Set();
+    for (const [creatureName, previousCount] of previousTargetedCreatureCounts) {
       const currentCount = currentTargetedCreatureCounts.get(creatureName) || 0;
       if (currentCount < previousCount) {
-        // This many creatures of this type died
-        const diedCount = previousCount - currentCount;
-        logger(
-          'info',
-          `[CreatureMonitor] DEATH DETECTED: ${creatureName}: ${previousCount} -> ${currentCount} (${diedCount} died)`,
-        );
-        for (let i = 0; i < diedCount; i++) {
-          disappearedCreatures.push(creatureName);
+        disappearedCreatures.add(creatureName);
+      }
+    }
+
+    if (disappearedCreatures.size > 0) {
+      lootReason = `Count decreased for: ${[...disappearedCreatures].join(', ')}`;
+    }
+
+    // 2. Check if the explicit target disappeared (can be a fallback)
+    if (previousTargetName) {
+      const targetStillPresent = battleListEntriesForStore.some((entry) => {
+        if (previousTargetName === entry.name) return true;
+        if (entry.name.endsWith('...')) {
+          const truncatedPart = entry.name.slice(0, -3);
+          return previousTargetName.startsWith(truncatedPart);
+        }
+        return false;
+      });
+
+      if (!targetStillPresent) {
+        if (!lootReason) {
+          lootReason = `Target '${previousTargetName}' disappeared from battle list`;
         }
       }
     }
 
-    // Fallback looting logic: if any creature died and we haven't looted yet, loot
-    // (This covers cases where target detection might miss something)
-    if (
-      disappearedCreatures.length > 0 &&
-      !sabStateManager.isLootingRequired() &&
-      !isLootingInProgress
-    ) {
-      logger(
-        'info',
-        `[CreatureMonitor] Creature(s) died: ${disappearedCreatures.join(', ')} - triggering fallback looting`,
-      );
-
-      // Perform looting immediately
+    // 3. Trigger looting if a reason was found and not already in progress
+    if (lootReason && !isLootingInProgress) {
+      logger('info', `[CreatureMonitor] ${lootReason} - triggering looting.`);
       await performImmediateLooting();
     }
 
-    // Always update previousTargetedCreatureCounts for the next cycle
+    // 4. Update state for the next cycle
+    previousTargetName = currentTarget?.name || null;
     previousTargetedCreatureCounts = new Map(currentTargetedCreatureCounts);
-    // --- END NEW ---
+    // --- END UNIFIED ---
   } catch (error) {
     logger('error', '[CreatureMonitor] Error in operation:', error);
   }
@@ -852,7 +802,7 @@ async function performImmediateLooting() {
     });
 
     // Wait 200ms
-    await delay(200);
+    await delay(50);
 
     // Clear looting flag
     sabStateManager.setLootingRequired(false);
@@ -862,7 +812,11 @@ async function performImmediateLooting() {
       type: 'cavebot/setLootingRequired',
       payload: false,
     });
-
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: false,
+    });
     logger('info', '[CreatureMonitor] Immediate looting action completed');
   } catch (error) {
     logger('error', '[CreatureMonitor] Error during immediate looting:', error);

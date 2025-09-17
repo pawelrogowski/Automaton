@@ -262,7 +262,13 @@ export function createTargetingActions(workerContext) {
     if (sabStateManager.isLootingRequired()) return;
 
     const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
-    if (pathfindingTarget.distance <= desiredDistance || pathfindingTarget.isAdjacent) return;
+    // For melee, rely only on the isAdjacent flag which uses rawDistance and is more responsive.
+    if (desiredDistance === 1) {
+      if (pathfindingTarget.isAdjacent) return;
+    } else {
+      // For ranged, use the stabilized Chebyshev distance.
+      if (pathfindingTarget.distance <= desiredDistance) return;
+    }
 
     if (rule.stance === 'Stand') return;
 
