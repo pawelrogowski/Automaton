@@ -20,6 +20,15 @@ import {
 const logger = createLogger({ info: true, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const chebyshevDistance = (p1, p2) => {
+  if (!p1 || !p2) return Infinity;
+  return Math.max(
+    Math.abs(p1.x - p2.x),
+    Math.abs(p1.y - p2.y),
+    Math.abs(p1.z - p2.z),
+  );
+};
+
 // Core configuration
 const config = {
   mainLoopIntervalMs: 25,
@@ -265,6 +274,15 @@ async function performTargeting() {
 
   if (!workerState.playerMinimapPosition) return;
 
+  // AI-INTEGRATION: Record player's path during targeting.
+  // This data is used by the cavebot to determine if it should skip
+  // a 'node' waypoint, preventing backtracking over explored areas.
+  parentPort.postMessage({
+    storeUpdate: true,
+    type: 'cavebot/addVisitedTile',
+    payload: workerState.playerMinimapPosition,
+  });
+
   // Continuous target acquisition attempt
   await targetingActions.manageTargetAcquisition(
     targetingContext,
@@ -334,6 +352,48 @@ function handleControlStateChange(newControlState, oldControlState) {
       'info',
       '[TargetingWorker] Gained control, cleared path and requesting new pathfinding',
     );
+  } else if (
+    (oldControlState === 'TARGETING' ||
+      oldControlState === 'HANDOVER_TO_TARGETING') &&
+    newControlState === 'CAVEBOT'
+  ) {
+    // AI-INTEGRATION: Cavebot is regaining control. Check if we were near the next node.
+    // If the player, while under targeting control, moved within 4 tiles of the
+    // next 'node' waypoint, we can skip walking to it.
+    const { cavebot: cavebotState } = workerState.globalState || {};
+    if (cavebotState?.visitedTiles?.length > 0) {
+      const { waypoints, currentWaypointIndex } = cavebotState;
+      if (waypoints && typeof currentWaypointIndex === 'number') {
+        const currentWaypoint = waypoints[currentWaypointIndex];
+        if (currentWaypoint && currentWaypoint.type === 'node') {
+          const nodeCoord = {
+            x: currentWaypoint.x,
+            y: currentWaypoint.y,
+            z: currentWaypoint.z,
+          };
+          const isClose = cavebotState.visitedTiles.some(
+            (visitedTile) => chebyshevDistance(visitedTile, nodeCoord) <= 4,
+          );
+
+          if (isClose) {
+            logger(
+              'info',
+              '[TargetingWorker] Visited area near node waypoint, skipping.',
+            );
+            parentPort.postMessage({
+              storeUpdate: true,
+              type: 'cavebot/goToNextWaypoint',
+            });
+          }
+        }
+      }
+    }
+    // AI-INTEGRATION: Always clear the visited tiles after the check.
+    // This ensures that the data from one targeting session doesn't affect the next.
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/clearVisitedTiles',
+    });
   }
 }
 

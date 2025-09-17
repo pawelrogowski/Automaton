@@ -85,7 +85,10 @@ export async function processMinimapData(
     );
 
     if (result?.position) {
-      const newPos = result.position;
+      const newPos = {
+        ...result.position,
+        positionSearchMs: result.performance?.totalTimeMs?.toFixed(2) || 0,
+      };
 
       if (
         !lastWrittenPosition ||

@@ -312,6 +312,7 @@ function updateCreatureState(
 }
 
 async function performOperation() {
+  const startTime = performance.now();
   try {
     if (
       !isInitialized ||
@@ -499,18 +500,13 @@ async function performOperation() {
     }
 
     if (detectedEntities.length > 0) {
+      const allCreaturePositions = detectedEntities.map(c => c.gameCoords);
+      const reachableTiles = pathfinderInstance.getReachableTiles(currentPlayerMinimapPosition, allCreaturePositions, 14);
+
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
-        let isReachable = reachableTilesCache.get(coordsKey);
-        if (typeof isReachable === 'undefined') {
-          const pathLength = pathfinderInstance.getPathLength(
-            currentPlayerMinimapPosition,
-            entity.gameCoords,
-            [],
-          );
-          isReachable = pathLength !== -1 && pathLength <= 14;
-          reachableTilesCache.set(coordsKey, isReachable);
-        }
+        const pathLength = reachableTiles[coordsKey];
+        const isReachable = typeof pathLength !== 'undefined';
         const isAdjacent = entity.rawDistance < ADJACENT_DISTANCE_THRESHOLD;
         
         let isBlockingPath = false;
@@ -650,7 +646,11 @@ async function performOperation() {
 
     // Post updates to the main thread for Redux/UI *after* the SAB is updated.
     if (creaturesChanged) {
-      postUpdateOnce('targeting/setEntities', detectedEntities);
+      const duration = (performance.now() - startTime).toFixed(2);
+      postUpdateOnce('targeting/setEntities', {
+        creatures: detectedEntities,
+        duration,
+      });
     }
     if (targetChanged) {
       parentPort.postMessage({

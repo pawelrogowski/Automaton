@@ -41,7 +41,7 @@ const initialState = {
     whiteSkull: false,
     redSkull: false,
   },
-  playerMinimapPosition: { x: 0, y: 0, z: 0 },
+  playerMinimapPosition: { x: 0, y: 0, z: 0, positionSearchMs: null },
   lastMoveTime: null,
   characterName: null,
   lastCharacterName: null,

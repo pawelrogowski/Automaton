@@ -48,16 +48,6 @@ namespace AStar {
         std::function<void()> onCancelled
     );
 
-    // --- FIX: Corrected declaration. It no longer returns a Node, but a set of indices. ---
-    std::unordered_set<int> findBestTargetTile(
-        const Node& player,
-        const Node& monster,
-        const std::string& stance,
-        int distance,
-        const MapData& mapData,
-        const std::vector<int>& cost_grid,
-        const std::vector<Node>& creaturePositions
-    );
 }
 
 #endif // ASTAR_H

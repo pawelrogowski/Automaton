@@ -93,7 +93,18 @@ namespace AStar {
         int visit = sb.visitToken;
         auto indexOf = [&](int x, int y) { return y * W + x; };
 
-        using PQItem = std::tuple<int, int, int, int, int>;
+        std::unordered_set<int> creatureIndices;
+        for (const auto& creature : creaturePositions) {
+            if (creature.z == start.z) {
+                int creatureX = creature.x - mapData.minX;
+                int creatureY = creature.y - mapData.minY;
+                if (inBounds(creatureX, creatureY, mapData)) {
+                    creatureIndices.insert(indexOf(creatureX, creatureY));
+                }
+            }
+        }
+
+        using PQItem = std::tuple<int, int, int, int>;
         std::priority_queue<PQItem, std::vector<PQItem>, std::greater<PQItem>> open;
 
         int startIdx = indexOf(start.x, start.y);
@@ -102,7 +113,7 @@ namespace AStar {
         sb.gScore[startIdx] = 0;
         sb.parent[startIdx] = -1;
         sb.mark[startIdx] = visit;
-        open.emplace(h0, h0, 0, 0, startIdx); // f, h, preference, g, idx
+        open.emplace(h0, h0, 0, startIdx); // f, h, g, idx
 
         int iterations = 0;
         const int dxs[8] = { 1, 1, 0, -1, 1, -1, -1, 0 };
@@ -110,7 +121,7 @@ namespace AStar {
 
         while (!open.empty()) {
             if (++iterations % 1000 == 0) onCancelled();
-            auto [f, h, preference, g, idx] = open.top();
+            auto [f, h, g, idx] = open.top();
             open.pop();
 
             if (sb.closedMark[idx] == visit || g > sb.gScore[idx]) continue;
@@ -129,35 +140,12 @@ namespace AStar {
             int cx = idx % W;
             int cy = idx / W;
 
-            bool prefer_horizontal = (cx + cy) % 2 == 0;
-
             for (int dir = 0; dir < 8; ++dir) {
                 int nx = cx + dxs[dir];
                 int ny = cy + dys[dir];
                 if (!inBounds(nx, ny, mapData)) continue;
 
                 bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
-                if (isDiagonal) {
-                    int orth_x1 = cx + dxs[dir];
-                    int orth_y1 = cy;
-                    int orth_x2 = cx;
-                    int orth_y2 = cy + dys[dir];
-
-                    auto isCornerWalkable = [&](int x, int y) {
-                        if (!inBounds(x, y, mapData)) return false;
-                        int nIdx = indexOf(x, y);
-                        int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
-                        bool isWalkableByMap = isWalkable(x, y, mapData);
-                        if (tileAvoidance == 255 || !isWalkableByMap) {
-                            return false;
-                        }
-                        return true;
-                    };
-
-                    if (isCornerWalkable(orth_x1, orth_y1) || isCornerWalkable(orth_x2, orth_y2)) {
-                        continue;
-                    }
-                }
 
                 int nIdx = indexOf(nx, ny);
                 int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
@@ -167,15 +155,7 @@ namespace AStar {
                     continue;
                 }
 
-                bool isCreatureTile = false;
-                if (!isGoal(nIdx)) {
-                    for (const auto& creature : creaturePositions) {
-                        if (creature.x - mapData.minX == nx && creature.y - mapData.minY == ny && creature.z == start.z) {
-                            isCreatureTile = true;
-                            break;
-                        }
-                    }
-                }
+                bool isCreatureTile = (!isGoal(nIdx)) ? creatureIndices.count(nIdx) > 0 : false;
 
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
@@ -190,18 +170,7 @@ namespace AStar {
                     int nh = isGoal.heuristic(nx, ny);
                     int nf = tentativeG + nh;
 
-                    int current_dx = dxs[dir];
-                    int current_dy = dys[dir];
-
-                    int axis_preference = 1;
-                    bool is_horizontal = (current_dy == 0 && current_dx != 0);
-                    bool is_vertical = (current_dx == 0 && current_dy != 0);
-
-                    if ((prefer_horizontal && is_horizontal) || (!prefer_horizontal && is_vertical)) {
-                        axis_preference = 0;
-                    }
-
-                    open.emplace(nf, nh, axis_preference, tentativeG, nIdx);
+                    open.emplace(nf, nh, tentativeG, nIdx);
                 }
             }
         }
@@ -253,59 +222,6 @@ namespace AStar {
     bool isReachable(const Node& start, const Node& end, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions, std::function<void()> onCancelled) {
         return !findPathWithCosts(start, end, mapData, cost_grid, creaturePositions, onCancelled).empty();
     }
-
-    std::unordered_set<int> findBestTargetTile(const Node& player, const Node& monster, const std::string& stance, int distance, const MapData& mapData, const std::vector<int>& cost_grid, const std::vector<Node>& creaturePositions) {
-        std::unordered_set<int> target_indices;
-        Node monsterLocal = {monster.x - mapData.minX, monster.y - mapData.minY, 0, 0, nullptr, monster.z};
-        std::queue<std::pair<Node, int>> q;
-        std::unordered_set<int> visited;
-        auto indexOf = [&](int x, int y) { return y * mapData.width + x; };
-
-        if (!AStar::inBounds(monsterLocal.x, monsterLocal.y, mapData)) return target_indices;
-
-        q.push({monsterLocal, 0});
-        visited.insert(indexOf(monsterLocal.x, monsterLocal.y));
-
-        while (!q.empty()) {
-            auto [current, dist] = q.front();
-            q.pop();
-
-            if (stance == "keepAway" && dist == distance) {
-                int currentIdx = indexOf(current.x, current.y);
-                int tileAvoidance = cost_grid.empty() ? 0 : cost_grid[currentIdx];
-                bool isCreatureOnTile = false;
-                for (const auto& creature : creaturePositions) {
-                    if (creature.x - mapData.minX == current.x && creature.y - mapData.minY == current.y && creature.z == player.z) {
-                        isCreatureOnTile = true;
-                        break;
-                    }
-                }
-                bool isWalkableNode = (tileAvoidance != 255) && isWalkable(current.x, current.y, mapData) && !isCreatureOnTile;
-                if (isWalkableNode) {
-                    target_indices.insert(currentIdx);
-                }
-            }
-
-            if (stance == "keepAway" && dist >= distance) {
-                continue;
-            }
-
-            for (int dx = -1; dx <= 1; ++dx) {
-                for (int dy = -1; dy <= 1; ++dy) {
-                    if (dx == 0 && dy == 0) continue;
-                    Node neighbor = {current.x + dx, current.y + dy, 0, 0, nullptr, current.z};
-                    if (AStar::inBounds(neighbor.x, neighbor.y, mapData)) {
-                        int neighborIdx = indexOf(neighbor.x, neighbor.y);
-                        if (visited.find(neighborIdx) == visited.end()) {
-                            visited.insert(neighborIdx);
-                            q.push({neighbor, dist + 1});
-                        }
-                    }
-                }
-            }
-        }
-        return target_indices;
-    }
 } // namespace AStar
 
 Napi::FunctionReference Pathfinder::constructor;
@@ -318,6 +234,7 @@ Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("findPathToGoal", &Pathfinder::FindPathToGoal),
         InstanceMethod("isReachable", &Pathfinder::IsReachable),
         InstanceMethod("getPathLength", &Pathfinder::GetPathLength),
+        InstanceMethod("getReachableTiles", &Pathfinder::GetReachableTiles),
         InstanceAccessor("isLoaded", &Pathfinder::IsLoadedGetter, nullptr),
     });
     constructor = Napi::Persistent(func);
@@ -351,6 +268,121 @@ int Pathfinder::_getPathLengthInternal(Napi::Env env, const Node& start, const N
 
     return AStar::getPathLength(localStart, localEnd, mapData, cost_grid, creaturePositions, [](){});
 }
+
+Napi::Value Pathfinder::GetReachableTiles(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsArray() || !info[2].IsNumber()) {
+        Napi::TypeError::New(env, "Expected start node, creature positions array, and max distance").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    Napi::Object startObj = info[0].As<Napi::Object>();
+    Node start = {
+        startObj.Get("x").As<Napi::Number>().Int32Value(),
+        startObj.Get("y").As<Napi::Number>().Int32Value(),
+        0, 0, nullptr,
+        startObj.Get("z").As<Napi::Number>().Int32Value()
+    };
+
+    Napi::Array creaturePositionsArray = info[1].As<Napi::Array>();
+    std::vector<Node> creaturePositions;
+    for (uint32_t i = 0; i < creaturePositionsArray.Length(); ++i) {
+        Napi::Object creatureObj = creaturePositionsArray.Get(i).As<Napi::Object>();
+        creaturePositions.push_back({
+            creatureObj.Get("x").As<Napi::Number>().Int32Value(),
+            creatureObj.Get("y").As<Napi::Number>().Int32Value(),
+            0, 0, nullptr,
+            creatureObj.Get("z").As<Napi::Number>().Int32Value()
+        });
+    }
+
+    int maxDistance = info[2].As<Napi::Number>().Int32Value();
+
+    auto it_map = this->allMapData.find(start.z);
+    if (it_map == this->allMapData.end()) {
+        return Napi::Object::New(env);
+    }
+    const MapData& mapData = it_map->second;
+    auto it_cache = this->cost_grid_cache.find(start.z);
+    const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
+
+    Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
+    if (!AStar::inBounds(localStart.x, localStart.y, mapData)) {
+        return Napi::Object::New(env);
+    }
+
+    std::unordered_set<int> allCreatureIndices;
+    for (const auto& creature : creaturePositions) {
+        if (creature.z == start.z) {
+            int creatureX = creature.x - mapData.minX;
+            int creatureY = creature.y - mapData.minY;
+            if (AStar::inBounds(creatureX, creatureY, mapData)) {
+                allCreatureIndices.insert(creatureY * mapData.width + creatureX);
+            }
+        }
+    }
+
+    Napi::Object reachableTiles = Napi::Object::New(env);
+    std::queue<std::pair<int, int>> q;
+    std::unordered_map<int, int> distance;
+
+    int startIdx = localStart.y * mapData.width + localStart.x;
+    q.push({startIdx, 0});
+    distance[startIdx] = 0;
+
+    const int dx[] = {0, 0, 1, -1, 1, 1, -1, -1};
+    const int dy[] = {1, -1, 0, 0, 1, -1, 1, -1};
+
+    while (!q.empty()) {
+        auto curr = q.front();
+        q.pop();
+        int currIdx = curr.first;
+        int currDist = curr.second;
+
+        if (currDist >= maxDistance) continue;
+
+        int cx = currIdx % mapData.width;
+        int cy = currIdx / mapData.width;
+
+        for (int i = 0; i < 8; ++i) {
+            int nx = cx + dx[i];
+            int ny = cy + dy[i];
+
+            if (!AStar::inBounds(nx, ny, mapData)) continue;
+
+            int nextIdx = ny * mapData.width + nx;
+            if (distance.count(nextIdx)) continue;
+
+            bool isCreatureTile = allCreatureIndices.count(nextIdx) > 0;
+
+            if (!AStar::isWalkable(nx, ny, mapData) || isCreatureTile) {
+                 if (isCreatureTile) {
+                    // If the tile is a creature, it's "reachable" in the sense that we can target it.
+                    // But we can't path *through* it. So we record its distance and stop exploring from it.
+                    int globalX = nx + mapData.minX;
+                    int globalY = ny + mapData.minY;
+                    std::string key = std::to_string(globalX) + "," + std::to_string(globalY) + "," + std::to_string(start.z);
+                    reachableTiles.Set(key, Napi::Number::New(env, currDist + 1));
+                 }
+                continue;
+            }
+            
+            int tileAvoidance = (nextIdx >= 0 && nextIdx < (int)cost_grid.size()) ? cost_grid[nextIdx] : 0;
+            if (tileAvoidance == 255) continue;
+
+            distance[nextIdx] = currDist + 1;
+            q.push({nextIdx, currDist + 1});
+
+            int globalX = nx + mapData.minX;
+            int globalY = ny + mapData.minY;
+            std::string key = std::to_string(globalX) + "," + std::to_string(globalY) + "," + std::to_string(start.z);
+            reachableTiles.Set(key, Napi::Number::New(env, currDist + 1));
+        }
+    }
+
+    return reachableTiles;
+}
+
 
 Napi::Value Pathfinder::GetPathLength(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
@@ -649,18 +681,8 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
             }
         }
 
-        pathResult = AStar::findPathWithCosts(localEnd, localStart, mapData, cost_grid, otherCreaturePositions, [](){});
-        if (!pathResult.empty()) {
-            std::reverse(pathResult.begin(), pathResult.end());
-        }
+        pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, cost_grid, otherCreaturePositions, [](){});
 
-    } else if (stance == "keepAway") {
-        int distance = goalObj.Get("distance").As<Napi::Number>().Int32Value();
-        std::unordered_set<int> target_indices = AStar::findBestTargetTile(start, monster, stance, distance, mapData, cost_grid, creaturePositions);
-
-        if (!target_indices.empty()) {
-            pathResult = AStar::findPathToAny(localStart, target_indices, mapData, cost_grid, creaturePositions, [](){});
-        }
     }
 
 
