@@ -35,6 +35,20 @@ export function createFsm(workerState, config) {
     EVALUATING_WAYPOINT: {
       execute: async (context) => {
         const { playerPos, targetWaypoint, status, chebyshevDist } = context;
+        const { unreachableWaypointIds = [] } =
+          workerState.globalState.cavebot;
+
+        // Immediately skip if this waypoint is known to be unreachable
+        if (unreachableWaypointIds.includes(targetWaypoint.id)) {
+          logger(
+            'info',
+            `[FSM] Skipping known unreachable waypoint ${targetWaypoint.id}.`,
+          );
+          await advanceToNextWaypoint(workerState, config, {
+            skipCurrent: false,
+          }); // Already marked, just advance
+          return 'IDLE';
+        }
 
         // Handle Script waypoints first, as they ignore pathfinding and position.
         if (targetWaypoint.type === 'Script') {
@@ -90,7 +104,9 @@ export function createFsm(workerState, config) {
               'warn',
               `[FSM] Unreachable waypoint ${targetWaypoint.id} (${targetWaypoint.type}) due to path status: ${status}. Skipping.`,
             );
-            await advanceToNextWaypoint(workerState, config);
+            await advanceToNextWaypoint(workerState, config, {
+              skipCurrent: true,
+            });
             return 'IDLE';
 
           case PATH_STATUS_WAYPOINT_REACHED:

@@ -42,7 +42,12 @@ export function findFirstValidWaypoint(globalState) {
   return null;
 }
 
-export async function advanceToNextWaypoint(workerState, config) {
+export async function advanceToNextWaypoint(
+  workerState,
+  config,
+  options = {},
+) {
+  const { skipCurrent = false } = options;
   workerState.scriptErrorWaypointId = null;
   workerState.scriptErrorCount = 0;
 
@@ -53,15 +58,33 @@ export async function advanceToNextWaypoint(workerState, config) {
     waypointSections,
     currentSection,
     wptId: oldWptId,
+    unreachableWaypointIds = [],
   } = globalState.cavebot;
   const waypoints = waypointSections[currentSection]?.waypoints || [];
   if (waypoints.length === 0) return false;
 
+  if (skipCurrent) {
+    postStoreUpdate('cavebot/addUnreachableWaypointId', oldWptId);
+  }
+
   const currentIndex = waypoints.findIndex((wp) => wp.id === oldWptId);
   if (currentIndex === -1) return false;
 
-  const nextIndex = (currentIndex + 1) % waypoints.length;
-  const nextWpt = waypoints[nextIndex];
+  // Find the next waypoint that is not marked as unreachable
+  let nextWpt = null;
+  let searchIndex = currentIndex;
+  const updatedUnreachableIds = skipCurrent
+    ? [...unreachableWaypointIds, oldWptId]
+    : unreachableWaypointIds;
+
+  for (let i = 1; i <= waypoints.length; i++) {
+    const potentialIndex = (currentIndex + i) % waypoints.length;
+    const candidateWpt = waypoints[potentialIndex];
+    if (!updatedUnreachableIds.includes(candidateWpt.id)) {
+      nextWpt = candidateWpt;
+      break;
+    }
+  }
 
   if (nextWpt) {
     postStoreUpdate('cavebot/setwptId', nextWpt.id);

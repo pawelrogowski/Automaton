@@ -151,11 +151,11 @@ export const updateSABData = (workerState, config) => {
         // Check 1: Path must start from our current position
         workerState.cachedPathStart.x !== workerState.playerMinimapPosition.x ||
         workerState.cachedPathStart.y !== workerState.playerMinimapPosition.y ||
-        workerState.cachedPathStart.z !== workerState.playerMinimapPosition.z ||
-        // Check 2: Path must be for our current target waypoint
-        workerState.cachedPathTarget.x !== currentWaypoint.x ||
-        workerState.cachedPathTarget.y !== currentWaypoint.y ||
-        workerState.cachedPathTarget.z !== currentWaypoint.z
+        workerState.cachedPathStart.z !== workerState.playerMinimapPosition.z
+        // Check 2: Path must be for our current target waypoint (REMOVED FOR NOW)
+        // workerState.cachedPathTarget.x !== currentWaypoint.x ||
+        // workerState.cachedPathTarget.y !== currentWaypoint.y ||
+        // workerState.cachedPathTarget.z !== currentWaypoint.z
       ) {
         workerState.path = []; // Invalidate path
         workerState.pathfindingStatus = PATH_STATUS_IDLE;

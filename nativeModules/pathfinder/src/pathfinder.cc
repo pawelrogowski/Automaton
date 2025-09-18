@@ -104,7 +104,7 @@ namespace AStar {
             }
         }
 
-        using PQItem = std::tuple<int, int, int, int>;
+        using PQItem = std::tuple<int, int, int>; // f, generation, idx
         std::priority_queue<PQItem, std::vector<PQItem>, std::greater<PQItem>> open;
 
         int startIdx = indexOf(start.x, start.y);
@@ -113,18 +113,17 @@ namespace AStar {
         sb.gScore[startIdx] = 0;
         sb.parent[startIdx] = -1;
         sb.mark[startIdx] = visit;
-        open.emplace(h0, h0, 0, startIdx); // f, h, g, idx
+        open.emplace(h0, 0, startIdx); // f, generation, idx
 
-        int iterations = 0;
-        const int dxs[8] = { 1, 1, 0, -1, 1, -1, -1, 0 };
-        const int dys[8] = { 1, 0, 1, 1, -1, -1, 0, -1 };
+        int generation = 0;
 
         while (!open.empty()) {
-            if (++iterations % 1000 == 0) onCancelled();
-            auto [f, h, g, idx] = open.top();
+            if (++generation % 1000 == 0) onCancelled();
+            auto [f, gen, idx] = open.top();
             open.pop();
 
-            if (sb.closedMark[idx] == visit || g > sb.gScore[idx]) continue;
+            int g = sb.gScore[idx];
+            if (sb.closedMark[idx] == visit) continue;
 
             if (isGoal(idx)) {
                 int cur = idx;
@@ -140,23 +139,20 @@ namespace AStar {
             int cx = idx % W;
             int cy = idx / W;
 
-            for (int dir = 0; dir < 8; ++dir) {
-                int nx = cx + dxs[dir];
-                int ny = cy + dys[dir];
-                if (!inBounds(nx, ny, mapData)) continue;
-
-                bool isDiagonal = (dxs[dir] != 0 && dys[dir] != 0);
+            auto processNeighbor = [&](int nx, int ny, bool isDiagonal) {
+                if (!inBounds(nx, ny, mapData)) return;
 
                 int nIdx = indexOf(nx, ny);
+                if (sb.closedMark[nIdx] == visit) return;
+
                 int tileAvoidance = (nIdx >= 0 && nIdx < (int)cost_grid.size()) ? cost_grid[nIdx] : 0;
                 bool isWalkableByMap = isWalkable(nx, ny, mapData);
 
-                if (tileAvoidance == 255 || (!isWalkableByMap && (tileAvoidance > 0 || !isGoal(nIdx) ))) {
-                    continue;
+                if (tileAvoidance == 255 || (!isWalkableByMap && (tileAvoidance > 0 || !isGoal(nIdx)))) {
+                    return;
                 }
 
                 bool isCreatureTile = (!isGoal(nIdx)) ? creatureIndices.count(nIdx) > 0 : false;
-
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
@@ -166,13 +162,54 @@ namespace AStar {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
+                    int h = isGoal.heuristic(nx, ny);
+                    open.emplace(tentativeG + h, generation + 1, nIdx);
+                }
+            };
 
-                    int nh = isGoal.heuristic(nx, ny);
-                    int nf = tentativeG + nh;
+            int dx_to_goal = isGoal.end_x - cx;
+            int dy_to_goal = isGoal.end_y - cy;
 
-                    open.emplace(nf, nh, tentativeG, nIdx);
+            int dx_abs = std::abs(dx_to_goal);
+            int dy_abs = std::abs(dy_to_goal);
+
+            int dir_x = (dx_to_goal > 0) ? 1 : -1;
+            int dir_y = (dy_to_goal > 0) ? 1 : -1;
+
+            std::vector<std::pair<int, int>> neighbors;
+            if (dx_abs > dy_abs) {
+                neighbors.push_back({cx + dir_x, cy});
+                neighbors.push_back({cx, cy + dir_y});
+                neighbors.push_back({cx, cy - dir_y});
+                neighbors.push_back({cx - dir_x, cy});
+            } else if (dy_abs > dx_abs) {
+                neighbors.push_back({cx, cy + dir_y});
+                neighbors.push_back({cx + dir_x, cy});
+                neighbors.push_back({cx - dir_x, cy});
+                neighbors.push_back({cx, cy - dir_y});
+            } else {
+                 if (generation % 2 == 0) {
+                    neighbors.push_back({cx + dir_x, cy});
+                    neighbors.push_back({cx, cy + dir_y});
+                    neighbors.push_back({cx - dir_x, cy});
+                    neighbors.push_back({cx, cy - dir_y});
+                } else {
+                    neighbors.push_back({cx, cy + dir_y});
+                    neighbors.push_back({cx + dir_x, cy});
+                    neighbors.push_back({cx, cy - dir_y});
+                    neighbors.push_back({cx - dir_x, cy});
                 }
             }
+
+            for(const auto& p : neighbors) {
+                processNeighbor(p.first, p.second, false);
+            }
+
+            // Diagonals last
+            processNeighbor(cx + 1, cy + 1, true);
+            processNeighbor(cx - 1, cy - 1, true);
+            processNeighbor(cx + 1, cy - 1, true);
+            processNeighbor(cx - 1, cy + 1, true);
         }
         return path;
     }
@@ -203,12 +240,13 @@ namespace AStar {
 
         struct Goal {
             const std::unordered_set<int>& ends;
+            int end_x, end_y;
             int h_x, h_y;
             bool operator()(int idx) const { return ends.count(idx); }
             int heuristic(int x, int y) const { return manhattanHeuristic(x, y, h_x, h_y); }
         };
 
-        return findPathGeneric(start, mapData, cost_grid, creaturePositions, onCancelled, Goal{endIndices, heuristicEndX, heuristicEndY});
+        return findPathGeneric(start, mapData, cost_grid, creaturePositions, onCancelled, Goal{endIndices, heuristicEndX, heuristicEndY, heuristicEndX, heuristicEndY});
     }
 
     // --- CRASH FIX HERE ---
