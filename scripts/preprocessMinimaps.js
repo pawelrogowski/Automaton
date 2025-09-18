@@ -15,7 +15,7 @@ const SAVE_DEBUG_FULL_MAP_PNG = true;
 const SAVE_DEBUG_WAYPOINT_MAP_PNG = true;
 const PROCESS_WAYPOINT_MAPS = true;
 
-const LANDMARK_SIZE = 5;
+const LANDMARK_SIZE = 3;
 const LANDMARK_UNIQUENESS_THRESHOLD = 1;
 
 // --- Configuration for the robust coverage algorithm ---
@@ -27,6 +27,9 @@ const DEFAULT_REQUIRED_COVERAGE_COUNT = 2; // Renamed for clarity
 const ENABLE_HYBRID_LANDMARK_SYSTEM = true; // Master switch to enable/disable the entire new system.
 const SAFE_ZONE_RADIUS = 9; // The buffer radius in pixels around walkable areas to define a "safe zone".
 const ARTIFICIAL_LANDMARK_GRID_SPACING = 75; // The spacing in pixels for the artificial landmark grid.
+const MIN_DISTANCE_BETWEEN_ARTIFICIAL_LANDMARKS = 15; // To avoid clustering.
+const CANDIDATE_GRID_SPACING = 3; // Optimization: check one pixel every 5x5 grid.
+const MAX_ARTIFICIAL_LANDMARKS_PER_MINIMAP_AREA = 10;
 
 const PACKED_LANDMARK_PATTERN_BYTES = Math.ceil(
   (LANDMARK_SIZE * LANDMARK_SIZE) / 2,
@@ -147,6 +150,52 @@ function generateSafeZoneGrid(walkableGrid, width, height, radius) {
   return safeZoneGrid;
 }
 
+// --- Distance Transform ---
+// Uses a two-pass algorithm to calculate the squared Euclidean distance to the nearest "0" pixel.
+function calculateDistanceTransform(grid, width, height) {
+  const dist = new Float32Array(width * height).fill(Infinity);
+
+  // Initialize distances: 0 for non-safe zones, Infinity for safe zones
+  for (let i = 0; i < grid.length; i++) {
+    if (grid[i] === 0) {
+      dist[i] = 0;
+    }
+  }
+
+  // Pass 1: Top-down, left-to-right
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (grid[i] !== 0) {
+        let minNeighborDist = Infinity;
+        if (y > 0) minNeighborDist = Math.min(minNeighborDist, dist[(y - 1) * width + x] + 1);
+        if (x > 0) minNeighborDist = Math.min(minNeighborDist, dist[y * width + x - 1] + 1);
+        if (y > 0 && x > 0) minNeighborDist = Math.min(minNeighborDist, dist[(y - 1) * width + x - 1] + 1.414);
+        if (y > 0 && x < width - 1) minNeighborDist = Math.min(minNeighborDist, dist[(y - 1) * width + x + 1] + 1.414);
+        dist[i] = Math.min(dist[i], minNeighborDist);
+      }
+    }
+  }
+
+  // Pass 2: Bottom-up, right-to-left
+  for (let y = height - 1; y >= 0; y--) {
+    for (let x = width - 1; x >= 0; x--) {
+      const i = y * width + x;
+      if (grid[i] !== 0) {
+        let minNeighborDist = dist[i];
+        if (y < height - 1) minNeighborDist = Math.min(minNeighborDist, dist[(y + 1) * width + x] + 1);
+        if (x < width - 1) minNeighborDist = Math.min(minNeighborDist, dist[y * width + x + 1] + 1);
+        if (y < height - 1 && x < width - 1) minNeighborDist = Math.min(minNeighborDist, dist[(y + 1) * width + x + 1] + 1.414);
+        if (y < height - 1 && x > 0) minNeighborDist = Math.min(minNeighborDist, dist[(y + 1) * width + x - 1] + 1.414);
+        dist[i] = minNeighborDist;
+      }
+    }
+  }
+
+  return dist;
+}
+
+
 function generateUniquePatternForId(id, palette) {
   // The landmark packing is 4-bit, so we MUST use palette indices < 16.
   // We exclude 0 (black/noise) and 14 (often another noise/special color).
@@ -154,7 +203,7 @@ function generateUniquePatternForId(id, palette) {
   const N = safePaletteIndices.length;
   const pattern = Buffer.alloc(LANDMARK_SIZE * LANDMARK_SIZE);
   let currentId = id;
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < LANDMARK_SIZE * LANDMARK_SIZE; i++) {
     const digit = currentId % N;
     pattern[i] = safePaletteIndices[digit];
     currentId = Math.floor(currentId / N);
@@ -165,43 +214,110 @@ function generateUniquePatternForId(id, palette) {
 function injectArtificialLandmarks({
   fullMapData,
   safeZoneGrid,
+  walkableGrid,
   mapWidth,
   mapHeight,
   indexData,
   palette,
-  gridSpacing,
 }) {
   const modifiedMapData = new Uint8Array(fullMapData);
   const injectedLandmarks = [];
-  let id = 0;
   const halfLandmark = Math.floor(LANDMARK_SIZE / 2);
-  for (let y = 0; y < mapHeight; y += gridSpacing) {
-    for (let x = 0; x < mapWidth; x += gridSpacing) {
-      if (
-        x > halfLandmark &&
-        x < mapWidth - halfLandmark &&
-        y > halfLandmark &&
-        y < mapHeight - halfLandmark &&
-        safeZoneGrid[y * mapWidth + x] === 1
-      ) {
-        const pattern = generateUniquePatternForId(id, palette);
-        for (let my = 0; my < LANDMARK_SIZE; my++) {
-          for (let mx = 0; mx < LANDMARK_SIZE; mx++) {
-            const mapX = x - halfLandmark + mx;
-            const mapY = y - halfLandmark + my;
-            modifiedMapData[mapY * mapWidth + mapX] =
-              pattern[my * LANDMARK_SIZE + mx];
-          }
-        }
-        injectedLandmarks.push({
-          x: x + indexData.minX,
-          y: y + indexData.minY,
-          pattern,
-        });
-        id++;
+  const halfMinimapW = Math.floor(MINIMAP_WIDTH / 2);
+  const halfMinimapH = Math.floor(MINIMAP_HEIGHT / 2);
+  const visibilityRadiusX = halfMinimapW - halfLandmark;
+  const visibilityRadiusY = halfMinimapH - halfLandmark;
+
+  logger('info', `(Z=${indexData.z}) Calculating distance transform for inland placement...`);
+  const distanceMap = calculateDistanceTransform(safeZoneGrid, mapWidth, mapHeight);
+
+  const candidates = [];
+  for (let y = halfLandmark; y < mapHeight - halfLandmark; y += CANDIDATE_GRID_SPACING) {
+    for (let x = halfLandmark; x < mapWidth - halfLandmark; x += CANDIDATE_GRID_SPACING) {
+      const i = y * mapWidth + x;
+      if (safeZoneGrid[i] === 1) {
+        candidates.push({ x, y, dist: distanceMap[i] });
       }
     }
   }
+
+  // Sort candidates: lowest distance (closest to walkable) first
+  candidates.sort((a, b) => a.dist - b.dist);
+  logger('info', `(Z=${indexData.z}) Found ${candidates.length} potential artificial landmark locations.`);
+
+  const coveredWalkablePixels = new Uint8Array(mapWidth * mapHeight).fill(0);
+  let id = 0;
+  const minSqDist = MIN_DISTANCE_BETWEEN_ARTIFICIAL_LANDMARKS * MIN_DISTANCE_BETWEEN_ARTIFICIAL_LANDMARKS;
+  const maxLandmarks = Math.ceil((mapWidth / MINIMAP_WIDTH) * (mapHeight / MINIMAP_HEIGHT) * MAX_ARTIFICIAL_LANDMARKS_PER_MINIMAP_AREA);
+
+
+  for (const cand of candidates) {
+    if (injectedLandmarks.length >= maxLandmarks) {
+      logger('info', `(Z=${indexData.z}) Reached max artificial landmark limit of ${maxLandmarks}.`);
+      break;
+    }
+    const { x, y } = cand;
+
+    // Check distance to already placed landmarks to avoid clustering
+    let tooClose = false;
+    for (const placed of injectedLandmarks) {
+      const localPlacedX = placed.x - indexData.minX;
+      const localPlacedY = placed.y - indexData.minY;
+      const dx = x - localPlacedX;
+      const dy = y - localPlacedY;
+      if (dx * dx + dy * dy < minSqDist) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+
+    // Calculate how many *new* walkable pixels this landmark would cover
+    let newCoverage = 0;
+    const playerStartX = Math.max(0, x - visibilityRadiusX);
+    const playerEndX = Math.min(mapWidth, x + visibilityRadiusX);
+    const playerStartY = Math.max(0, y - visibilityRadiusY);
+    const playerEndY = Math.min(mapHeight, y + visibilityRadiusY);
+
+    for (let py = playerStartY; py < playerEndY; py++) {
+      for (let px = playerStartX; px < playerEndX; px++) {
+        const i = py * mapWidth + px;
+        if (walkableGrid[i] === 1 && coveredWalkablePixels[i] === 0) {
+          newCoverage++;
+        }
+      }
+    }
+
+    // If it provides new coverage, place it
+    if (newCoverage > 0) {
+      const pattern = generateUniquePatternForId(id, palette);
+      for (let my = 0; my < LANDMARK_SIZE; my++) {
+        for (let mx = 0; mx < LANDMARK_SIZE; mx++) {
+          const mapX = x - halfLandmark + mx;
+          const mapY = y - halfLandmark + my;
+          modifiedMapData[mapY * mapWidth + mapX] = pattern[my * LANDMARK_SIZE + mx];
+        }
+      }
+
+      injectedLandmarks.push({
+        x: x + indexData.minX,
+        y: y + indexData.minY,
+        pattern,
+      });
+      id++;
+
+      // Mark the newly covered pixels
+      for (let py = playerStartY; py < playerEndY; py++) {
+        for (let px = playerStartX; px < playerEndX; px++) {
+          const i = py * mapWidth + px;
+          if (walkableGrid[i] === 1) {
+            coveredWalkablePixels[i] = 1;
+          }
+        }
+      }
+    }
+  }
+
   return { modifiedMapData, injectedLandmarks };
 }
 
@@ -585,11 +701,11 @@ async function preprocessMinimaps() {
         const injectionResult = injectArtificialLandmarks({
           fullMapData: modifiedFullMapData,
           safeZoneGrid,
+          walkableGrid,
           mapWidth,
           mapHeight,
           indexData,
           palette,
-          gridSpacing: ARTIFICIAL_LANDMARK_GRID_SPACING,
         });
         modifiedFullMapData = injectionResult.modifiedMapData;
         injectedLandmarks = injectionResult.injectedLandmarks;

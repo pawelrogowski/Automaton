@@ -22,7 +22,7 @@ export const BYTES_PER_PIXEL = 4;
 // --- Minimap Specifics ---
 export const MINIMAP_WIDTH = 106;
 export const MINIMAP_HEIGHT = 109;
-export const LANDMARK_SIZE = 5;
+export const LANDMARK_SIZE = 3;
 /**
  * A pre-computed map for fast lookups of a color's 8-bit palette index.
  * Key: An integer representing an RGB color (e.g., (r << 16) | (g << 8) | b).
