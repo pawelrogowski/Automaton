@@ -2,7 +2,12 @@ import React, { useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTable, useBlockLayout } from 'react-table';
 import styled from 'styled-components';
-import { Crosshair, Navigation } from 'react-feather';
+import {
+  Crosshair,
+  Navigation,
+  AlertTriangle,
+  UserCheck,
+} from 'react-feather';
 import StyledTargeting from './Targeting.styled.js';
 import TargetingTable from '../components/TargetingTable/TargetingTable.jsx';
 import SelectControl from '../components/NodeRangeControl/SelectControl.jsx';
@@ -17,7 +22,7 @@ const TargetingContainer = styled.div`
 `;
 
 const MainColumn = styled.div`
-  flex: 0 0 65%;
+  flex: 0 0 60%;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -25,7 +30,7 @@ const MainColumn = styled.div`
 `;
 
 const SideColumn = styled.div`
-  flex: 0 0 35%;
+  flex: 0 0 40%;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -39,7 +44,11 @@ const CreatureList = () => {
   const currentTargetId = target?.instanceId;
 
   const data = useMemo(() => {
-    return [...creatures].sort((a, b) => a.instanceId - b.instanceId);
+    return [...creatures].sort((a, b) => {
+      if (a.distance < b.distance) return -1;
+      if (a.distance > b.distance) return 1;
+      return a.instanceId - b.instanceId;
+    });
   }, [creatures]);
 
   const columns = useMemo(
@@ -47,38 +56,51 @@ const CreatureList = () => {
       {
         Header: 'Name',
         accessor: 'name',
-        width: 100,
+        width: 110,
       },
       {
-        Header: 'Health',
-        accessor: 'healthTag',
-        width: 60,
+        Header: 'HP',
+        accessor: 'hp',
+        width: 50,
       },
       {
         Header: 'Dist',
         accessor: 'distance',
-        width: 40,
+        width: 50,
       },
       {
-        Header: 'Targeted',
-        id: 'targeted',
+        Header: 'Adj',
+        accessor: 'isAdjacent',
         width: 50,
+        Cell: ({ value }) => (value ? <UserCheck size={14} /> : null),
+      },
+      {
+        Header: 'Blocking',
+        accessor: 'isBlockingPath',
+        width: 80,
+        Cell: ({ value }) => (value ? <AlertTriangle size={14} /> : null),
+      },
+      {
+        Header: 'Target',
+        id: 'targeted',
+        width: 80,
         Cell: ({ row }) => {
           const isTargeted = row.original.instanceId === currentTargetId;
           return isTargeted ? <Crosshair size={14} /> : null;
         },
       },
       {
-        Header: 'Pathing',
+        Header: 'Path',
         id: 'pathing',
-        width: 50,
+        width: 70,
         Cell: ({ row }) => {
-          const isPathingTarget = row.original.instanceId === pathfindingTargetId;
+          const isPathingTarget =
+            row.original.instanceId === pathfindingTargetId;
           return isPathingTarget ? <Navigation size={14} /> : null;
         },
       },
     ],
-    [currentTargetId, pathfindingTargetId]
+    [currentTargetId, pathfindingTargetId],
   );
 
   const { getTableProps, getTableBodyProps, headerGroups, rows, prepareRow } =
@@ -101,8 +123,12 @@ const CreatureList = () => {
         <div {...getTableBodyProps()} className="tbody">
           {rows.map((row) => {
             prepareRow(row);
+            const isUnreachable = !row.original.isReachable;
+            const rowStyle = isUnreachable
+              ? { color: '#777', fontStyle: 'italic' }
+              : {};
             return (
-              <div {...row.getRowProps()} className="tr">
+              <div {...row.getRowProps({ style: rowStyle })} className="tr">
                 {row.cells.map((cell) => (
                   <div {...cell.getCellProps()} className="td">
                     {cell.render('Cell')}
