@@ -471,10 +471,6 @@ class WorkerManager {
           name !== workerName &&
           (/^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker')
         ) {
-          log(
-            'debug',
-            `[Worker Manager] Broadcasting lua_global_broadcast to ${name}: key=${key}, value=${value}`,
-          );
           workerEntry.worker.postMessage({
             type: 'lua_global_broadcast',
             payload: { key, value },

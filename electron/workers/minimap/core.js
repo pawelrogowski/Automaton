@@ -16,6 +16,7 @@ let minimapMatcher = null;
 let isProcessing = false;
 let needsReProcessing = false;
 let dirtyRectsQueue = [];
+let lastProcessedTime = Date.now();
 
 const { imageSAB, syncSAB } = workerData.sharedData;
 const syncArray = new Int32Array(syncSAB);
@@ -60,20 +61,30 @@ async function performOperation(dirtyRects) {
       minimapMatcher,
       workerData,
     );
+    lastProcessedTime = Date.now();
   }
 }
 
-async function processFrames() {
+async function processFrames(force = false) {
   if (isProcessing) {
     needsReProcessing = true;
     return;
   }
+
+  if (dirtyRectsQueue.length === 0 && !force) {
+    return;
+  }
+
   isProcessing = true;
 
   try {
-    while (dirtyRectsQueue.length > 0) {
-      const currentDirtyRects = dirtyRectsQueue.shift();
-      await performOperation(currentDirtyRects);
+    if (dirtyRectsQueue.length > 0) {
+      while (dirtyRectsQueue.length > 0) {
+        const currentDirtyRects = dirtyRectsQueue.shift();
+        await performOperation(currentDirtyRects);
+      }
+    } else if (force) {
+      await performOperation(null);
     }
   } catch (error) {
     console.error('[MinimapCore] Error during frame processing:', error);
@@ -115,4 +126,13 @@ function handleMessage(message) {
 export function start() {
   console.log('[MinimapCore] Worker starting up.');
   parentPort.on('message', handleMessage);
+
+  setInterval(() => {
+    if (isShuttingDown) {
+      return;
+    }
+    if (Date.now() - lastProcessedTime > 1000) {
+      processFrames(true);
+    }
+  }, 200);
 }

@@ -18,7 +18,8 @@ Napi::Object MinimapMatcher::Init(Napi::Env env, Napi::Object exports) {
     Napi::Function func = DefineClass(env, "MinimapMatcher", {
         InstanceAccessor("isLoaded", &MinimapMatcher::IsLoadedGetter, &MinimapMatcher::IsLoadedSetter),
         InstanceAccessor("palette", &MinimapMatcher::PaletteGetter, &MinimapMatcher::PaletteSetter),
-        InstanceAccessor("landmarkData", &MinimapMatcher::LandmarkDataGetter, &MinimapMatcher::LandmarkDataSetter),
+        InstanceAccessor("artificialLandmarkData", &MinimapMatcher::LandmarkDataGetter, &MinimapMatcher::ArtificialLandmarkDataSetter),
+        InstanceAccessor("naturalLandmarkData", &MinimapMatcher::LandmarkDataGetter, &MinimapMatcher::NaturalLandmarkDataSetter),
         InstanceMethod("findPosition", &MinimapMatcher::FindPosition),
         InstanceMethod("cancelSearch", &MinimapMatcher::CancelSearch)
     });
@@ -39,7 +40,7 @@ MinimapMatcher::MinimapMatcher(const Napi::CallbackInfo& info) : Napi::ObjectWra
         EXCLUDED_COLORS_RGB.push_back(Napi::Persistent(excludedColorsArray.Get(i).As<Napi::Object>()));
     }
 
-    this->liveNoiseIndices = {0, 14};
+    this->liveNoiseIndices = {0, 10, 14};
     this->isLoaded = false;
     this->activeWorker = nullptr;
 }
@@ -51,36 +52,53 @@ void MinimapMatcher::PaletteSetter(const Napi::CallbackInfo& info, const Napi::V
 Napi::Value MinimapMatcher::PaletteGetter(const Napi::CallbackInfo& info) { return this->palette.Value(); }
 Napi::Value MinimapMatcher::LandmarkDataGetter(const Napi::CallbackInfo& info) { return Napi::String::New(info.Env(), "Landmark data is stored natively."); }
 
-// --- LandmarkDataSetter (No Changes) ---
-// This function is already generic enough. It reads a buffer of LANDMARK_PATTERN_BYTES
-// and uses it as a key, so it works perfectly with the new 25-byte patterns.
-void MinimapMatcher::LandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value) {
+void MinimapMatcher::ArtificialLandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value) {
     Napi::Object obj = value.As<Napi::Object>();
     Napi::Array keys = obj.GetPropertyNames();
-    this->landmarkData.clear();
+    this->artificialLandmarkData.clear();
+    std::cout << "[NATIVE] Loading artificial landmarks..." << std::endl;
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         Napi::Value key_value = keys.Get(i);
         std::string key_str = key_value.As<Napi::String>().Utf8Value();
         int z_level = std::stoi(key_str);
         Napi::Array landmarksArray = obj.Get(key_value).As<Napi::Array>();
-
         LandmarkMap nativeLandmarkMap;
         for (uint32_t j = 0; j < landmarksArray.Length(); ++j) {
             Napi::Object lm_js = landmarksArray.Get(j).As<Napi::Object>();
             Napi::Buffer<uint8_t> pattern_buffer = lm_js.Get("pattern").As<Napi::Buffer<uint8_t>>();
-
-            LandmarkPattern pattern_key(
-                reinterpret_cast<const char*>(pattern_buffer.Data()),
-                pattern_buffer.Length()
-            );
-
+            LandmarkPattern pattern_key(reinterpret_cast<const char*>(pattern_buffer.Data()), pattern_buffer.Length());
             NativeLandmark nativeLm;
             nativeLm.x = lm_js.Get("x").As<Napi::Number>().Int32Value();
             nativeLm.y = lm_js.Get("y").As<Napi::Number>().Int32Value();
-
             nativeLandmarkMap[pattern_key] = nativeLm;
         }
-        this->landmarkData[z_level] = std::move(nativeLandmarkMap);
+        this->artificialLandmarkData[z_level] = std::move(nativeLandmarkMap);
+        std::cout << "[NATIVE]  -> Loaded " << landmarksArray.Length() << " artificial landmarks for Z=" << z_level << std::endl;
+    }
+}
+
+void MinimapMatcher::NaturalLandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value) {
+    Napi::Object obj = value.As<Napi::Object>();
+    Napi::Array keys = obj.GetPropertyNames();
+    this->naturalLandmarkData.clear();
+    std::cout << "[NATIVE] Loading natural landmarks..." << std::endl;
+    for (uint32_t i = 0; i < keys.Length(); ++i) {
+        Napi::Value key_value = keys.Get(i);
+        std::string key_str = key_value.As<Napi::String>().Utf8Value();
+        int z_level = std::stoi(key_str);
+        Napi::Array landmarksArray = obj.Get(key_value).As<Napi::Array>();
+        LandmarkMap nativeLandmarkMap;
+        for (uint32_t j = 0; j < landmarksArray.Length(); ++j) {
+            Napi::Object lm_js = landmarksArray.Get(j).As<Napi::Object>();
+            Napi::Buffer<uint8_t> pattern_buffer = lm_js.Get("pattern").As<Napi::Buffer<uint8_t>>();
+            LandmarkPattern pattern_key(reinterpret_cast<const char*>(pattern_buffer.Data()), pattern_buffer.Length());
+            NativeLandmark nativeLm;
+            nativeLm.x = lm_js.Get("x").As<Napi::Number>().Int32Value();
+            nativeLm.y = lm_js.Get("y").As<Napi::Number>().Int32Value();
+            nativeLandmarkMap[pattern_key] = nativeLm;
+        }
+        this->naturalLandmarkData[z_level] = std::move(nativeLandmarkMap);
+        std::cout << "[NATIVE]  -> Loaded " << landmarksArray.Length() << " natural landmarks for Z=" << z_level << std::endl;
     }
 }
 
@@ -144,73 +162,118 @@ void PositionFinderWorker::OnError(const Napi::Error& e) {
     deferred.Reject(e.Value());
 }
 
-// --- THE CORE CHANGE IS IN THIS METHOD ---
 void PositionFinderWorker::Execute() {
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    auto z_it = this->matcherInstance->landmarkData.find(targetZ);
-    if (z_it == this->matcherInstance->landmarkData.end() || z_it->second.empty()) {
+    auto artificial_it = this->matcherInstance->artificialLandmarkData.find(targetZ);
+    auto natural_it = this->matcherInstance->naturalLandmarkData.find(targetZ);
+
+    bool hasArtificial = artificial_it != this->matcherInstance->artificialLandmarkData.end() && !artificial_it->second.empty();
+    bool hasNatural = natural_it != this->matcherInstance->naturalLandmarkData.end() && !natural_it->second.empty();
+
+    if (!hasArtificial && !hasNatural) {
         this->searchMethod = "fallback_no_landmarks";
         auto end_time = std::chrono::high_resolution_clock::now();
         this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
         return;
     }
 
-    const auto& landmarkMapForZ = z_it->second;
-    this->searchMethod = "v2.1";
     int halfLandmark = this->matcherInstance->LANDMARK_SIZE / 2;
-    const int patternPixelCount = this->matcherInstance->LANDMARK_SIZE * this->matcherInstance->LANDMARK_SIZE; // 49
-
-    // Pre-allocate the string for our packed probe pattern (25 bytes).
+    const int patternPixelCount = this->matcherInstance->LANDMARK_SIZE * this->matcherInstance->LANDMARK_SIZE;
     MinimapMatcher::LandmarkPattern probePattern(this->matcherInstance->LANDMARK_PATTERN_BYTES, '\0');
     char* probePatternData = probePattern.data();
 
-    for (int y = halfLandmark; y < minimapHeight - halfLandmark; ++y) {
-        if (this->wasCancelled) { return; }
-        for (int x = halfLandmark; x < minimapWidth - halfLandmark; ++x) {
-            bool isClean = true;
-
-            // --- NEW: Pack the live 7x7 minimap area into the 25-byte probePattern ---
-            for (int i = 0; i < patternPixelCount; ++i) {
-                int my = i / this->matcherInstance->LANDMARK_SIZE;
-                int mx = i % this->matcherInstance->LANDMARK_SIZE;
-
-                uint8_t liveIndex = unpackedMinimap[(y - halfLandmark + my) * minimapWidth + (x - halfLandmark + mx)];
-
-                if (this->matcherInstance->liveNoiseIndices.count(liveIndex)) {
-                    isClean = false;
-                    break;
+    // --- Phase 1: Search Artificial Landmarks ---
+    if (hasArtificial) {
+        this->searchMethod = "v3.0_artificial";
+        std::cout << "[NATIVE] Begin search for ARTIFICIAL landmarks on Z=" << targetZ << std::endl;
+        const auto& landmarkMap = artificial_it->second;
+        for (int y = halfLandmark; y < minimapHeight - halfLandmark; ++y) {
+            if (this->wasCancelled) { return; }
+            for (int x = halfLandmark; x < minimapWidth - halfLandmark; ++x) {
+                probePattern.assign(this->matcherInstance->LANDMARK_PATTERN_BYTES, '\0'); // Clear the buffer
+                bool isClean = true;
+                for (int i = 0; i < patternPixelCount; ++i) {
+                    int my = i / this->matcherInstance->LANDMARK_SIZE;
+                    int mx = i % this->matcherInstance->LANDMARK_SIZE;
+                    uint8_t liveIndex = unpackedMinimap[(y - halfLandmark + my) * minimapWidth + (x - halfLandmark + mx)];
+                    if (this->matcherInstance->liveNoiseIndices.count(liveIndex)) {
+                        isClean = false;
+                        break;
+                    }
+                    int byteIndex = i / 2;
+                    if (i % 2 == 0) {
+                        probePatternData[byteIndex] = static_cast<char>(liveIndex << 4);
+                    } else {
+                        probePatternData[byteIndex] |= static_cast<char>(liveIndex);
+                    }
                 }
 
-                // Pack two 4-bit palette indices into one byte
-                int byteIndex = i / 2;
-                if (i % 2 == 0) {
-                    // First pixel goes into the high 4 bits
-                    probePatternData[byteIndex] = static_cast<char>(liveIndex << 4);
-                } else {
-                    // Second pixel goes into the low 4 bits
-                    probePatternData[byteIndex] |= static_cast<char>(liveIndex);
+                if (isClean) {
+                    auto lm_it = landmarkMap.find(probePattern);
+                    if (lm_it != landmarkMap.end()) {
+                        const NativeLandmark& foundLandmark = lm_it->second;
+                        std::cout << "[NATIVE] SUCCESS: Found ARTIFICIAL landmark match at " << foundLandmark.x << "," << foundLandmark.y << std::endl;
+                        this->resultPosition.found = true;
+                        int mapViewX = foundLandmark.x - x;
+                        int mapViewY = foundLandmark.y - y;
+                        this->resultPosition.x = mapViewX + (minimapWidth / 2);
+                        this->resultPosition.y = mapViewY + (minimapHeight / 2);
+                        this->resultPosition.z = targetZ;
+                        this->resultPosition.mapViewX = mapViewX;
+                        this->resultPosition.mapViewY = mapViewY;
+                        auto end_time = std::chrono::high_resolution_clock::now();
+                        this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
+                        return; // Position found, exit immediately.
+                    }
                 }
             }
+        }
+    }
 
-            if (isClean) {
-                // This is now a lookup using the 25-byte packed key
-                auto lm_it = landmarkMapForZ.find(probePattern);
-                if (lm_it != landmarkMapForZ.end()) {
-                    const NativeLandmark& foundLandmark = lm_it->second;
+    // --- Phase 2: Search Natural Landmarks (only if no artificial match was found) ---
+    if (hasNatural) {
+        this->searchMethod = "v3.0_natural_fallback";
+        std::cout << "[NATIVE] ARTIFICIAL search failed. Begin search for NATURAL landmarks on Z=" << targetZ << std::endl;
+        const auto& landmarkMap = natural_it->second;
+        for (int y = halfLandmark; y < minimapHeight - halfLandmark; ++y) {
+            if (this->wasCancelled) { return; }
+            for (int x = halfLandmark; x < minimapWidth - halfLandmark; ++x) {
+                probePattern.assign(this->matcherInstance->LANDMARK_PATTERN_BYTES, '\0'); // Clear the buffer
+                bool isClean = true;
+                for (int i = 0; i < patternPixelCount; ++i) {
+                    int my = i / this->matcherInstance->LANDMARK_SIZE;
+                    int mx = i % this->matcherInstance->LANDMARK_SIZE;
+                    uint8_t liveIndex = unpackedMinimap[(y - halfLandmark + my) * minimapWidth + (x - halfLandmark + mx)];
+                    if (this->matcherInstance->liveNoiseIndices.count(liveIndex)) {
+                        isClean = false;
+                        break;
+                    }
+                    int byteIndex = i / 2;
+                    if (i % 2 == 0) {
+                        probePatternData[byteIndex] = static_cast<char>(liveIndex << 4);
+                    } else {
+                        probePatternData[byteIndex] |= static_cast<char>(liveIndex);
+                    }
+                }
 
-                    this->resultPosition.found = true;
-                    int mapViewX = foundLandmark.x - x;
-                    int mapViewY = foundLandmark.y - y;
-                    this->resultPosition.x = mapViewX + (minimapWidth / 2);
-                    this->resultPosition.y = mapViewY + (minimapHeight / 2);
-                    this->resultPosition.z = targetZ;
-                    this->resultPosition.mapViewX = mapViewX;
-                    this->resultPosition.mapViewY = mapViewY;
-
-                    auto end_time = std::chrono::high_resolution_clock::now();
-                    this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
-                    return; // Position found, exit immediately.
+                if (isClean) {
+                    auto lm_it = landmarkMap.find(probePattern);
+                    if (lm_it != landmarkMap.end()) {
+                        const NativeLandmark& foundLandmark = lm_it->second;
+                        std::cout << "[NATIVE] SUCCESS: Found NATURAL landmark match at " << foundLandmark.x << "," << foundLandmark.y << std::endl;
+                        this->resultPosition.found = true;
+                        int mapViewX = foundLandmark.x - x;
+                        int mapViewY = foundLandmark.y - y;
+                        this->resultPosition.x = mapViewX + (minimapWidth / 2);
+                        this->resultPosition.y = mapViewY + (minimapHeight / 2);
+                        this->resultPosition.z = targetZ;
+                        this->resultPosition.mapViewX = mapViewX;
+                        this->resultPosition.mapViewY = mapViewY;
+                        auto end_time = std::chrono::high_resolution_clock::now();
+                        this->durationMs = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count() / 1000.0;
+                        return; // Position found, exit immediately.
+                    }
                 }
             }
         }

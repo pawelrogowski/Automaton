@@ -70,53 +70,65 @@ class MinimapMatcher {
       const paletteFilePath = path.join(baseDir, 'palette.json');
       const palette = JSON.parse(await fs.readFile(paletteFilePath, 'utf8'));
 
-      const landmarkData = new Map();
+      const artificialLandmarkData = new Map();
+      const naturalLandmarkData = new Map();
 
       const zLevelDirs = (await fs.readdir(baseDir, { withFileTypes: true }))
         .filter((d) => d.isDirectory() && d.name.startsWith('z'))
         .map((d) => parseInt(d.name.substring(1), 10));
 
+      const landmarkEntrySize = 8 + LANDMARK_PATTERN_BYTES;
+
+      const parseLandmarks = (buffer) => {
+        const landmarks = [];
+        for (let i = 0; i < buffer.length; i += landmarkEntrySize) {
+          landmarks.push({
+            x: buffer.readUInt32LE(i),
+            y: buffer.readUInt32LE(i + 4),
+            pattern: buffer.subarray(i + 8, i + landmarkEntrySize),
+          });
+        }
+        return landmarks;
+      };
+
       for (const z of zLevelDirs) {
         const zLevelDir = path.join(baseDir, `z${z}`);
+
+        // Load artificial landmarks
         try {
-          const landmarkBuffer = await fs.readFile(
-            path.join(zLevelDir, 'landmarks.bin'),
+          const artificialBuffer = await fs.readFile(
+            path.join(zLevelDir, 'landmarks_artificial.bin'),
           );
-          const landmarks = [];
-
-          // --- KEY CHANGE #2 ---
-          // The size of each entry in the file is now based on the packed size.
-          // 8 bytes for x/y coordinates + 25 bytes for the packed pattern.
-          const landmarkEntrySize = 8 + LANDMARK_PATTERN_BYTES;
-
-          for (let i = 0; i < landmarkBuffer.length; i += landmarkEntrySize) {
-            landmarks.push({
-              x: landmarkBuffer.readUInt32LE(i),
-              y: landmarkBuffer.readUInt32LE(i + 4),
-              // The pattern is now the 25-byte packed buffer.
-              pattern: landmarkBuffer.subarray(i + 8, i + landmarkEntrySize),
-            });
-          }
-          landmarkData.set(z, landmarks);
+          artificialLandmarkData.set(z, parseLandmarks(artificialBuffer));
         } catch (e) {
-          if (e.code === 'ENOENT') {
-            logger(
-              'warn',
-              `No landmarks.bin found for Z=${z}. Position finding will be unavailable for this floor.`,
-            );
-          } else {
-            logger(
-              'error',
-              `Could not load landmarks.bin for Z=${z}: ${e.message}`,
-            );
+          if (e.code !== 'ENOENT') {
+            logger('error', `Could not load landmarks_artificial.bin for Z=${z}: ${e.message}`);
           }
-          landmarkData.set(z, []);
+          artificialLandmarkData.set(z, []);
+        }
+
+        // Load natural landmarks
+        try {
+          const naturalBuffer = await fs.readFile(
+            path.join(zLevelDir, 'landmarks_natural.bin'),
+          );
+          naturalLandmarkData.set(z, parseLandmarks(naturalBuffer));
+        } catch (e) {
+          if (e.code !== 'ENOENT') {
+            logger('error', `Could not load landmarks_natural.bin for Z=${z}: ${e.message}`);
+          }
+          naturalLandmarkData.set(z, []);
+        }
+
+        if (!artificialLandmarkData.get(z).length && !naturalLandmarkData.get(z).length) {
+            logger('warn', `No landmarks found for Z=${z}. Position finding will be unavailable for this floor.`);
         }
       }
 
       // Sync data to the native module once on load
       this.nativeMatcher.palette = palette;
-      this.nativeMatcher.landmarkData = Object.fromEntries(landmarkData);
+      this.nativeMatcher.artificialLandmarkData = Object.fromEntries(artificialLandmarkData);
+      this.nativeMatcher.naturalLandmarkData = Object.fromEntries(naturalLandmarkData);
       this.nativeMatcher.isLoaded = true;
       this.isLoaded = true;
 

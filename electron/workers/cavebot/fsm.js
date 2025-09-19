@@ -96,10 +96,18 @@ export function createFsm(workerState, config) {
             workerState.shouldRequestNewPath = true;
             return 'EVALUATING_WAYPOINT';
 
+          case PATH_STATUS_DIFFERENT_FLOOR:
+            // If the pathfinder thinks we're on a different floor, but the core logic in index.js
+            // confirms we are on the correct Z-level, it means the path is just stale.
+            // We should wait for a new, correct path instead of skipping the waypoint.
+            if (playerPos.z === targetWaypoint.z) {
+              workerState.shouldRequestNewPath = true;
+              return 'EVALUATING_WAYPOINT'; // Wait for a new path
+            }
+            // Fallthrough to default skip logic if Z-levels actually mismatch
           case PATH_STATUS_NO_PATH_FOUND:
           case PATH_STATUS_NO_VALID_START_OR_END:
           case PATH_STATUS_ERROR:
-          case PATH_STATUS_DIFFERENT_FLOOR:
             logger(
               'warn',
               `[FSM] Unreachable waypoint ${targetWaypoint.id} (${targetWaypoint.type}) due to path status: ${status}. Skipping.`,

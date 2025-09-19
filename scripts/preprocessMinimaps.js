@@ -27,8 +27,8 @@ const DEFAULT_REQUIRED_COVERAGE_COUNT = 2; // Renamed for clarity
 const ENABLE_HYBRID_LANDMARK_SYSTEM = true; // Master switch to enable/disable the entire new system.
 const SAFE_ZONE_RADIUS = 9; // The buffer radius in pixels around walkable areas to define a "safe zone".
 const ARTIFICIAL_LANDMARK_GRID_SPACING = 75; // The spacing in pixels for the artificial landmark grid.
-const MIN_DISTANCE_BETWEEN_ARTIFICIAL_LANDMARKS = 15; // To avoid clustering.
-const CANDIDATE_GRID_SPACING = 3; // Optimization: check one pixel every 5x5 grid.
+const MIN_DISTANCE_BETWEEN_ARTIFICIAL_LANDMARKS = 30; // To avoid clustering.
+const CANDIDATE_GRID_SPACING = 5; // Optimization: check one pixel every 5x5 grid.
 const MAX_ARTIFICIAL_LANDMARKS_PER_MINIMAP_AREA = 10;
 
 const PACKED_LANDMARK_PATTERN_BYTES = Math.ceil(
@@ -38,7 +38,7 @@ const PACKED_LANDMARK_PATTERN_BYTES = Math.ceil(
 const logger = createLogger({ info: true, error: true, debug: true });
 
 // --- PATH CONFIGURATION ---
-const PROJECT_ROOT = path.join(process.cwd(), '..');
+const PROJECT_ROOT = process.cwd();
 const TIBIA_MINIMAP_BASE_PATH = path.join(
   os.homedir(),
   '.local',
@@ -196,19 +196,33 @@ function calculateDistanceTransform(grid, width, height) {
 }
 
 
-function generateUniquePatternForId(id, palette) {
-  // The landmark packing is 4-bit, so we MUST use palette indices < 16.
-  // We exclude 0 (black/noise) and 14 (often another noise/special color).
-  const safePaletteIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15];
+function generateUniquePatternForId(id, palette, existingNaturalPatterns) {
+  const safePaletteIndices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15];
   const N = safePaletteIndices.length;
-  const pattern = Buffer.alloc(LANDMARK_SIZE * LANDMARK_SIZE);
   let currentId = id;
-  for (let i = 0; i < LANDMARK_SIZE * LANDMARK_SIZE; i++) {
-    const digit = currentId % N;
-    pattern[i] = safePaletteIndices[digit];
-    currentId = Math.floor(currentId / N);
+  let attempts = 0;
+
+  while (attempts < 1_000_000) { // Safety break to prevent infinite loops
+    const pattern = Buffer.alloc(LANDMARK_SIZE * LANDMARK_SIZE);
+    let tempId = currentId;
+    for (let i = 0; i < LANDMARK_SIZE * LANDMARK_SIZE; i++) {
+      const digit = tempId % N;
+      pattern[i] = safePaletteIndices[digit];
+      tempId = Math.floor(tempId / N);
+    }
+
+    const patternKey = pattern.toString('hex');
+    if (!existingNaturalPatterns.has(patternKey)) {
+      // This pattern is unique and does not exist naturally.
+      return { pattern, nextId: currentId + 1 };
+    }
+
+    // If the pattern exists naturally, try the next ID.
+    currentId++;
+    attempts++;
   }
-  return pattern;
+
+  throw new Error(`Failed to generate a unique artificial landmark pattern after ${attempts} attempts.`);
 }
 
 function injectArtificialLandmarks({
@@ -219,6 +233,7 @@ function injectArtificialLandmarks({
   mapHeight,
   indexData,
   palette,
+  existingNaturalPatterns,
 }) {
   const modifiedMapData = new Uint8Array(fullMapData);
   const injectedLandmarks = [];
@@ -290,7 +305,10 @@ function injectArtificialLandmarks({
 
     // If it provides new coverage, place it
     if (newCoverage > 0) {
-      const pattern = generateUniquePatternForId(id, palette);
+      const result = generateUniquePatternForId(id, palette, existingNaturalPatterns);
+      const pattern = result.pattern;
+      id = result.nextId; // Use the next available ID
+
       for (let my = 0; my < LANDMARK_SIZE; my++) {
         for (let mx = 0; mx < LANDMARK_SIZE; mx++) {
           const mapX = x - halfLandmark + mx;
@@ -304,7 +322,6 @@ function injectArtificialLandmarks({
         y: y + indexData.minY,
         pattern,
       });
-      id++;
 
       // Mark the newly covered pixels
       for (let py = playerStartY; py < playerEndY; py++) {
@@ -687,6 +704,7 @@ async function preprocessMinimaps() {
 
       let injectedLandmarks = [];
       let modifiedFullMapData = fullMapData;
+      let mapDataForNaturalScan = null;
 
       if (ENABLE_HYBRID_LANDMARK_SYSTEM && walkableGrid.length > 0) {
         logger('info', `(Z=${z}) Starting Hybrid System: Generating safe zones...`);
@@ -697,6 +715,34 @@ async function preprocessMinimaps() {
           SAFE_ZONE_RADIUS,
         );
 
+        // --- PRE-SCAN FOR NATURAL PATTERNS ---
+        logger('info', `(Z=${z}) Pre-scanning for all naturally occurring patterns...`);
+        const existingNaturalPatterns = new Set();
+        const halfLandmark = Math.floor(LANDMARK_SIZE / 2);
+        const noiseIndicesForNaturalScan = new Set([0, 10, 14]);
+        for (let y = halfLandmark; y < mapHeight - halfLandmark; y++) {
+            for (let x = halfLandmark; x < mapWidth - halfLandmark; x++) {
+                const pattern = Buffer.alloc(LANDMARK_SIZE * LANDMARK_SIZE);
+                let isNaturalPatternValid = true;
+                for (let my = 0; my < LANDMARK_SIZE; my++) {
+                    for (let mx = 0; mx < LANDMARK_SIZE; mx++) {
+                        const px = fullMapData[(y - halfLandmark + my) * mapWidth + (x - halfLandmark + mx)];
+                        if (noiseIndicesForNaturalScan.has(px)) {
+                            isNaturalPatternValid = false;
+                            break;
+                        }
+                        pattern[my * LANDMARK_SIZE + mx] = px;
+                    }
+                    if (!isNaturalPatternValid) break;
+                }
+                if (isNaturalPatternValid) {
+                    existingNaturalPatterns.add(pattern.toString('hex'));
+                }
+            }
+        }
+        logger('info', `(Z=${z}) Found ${existingNaturalPatterns.size} unique natural patterns.`);
+
+
         logger('info', `(Z=${z}) Injecting artificial landmarks...`);
         const injectionResult = injectArtificialLandmarks({
           fullMapData: modifiedFullMapData,
@@ -706,6 +752,7 @@ async function preprocessMinimaps() {
           mapHeight,
           indexData,
           palette,
+          existingNaturalPatterns, // Pass the set of natural patterns
         });
         modifiedFullMapData = injectionResult.modifiedMapData;
         injectedLandmarks = injectionResult.injectedLandmarks;
@@ -713,6 +760,28 @@ async function preprocessMinimaps() {
           'info',
           `(Z=${z}) Injected ${injectedLandmarks.length} permanent landmarks.`,
         );
+
+        mapDataForNaturalScan = new Uint8Array(modifiedFullMapData);
+        // --- BLACKOUT LOGIC ---
+        // After injecting, we now black out the area around the artificial landmarks in our in-memory map
+        // to prevent natural landmarks from generating with the same pattern.
+        if (injectedLandmarks.length > 0) {
+            logger('info', `(Z=${z}) Blacking out areas under artificial landmarks for natural landmark scan...`);
+            const halfLandmark = Math.floor(LANDMARK_SIZE / 2);
+            for (const landmark of injectedLandmarks) {
+                const localX = landmark.x - indexData.minX;
+                const localY = landmark.y - indexData.minY;
+                for (let dy = -halfLandmark; dy <= halfLandmark; dy++) {
+                    for (let dx = -halfLandmark; dx <= halfLandmark; dx++) {
+                        const mapX = localX + dx;
+                        const mapY = localY + dy;
+                        if (mapX >= 0 && mapX < mapWidth && mapY >= 0 && mapY < mapHeight) {
+                            mapDataForNaturalScan[mapY * mapWidth + mapX] = 0; // Blackout
+                        }
+                    }
+                }
+            }
+        }
 
         if (injectedLandmarks.length > 0) {
           logger(
@@ -792,17 +861,35 @@ async function preprocessMinimaps() {
         }
       }
 
-      let currentFinalLandmarks = [...injectedLandmarks];
-      let currentCoverageCountMap = new Uint8Array(mapWidth * mapHeight).fill(0);
-      let currentCoverableAreaMask = new Uint8Array(mapWidth * mapHeight).fill(0);
+      // --- SEGREGATED LANDMARK GENERATION ---
 
-      if (ENABLE_HYBRID_LANDMARK_SYSTEM && injectedLandmarks.length > 0) {
-        logger(
-          'info',
-          `(Z=${z}) Pre-populating coverage map with artificial landmarks...`,
+      // 1. Save Artificial Landmarks
+      if (injectedLandmarks.length > 0) {
+        logger('info', `(Z=${z}) Saving ${injectedLandmarks.length} artificial landmarks...`);
+        const artificialLandmarkBuffers = injectedLandmarks.map((landmark) => {
+          const header = Buffer.alloc(8);
+          header.writeUInt32LE(landmark.x, 0);
+          header.writeUInt32LE(landmark.y, 4);
+          const packedPattern = packLandmarkPattern4bit(landmark.pattern);
+          return Buffer.concat([header, packedPattern]);
+        });
+        const artificialFinalBuffer = Buffer.concat(artificialLandmarkBuffers);
+        await fs.writeFile(
+          path.join(zLevelResourceDir, 'landmarks_artificial.bin'),
+          artificialFinalBuffer,
         );
+      }
+
+      // 2. Discover and Save Natural Landmarks
+      let naturalLandmarks = [];
+      let coverageCountMap = new Uint8Array(mapWidth * mapHeight).fill(0);
+      let coverableAreaMask = new Uint8Array(mapWidth * mapHeight).fill(0);
+
+      // Pre-populate coverage with artificial landmarks so natural landmarks don't try to cover the same area
+      if (ENABLE_HYBRID_LANDMARK_SYSTEM && injectedLandmarks.length > 0) {
+        logger('info', `(Z=${z}) Pre-populating coverage map with artificial landmarks for natural landmark discovery...`);
         prepopulateCoverageMap(
-          currentCoverageCountMap,
+          coverageCountMap,
           injectedLandmarks,
           mapWidth,
           mapHeight,
@@ -812,54 +899,65 @@ async function preprocessMinimaps() {
 
       logger('info', `(Z=${z}) Starting discovery pass 1 (Natural Landmarks)...`);
       ({
-        finalLandmarks: currentFinalLandmarks,
-        coverageCountMap: currentCoverageCountMap,
-        coverableAreaMask: currentCoverableAreaMask,
+        finalLandmarks: naturalLandmarks,
+        coverageCountMap: coverageCountMap,
+        coverableAreaMask: coverableAreaMask,
       } = await generateLandmarks(
-        modifiedFullMapData,
+        mapDataForNaturalScan || modifiedFullMapData,
         mapWidth,
         mapHeight,
         indexData,
         z,
         2,
-        currentFinalLandmarks,
-        currentCoverageCountMap,
-        currentCoverableAreaMask,
+        [], // Start with an empty list for natural landmarks
+        coverageCountMap,
+        coverableAreaMask,
       ));
 
       logger('info', `(Z=${z}) Starting discovery pass 2 (Natural Landmarks)...`);
       ({
-        finalLandmarks: currentFinalLandmarks,
-        coverageCountMap: currentCoverageCountMap,
-        coverableAreaMask: currentCoverableAreaMask,
+        finalLandmarks: naturalLandmarks,
+        coverageCountMap: coverageCountMap,
+        coverableAreaMask: coverableAreaMask,
       } = await generateLandmarks(
-        modifiedFullMapData,
+        mapDataForNaturalScan || modifiedFullMapData,
         mapWidth,
         mapHeight,
         indexData,
         z,
         1,
-        currentFinalLandmarks,
-        currentCoverageCountMap,
-        currentCoverableAreaMask,
+        naturalLandmarks, // Pass the results from the first pass
+        coverageCountMap,
+        coverableAreaMask,
       ));
 
-      if (currentFinalLandmarks.length > 0) {
-        logger(
-          'info',
-          `(Z=${z}) Final landmark count: ${currentFinalLandmarks.length}.`,
-        );
-        const landmarkBuffers = currentFinalLandmarks.map((landmark) => {
+      if (naturalLandmarks.length > 0) {
+        logger('info', `(Z=${z}) Saving ${naturalLandmarks.length} natural landmarks...`);
+        const naturalLandmarkBuffers = naturalLandmarks.map((landmark) => {
           const header = Buffer.alloc(8);
           header.writeUInt32LE(landmark.x, 0);
           header.writeUInt32LE(landmark.y, 4);
           const packedPattern = packLandmarkPattern4bit(landmark.pattern);
           return Buffer.concat([header, packedPattern]);
         });
-        const finalBuffer = Buffer.concat(landmarkBuffers);
+        const naturalFinalBuffer = Buffer.concat(naturalLandmarkBuffers);
         await fs.writeFile(
-          path.join(zLevelResourceDir, 'landmarks.bin'),
-          finalBuffer,
+          path.join(zLevelResourceDir, 'landmarks_natural.bin'),
+          naturalFinalBuffer,
+        );
+      } else {
+        logger('warn', `No natural landmarks found for Z=${z}.`);
+      }
+
+      // For coverage reporting, we consider both
+      const currentFinalLandmarks = [...injectedLandmarks, ...naturalLandmarks];
+      const currentCoverageCountMap = coverageCountMap;
+      const currentCoverableAreaMask = coverableAreaMask;
+
+      if (currentFinalLandmarks.length > 0) {
+        logger(
+          'info',
+          `(Z=${z}) Final landmark count: ${currentFinalLandmarks.length} (${injectedLandmarks.length} artificial, ${naturalLandmarks.length} natural).`,
         );
       } else {
         logger('warn', `No landmarks found for Z=${z}.`);
@@ -1024,7 +1122,7 @@ async function generateLandmarks(
   const coverageCountMap =
     existingCoverageMap || new Uint8Array(mapWidth * mapHeight).fill(0);
   const finalLandmarks = [...existingLandmarks];
-  const noiseIndices = new Set([0, 14]);
+  const noiseIndices = new Set([0, 10, 14]);
 
   for (let y = halfLandmark; y < mapHeight - halfLandmark; y++) {
     for (let x = halfLandmark; x < mapWidth - halfLandmark; x++) {

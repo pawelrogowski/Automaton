@@ -17,7 +17,7 @@ import {
   WORLD_STATE_UPDATE_COUNTER_INDEX,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const chebyshevDistance = (p1, p2) => {

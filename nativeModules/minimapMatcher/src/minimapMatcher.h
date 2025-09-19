@@ -4,6 +4,7 @@
 #define MINIMAP_MATCHER_H
 
 #include <napi.h>
+#include <iostream> // For logging
 #include <vector>
 #include <string>        // <--- ADDED
 #include <set>
@@ -40,8 +41,9 @@ public:
     using LandmarkPattern = std::string;
     using LandmarkMap = std::unordered_map<LandmarkPattern, NativeLandmark>;
 
-    // --- CHANGED: Use the new, faster unordered_map ---
-    std::map<int, LandmarkMap> landmarkData;
+    // --- NEW: Segregated landmark storage ---
+    std::map<int, LandmarkMap> artificialLandmarkData;
+    std::map<int, LandmarkMap> naturalLandmarkData;
 
     PositionFinderWorker* activeWorker; // Pointer to an incomplete type is allowed
 
@@ -55,7 +57,8 @@ private:
     Napi::Value IsLoadedGetter(const Napi::CallbackInfo& info);
     void PaletteSetter(const Napi::CallbackInfo& info, const Napi::Value& value);
     Napi::Value PaletteGetter(const Napi::CallbackInfo& info);
-    void LandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value);
+    void ArtificialLandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value);
+    void NaturalLandmarkDataSetter(const Napi::CallbackInfo& info, const Napi::Value& value);
     Napi::Value LandmarkDataGetter(const Napi::CallbackInfo& info);
 
     // --- Private Members ---
@@ -64,4 +67,4 @@ private:
     std::vector<Napi::Reference<Napi::Object>> EXCLUDED_COLORS_RGB;
 };
 
-#endif 
+#endif

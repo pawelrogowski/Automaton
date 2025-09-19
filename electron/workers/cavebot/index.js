@@ -54,7 +54,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   pathfinderInstance: null,
-  logger: createLogger({ info: false, error: true, debug: false }),
+  logger: createLogger({ info: true, error: true, debug: true }),
   parentPort: parentPort,
 };
 
@@ -246,7 +246,7 @@ async function performOperation() {
   ) {
     workerState.logger(
       'debug',
-      `Skipping waypoint ${targetWaypoint.id} due to Z-level mismatch.`,
+      `Skipping waypoint ${targetWaypoint.id} due to Z-level mismatch. Player Z: ${workerState.playerMinimapPosition.z}, Waypoint Z: ${targetWaypoint.z}, Status: ${workerState.pathfindingStatus}`,
     );
     await advanceToNextWaypoint(workerState, config);
     return;
@@ -416,10 +416,6 @@ parentPort.on('message', (message) => {
       const { key, value } = message.payload;
       if (workerData.sharedLuaGlobals) {
         workerData.sharedLuaGlobals[key] = value;
-        workerState.logger(
-          'debug',
-          `[CavebotWorker] Received lua_global_broadcast: ${key} = ${value}`,
-        );
       }
     } else if (typeof message === 'object' && !message.type) {
       workerState.globalState = message;
