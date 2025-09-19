@@ -14,7 +14,7 @@ import Pathfinder from 'pathfinder-native';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const log = createLogger({ info: true, error: true, debug: false });
+const log = createLogger({ info: false, error: true, debug: false });
 let lua;
 let currentState = {};
 let scriptConfig = {};

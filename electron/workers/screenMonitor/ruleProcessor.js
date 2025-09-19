@@ -2,7 +2,7 @@ import parseMathCondition from '../../utils/parseMathCondition.js';
 import areCharStatusConditionsMet from '../../utils/areStatusConditionsMet.js';
 import { createLogger } from '../../utils/logger.js';
 
-const log = createLogger({ info: true, error: true, warn: true });
+const log = createLogger({ info: false, error: true, warn: true });
 
 import { getRandomNumber } from '../../utils/getRandomNumber.js';
 import { OPTIONS } from './constants.js';

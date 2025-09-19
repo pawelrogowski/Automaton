@@ -54,7 +54,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   pathfinderInstance: null,
-  logger: createLogger({ info: true, error: true, debug: true }),
+  logger: createLogger({ info: false, error: true, debug: true }),
   parentPort: parentPort,
 };
 
@@ -236,6 +236,13 @@ async function performOperation() {
     targetWaypoint.id !== workerState.lastProcessedWptId
   ) {
     resetInternalState(workerState, fsm);
+    // Manually reset pathfinding state on any waypoint change to prevent using stale data.
+    // This is critical when a waypoint is skipped, as the pathfinder might still be processing
+    // the old, now-irrelevant waypoint.
+    workerState.path = [];
+    workerState.pathfindingStatus = 0; // Assumes 0 is a neutral/idle state
+    workerState.lastPathDataCounter = -1; // Force waiting for a new path
+    workerState.shouldRequestNewPath = true; // Ensure we actively wait for a new path
   }
   workerState.lastProcessedWptId = targetWaypoint.id;
 

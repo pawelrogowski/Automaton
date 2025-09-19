@@ -16,7 +16,7 @@ import {
   PATH_UPDATE_COUNTER_INDEX,
 } from '../sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 let state = null;
 let pathfinderInstance = null;

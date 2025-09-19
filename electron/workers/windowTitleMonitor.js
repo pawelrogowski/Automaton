@@ -2,7 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import windowinfo from 'windowinfo-native';
 import { createLogger } from '../utils/logger.js';
 
-const log = createLogger({ info: true, debug: false });
+const log = createLogger({ info: false, debug: false });
 log('info', '[WindowTitleMonitor] Worker file loaded.');
 
 const POLLING_INTERVAL = 100;

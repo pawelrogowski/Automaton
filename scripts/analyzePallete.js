@@ -5,7 +5,7 @@ import os from 'os';
 import sharp from 'sharp';
 import { createLogger } from '../electron/utils/logger.js'; // Adjust path if needed
 
-const logger = createLogger({ info: true });
+const logger = createLogger({ info: false });
 
 const TIBIA_MINIMAP_BASE_PATH = path.join(os.homedir(), '.local', 'share', 'CipSoft GmbH', 'Tibia', 'packages', 'Tibia', 'minimap');
 const PALETTE_OUTPUT_PATH = path.join(process.cwd(), 'resources', 'preprocessed_minimaps', 'palette.json');

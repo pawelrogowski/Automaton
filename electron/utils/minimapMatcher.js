@@ -3,7 +3,7 @@ import path from 'path';
 import { createLogger } from './logger.js';
 import MinimapMatcherNative from 'minimap_matcher-native';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 let PREPROCESSED_BASE_DIR = null;
 

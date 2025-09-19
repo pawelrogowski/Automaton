@@ -16,7 +16,7 @@ const TARGET_ACQUISITION_COOLDOWN_MS = 250; // Cooldown between tab presses
 export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort, sabStateManager } =
     workerContext;
-  const logger = createLogger({ info: true, error: true, debug: false });
+  const logger = createLogger({ info: false, error: true, debug: false });
 
   let previousSelectedTargetId = null;
 
