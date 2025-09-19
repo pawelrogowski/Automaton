@@ -56,7 +56,6 @@ void MinimapMatcher::ArtificialLandmarkDataSetter(const Napi::CallbackInfo& info
     Napi::Object obj = value.As<Napi::Object>();
     Napi::Array keys = obj.GetPropertyNames();
     this->artificialLandmarkData.clear();
-    std::cout << "[NATIVE] Loading artificial landmarks..." << std::endl;
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         Napi::Value key_value = keys.Get(i);
         std::string key_str = key_value.As<Napi::String>().Utf8Value();
@@ -73,7 +72,6 @@ void MinimapMatcher::ArtificialLandmarkDataSetter(const Napi::CallbackInfo& info
             nativeLandmarkMap[pattern_key] = nativeLm;
         }
         this->artificialLandmarkData[z_level] = std::move(nativeLandmarkMap);
-        std::cout << "[NATIVE]  -> Loaded " << landmarksArray.Length() << " artificial landmarks for Z=" << z_level << std::endl;
     }
 }
 
@@ -81,7 +79,6 @@ void MinimapMatcher::NaturalLandmarkDataSetter(const Napi::CallbackInfo& info, c
     Napi::Object obj = value.As<Napi::Object>();
     Napi::Array keys = obj.GetPropertyNames();
     this->naturalLandmarkData.clear();
-    std::cout << "[NATIVE] Loading natural landmarks..." << std::endl;
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         Napi::Value key_value = keys.Get(i);
         std::string key_str = key_value.As<Napi::String>().Utf8Value();
@@ -98,7 +95,6 @@ void MinimapMatcher::NaturalLandmarkDataSetter(const Napi::CallbackInfo& info, c
             nativeLandmarkMap[pattern_key] = nativeLm;
         }
         this->naturalLandmarkData[z_level] = std::move(nativeLandmarkMap);
-        std::cout << "[NATIVE]  -> Loaded " << landmarksArray.Length() << " natural landmarks for Z=" << z_level << std::endl;
     }
 }
 
@@ -186,7 +182,6 @@ void PositionFinderWorker::Execute() {
     // --- Phase 1: Search Artificial Landmarks ---
     if (hasArtificial) {
         this->searchMethod = "v3.0_artificial";
-        std::cout << "[NATIVE] Begin search for ARTIFICIAL landmarks on Z=" << targetZ << std::endl;
         const auto& landmarkMap = artificial_it->second;
         for (int y = halfLandmark; y < minimapHeight - halfLandmark; ++y) {
             if (this->wasCancelled) { return; }
@@ -213,7 +208,6 @@ void PositionFinderWorker::Execute() {
                     auto lm_it = landmarkMap.find(probePattern);
                     if (lm_it != landmarkMap.end()) {
                         const NativeLandmark& foundLandmark = lm_it->second;
-                        std::cout << "[NATIVE] SUCCESS: Found ARTIFICIAL landmark match at " << foundLandmark.x << "," << foundLandmark.y << std::endl;
                         this->resultPosition.found = true;
                         int mapViewX = foundLandmark.x - x;
                         int mapViewY = foundLandmark.y - y;
@@ -234,7 +228,6 @@ void PositionFinderWorker::Execute() {
     // --- Phase 2: Search Natural Landmarks (only if no artificial match was found) ---
     if (hasNatural) {
         this->searchMethod = "v3.0_natural_fallback";
-        std::cout << "[NATIVE] ARTIFICIAL search failed. Begin search for NATURAL landmarks on Z=" << targetZ << std::endl;
         const auto& landmarkMap = natural_it->second;
         for (int y = halfLandmark; y < minimapHeight - halfLandmark; ++y) {
             if (this->wasCancelled) { return; }
@@ -261,7 +254,6 @@ void PositionFinderWorker::Execute() {
                     auto lm_it = landmarkMap.find(probePattern);
                     if (lm_it != landmarkMap.end()) {
                         const NativeLandmark& foundLandmark = lm_it->second;
-                        std::cout << "[NATIVE] SUCCESS: Found NATURAL landmark match at " << foundLandmark.x << "," << foundLandmark.y << std::endl;
                         this->resultPosition.found = true;
                         int mapViewX = foundLandmark.x - x;
                         int mapViewY = foundLandmark.y - y;
