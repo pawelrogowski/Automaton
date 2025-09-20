@@ -150,11 +150,19 @@ export function runPathfindingLogic(context) {
     const currentCreatureDataHash = hashCreatureData(targeting.creatures);
 
     if (
+      !cavebot.forcePathRefresh &&
       logicContext.lastPlayerPosKey === currentPosKey &&
       logicContext.lastTargetWptId === targetIdentifier &&
       logicContext.lastCreatureDataHash === currentCreatureDataHash
     ) {
       return; // No change in inputs, skip pathfinding.
+    }
+    
+    if (cavebot.forcePathRefresh) {
+      throttleReduxUpdate({
+        type: 'cavebot/setForcePathRefresh',
+        payload: false,
+      });
     }
 
     logicContext.lastPlayerPosKey = currentPosKey;

@@ -205,6 +205,17 @@ export const loadRulesFromFile = async (callback) => {
       const content = await fs.readFile(file_path, 'utf8');
       const loaded_state = JSON.parse(content);
       applyLoadedState(loaded_state);
+
+      // --- FIX: Force state transition for workers ---
+      // If rules were loaded as enabled, toggle them off and on again
+      // to ensure workers that listen for state changes are triggered.
+      if (loaded_state.rules?.enabled) {
+        setGlobalState('rules/setenabled', false, 'backend');
+        setTimeout(() => {
+          setGlobalState('rules/setenabled', true, 'backend');
+        }, 50); // 50ms delay is enough for the state to propagate
+      }
+
       showNotification(`📤 Loaded | ${path.basename(file_path)}`);
     }
   } catch (err) {

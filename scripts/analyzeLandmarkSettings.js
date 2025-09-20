@@ -18,7 +18,7 @@ const MIN_DISTANCE_RANGE = [3];
 const CANDIDATE_SPACING_RANGE = [1];
 
 
-const logger = createLogger({ info: false, error: true, debug: true });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // --- PATH CONFIGURATION ---
 const PROJECT_ROOT = path.join(process.cwd(), '..');

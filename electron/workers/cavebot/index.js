@@ -54,7 +54,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   pathfinderInstance: null,
-  logger: createLogger({ info: false, error: true, debug: true }),
+  logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,
 };
 

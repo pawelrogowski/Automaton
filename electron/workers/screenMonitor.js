@@ -252,9 +252,10 @@ async function processGameState() {
       metadata
     );
 
-    // This worker now ONLY READS the monster count from the state populated by the ocrWorker.
+    // Correctly calculate monsterNum from the battleList state.
     lastCalculatedState.monsterNum =
       currentState.battleList?.entries?.length || 0;
+      console.log()
     lastCalculatedState.isWalking = calculateWalkingState();
 
     reusableGameStateUpdate.payload = {

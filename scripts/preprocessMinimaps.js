@@ -35,7 +35,7 @@ const PACKED_LANDMARK_PATTERN_BYTES = Math.ceil(
   (LANDMARK_SIZE * LANDMARK_SIZE) / 2,
 );
 
-const logger = createLogger({ info: true, error: true, debug: true });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // --- PATH CONFIGURATION ---
 const PROJECT_ROOT = process.cwd();

@@ -101,6 +101,7 @@ export function createFsm(workerState, config) {
             // confirms we are on the correct Z-level, it means the path is just stale.
             // We should wait for a new, correct path instead of skipping the waypoint.
             if (playerPos.z === targetWaypoint.z) {
+              postStoreUpdate('cavebot/setForcePathRefresh', true);
               workerState.shouldRequestNewPath = true;
               return 'EVALUATING_WAYPOINT'; // Wait for a new path
             }

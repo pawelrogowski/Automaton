@@ -77,7 +77,7 @@ export function createLogger(config = {}) {
 // defaultLogger('info', 'This is an info message.');   // Won't show with default config
 // defaultLogger('debug', 'This is a debug message.'); // Won't show with default config
 
-// const verboseLogger = createLogger({ info: false, warn: true, debug: true });
+// const verboseLogger = createLogger({ info: false, warn: true, debug: false });
 // verboseLogger('error', 'This is an error message (verbose).');
 // verboseLogger('warn', 'This is a warning message (verbose).');
 // verboseLogger('info', 'This is an info message (verbose).');

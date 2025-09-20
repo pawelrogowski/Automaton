@@ -423,23 +423,31 @@ const ruleSlice = createSlice({
     },
     setState: (state, action) => {
       const loadedState = action.payload;
+      // Create a new state by merging the initial state with the loaded state.
+      const newState = { ...initialState, ...loadedState };
+
       // Apply validateRule during load/set state to clean up/migrate old states
       const cleanPreset = (preset) => (preset && Array.isArray(preset) ? preset.map((rule) => validateRule(rule)) : []);
 
-      if (loadedState && typeof loadedState === 'object') {
-        if (!Array.isArray(loadedState.presets)) {
-          state.presets = [cleanPreset(loadedState.presets || initialPreset)];
-          state.activePresetIndex = 0;
+      if (newState && typeof newState === 'object') {
+        if (!Array.isArray(newState.presets)) {
+          newState.presets = [cleanPreset(newState.presets || initialPreset)];
+          newState.activePresetIndex = 0;
         } else {
-          state.presets = loadedState.presets.map((preset) => cleanPreset(preset));
-          state.activePresetIndex = Math.max(
+          newState.presets = newState.presets.map((preset) => cleanPreset(preset));
+          newState.activePresetIndex = Math.max(
             0,
-            Math.min((state.presets?.length || 1) - 1, parseInt(loadedState.activePresetIndex, 10) || 0),
+            Math.min((newState.presets?.length || 1) - 1, parseInt(newState.activePresetIndex, 10) || 0),
           );
         }
-        state.sortBy = loadedState.sortBy || initialState.sortBy;
-        state.sortOrder = loadedState.sortOrder || initialState.sortOrder;
-        sortPresetRules(state);
+        newState.sortBy = newState.sortBy || initialState.sortBy;
+        newState.sortOrder = newState.sortOrder || initialState.sortOrder;
+        
+        // Since we are replacing the state, we need to sort the rules for the new active preset.
+        const tempStateForSorting = { ...state, ...newState };
+        sortPresetRules(tempStateForSorting);
+        
+        return tempStateForSorting;
       } else {
         Object.assign(state, initialState);
         sortPresetRules(state);

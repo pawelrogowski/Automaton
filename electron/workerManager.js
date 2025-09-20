@@ -44,6 +44,16 @@ const RESTART_COOLDOWN = 500;
 const RESTART_LOCK_TIMEOUT = 5000;
 const DEBOUNCE_INTERVAL = 16;
 
+// New throttling configuration
+const WORKER_THROTTLE_MS = {
+  creatureMonitor: 50, 
+  targetingWorker: 50, 
+  ocrWorker: 200,      
+  screenMonitor: 75,  
+  minimapMonitor: 50, 
+};
+const THROTTLE_FALLBACK_MS = 1000; // Ensure at least one update per second
+
 function quickHash(obj) {
   return deepHash(obj);
 }
@@ -169,6 +179,7 @@ class WorkerManager {
     this.lastPerfReport = Date.now();
     this.reusableChangedSlices = {};
     this.workerStateCache = new Map();
+    this.workerLastUpdate = new Map(); // For throttling
     this.debounceTimeout = null;
     this.sharedLuaGlobals = {}; // NEW: Centralized object for shared Lua globals
     this.handleWorkerError = this.handleWorkerError.bind(this);
@@ -687,6 +698,7 @@ class WorkerManager {
     // Sync specific Redux data to SAB before broadcasting
     this.syncReduxToSAB(currentState);
 
+    const now = Date.now();
     this.precalculatedWorkerPayloads.clear();
     for (const workerName in WORKER_STATE_DEPENDENCIES) {
       const workerDeps = WORKER_STATE_DEPENDENCIES[workerName];
@@ -710,20 +722,39 @@ class WorkerManager {
         /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
 
       if (!this.workerInitialized.get(name) || isLuaWorker) {
-        // For initial setup or Lua workers, always send the full state
         workerEntry.worker.postMessage(currentState);
         this.workerInitialized.set(name, true);
-        if (isLuaWorker) {
-          // For Lua workers, we don't use state_diff, so clear cache
-          this.workerStateCache.delete(name);
-        }
+        if (isLuaWorker) this.workerStateCache.delete(name);
         log('info', `[Worker Manager] Sent full state to ${name}.`);
         continue;
       }
 
+      const lastUpdate = this.workerLastUpdate.get(name) || 0;
+      const timeSinceLastUpdate = now - lastUpdate;
+      const throttleMs = WORKER_THROTTLE_MS[name];
       const relevant = this.precalculatedWorkerPayloads.get(name);
+      const hasRelevantChanges = relevant && Object.keys(relevant).length > 0;
 
-      if (relevant && Object.keys(relevant).length) {
+      // Condition 1: Fallback. Force an update if it's been too long.
+      if (throttleMs && timeSinceLastUpdate > THROTTLE_FALLBACK_MS) {
+        const workerDeps = WORKER_STATE_DEPENDENCIES[name];
+        const payload = {};
+        if (workerDeps) {
+          for (const dep of workerDeps) {
+            payload[dep] = currentState[dep];
+          }
+        }
+        // Force the update, bypassing the hash check, to ensure the worker runs.
+        workerEntry.worker.postMessage({ type: 'state_diff', payload });
+        this.workerStateCache.set(name, quickHash(payload));
+        // Always update the timestamp to reset the fallback timer.
+        this.workerLastUpdate.set(name, now);
+      }
+      // Condition 2: Regular update on change, respecting throttle.
+      else if (
+        hasRelevantChanges &&
+        (!throttleMs || timeSinceLastUpdate > throttleMs)
+      ) {
         const hash = quickHash(relevant);
         if (this.workerStateCache.get(name) !== hash) {
           this.workerStateCache.set(name, hash);
@@ -731,6 +762,7 @@ class WorkerManager {
             type: 'state_diff',
             payload: relevant,
           });
+          this.workerLastUpdate.set(name, now);
         }
       }
     }
@@ -849,7 +881,8 @@ class WorkerManager {
 
       if (this.previousState) {
         const changed = this.getStateChanges(currentState, this.previousState);
-        if (changed) this.broadcastStateUpdate(changed, currentState);
+        // Always broadcast to allow the throttling/fallback logic to make the final decision.
+        this.broadcastStateUpdate(changed || {}, currentState);
       }
       this.previousState = currentState;
       this.logPerformanceStats();
