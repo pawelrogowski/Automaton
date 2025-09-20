@@ -78,6 +78,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'gameState',
     'rules',
     'uiValues',
+    'battleList',
   ],
   minimapMonitor: ['gameState', 'regionCoordinates'],
   ocrWorker: ['global', 'regionCoordinates', 'gameState', 'ocr'],

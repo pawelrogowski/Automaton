@@ -362,22 +362,22 @@ async function performOperation() {
       constrainedGameWorld,
     );
 
-    let detections = [];
+    const newActiveCreatures = new Map();
+    const matchedHealthBars = new Set();
+
     if (healthBars.length > 0) {
       const targetingList = sabStateManager.getTargetingList();
       const canonicalNames = [
         ...new Set(targetingList.map((rule) => rule.name)),
       ];
 
-      const ocrPromises = healthBars.map(async (hb) => {
-        // Define a precise, individual OCR region for each health bar
+      const performOcrForHealthBar = async (hb) => {
         const ocrRegion = {
           x: Math.max(0, hb.x - tileSize.width / 2),
-          y: Math.max(0, hb.y - 16), // Shifted 2px down to better capture descenders (e.g., 'p', 'g')
+          y: Math.max(0, hb.y - 16),
           width: tileSize.width,
           height: 14,
         };
-
         const nameplateOcrResults =
           recognizeText(
             sharedBufferView,
@@ -385,109 +385,100 @@ async function performOperation() {
             regionDefinitions.gameWorld?.ocrColors || [],
             CHAR_PRESETS.ALPHA,
           ) || [];
-
-        // With a small region, we can be confident the first result is the correct one.
         const rawOcrName =
           nameplateOcrResults.length > 0
             ? nameplateOcrResults[0].text
                 .trim()
                 .replace(/([a-z])([A-Z])/g, '$1 $2')
             : null;
+        return findBestNameMatch(rawOcrName, canonicalNames, logger);
+      };
 
-        const matchedName = findBestNameMatch(
-          rawOcrName,
-          canonicalNames,
-          logger,
-        );
+      // --- 1. Correlate existing creatures with new health bars ---
+      for (const [id, oldCreature] of activeCreatures.entries()) {
+        let bestMatch = null;
+        let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
 
-        return {
-          absoluteCoords: { x: hb.x, y: hb.y },
-          healthBarY: hb.y,
-          name: matchedName, // Use the matched name
-          hp: hb.healthTag,
-        };
-      });
-
-      detections = await Promise.all(ocrPromises);
-    }
-
-    const newActiveCreatures = new Map();
-    const matchedDetections = new Set();
-    for (const [id, oldCreature] of activeCreatures.entries()) {
-      let bestMatch = null;
-      let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
-      for (const detection of detections) {
-        if (matchedDetections.has(detection)) continue;
-        const distance = screenDist(
-          detection.absoluteCoords,
-          oldCreature.absoluteCoords,
-        );
-        if (distance < minDistance) {
-          minDistance = distance;
-          bestMatch = detection;
-        }
-      }
-      if (bestMatch) {
-        const updated = updateCreatureState(
-          oldCreature,
-          bestMatch,
-          currentPlayerMinimapPosition,
-          regions,
-          tileSize,
-          now,
-          isPlayerInAnimationFreeze,
-        );
-        if (updated) {
-          // Clear flicker grace period since creature was found
-          if (updated.flickerGracePeriodEndTime) {
-            logger(
-              'debug',
-              `[CreatureMonitor] Creature ${updated.instanceId} reappeared, clearing flicker grace period`,
-            );
-            delete updated.flickerGracePeriodEndTime;
+        for (const hb of healthBars) {
+          if (matchedHealthBars.has(hb)) continue;
+          const distance = screenDist(
+            { x: hb.x, y: hb.y },
+            oldCreature.absoluteCoords,
+          );
+          if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = hb;
           }
-          newActiveCreatures.set(id, updated);
-        }
-        matchedDetections.add(bestMatch);
-      } else {
-        // Creature not found in current detections - check flicker grace period
-        if (!oldCreature.flickerGracePeriodEndTime) {
-          // Start grace period
-          oldCreature.flickerGracePeriodEndTime =
-            now + CREATURE_FLICKER_GRACE_PERIOD_MS;
-          logger(
-            'debug',
-            `[CreatureMonitor] Creature ${oldCreature.instanceId} disappeared, starting flicker grace period (${CREATURE_FLICKER_GRACE_PERIOD_MS}ms)`,
-          );
         }
 
-        if (now < oldCreature.flickerGracePeriodEndTime) {
-          // Still within grace period - keep the creature without updating its distance,
-          // to prevent jitter from resetting the adjacency timer.
-          newActiveCreatures.set(id, oldCreature);
-        } else {
-          logger(
-            'debug',
-            `[CreatureMonitor] Creature ${oldCreature.instanceId} flicker grace period expired, removing creature`,
+        if (bestMatch) {
+          let creatureName = oldCreature.name;
+          if (!creatureName) {
+            creatureName = await performOcrForHealthBar(bestMatch);
+          }
+
+          const detection = {
+            absoluteCoords: { x: bestMatch.x, y: bestMatch.y },
+            healthBarY: bestMatch.y,
+            name: creatureName,
+            hp: bestMatch.healthTag,
+          };
+
+          const updated = updateCreatureState(
+            oldCreature,
+            detection,
+            currentPlayerMinimapPosition,
+            regions,
+            tileSize,
+            now,
+            isPlayerInAnimationFreeze,
           );
+
+          if (updated) {
+            if (updated.flickerGracePeriodEndTime) {
+              delete updated.flickerGracePeriodEndTime;
+            }
+            newActiveCreatures.set(id, updated);
+          }
+          matchedHealthBars.add(bestMatch);
+        } else {
+          // Handle creature disappearance (flicker grace period)
+          if (!oldCreature.flickerGracePeriodEndTime) {
+            oldCreature.flickerGracePeriodEndTime =
+              now + CREATURE_FLICKER_GRACE_PERIOD_MS;
+          }
+          if (now < oldCreature.flickerGracePeriodEndTime) {
+            newActiveCreatures.set(id, oldCreature);
+          }
         }
-        // If grace period expired, creature is not added to newActiveCreatures (removed)
       }
-    }
-    for (const detection of detections) {
-      if (!matchedDetections.has(detection)) {
-        const newId = nextInstanceId++;
-        let newCreature = { instanceId: newId };
-        newCreature = updateCreatureState(
-          newCreature,
-          detection,
-          currentPlayerMinimapPosition,
-          regions,
-          tileSize,
-          now,
-          isPlayerInAnimationFreeze,
-        );
-        if (newCreature) newActiveCreatures.set(newId, newCreature);
+
+      // --- 2. Handle unmatched health bars (new creatures) ---
+      for (const hb of healthBars) {
+        if (!matchedHealthBars.has(hb)) {
+          const creatureName = await performOcrForHealthBar(hb);
+          const detection = {
+            absoluteCoords: { x: hb.x, y: hb.y },
+            healthBarY: hb.y,
+            name: creatureName,
+            hp: hb.healthTag,
+          };
+
+          const newId = nextInstanceId++;
+          let newCreature = { instanceId: newId };
+          newCreature = updateCreatureState(
+            newCreature,
+            detection,
+            currentPlayerMinimapPosition,
+            regions,
+            tileSize,
+            now,
+            isPlayerInAnimationFreeze,
+          );
+          if (newCreature) {
+            newActiveCreatures.set(newId, newCreature);
+          }
+        }
       }
     }
     activeCreatures = newActiveCreatures;

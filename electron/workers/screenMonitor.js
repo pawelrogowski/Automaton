@@ -254,8 +254,7 @@ async function processGameState() {
 
     // Correctly calculate monsterNum from the battleList state.
     lastCalculatedState.monsterNum =
-      currentState.battleList?.entries?.length || 0;
-      console.log()
+      currentState.battleList?.entriesCount || 0;
     lastCalculatedState.isWalking = calculateWalkingState();
 
     reusableGameStateUpdate.payload = {
