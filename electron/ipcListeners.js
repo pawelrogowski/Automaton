@@ -25,7 +25,8 @@ ipcMain.on('state-change-batch', (_, serializedBatch) => {
     if (Array.isArray(batch)) {
       for (const action of batch) {
         if (action.origin === 'renderer') {
-          setGlobalState(action.type, action.payload);
+          // Pass the origin to setGlobalState so it can be echoed back.
+          setGlobalState(action.type, action.payload, action.origin);
         }
       }
     }
