@@ -39,9 +39,7 @@ const STATE_SCHEMA = {
       isGlobalShortcutsEnabled: state.isGlobalShortcutsEnabled,
     }),
   },
-  rules: {
-    transformOnLoad: (state) => ({ ...state, enabled: false }),
-  },
+  rules: {},
   lua: {
     transformOnSave: (state) => ({
       enabled: false,

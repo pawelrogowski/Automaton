@@ -332,11 +332,46 @@ const Layout = () => {
                   tooltip="View the current cavebot state slice"
                 ></SideBarNavButton>
                 <SideBarNavButton
+                  to="/gameState#statusMessagesState"
+                  img={tibia}
+                  text={'Status Messages'}
+                  imageWidth="32px"
+                  tooltip="View the current status messages slice"
+                ></SideBarNavButton>
+                <SideBarNavButton
+                  to="/gameState#regionCoordinatesState"
+                  img={tibia}
+                  text={'Region Coordinates'}
+                  imageWidth="32px"
+                  tooltip="View the current region coordinates slice"
+                ></SideBarNavButton>
+                <SideBarNavButton
+                  to="/gameState#ocrState"
+                  img={tibia}
+                  text={'OCR Output'}
+                  imageWidth="32px"
+                  tooltip="View the current OCR output slice"
+                ></SideBarNavButton>
+                <SideBarNavButton
                   to="/gameState#targetingState"
                   img={tibia}
                   text={'Targeting State'}
                   imageWidth="32px"
                   tooltip="View the current targeting slice"
+                ></SideBarNavButton>
+                <SideBarNavButton
+                  to="/gameState#uiValuesState"
+                  img={tibia}
+                  text={'UI Values'}
+                  imageWidth="32px"
+                  tooltip="View the current UI values slice (skills widget data)"
+                ></SideBarNavButton>
+                <SideBarNavButton
+                  to="/gameState#battleListState"
+                  img={tibia}
+                  text={'Battle List'}
+                  imageWidth="32px"
+                  tooltip="View the current battle list slice"
                 ></SideBarNavButton>
                 <SideBarNavButton
                   to="/gameState#pathfinderState"

@@ -5,6 +5,11 @@ import gameStateSlice from './slices/gameStateSlice.js';
 import luaSlice from './slices/luaSlice.js';
 import cavebotSlice from './slices/cavebotSlice.js';
 import targetingSlice from './slices/targetingSlice.js';
+import statusMessagesSlice from './slices/statusMessagesSlice.js';
+import regionCoordinatesSlice from './slices/regionCoordinatesSlice.js';
+import ocrSlice from './slices/ocrSlice.js';
+import uiValuesSlice from './slices/uiValuesSlice.js';
+import battleListSlice from './slices/battleListSlice.js';
 import pathfinderSlice from './slices/pathfinderSlice.js';
 
 let actionBatch = [];
@@ -45,6 +50,11 @@ const store = configureStore({
     lua: luaSlice.reducer,
     cavebot: cavebotSlice.reducer,
     targeting: targetingSlice.reducer,
+    statusMessages: statusMessagesSlice.reducer,
+    regionCoordinates: regionCoordinatesSlice.reducer,
+    ocr: ocrSlice.reducer,
+    uiValues: uiValuesSlice.reducer,
+    battleList: battleListSlice.reducer,
     pathfinder: pathfinderSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>

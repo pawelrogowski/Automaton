@@ -19,24 +19,19 @@ const targetingSlice = createSlice({
   reducers: {
     setState: (state, action) => {
       const loadedState = action.payload;
-      // Create a new state by merging the initial state with the loaded state.
-      const newState = { ...initialState, ...loadedState };
-
-      if (newState.targetingList) {
-        newState.targetingList = newState.targetingList.map((creature) => ({
-          priority: 0,
-          action: 'Attack',
-          healthRange: 'Any',
-          stickiness: 0,
-          ...creature,
-        }));
+      if (loadedState && loadedState.targetingList) {
+        loadedState.targetingList = loadedState.targetingList.map(
+          (creature) => ({
+            priority: 0,
+            action: 'Attack',
+            healthRange: 'Any',
+            stickiness: 0,
+            ...creature,
+          }),
+        );
       }
-      // Ensure essential arrays are always present.
-      newState.creatures = newState.creatures || [];
-      newState.targetingList = newState.targetingList || [];
-
-      delete newState.stickiness;
-      return newState;
+      delete loadedState.stickiness;
+      return { ...initialState, ...loadedState };
     },
     setenabled: (state, action) => {
       state.enabled = action.payload;

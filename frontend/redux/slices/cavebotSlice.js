@@ -40,7 +40,6 @@ const initialState = {
   dynamicTarget: null,
   visitedTiles: [],
   waypointIdAtTargetingStart: null,
-  forcePathRefresh: false,
 };
 
 const cavebotSlice = createSlice({
@@ -316,9 +315,6 @@ const cavebotSlice = createSlice({
     setNodeRange: (state, action) => {
       state.nodeRange = action.payload;
     },
-    setForcePathRefresh: (state, action) => {
-      state.forcePathRefresh = action.payload;
-    },
   },
 });
 
@@ -350,7 +346,6 @@ export const {
   clearVisitedTiles, // Export the correctly named action
   setScriptPause,
   setNodeRange,
-  setForcePathRefresh,
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };

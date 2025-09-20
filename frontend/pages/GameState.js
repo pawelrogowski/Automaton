@@ -27,8 +27,19 @@ const GameState = () => {
         return state.lua; // Return lua state slice
       case '#cavebotState':
         return state.cavebot;
+      case '#statusMessagesState':
+        return state.statusMessages;
+      case '#regionCoordinatesState':
+        return state.regionCoordinates;
+      case '#ocrState':
+        return state.ocr;
       case '#targetingState': // Add case for targetingState
         return state.targeting; // Return targeting state slice
+      case '#uiValuesState':
+        console.log('[GameState] Returning uiValues:', state.uiValues);
+        return state.uiValues; // Return uiValues state slice
+      case '#battleListState':
+        return state.battleList; // Return battleList state slice
       case '#pathfinderState':
         return state.pathfinder;
     }
@@ -48,8 +59,18 @@ const GameState = () => {
         return 'Lua Scripts'; // Return lua state slice
       case '#cavebotState':
         return 'Cavebot State';
+      case '#statusMessagesState':
+        return 'Status Messages';
+      case '#regionCoordinatesState':
+        return 'Region Coordinates';
+      case '#ocrState':
+        return 'OCR Output';
       case '#targetingState': // Add case for targetingState
         return 'Targeting State'; // Return targeting state slice
+      case '#uiValuesState':
+        return 'UI Values (Skills Widget)';
+      case '#battleListState':
+        return 'Battle List State';
       case '#pathfinderState':
         return 'Pathfinder State';
     }
