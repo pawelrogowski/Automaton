@@ -479,7 +479,8 @@ class WorkerManager {
       }
       return; // Message handled
     } else if (message.type === 'play_alert') {
-      playSound('alert.wav');
+      const soundFile = message.payload?.soundFile || 'alert.wav';
+      playSound(soundFile);
       return;
     } else if (message.type === 'lua-pause-walking') {
       store.dispatch(setWalkingPause(message.payload));

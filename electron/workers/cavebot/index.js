@@ -37,7 +37,6 @@ const workerState = {
   lastPlayerPosCounter: -1,
   lastPathDataCounter: -1,
   playerMinimapPosition: null,
-  lastPlayerPosition: null,
   path: [],
   pathChebyshevDistance: null,
   pathfindingStatus: 0,
@@ -265,21 +264,6 @@ async function performOperation() {
     return;
   }
 
-  // --- Teleport & Floor Change Detection ---
-  if (workerState.lastPlayerPosition) {
-    const { x: lastX, y: lastY, z: lastZ } = workerState.lastPlayerPosition;
-    const { x, y, z } = workerState.playerMinimapPosition;
-    const dist = Math.max(Math.abs(x - lastX), Math.abs(y - lastY));
-
-    if (z !== lastZ) {
-      workerState.logger('info', `[Cavebot] Floor change detected (${lastZ} -> ${z}). Applying grace period.`);
-      workerState.floorChangeGraceUntil = Date.now() + 250;
-    } else if (dist >= config.teleportDistanceThreshold) {
-      workerState.logger('info', `[Cavebot] Teleport detected (distance: ${dist}). Applying grace period.`);
-      workerState.floorChangeGraceUntil = Date.now() + 250;
-    }
-  }
-
   let targetWaypoint = findCurrentWaypoint(globalState);
   if (!targetWaypoint) {
     const fallback = findFirstValidWaypoint(globalState);
@@ -381,7 +365,6 @@ async function performOperation() {
   }
 
   workerState.lastControlState = globalState.cavebot.controlState;
-  workerState.lastPlayerPosition = { ...workerState.playerMinimapPosition };
 }
 
 async function mainLoop() {

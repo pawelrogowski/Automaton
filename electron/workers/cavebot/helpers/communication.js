@@ -53,11 +53,26 @@ export const updateSABData = (workerState, config) => {
       PLAYER_POS_UPDATE_COUNTER_INDEX,
     );
     if (newPlayerPosCounter > workerState.lastPlayerPosCounter) {
-      workerState.playerMinimapPosition = {
+      const lastPos = workerState.playerMinimapPosition;
+      const newPos = {
         x: Atomics.load(workerState.playerPosArray, PLAYER_X_INDEX),
         y: Atomics.load(workerState.playerPosArray, PLAYER_Y_INDEX),
         z: Atomics.load(workerState.playerPosArray, PLAYER_Z_INDEX),
       };
+
+      // --- Teleport & Floor Change Detection ---
+      if (lastPos) {
+        const dist = Math.max(Math.abs(newPos.x - lastPos.x), Math.abs(newPos.y - lastPos.y));
+        if (newPos.z !== lastPos.z) {
+          workerState.logger('info', `[Cavebot] Floor change detected (${lastPos.z} -> ${newPos.z}). Applying grace period.`);
+          workerState.floorChangeGraceUntil = Date.now() + 250;
+        } else if (dist >= config.teleportDistanceThreshold) {
+          workerState.logger('info', `[Cavebot] Teleport detected (distance: ${dist}). Applying grace period.`);
+          workerState.floorChangeGraceUntil = Date.now() + 250;
+        }
+      }
+
+      workerState.playerMinimapPosition = newPos;
       workerState.lastPlayerPosCounter = newPlayerPosCounter;
     }
   }

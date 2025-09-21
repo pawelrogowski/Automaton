@@ -74,8 +74,10 @@ These functions are available globally in your Lua scripts.
   - `level`: (String) The log level.
   - `...messages`: The messages to log.
 
-`alert()`
-- **Description**: Plays the system alert sound configured in the bot.
+`alert(soundFile)`
+- **Description**: Plays a sound file from the `electron/sounds` directory.
+- **Parameters**:
+  - `soundFile`: (String, optional) The name of the sound file (e.g., 'alert.wav'). Defaults to `'alert.wav'` if not provided.
 
 `wait(min_ms, max_ms)`
 - **Description**: Pauses the script for a random duration between `min_ms` and `max_ms`.

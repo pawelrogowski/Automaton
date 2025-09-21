@@ -649,7 +649,8 @@ export const createLuaApi = async (context) => {
         });
       }
     },
-    alert: () => postSystemMessage({ type: 'play_alert' }),
+    alert: (soundFile = 'alert.wav') =>
+      postSystemMessage({ type: 'play_alert', payload: { soundFile } }),
     wait: (min_ms, max_ms) =>
       wait(min_ms, max_ms, context.refreshLuaGlobalState),
     keyPress: (key, modifier = null) =>

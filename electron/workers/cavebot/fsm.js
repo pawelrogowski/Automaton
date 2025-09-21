@@ -97,12 +97,15 @@ export function createFsm(workerState, config) {
           );
           switch (targetWaypoint.type) {
             case 'Stand':
+            case 'Ladder':
+            case 'Rope':
+            case 'Shovel':
               logger(
                 'debug',
-                '[FSM] Waypoint is a Stand action. Transitioning to PERFORMING_ACTION.',
+                `[FSM] Waypoint is a '${targetWaypoint.type}' action. Transitioning to PERFORMING_ACTION.`,
               );
               return 'PERFORMING_ACTION';
-            default: // For Ladder, Rope, Node, etc., being on the tile means we're done.
+            default: // For Node, etc., being on the tile means we're done.
               logger(
                 'debug',
                 '[FSM] Actionless waypoint reached. Advancing to next.',
@@ -116,7 +119,7 @@ export function createFsm(workerState, config) {
         switch (status) {
           case PATH_STATUS_PATH_FOUND:
             logger('debug', '[FSM] Path found.');
-            const isAdjacent =
+            let isAdjacent =
               typeof chebyshevDist === 'number' && chebyshevDist <= 1;
             const isActionType = [
               'Ladder',
@@ -125,6 +128,20 @@ export function createFsm(workerState, config) {
               'Machete',
               'Door',
             ].includes(targetWaypoint.type);
+
+            // Exclude South-East tile for Ladders
+            if (targetWaypoint.type === 'Ladder' && isAdjacent) {
+              if (
+                playerPos.x === targetWaypoint.x + 1 &&
+                playerPos.y === targetWaypoint.y + 1
+              ) {
+                logger(
+                  'debug',
+                  '[FSM] Player is on the south-east tile of a ladder. Ignoring adjacency.',
+                );
+                isAdjacent = false;
+              }
+            }
 
             if (isActionType && isAdjacent) {
               logger(
@@ -190,6 +207,10 @@ export function createFsm(workerState, config) {
             await advanceToNextWaypoint(workerState, config, {
               skipCurrent: true,
             });
+            // DEADLOCK FIX: Immediately invalidate our knowledge of the current waypoint.
+            // This forces the main loop to re-evaluate `findCurrentWaypoint` on the next tick
+            // and prevents us from getting stuck processing the waypoint we just decided to skip.
+            workerState.lastProcessedWptId = null;
             return 'IDLE';
 
           case PATH_STATUS_WAYPOINT_REACHED:
