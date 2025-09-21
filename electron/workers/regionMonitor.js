@@ -30,6 +30,33 @@ const frameUpdateManager = new FrameUpdateManager();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Helper function to remove unnecessary raw position data before sending to store
+function sanitizeRegionsForStore(regions) {
+  if (!regions || typeof regions !== 'object') {
+    return regions;
+  }
+
+  const newRegions = { ...regions };
+
+  // Remove raw position properties from the current level
+  delete newRegions.rawPos;
+  delete newRegions.rawStartPos;
+  delete newRegions.rawEndPos;
+
+  // Recursively sanitize children
+  for (const key in newRegions) {
+    if (
+      Object.prototype.hasOwnProperty.call(newRegions, key) &&
+      newRegions[key] &&
+      typeof newRegions[key] === 'object'
+    ) {
+      newRegions[key] = sanitizeRegionsForStore(newRegions[key]);
+    }
+  }
+
+  return newRegions;
+}
+
 // Helper function to calculate constrained search area based on definition
 function calculateConstrainedSearchArea(def, fullSearchArea, metadata) {
   if (!def.searchArea) return fullSearchArea;
@@ -341,10 +368,13 @@ async function mainLoop() {
         lastHeight = height;
         lastKnownRegions = newRegions;
 
+        // Sanitize the regions object to remove unnecessary data before posting
+        const sanitizedRegions = sanitizeRegionsForStore(newRegions);
+
         parentPort.postMessage({
           storeUpdate: true,
           type: setAllRegions.type,
-          payload: newRegions,
+          payload: sanitizedRegions,
         });
       } catch (err) {
         console.error('[RegionMonitor] Error during scan:', err);

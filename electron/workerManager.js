@@ -150,6 +150,8 @@ const WORKER_REGION_DEPENDENCIES = {
   regionMonitor: null,
 };
 
+let inspectorPort = 9230; // Base port for worker inspection
+
 class WorkerManager {
   constructor() {
     const filename = fileURLToPath(import.meta.url);
@@ -563,7 +565,14 @@ class WorkerManager {
       if (needsSharedScreen) {
         workerData.display = store.getState().global.display;
       }
-      const worker = new Worker(workerPath, { name, workerData });
+
+      const execArgv = [`--inspect=${inspectorPort++}`];
+      const worker = new Worker(workerPath, {
+        name,
+        workerData,
+        execArgv,
+      });
+
       this.workers.set(name, { worker, config: scriptConfig });
       this.workerInitialized.set(name, false);
       worker.on('message', (msg) => this.handleWorkerMessage(msg, name));
@@ -670,6 +679,18 @@ class WorkerManager {
         hasChanges = true;
       }
     }
+
+    // Optimization: For pathfinder, only consider it "changed" if the path length is different.
+    // This avoids deep hashing the large path array on every minor change.
+    if (
+      changedSlices.pathfinder &&
+      previousState.pathfinder &&
+      currentState.pathfinder.path?.length ===
+        previousState.pathfinder.path?.length
+    ) {
+      delete changedSlices.pathfinder;
+    }
+
     return hasChanges ? changedSlices : null;
   }
 

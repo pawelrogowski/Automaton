@@ -1,6 +1,10 @@
 import store from './store.js';
 import { getMainWindow, getWidgetWindow } from './createMainWindow.js';
 
+// A blacklist of action types that should NOT be forwarded to the renderer process.
+// This is for state that is only relevant to the main process and workers.
+const RENDERER_BLACKLIST = new Set(['regionCoordinates/setAllRegions']);
+
 let actionQueue = [];
 let isScheduled = false;
 
@@ -51,9 +55,11 @@ function setGlobalState(type, payload) {
   // 1. Dispatch the action to the main process store immediately.
   store.dispatch(action);
 
-  // 2. Queue the action to be sent to the renderer in a batch.
-  actionQueue.push(action);
-  scheduleBatch();
+  // 2. Queue the action to be sent to the renderer in a batch, unless it's blacklisted.
+  if (!RENDERER_BLACKLIST.has(type)) {
+    actionQueue.push(action);
+    scheduleBatch();
+  }
 }
 
 export default setGlobalState;

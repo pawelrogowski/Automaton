@@ -10,6 +10,7 @@
   "scripts": {
     "pre-build": "node scripts/set-random-name.js",
     "start": "webpack --mode production && electron .",
+    "dev": "webpack --mode development && electron --inspect=5858 .",
     "rebuild": "electron-rebuild",
     "build": "cross-env NODE_ENV=production webpack --mode production",
     "package": "npm run build && electron-builder ",
