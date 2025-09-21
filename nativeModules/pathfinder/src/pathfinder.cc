@@ -273,6 +273,7 @@ Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("isReachable", &Pathfinder::IsReachable),
         InstanceMethod("getPathLength", &Pathfinder::GetPathLength),
         InstanceMethod("getReachableTiles", &Pathfinder::GetReachableTiles),
+        InstanceMethod("destroy", &Pathfinder::Destroy),
         InstanceAccessor("isLoaded", &Pathfinder::IsLoadedGetter, nullptr),
     });
     constructor = Napi::Persistent(func);
@@ -282,6 +283,14 @@ Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {
 }
 
 Pathfinder::Pathfinder(const Napi::CallbackInfo& info) : Napi::ObjectWrap<Pathfinder>(info) {}
+
+Napi::Value Pathfinder::Destroy(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    this->allMapData.clear();
+    this->cost_grid_cache.clear();
+    this->isLoaded = false;
+    return env.Undefined();
+}
 
 Napi::Value Pathfinder::IsLoadedGetter(const Napi::CallbackInfo& info) {
     return Napi::Boolean::New(info.Env(), this->isLoaded.load());

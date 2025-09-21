@@ -57,6 +57,7 @@ private:
     // NEW: N-API wrapper for path length
     Napi::Value GetPathLength(const Napi::CallbackInfo& info);
     Napi::Value GetReachableTiles(const Napi::CallbackInfo& info);
+    Napi::Value Destroy(const Napi::CallbackInfo& info);
 
     // Internal State
     std::unordered_map<int, MapData> allMapData;

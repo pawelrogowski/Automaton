@@ -270,6 +270,7 @@ const Minimap = () => {
     height: CANVAS_SIZE,
   });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [lastVisibleTimestamp, setLastVisibleTimestamp] = useState(Date.now());
   const [drawSettings, setDrawSettings] = useState(() => {
     const defaultSettings = {
       player: { draw: true, color: MINIMAP_COLORS.PLAYER },
@@ -374,7 +375,7 @@ const Minimap = () => {
   );
   const visibleEntities = useMemo(
     () => creatures.filter((e) => e.gameCoords.z === zLevel),
-    [creatures, zLevel],
+    [creatures, zLevel, lastVisibleTimestamp],
   );
 
   // --- Centering & Resizing Logic ---
@@ -415,6 +416,18 @@ const Minimap = () => {
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () =>
       document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setLastVisibleTimestamp(Date.now());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // --- UI Event Handlers ---
