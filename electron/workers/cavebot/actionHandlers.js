@@ -46,8 +46,18 @@ async function performWalk(
   const posCounterBeforeMove = workerState.lastPlayerPosCounter;
   const pathCounterBeforeMove = workerState.lastPathDataCounter;
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, targetPos);
-  if (!dirKey) return;
+  if (!dirKey) {
+    workerState.logger(
+      'warn',
+      '[handleWalkAction] Could not determine direction key.',
+    );
+    return;
+  }
 
+  workerState.logger(
+    'debug',
+    `[performWalk] Attempting to walk. Direction: ${dirKey}, Diagonal: ${isDiagonal}.`,
+  );
   keyPress(dirKey, { type: 'movement' });
   await awaitWalkConfirmation(
     workerState,
@@ -62,12 +72,26 @@ async function performWalk(
 }
 
 export async function handleWalkAction(workerState, config) {
-  if (!workerState.path || workerState.path.length < 2) return;
+  if (!workerState.path || workerState.path.length < 2) {
+    workerState.logger(
+      'debug',
+      `[handleWalkAction] Aborted: Path is too short (${
+        workerState.path?.length || 0
+      }).`,
+    );
+    return;
+  }
 
   const nextStep = workerState.path[1];
 
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, nextStep);
-  if (!dirKey) return;
+  if (!dirKey) {
+    workerState.logger(
+      'warn',
+      '[handleWalkAction] Could not determine direction key for next step.',
+    );
+    return;
+  }
 
   const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
   const timeout = isDiagonal
@@ -78,6 +102,17 @@ export async function handleWalkAction(workerState, config) {
 }
 
 export async function handleStandAction(workerState, config, targetWaypoint) {
+  const { waypointSections = {} } = workerState.globalState.cavebot;
+  const allWaypoints = Object.values(waypointSections).flatMap(
+    (section) => section.waypoints || [],
+  );
+  const waypointIndex = allWaypoints.findIndex(
+    (wpt) => wpt.id === targetWaypoint.id,
+  );
+  workerState.logger(
+    'debug',
+    `[handleStandAction] Executing for waypoint index ${waypointIndex + 1}.`,
+  );
   const initialPos = { ...workerState.playerMinimapPosition };
 
   // Safety check: Don't attempt action if there's no valid path and we're not on the waypoint
@@ -96,7 +131,15 @@ export async function handleStandAction(workerState, config, targetWaypoint) {
   }
 
   const dirKey = getDirectionKey(initialPos, targetWaypoint);
-  if (!dirKey) return false;
+  if (!dirKey) {
+    workerState.logger(
+      'warn',
+      `[handleStandAction] Could not determine direction for stand action at waypoint index ${
+        waypointIndex + 1
+      }.`,
+    );
+    return false;
+  }
 
   keyPress(dirKey, { type: 'movement' });
 
@@ -134,8 +177,15 @@ async function handleToolAction(
   clickOffset,
 ) {
   const { logger, globalState } = workerState;
+  logger(
+    'debug',
+    `[handleToolAction] Executing tool '${useType}' with hotkey '${hotkey}'.`,
+  );
   const initialPos = { ...workerState.playerMinimapPosition };
-  if (!initialPos) return false;
+  if (!initialPos) {
+    logger('error', `[handleToolAction:${useType}] No initial position found.`);
+    return false;
+  }
 
   // Use the standardized animation delay for these tools
   if (useType === 'shovel' || useType === 'rope') {
@@ -180,9 +230,17 @@ async function handleToolAction(
   );
 
   if (zChanged) {
+    logger(
+      'debug',
+      `[handleToolAction:${useType}] Z-level change confirmed. Action successful.`,
+    );
     workerState.floorChangeGraceUntil = Date.now() + config.floorChangeGraceMs;
     return true;
   }
+  logger(
+    'warn',
+    `[handleToolAction:${useType}] Failed to confirm Z-level change.`,
+  );
   return false;
 }
 
@@ -216,6 +274,17 @@ export const handleShovelAction = (workerState, config, targetCoords) =>
 
 export async function handleMacheteAction(workerState, config, targetWaypoint) {
   const { logger, globalState } = workerState;
+  const { waypointSections = {} } = workerState.globalState.cavebot;
+  const allWaypoints = Object.values(waypointSections).flatMap(
+    (section) => section.waypoints || [],
+  );
+  const waypointIndex = allWaypoints.findIndex(
+    (wpt) => wpt.id === targetWaypoint.id,
+  );
+  logger(
+    'debug',
+    `[handleMacheteAction] Executing for waypoint index ${waypointIndex + 1}.`,
+  );
   const hotkey = config.toolHotkeys.machete;
   if (!hotkey) {
     logger('error', '[handleMacheteAction] Machete hotkey not configured.');
@@ -243,12 +312,22 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
   for (let i = 0; i < config.maxMacheteRetries; i++) {
     try {
       // First, try to just walk
+      logger(
+        'debug',
+        `[handleMacheteAction] Attempt ${i + 1}: Trying to walk first.`,
+      );
       await performWalk(
         workerState,
         config,
         targetWaypoint,
         config.moveConfirmTimeoutMs,
         false,
+      );
+      logger(
+        'debug',
+        `[handleMacheteAction] Attempt ${
+          i + 1
+        }: Walk succeeded, no machete needed.`,
       );
       return true; // Walk succeeded, no need for machete
     } catch (error) {
@@ -261,6 +340,10 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
     }
 
     // Walk failed, use tool
+    logger(
+      'debug',
+      `[handleMacheteAction] Attempt ${i + 1}: Using machete.`,
+    );
     useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
       type: 'movement',
     });
@@ -268,12 +351,22 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
 
     try {
       // Try to walk again after using the tool
+      logger(
+        'debug',
+        `[handleMacheteAction] Attempt ${i + 1}: Trying to walk after using machete.`,
+      );
       await performWalk(
         workerState,
         config,
         targetWaypoint,
         config.moveConfirmTimeoutMs,
         false,
+      );
+      logger(
+        'debug',
+        `[handleMacheteAction] Attempt ${
+          i + 1
+        }: Walk after machete succeeded.`,
       );
       return true; // Success after using tool
     } catch (error) {
@@ -295,9 +388,21 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
 
 export async function handleDoorAction(workerState, config, targetWaypoint) {
   const { logger, globalState } = workerState;
+  const { waypointSections = {} } = workerState.globalState.cavebot;
+  const allWaypoints = Object.values(waypointSections).flatMap(
+    (section) => section.waypoints || [],
+  );
+  const waypointIndex = allWaypoints.findIndex(
+    (wpt) => wpt.id === targetWaypoint.id,
+  );
+  logger(
+    'debug',
+    `[handleDoorAction] Executing for waypoint index ${waypointIndex + 1}.`,
+  );
 
   // First, try to just walk in case door is already open
   try {
+    logger('debug', '[handleDoorAction] Trying to walk through first.');
     await performWalk(
       workerState,
       config,
@@ -305,6 +410,7 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
       config.moveConfirmTimeoutMs,
       false,
     );
+    logger('debug', '[handleDoorAction] Walk succeeded, door was open.');
     return true;
   } catch (error) {
     logger(
@@ -332,6 +438,7 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
   const posCounterBeforeMove = workerState.lastPlayerPosCounter;
   const pathCounterBeforeMove = workerState.lastPathDataCounter;
 
+  logger('debug', '[handleDoorAction] Clicking on door.');
   leftClick(clickCoords.x, clickCoords.y);
 
   try {
@@ -342,6 +449,7 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
       pathCounterBeforeMove,
       config.actionStateChangeTimeoutMs,
     );
+    logger('debug', '[handleDoorAction] Move confirmed after clicking door.');
     return true;
   } catch (e) {
     logger('warn', '[handleDoorAction] Failed to confirm move after clicking.');
@@ -351,7 +459,21 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
 
 export async function handleScriptAction(workerState, config, targetWpt) {
   const { luaExecutor, logger } = workerState;
+  const { waypointSections = {} } = workerState.globalState.cavebot;
+  const allWaypoints = Object.values(waypointSections).flatMap(
+    (section) => section.waypoints || [],
+  );
+  const waypointIndex = allWaypoints.findIndex((wpt) => wpt.id === targetWpt.id);
+  logger(
+    'debug',
+    `[handleScriptAction] Executing for waypoint index ${waypointIndex + 1}.`,
+  );
+
   if (!luaExecutor || !luaExecutor.isInitialized) {
+    logger(
+      'warn',
+      '[handleScriptAction] Lua executor not ready, delaying...',
+    );
     await delay(config.controlHandoverGraceMs);
     return;
   }
@@ -364,15 +486,27 @@ export async function handleScriptAction(workerState, config, targetWpt) {
   const result = await luaExecutor.executeScript(targetWpt.script);
 
   if (result.success) {
+    logger(
+      'debug',
+      `[handleScriptAction] Script for waypoint index ${
+        waypointIndex + 1
+      } executed successfully.`,
+    );
     workerState.scriptErrorCount = 0;
     if (!result.navigationOccurred) {
+      logger(
+        'debug',
+        '[handleScriptAction] Script did not navigate, advancing waypoint manually.',
+      );
       await advanceToNextWaypoint(workerState, config);
     }
   } else {
     workerState.scriptErrorCount++;
     logger(
       'warn',
-      `[Cavebot] Script at waypoint ${targetWpt.id} failed. Attempt ${workerState.scriptErrorCount}/${config.maxScriptRetries}.`,
+      `[Cavebot] Script at waypoint index ${waypointIndex + 1} failed. Attempt ${
+        workerState.scriptErrorCount
+      }/${config.maxScriptRetries}.`,
     );
 
     if (workerState.scriptErrorCount >= config.maxScriptRetries) {
@@ -382,7 +516,9 @@ export async function handleScriptAction(workerState, config, targetWpt) {
           : `${config.maxScriptRetries} times`;
       logger(
         'error',
-        `[Cavebot] Script at waypoint ${targetWpt.id} failed ${attemptText}. Skipping to next waypoint.`,
+        `[Cavebot] Script at waypoint index ${
+          waypointIndex + 1
+        } failed ${attemptText}. Skipping to next waypoint.`,
       );
       await advanceToNextWaypoint(workerState, config);
     } else {

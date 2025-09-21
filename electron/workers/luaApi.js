@@ -1384,12 +1384,108 @@ export const createLuaApi = async (context) => {
     },
   };
   let navigationApi = {};
+
+  const goBackWaypoints = (numBack) => {
+    const state = getState();
+    const { waypointSections, currentSection, wptId } = state.cavebot;
+    const waypoints = waypointSections[currentSection]?.waypoints || [];
+    if (waypoints.length === 0) {
+      logger(
+        'warn',
+        `[Lua/${scriptName}] back function failed: no waypoints in current section.`,
+      );
+      return;
+    }
+
+    const currentIndex = waypoints.findIndex((wp) => wp.id === wptId);
+    if (currentIndex === -1) {
+      logger(
+        'warn',
+        `[Lua/${scriptName}] back function failed: current waypoint not found.`,
+      );
+      return;
+    }
+
+    const newIndex = Math.max(0, currentIndex - numBack);
+    if (currentIndex === newIndex) {
+      logger(
+        'info',
+        `[Lua/${scriptName}] back function: already at or before target waypoint index.`,
+      );
+      return;
+    }
+
+    if (waypoints[newIndex]) {
+      context.postStoreUpdate('cavebot/setwptId', waypoints[newIndex].id);
+    }
+  };
+
+  const goToSection = (sectionName, label) => {
+    const state = getState();
+    const { waypointSections } = state.cavebot;
+    const foundEntry = Object.entries(waypointSections).find(
+      ([, s]) => s.name === sectionName,
+    );
+
+    if (foundEntry) {
+      const [targetSectionId, targetSection] = foundEntry;
+      if (targetSection.waypoints?.length > 0) {
+        let targetWpt = targetSection.waypoints[0]; // Default to first
+        if (label) {
+          const foundWpt = targetSection.waypoints.find(
+            (wp) => wp.label === label,
+          );
+          if (foundWpt) {
+            targetWpt = foundWpt;
+          } else {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] goToSection: Label '${label}' not found in section '${sectionName}'. Failing gracefully.`,
+            );
+            return;
+          }
+        }
+        context.postStoreUpdate(
+          'cavebot/setCurrentWaypointSection',
+          targetSectionId,
+        );
+        context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
+      } else {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] goToSection: Section '${sectionName}' has no waypoints.`,
+        );
+      }
+    } else {
+      logger(
+        'warn',
+        `[Lua/${scriptName}] goToSection: Section '${sectionName}' not found.`,
+      );
+    }
+  };
+
   if (type === 'cavebot') {
     navigationApi = {
       skipWaypoint: context.advanceToNextWaypoint,
       goToLabel: context.goToLabel,
-      goToSection: context.goToSection,
+      goToSection,
       goToWpt: context.goToWpt,
+      back: (x) => goBackWaypoints(x),
+      backLoc: (x, y) => {
+        if (!baseApi.isLocation(x)) {
+          goBackWaypoints(y);
+        }
+      },
+      backz: (y) => {
+        const state = getState();
+        const playerPos = state.gameState?.playerMinimapPosition;
+        const { waypointSections, currentSection, wptId } = state.cavebot;
+        const waypoints = waypointSections[currentSection]?.waypoints || [];
+        const currentWpt = waypoints.find((wp) => wp.id === wptId);
+        if (playerPos && currentWpt && playerPos.z !== currentWpt.z) {
+          goBackWaypoints(y);
+        }
+      },
       pauseActions: (paused) =>
         context.postStoreUpdate('cavebot/setActionPaused', !!paused),
       setCavebotEnabled: (enabled) =>
@@ -1416,26 +1512,7 @@ export const createLuaApi = async (context) => {
         if (targetWpt)
           context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
       },
-      goToSection: (sectionName) => {
-        const state = getState();
-        const { waypointSections } = state.cavebot;
-        const foundEntry = Object.entries(waypointSections).find(
-          ([, s]) => s.name === sectionName,
-        );
-        if (foundEntry) {
-          const [targetSectionId, targetSection] = foundEntry;
-          if (targetSection.waypoints?.length > 0) {
-            context.postStoreUpdate(
-              'cavebot/setCurrentWaypointSection',
-              targetSectionId,
-            );
-            context.postStoreUpdate(
-              'cavebot/setwptId',
-              targetSection.waypoints[0].id,
-            );
-          }
-        }
-      },
+      goToSection,
       goToWpt: (index) => {
         const arrayIndex = parseInt(index, 10) - 1;
         if (isNaN(arrayIndex) || arrayIndex < 0) return;
@@ -1444,6 +1521,22 @@ export const createLuaApi = async (context) => {
         const waypoints = waypointSections[currentSection]?.waypoints || [];
         if (arrayIndex < waypoints.length)
           context.postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
+      },
+      back: (x) => goBackWaypoints(x),
+      backLoc: (x, y) => {
+        if (!baseApi.isLocation(x)) {
+          goBackWaypoints(y);
+        }
+      },
+      backz: (y) => {
+        const state = getState();
+        const playerPos = state.gameState?.playerMinimapPosition;
+        const { waypointSections, currentSection, wptId } = state.cavebot;
+        const waypoints = waypointSections[currentSection]?.waypoints || [];
+        const currentWpt = waypoints.find((wp) => wp.id === wptId);
+        if (playerPos && currentWpt && playerPos.z !== currentWpt.z) {
+          goBackWaypoints(y);
+        }
       },
       pauseActions: (paused) =>
         context.postStoreUpdate('cavebot/setActionPaused', !!paused),

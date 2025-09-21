@@ -270,11 +270,30 @@ These functions are only available in scripts running from a 'Script' waypoint i
 `goToLabel(label)`
 - **Description**: Finds the next waypoint with the given label in the current section and sets it as the target.
 
-`goToSection(sectionName)`
-- **Description**: Finds a waypoint section by name and sets the first waypoint of that section as the target.
+`goToSection(sectionName, label)`
+- **Description**: Finds a waypoint section by name and sets the first waypoint of that section as the target. If a `label` is provided, it will go to the waypoint with that specific label within the target section.
+- **Parameters**:
+  - `sectionName`: (String) The name of the section to go to.
+  - `label`: (String, optional) The label of the specific waypoint to go to within the section.
 
 `goToWpt(index)`
 - **Description**: Goes to a waypoint by its numerical index (starting from 1) in the current section.
+
+`back(waypoints)`
+- **Description**: Goes back a specified number of waypoints in the current section.
+- **Parameters**:
+  - `waypoints`: (Number) The number of waypoints to go back.
+
+`backLoc(range, waypoints)`
+- **Description**: If the character is not at the current waypoint (within the specified `range`), it goes back a number of `waypoints`.
+- **Parameters**:
+  - `range`: (Number) The allowed distance from the waypoint.
+  - `waypoints`: (Number) The number of waypoints to go back.
+
+`backz(waypoints)`
+- **Description**: If the character's Z position (floor) does not match the current waypoint's Z position, it goes back a number of `waypoints`.
+- **Parameters**:
+  - `waypoints`: (Number) The number of waypoints to go back.
 
 `pauseActions(paused)`
 - **Description**: Pauses or resumes the execution of actions (e.g., 'use', 'say') at cavebot waypoints.

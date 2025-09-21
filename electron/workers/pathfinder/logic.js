@@ -229,23 +229,10 @@ export function runPathfindingLogic(context) {
         (wp) => wp.id === wptId,
       );
       if (targetWaypoint) {
-        if (z !== targetWaypoint.z) {
-          throttleReduxUpdate({
-            pathWaypoints: [],
-            wptDistance: null,
-            pathfindingStatus: 'DIFFERENT_FLOOR',
-          });
-          if (pathDataArray) {
-            Atomics.store(
-              pathDataArray,
-              PATHFINDING_STATUS_INDEX,
-              PATH_STATUS_DIFFERENT_FLOOR,
-            );
-            Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
-            Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
-          }
-          return;
-        }
+        // REMOVED: The premature Z-level check was causing a deadlock.
+        // The native pathfinder is capable of finding paths across floors.
+        // The cavebot FSM is responsible for handling the path result,
+        // including cases where no path is found due to floor differences.
         result = pathfinderInstance.findPathSync(
           playerMinimapPosition,
           { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },

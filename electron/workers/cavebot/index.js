@@ -37,6 +37,7 @@ const workerState = {
   lastPlayerPosCounter: -1,
   lastPathDataCounter: -1,
   playerMinimapPosition: null,
+  lastPlayerPosition: null,
   path: [],
   pathChebyshevDistance: null,
   pathfindingStatus: 0,
@@ -54,7 +55,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   pathfinderInstance: null,
-  logger: createLogger({ info: false, error: true, debug: false }),
+  logger: createLogger({ info: true, error: true, debug: false }),
   parentPort: parentPort,
 };
 
@@ -96,6 +97,20 @@ function handleControlHandover() {
     '[Cavebot] Gained control, cleared path and requesting new pathfinding',
   );
 
+  const currentWaypoint = findCurrentWaypoint(workerState.globalState);
+  const allWaypoints = Object.values(
+    workerState.globalState.cavebot.waypointSections || {},
+  ).flatMap((section) => section.waypoints || []);
+  const waypointIndex = allWaypoints.findIndex(
+    (wpt) => wpt.id === currentWaypoint?.id,
+  );
+  workerState.logger(
+    'debug',
+    `[Cavebot] Control handover at waypoint index: ${
+      waypointIndex > -1 ? waypointIndex + 1 : 'N/A'
+    }`,
+  );
+
   if (waypointIdAtTargetingStart && visitedTiles && visitedTiles.length > 0) {
     const currentWaypoint = findCurrentWaypoint(workerState.globalState);
     if (
@@ -134,6 +149,15 @@ async function performOperation() {
     return;
   }
 
+  if (!globalState.cavebot) {
+    workerState.logger(
+      'debug',
+      '[Cavebot] cavebot state not present, skipping tick.',
+    );
+    return;
+  }
+  workerState.logger('debug', '[Cavebot] --- Tick ---');
+
   if (!globalState.regionCoordinates?.regions?.onlineMarker) {
     if (
       workerState.fsmState === 'SCRIPT' &&
@@ -162,6 +186,10 @@ async function performOperation() {
     !globalState.regionCoordinates ||
     !globalState.regionCoordinates.regions.gameWorld
   ) {
+    workerState.logger(
+      'debug',
+      '[Cavebot] Game world not visible, skipping tick.',
+    );
     if (
       workerState.fsmState === 'SCRIPT' &&
       workerState.luaExecutor.isExecuting()
@@ -183,25 +211,36 @@ async function performOperation() {
     enabled: cavebotIsEnabled,
     controlState,
     isPausedByScript,
+    waypointSections = {},
   } = globalState.cavebot;
+  const waypoints = Object.values(waypointSections).flatMap(
+    (section) => section.waypoints || [],
+  );
 
   if (isPausedByScript) {
+    workerState.logger('debug', '[Cavebot] Paused by script, skipping tick.');
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return;
   }
 
   if (workerState.sabStateManager.isLootingRequired()) {
+    workerState.logger('debug', '[Cavebot] Looting required, skipping tick.');
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return; // Do not perform any cavebot operations if looting is required
   }
 
   if (!cavebotIsEnabled) {
+    workerState.logger('debug', '[Cavebot] Disabled, skipping tick.');
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return;
   }
 
   if (controlState !== 'CAVEBOT') {
     if (workerState.lastControlState === 'CAVEBOT') {
+      workerState.logger(
+        'info',
+        `[Cavebot] Control lost. Current state: ${controlState}. Resetting FSM.`,
+      );
       resetInternalState(workerState, fsm); // Reset state when losing control
     }
     workerState.lastControlState = controlState;
@@ -209,20 +248,50 @@ async function performOperation() {
   }
 
   if (workerState.lastControlState !== 'CAVEBOT') {
+    workerState.logger(
+      'info',
+      '[Cavebot] Control gained. Handling handover.',
+    );
     handleControlHandover();
     await delay(config.controlHandoverGraceMs);
   }
 
   updateSABData(workerState, config);
-  if (!workerState.playerMinimapPosition) return;
+  if (!workerState.playerMinimapPosition) {
+    workerState.logger(
+      'debug',
+      '[Cavebot] No player position yet, skipping tick.',
+    );
+    return;
+  }
+
+  // --- Teleport & Floor Change Detection ---
+  if (workerState.lastPlayerPosition) {
+    const { x: lastX, y: lastY, z: lastZ } = workerState.lastPlayerPosition;
+    const { x, y, z } = workerState.playerMinimapPosition;
+    const dist = Math.max(Math.abs(x - lastX), Math.abs(y - lastY));
+
+    if (z !== lastZ) {
+      workerState.logger('info', `[Cavebot] Floor change detected (${lastZ} -> ${z}). Applying grace period.`);
+      workerState.floorChangeGraceUntil = Date.now() + 250;
+    } else if (dist >= config.teleportDistanceThreshold) {
+      workerState.logger('info', `[Cavebot] Teleport detected (distance: ${dist}). Applying grace period.`);
+      workerState.floorChangeGraceUntil = Date.now() + 250;
+    }
+  }
 
   let targetWaypoint = findCurrentWaypoint(globalState);
   if (!targetWaypoint) {
     const fallback = findFirstValidWaypoint(globalState);
     if (fallback) {
+      const waypointIndex = waypoints.findIndex(
+        (wpt) => wpt.id === fallback.waypoint.id,
+      );
       workerState.logger(
         'warn',
-        'Current waypoint not found, resetting to first valid waypoint.',
+        `Current waypoint not found, resetting to first valid waypoint at index ${
+          waypointIndex + 1
+        }.`,
       );
       postStoreUpdate('cavebot/setCurrentWaypointSection', fallback.sectionId);
       postStoreUpdate('cavebot/setwptId', fallback.waypoint.id);
@@ -235,6 +304,16 @@ async function performOperation() {
     workerState.lastProcessedWptId &&
     targetWaypoint.id !== workerState.lastProcessedWptId
   ) {
+    const fromIndex = waypoints.findIndex(
+      (wpt) => wpt.id === workerState.lastProcessedWptId,
+    );
+    const toIndex = waypoints.findIndex((wpt) => wpt.id === targetWaypoint.id);
+    workerState.logger(
+      'info',
+      `[Cavebot] Waypoint changed from index ${fromIndex + 1} to ${
+        toIndex + 1
+      }. Resetting FSM.`,
+    );
     resetInternalState(workerState, fsm);
     // Manually reset pathfinding state on any waypoint change to prevent using stale data.
     // This is critical when a waypoint is skipped, as the pathfinder might still be processing
@@ -251,9 +330,18 @@ async function performOperation() {
     targetWaypoint.z !== workerState.playerMinimapPosition.z &&
     targetWaypoint.type !== 'Script' // Scripts are now exempt from this check
   ) {
+    const waypointIndex = waypoints.findIndex(
+      (wpt) => wpt.id === targetWaypoint.id,
+    );
     workerState.logger(
       'debug',
-      `Skipping waypoint ${targetWaypoint.id} due to Z-level mismatch. Player Z: ${workerState.playerMinimapPosition.z}, Waypoint Z: ${targetWaypoint.z}, Status: ${workerState.pathfindingStatus}`,
+      `Skipping waypoint index ${
+        waypointIndex + 1
+      } due to Z-level mismatch. Player Z: ${
+        workerState.playerMinimapPosition.z
+      }, Waypoint Z: ${targetWaypoint.z}, Status: ${
+        workerState.pathfindingStatus
+      }`,
     );
     await advanceToNextWaypoint(workerState, config);
     return;
@@ -270,6 +358,13 @@ async function performOperation() {
   if (stateLogic) {
     const nextState = await stateLogic.execute(context);
     if (nextState && nextState !== workerState.fsmState) {
+      const waypointIndex = waypoints.findIndex(
+        (wpt) => wpt.id === targetWaypoint.id,
+      );
+      workerState.logger(
+        'debug',
+        `[FSM] State transition: ${workerState.fsmState} -> ${nextState} for waypoint index ${waypointIndex + 1}`,
+      );
       workerState.lastFsmState = workerState.fsmState;
       workerState.fsmState = nextState;
       const newStateLogic = fsm[workerState.fsmState];
@@ -286,6 +381,7 @@ async function performOperation() {
   }
 
   workerState.lastControlState = globalState.cavebot.controlState;
+  workerState.lastPlayerPosition = { ...workerState.playerMinimapPosition };
 }
 
 async function mainLoop() {
@@ -417,8 +513,8 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'shutdown') {
       workerState.isShuttingDown = true;
       if (workerState.luaExecutor) workerState.luaExecutor.destroy();
-      if (workerState.pathfinderInstance)
-        workerState.pathfinderInstance.destroy();
+      // NOTE: The pathfinder native instance does not have a destroy method.
+      // It will be garbage collected automatically when the worker terminates.
     } else if (message.type === 'lua_global_broadcast') {
       const { key, value } = message.payload;
       if (workerData.sharedLuaGlobals) {
