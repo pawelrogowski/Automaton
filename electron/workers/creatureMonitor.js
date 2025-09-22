@@ -9,6 +9,7 @@ import pkg from 'font-ocr';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance, chebyshevDistance } from '../utils/distance.js';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
+import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 import { SABStateManager } from './sabStateManager.js';
 import { findBestNameMatch } from '../utils/nameMatcher.js';
 import { processPlayerList, processNpcList } from './creatureMonitor/ocr.js';
@@ -28,6 +29,7 @@ const { recognizeText } = pkg;
 const BATTLELIST_ALLOWED_CHARS =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
+const frameUpdateManager = new FrameUpdateManager();
 let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
@@ -67,6 +69,9 @@ let isShuttingDown = false;
 let lastSentCreatures = [];
 let lastSentTarget = null;
 let lastSpecialAreasJson = null;
+let lastBattleListEntries = [];
+let lastPlayerNames = [];
+let lastNpcNames = [];
 let nextInstanceId = 1;
 let activeCreatures = new Map();
 let reachableTilesCache = new Map();
@@ -109,6 +114,25 @@ function isCreaturePresent(targetingCreatureName, battleListEntries) {
     }
   }
   return false;
+}
+
+function rectsIntersect(rectA, rectB) {
+  if (
+    !rectA ||
+    !rectB ||
+    rectA.width <= 0 ||
+    rectA.height <= 0 ||
+    rectB.width <= 0 ||
+    rectB.height <= 0
+  ) {
+    return false;
+  }
+  return (
+    rectA.x < rectB.x + rectB.width &&
+    rectA.x + rectA.width > rectB.x &&
+    rectA.y < rectB.y + rectB.height &&
+    rectA.y + rectA.height > rectB.y
+  );
 }
 
 function postLootingRequired(isLootingRequired) {
@@ -327,383 +351,439 @@ async function performOperation() {
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
 
-    // --- BATCHED OCR PROCESSING ---
-    const [battleListEntries, playerNames, npcNames] = await Promise.all([
-      processBattleListOcr(sharedBufferView, regions),
-      processPlayerList(sharedBufferView, regions),
-      processNpcList(sharedBufferView, regions),
-    ]);
-    // --- END BATCHED OCR ---
+    let battleListEntries = lastBattleListEntries;
+    let playerNames = lastPlayerNames;
+    let npcNames = lastNpcNames;
+
+    const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
+    frameUpdateManager.accumulatedDirtyRects.length = 0;
+
+    if (dirtyRects.length > 0) {
+      if (
+        regions.battleList &&
+        dirtyRects.some((r) => rectsIntersect(r, regions.battleList))
+      ) {
+        battleListEntries = await processBattleListOcr(
+          sharedBufferView,
+          regions,
+        );
+      }
+      if (
+        regions.playerList &&
+        dirtyRects.some((r) => rectsIntersect(r, regions.playerList))
+      ) {
+        playerNames = await processPlayerList(sharedBufferView, regions);
+      }
+      if (
+        regions.npcList &&
+        dirtyRects.some((r) => rectsIntersect(r, regions.npcList))
+      ) {
+        npcNames = await processNpcList(sharedBufferView, regions);
+      }
+    }
+
+    lastBattleListEntries = battleListEntries;
+    lastPlayerNames = playerNames;
+    lastNpcNames = npcNames;
 
     if (sabStateManager.isLootingRequired()) {
       return; // Do not perform any targeting or creature detection if looting is required
     }
 
-    const currentPlayerMinimapPosition = {
-      x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-      y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-      z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-    };
-    const now = Date.now();
+    // If all lists are empty, there's no need to process the game world.
+    if (
+      battleListEntries.length === 0 &&
+      playerNames.length === 0 &&
+      npcNames.length === 0
+    ) {
+      // Clear out any lingering entities from previous frames if they existed.
+      if (lastSentCreatures.length > 0 || lastSentTarget !== null) {
+        activeCreatures.clear();
+        lastSentCreatures = [];
+        lastSentTarget = null;
 
-    const playerPositionChanged = !arePositionsEqual(
-      currentPlayerMinimapPosition,
-      previousPlayerMinimapPosition,
-    );
-    if (playerPositionChanged) {
-      playerAnimationFreezeEndTime = now + PLAYER_ANIMATION_FREEZE_MS;
-      lastStablePlayerMinimapPosition = { ...currentPlayerMinimapPosition };
-      reachableTilesCache.clear();
-    }
-    previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
-    const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
+        sabStateManager.writeWorldState({
+          creatures: [],
+          target: null,
+          battleList: [],
+        });
 
-    // Create a constrained gameWorld region excluding top and bottom 14 pixels
-    const constrainedGameWorld = {
-      ...gameWorld,
-      y: gameWorld.y + 14,
-      height: Math.max(0, gameWorld.height - 28), // Ensure height doesn't go negative
-    };
+        postUpdateOnce('targeting/setEntities', { creatures: [], duration: 0 });
+        postUpdateOnce('targeting/setTarget', null);
+      }
+      // Always post the empty lists to ensure UI is up-to-date.
+      postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
+      postUpdateOnce('uiValues/setPlayers', playerNames);
+      postUpdateOnce('uiValues/setNpcs', npcNames);
+    } else {
+      const currentPlayerMinimapPosition = {
+        x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+        y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+        z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+      };
+      const now = Date.now();
 
-    const healthBars = await findHealthBars.findHealthBars(
-      sharedBufferView,
-      constrainedGameWorld,
-    );
+      const playerPositionChanged = !arePositionsEqual(
+        currentPlayerMinimapPosition,
+        previousPlayerMinimapPosition,
+      );
+      if (playerPositionChanged) {
+        playerAnimationFreezeEndTime = now + PLAYER_ANIMATION_FREEZE_MS;
+        lastStablePlayerMinimapPosition = { ...currentPlayerMinimapPosition };
+        reachableTilesCache.clear();
+      }
+      previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
+      const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
 
-    const newActiveCreatures = new Map();
-    const matchedHealthBars = new Set();
+      // Create a constrained gameWorld region excluding top and bottom 14 pixels
+      const constrainedGameWorld = {
+        ...gameWorld,
+        y: gameWorld.y + 14,
+        height: Math.max(0, gameWorld.height - 28), // Ensure height doesn't go negative
+      };
 
-    if (healthBars.length > 0) {
-      const targetingList = sabStateManager.getTargetingList();
-      const canonicalNames = [
-        ...new Set(targetingList.map((rule) => rule.name)),
-      ];
+      const healthBars = await findHealthBars.findHealthBars(
+        sharedBufferView,
+        constrainedGameWorld,
+      );
 
-      const performOcrForHealthBar = async (hb) => {
-        const ocrRegion = {
-          x: Math.max(0, hb.x - tileSize.width / 2),
-          y: Math.max(0, hb.y - 16),
-          width: tileSize.width,
-          height: 14,
+      const newActiveCreatures = new Map();
+      const matchedHealthBars = new Set();
+
+      if (healthBars.length > 0) {
+        const targetingList = sabStateManager.getTargetingList();
+        const canonicalNames = [
+          ...new Set(targetingList.map((rule) => rule.name)),
+        ];
+
+        const performOcrForHealthBar = async (hb) => {
+          const ocrRegion = {
+            x: Math.max(0, hb.x - tileSize.width / 2),
+            y: Math.max(0, hb.y - 16),
+            width: tileSize.width,
+            height: 14,
+          };
+          const nameplateOcrResults =
+            recognizeText(
+              sharedBufferView,
+              ocrRegion,
+              regionDefinitions.gameWorld?.ocrColors || [],
+              BATTLELIST_ALLOWED_CHARS,
+            ) || [];
+          const rawOcrName =
+            nameplateOcrResults.length > 0
+              ? nameplateOcrResults[0].text
+                  .trim()
+                  .replace(/([a-z])([A-Z])/g, '$1 $2')
+              : null;
+          return findBestNameMatch(rawOcrName, canonicalNames, logger);
         };
-        const nameplateOcrResults =
-          recognizeText(
-            sharedBufferView,
-            ocrRegion,
-            regionDefinitions.gameWorld?.ocrColors || [],
-            BATTLELIST_ALLOWED_CHARS,
-          ) || [];
-        const rawOcrName =
-          nameplateOcrResults.length > 0
-            ? nameplateOcrResults[0].text
-                .trim()
-                .replace(/([a-z])([A-Z])/g, '$1 $2')
-            : null;
-        return findBestNameMatch(rawOcrName, canonicalNames, logger);
-      };
 
-      // --- 1. Correlate existing creatures with new health bars ---
-      for (const [id, oldCreature] of activeCreatures.entries()) {
-        let bestMatch = null;
-        let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
+        // --- 1. Correlate existing creatures with new health bars ---
+        for (const [id, oldCreature] of activeCreatures.entries()) {
+          let bestMatch = null;
+          let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
 
+          for (const hb of healthBars) {
+            if (matchedHealthBars.has(hb)) continue;
+            const distance = screenDist(
+              { x: hb.x, y: hb.y },
+              oldCreature.absoluteCoords,
+            );
+            if (distance < minDistance) {
+              minDistance = distance;
+              bestMatch = hb;
+            }
+          }
+
+          if (bestMatch) {
+            let creatureName = oldCreature.name;
+            if (!creatureName) {
+              creatureName = await performOcrForHealthBar(bestMatch);
+            }
+
+            const detection = {
+              absoluteCoords: { x: bestMatch.x, y: bestMatch.y },
+              healthBarY: bestMatch.y,
+              name: creatureName,
+              hp: bestMatch.healthTag,
+            };
+
+            const updated = updateCreatureState(
+              oldCreature,
+              detection,
+              currentPlayerMinimapPosition,
+              regions,
+              tileSize,
+              now,
+              isPlayerInAnimationFreeze,
+            );
+
+            if (updated) {
+              if (updated.flickerGracePeriodEndTime) {
+                delete updated.flickerGracePeriodEndTime;
+              }
+              newActiveCreatures.set(id, updated);
+            }
+            matchedHealthBars.add(bestMatch);
+          } else {
+            // Handle creature disappearance (flicker grace period)
+            if (!oldCreature.flickerGracePeriodEndTime) {
+              oldCreature.flickerGracePeriodEndTime =
+                now + CREATURE_FLICKER_GRACE_PERIOD_MS;
+            }
+            if (now < oldCreature.flickerGracePeriodEndTime) {
+              newActiveCreatures.set(id, oldCreature);
+            }
+          }
+        }
+
+        // --- 2. Handle unmatched health bars (new creatures) ---
         for (const hb of healthBars) {
-          if (matchedHealthBars.has(hb)) continue;
-          const distance = screenDist(
-            { x: hb.x, y: hb.y },
-            oldCreature.absoluteCoords,
-          );
-          if (distance < minDistance) {
-            minDistance = distance;
-            bestMatch = hb;
-          }
-        }
+          if (!matchedHealthBars.has(hb)) {
+            const creatureName = await performOcrForHealthBar(hb);
+            if (creatureName) {
+              const detection = {
+                absoluteCoords: { x: hb.x, y: hb.y },
+                healthBarY: hb.y,
+                name: creatureName,
+                hp: hb.healthTag,
+              };
 
-        if (bestMatch) {
-          let creatureName = oldCreature.name;
-          if (!creatureName) {
-            creatureName = await performOcrForHealthBar(bestMatch);
-          }
-
-          const detection = {
-            absoluteCoords: { x: bestMatch.x, y: bestMatch.y },
-            healthBarY: bestMatch.y,
-            name: creatureName,
-            hp: bestMatch.healthTag,
-          };
-
-          const updated = updateCreatureState(
-            oldCreature,
-            detection,
-            currentPlayerMinimapPosition,
-            regions,
-            tileSize,
-            now,
-            isPlayerInAnimationFreeze,
-          );
-
-          if (updated) {
-            if (updated.flickerGracePeriodEndTime) {
-              delete updated.flickerGracePeriodEndTime;
+              const newId = nextInstanceId++;
+              let newCreature = { instanceId: newId };
+              newCreature = updateCreatureState(
+                newCreature,
+                detection,
+                currentPlayerMinimapPosition,
+                regions,
+                tileSize,
+                now,
+                isPlayerInAnimationFreeze,
+              );
+              if (newCreature) {
+                newActiveCreatures.set(newId, newCreature);
+              }
             }
-            newActiveCreatures.set(id, updated);
-          }
-          matchedHealthBars.add(bestMatch);
-        } else {
-          // Handle creature disappearance (flicker grace period)
-          if (!oldCreature.flickerGracePeriodEndTime) {
-            oldCreature.flickerGracePeriodEndTime =
-              now + CREATURE_FLICKER_GRACE_PERIOD_MS;
-          }
-          if (now < oldCreature.flickerGracePeriodEndTime) {
-            newActiveCreatures.set(id, oldCreature);
           }
         }
       }
+      activeCreatures = newActiveCreatures;
 
-      // --- 2. Handle unmatched health bars (new creatures) ---
-      for (const hb of healthBars) {
-        if (!matchedHealthBars.has(hb)) {
-          const creatureName = await performOcrForHealthBar(hb);
-          const detection = {
-            absoluteCoords: { x: hb.x, y: hb.y },
-            healthBarY: hb.y,
-            name: creatureName,
-            hp: hb.healthTag,
-          };
+      let detectedEntities = Array.from(activeCreatures.values());
 
-          const newId = nextInstanceId++;
-          let newCreature = { instanceId: newId };
-          newCreature = updateCreatureState(
-            newCreature,
-            detection,
-            currentPlayerMinimapPosition,
-            regions,
-            tileSize,
-            now,
-            isPlayerInAnimationFreeze,
-          );
-          if (newCreature) {
-            newActiveCreatures.set(newId, newCreature);
-          }
-        }
+      let blockingCreatureCoords = null;
+      if (pathDataArray && Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) === PATH_STATUS_BLOCKED_BY_CREATURE) {
+        blockingCreatureCoords = {
+          x: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX),
+          y: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX),
+          z: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX),
+        };
       }
-    }
-    activeCreatures = newActiveCreatures;
 
-    let detectedEntities = Array.from(activeCreatures.values());
+      if (detectedEntities.length > 0) {
+        const allCreaturePositions = detectedEntities.map(c => c.gameCoords);
+        const reachableTiles = pathfinderInstance.getReachableTiles(currentPlayerMinimapPosition, allCreaturePositions, 14);
 
-    let blockingCreatureCoords = null;
-    if (pathDataArray && Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) === PATH_STATUS_BLOCKED_BY_CREATURE) {
-      blockingCreatureCoords = {
-        x: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX),
-        y: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX),
-        z: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX),
-      };
-    }
+        detectedEntities = detectedEntities.map((entity) => {
+          const coordsKey = getCoordsKey(entity.gameCoords);
+          const pathLength = reachableTiles[coordsKey];
+          const isReachable = typeof pathLength !== 'undefined';
+          
+          let isAdjacent = false;
+          if (entity.gameCoords) {
+            const deltaX = Math.abs(currentPlayerMinimapPosition.x - entity.gameCoords.x);
+            const deltaY = Math.abs(currentPlayerMinimapPosition.y - entity.gameCoords.y);
+            const isStraight = (deltaX === 1 && deltaY === 0) || (deltaX === 0 && deltaY === 1);
+            const isDiagonal = deltaX === 1 && deltaY === 1;
 
-    if (detectedEntities.length > 0) {
-      const allCreaturePositions = detectedEntities.map(c => c.gameCoords);
-      const reachableTiles = pathfinderInstance.getReachableTiles(currentPlayerMinimapPosition, allCreaturePositions, 14);
-
-      detectedEntities = detectedEntities.map((entity) => {
-        const coordsKey = getCoordsKey(entity.gameCoords);
-        const pathLength = reachableTiles[coordsKey];
-        const isReachable = typeof pathLength !== 'undefined';
-        
-        let isAdjacent = false;
-        if (entity.gameCoords) {
-          const deltaX = Math.abs(currentPlayerMinimapPosition.x - entity.gameCoords.x);
-          const deltaY = Math.abs(currentPlayerMinimapPosition.y - entity.gameCoords.y);
-          const isStraight = (deltaX === 1 && deltaY === 0) || (deltaX === 0 && deltaY === 1);
-          const isDiagonal = deltaX === 1 && deltaY === 1;
-
-          let threshold = 0;
-          if (isStraight) {
-            threshold = ADJACENT_DISTANCE_THRESHOLD_STRAIGHT;
-          } else if (isDiagonal) {
-            threshold = ADJACENT_DISTANCE_THRESHOLD_DIAGONAL;
-          }
-
-          if (threshold > 0 && entity.rawDistance <= threshold) {
-            if (!entity.adjacentSince) {
-              entity.adjacentSince = now;
+            let threshold = 0;
+            if (isStraight) {
+              threshold = ADJACENT_DISTANCE_THRESHOLD_STRAIGHT;
+            } else if (isDiagonal) {
+              threshold = ADJACENT_DISTANCE_THRESHOLD_DIAGONAL;
             }
-            if (now - entity.adjacentSince >= ADJACENT_TIME_THRESHOLD_MS) {
-              isAdjacent = true;
+
+            if (threshold > 0 && entity.rawDistance <= threshold) {
+              if (!entity.adjacentSince) {
+                entity.adjacentSince = now;
+              }
+              if (now - entity.adjacentSince >= ADJACENT_TIME_THRESHOLD_MS) {
+                isAdjacent = true;
+              }
+            } else {
+              entity.adjacentSince = null;
             }
           } else {
             entity.adjacentSince = null;
           }
-        } else {
-          entity.adjacentSince = null;
-        }
-        
-        let isBlockingPath = false;
-        if (blockingCreatureCoords && entity.gameCoords) {
-            isBlockingPath = entity.gameCoords.x === blockingCreatureCoords.x &&
-                             entity.gameCoords.y === blockingCreatureCoords.y &&
-                             entity.gameCoords.z === blockingCreatureCoords.z;
-        }
+          
+          let isBlockingPath = false;
+          if (blockingCreatureCoords && entity.gameCoords) {
+              isBlockingPath = entity.gameCoords.x === blockingCreatureCoords.x &&
+                               entity.gameCoords.y === blockingCreatureCoords.y &&
+                               entity.gameCoords.z === blockingCreatureCoords.z;
+          }
 
-        return { ...entity, isReachable, isAdjacent, isBlockingPath };
-      });
-    }
+          return { ...entity, isReachable, isAdjacent, isBlockingPath };
+        });
+      }
 
-    // The deepCompare is still useful for deciding whether to send a Redux update,
-    // but the SAB write will happen regardless to ensure consistency.
-    const creaturesChanged = !deepCompareEntities(
-      detectedEntities,
-      lastSentCreatures,
-    );
-    if (creaturesChanged) {
-      lastSentCreatures = detectedEntities;
-    }
-
-    let gameWorldTarget = null;
-    const targetRect = await findTarget.findTarget(sharedBufferView, gameWorld);
-    if (targetRect) {
-      targetLossGracePeriodEndTime = 0;
-      const playerPosForTargetCalc = isPlayerInAnimationFreeze
-        ? lastStablePlayerMinimapPosition
-        : currentPlayerMinimapPosition;
-      const screenX = targetRect.x + targetRect.width / 2;
-      const screenY = targetRect.y + targetRect.height / 2;
-      const targetGameCoordsRaw = getGameCoordinatesFromScreen(
-        screenX,
-        screenY,
-        playerPosForTargetCalc,
-        gameWorld,
-        tileSize,
+      // The deepCompare is still useful for deciding whether to send a Redux update,
+      // but the SAB write will happen regardless to ensure consistency.
+      const creaturesChanged = !deepCompareEntities(
+        detectedEntities,
+        lastSentCreatures,
       );
-      if (targetGameCoordsRaw) {
-        let closestCreature = null;
-        let minDistance = Infinity;
-        for (const entity of detectedEntities) {
-          if (entity.gameCoords) {
-            const distance = calculateDistance(
-              targetGameCoordsRaw,
-              entity.gameCoords,
-            );
-            if (distance < minDistance) {
-              minDistance = distance;
-              closestCreature = entity;
+      if (creaturesChanged) {
+        lastSentCreatures = detectedEntities;
+      }
+
+      let gameWorldTarget = null;
+      const targetRect = await findTarget.findTarget(sharedBufferView, gameWorld);
+      if (targetRect) {
+        targetLossGracePeriodEndTime = 0;
+        const playerPosForTargetCalc = isPlayerInAnimationFreeze
+          ? lastStablePlayerMinimapPosition
+          : currentPlayerMinimapPosition;
+        const screenX = targetRect.x + targetRect.width / 2;
+        const screenY = targetRect.y + targetRect.height / 2;
+        const targetGameCoordsRaw = getGameCoordinatesFromScreen(
+          screenX,
+          screenY,
+          playerPosForTargetCalc,
+          gameWorld,
+          tileSize,
+        );
+        if (targetGameCoordsRaw) {
+          let closestCreature = null;
+          let minDistance = Infinity;
+          for (const entity of detectedEntities) {
+            if (entity.gameCoords) {
+              const distance = calculateDistance(
+                targetGameCoordsRaw,
+                entity.gameCoords,
+              );
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestCreature = entity;
+              }
             }
           }
-        }
-        if (closestCreature) {
-          gameWorldTarget = {
-            instanceId: closestCreature.instanceId,
-            name: closestCreature.name || null, // Add name from OCR
-            hp: closestCreature.hp || null,
-            distance: parseFloat(closestCreature.distance.toFixed(1)),
-            gameCoordinates: closestCreature.gameCoords,
-            isReachable: closestCreature.isReachable,
-          };
-        }
-      }
-    } else {
-      if (lastSentTarget) {
-        if (targetLossGracePeriodEndTime === 0) {
-          targetLossGracePeriodEndTime = now + TARGET_LOSS_GRACE_PERIOD_MS;
-        }
-        if (now < targetLossGracePeriodEndTime) {
-          gameWorldTarget = lastSentTarget;
-        }
-      }
-    }
-
-    let unifiedTarget = null;
-    const battleListRegion = currentState.regionCoordinates.regions.battleList;
-    if (gameWorldTarget && battleListRegion) {
-      const redColor = [255, 0, 0];
-      const redBarSequence = new Array(5).fill(redColor);
-      const result = await findSequences.findSequencesNative(
-        sharedBufferView,
-        {
-          red_vertical_bar: { sequence: redBarSequence, direction: 'vertical' },
-        },
-        battleListRegion,
-      );
-      if (result && result.red_vertical_bar) {
-        const markerY = result.red_vertical_bar.y;
-        let closestEntry = null;
-        let minDistance = Infinity;
-        for (const entry of battleListEntries) {
-          const distance = Math.abs(entry.y - markerY);
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestEntry = entry;
+          if (closestCreature) {
+            gameWorldTarget = {
+              instanceId: closestCreature.instanceId,
+              name: closestCreature.name || null, // Add name from OCR
+              hp: closestCreature.hp || null,
+              distance: parseFloat(closestCreature.distance.toFixed(1)),
+              gameCoordinates: closestCreature.gameCoords,
+              isReachable: closestCreature.isReachable,
+            };
           }
         }
-        if (closestEntry) {
-          unifiedTarget = { ...gameWorldTarget, name: closestEntry.name };
+      } else {
+        if (lastSentTarget) {
+          if (targetLossGracePeriodEndTime === 0) {
+            targetLossGracePeriodEndTime = now + TARGET_LOSS_GRACE_PERIOD_MS;
+          }
+          if (now < targetLossGracePeriodEndTime) {
+            gameWorldTarget = lastSentTarget;
+          }
         }
       }
-    }
 
-    const targetChanged = !deepCompareEntities(unifiedTarget, lastSentTarget);
-    if (targetChanged) {
-      // Only log when target name actually changes (reduce spam)
-      const newTargetName = unifiedTarget?.name || null;
-      const oldTargetName = lastSentTarget?.name || null;
-      if (newTargetName !== oldTargetName) {
-        logger(
-          'debug',
-          `[CreatureMonitor] Target switched: ${oldTargetName || 'none'} → ${newTargetName || 'none'}`,
+      let unifiedTarget = null;
+      const battleListRegion = currentState.regionCoordinates.regions.battleList;
+      if (gameWorldTarget && battleListRegion) {
+        const redColor = [255, 0, 0];
+        const redBarSequence = new Array(5).fill(redColor);
+        const result = await findSequences.findSequencesNative(
+          sharedBufferView,
+          {
+            red_vertical_bar: { sequence: redBarSequence, direction: 'vertical' },
+          },
+          battleListRegion,
         );
+        if (result && result.red_vertical_bar) {
+          const markerY = result.red_vertical_bar.y;
+          let closestEntry = null;
+          let minDistance = Infinity;
+          for (const entry of battleListEntries) {
+            const distance = Math.abs(entry.y - markerY);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestEntry = entry;
+            }
+          }
+          if (closestEntry) {
+            unifiedTarget = { ...gameWorldTarget, name: closestEntry.name };
+          }
+        }
       }
 
-      lastSentTarget = unifiedTarget;
-    }
+      const targetChanged = !deepCompareEntities(unifiedTarget, lastSentTarget);
+      if (targetChanged) {
+        // Only log when target name actually changes (reduce spam)
+        const newTargetName = unifiedTarget?.name || null;
+        const oldTargetName = lastSentTarget?.name || null;
+        if (newTargetName !== oldTargetName) {
+          logger(
+            'debug',
+            `[CreatureMonitor] Target switched: ${oldTargetName || 'none'} → ${newTargetName || 'none'}`,
+          );
+        }
 
-    // --- ATOMIC STATE UPDATE ---
-    // Write the complete, consistent world state to the SABs at once.
-    sabStateManager.writeWorldState({
-      creatures: detectedEntities,
-      target: unifiedTarget,
-      battleList: battleListEntries,
-    });
+        lastSentTarget = unifiedTarget;
+      }
 
-    // Post updates to the main thread for Redux/UI *after* the SAB is updated.
-    if (creaturesChanged) {
-      const duration = (performance.now() - startTime).toFixed(2);
-      postUpdateOnce('targeting/setEntities', {
+      // --- ATOMIC STATE UPDATE ---
+      // Write the complete, consistent world state to the SABs at once.
+      sabStateManager.writeWorldState({
         creatures: detectedEntities,
-        duration,
+        target: unifiedTarget,
+        battleList: battleListEntries,
       });
-    }
-    if (targetChanged) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'targeting/setTarget',
-        payload: unifiedTarget,
-      });
-    }
-    postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
 
-    if (battleListEntries.length > 0) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'battleList/updateLastSeenMs',
-      });
-    }
+      // Post updates to the main thread for Redux/UI *after* the SAB is updated.
+      if (creaturesChanged) {
+        const duration = (performance.now() - startTime).toFixed(2);
+        postUpdateOnce('targeting/setEntities', {
+          creatures: detectedEntities,
+          duration,
+        });
+      }
+      if (targetChanged) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'targeting/setTarget',
+          payload: unifiedTarget,
+        });
+      }
+      postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
 
-    // Post player and NPC list updates
-    postUpdateOnce('uiValues/setPlayers', playerNames);
-    if (playerNames.length > 0) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/updateLastSeenPlayerMs',
-      });
-    }
+      if (battleListEntries.length > 0) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'battleList/updateLastSeenMs',
+        });
+      }
 
-    postUpdateOnce('uiValues/setNpcs', npcNames);
-    if (npcNames.length > 0) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/updateLastSeenNpcMs',
-      });
+      // Post player and NPC list updates
+      postUpdateOnce('uiValues/setPlayers', playerNames);
+      if (playerNames.length > 0) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'uiValues/updateLastSeenPlayerMs',
+        });
+      }
+
+      postUpdateOnce('uiValues/setNpcs', npcNames);
+      if (npcNames.length > 0) {
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'uiValues/updateLastSeenNpcMs',
+        });
+      }
     }
 
     // --- UNIFIED DEATH DETECTION & LOOTING ---
@@ -885,6 +965,10 @@ async function initialize() {
 parentPort.on('message', async (message) => {
   if (isShuttingDown) return;
   try {
+    if (message.type === 'frame-update') {
+      frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
+      return;
+    }
     if (message.type === 'shutdown') {
       isShuttingDown = true;
       if (pathfinderInstance) {
