@@ -260,5 +260,4 @@ export const regionParsers = {
   selectCharacterModal: parseSelectCharacterModal,
   vipWidget: parseVipWidget,
   gameWorld: parseGameWorldOcr,
-  // REMOVED battleList parser
 };

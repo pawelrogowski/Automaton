@@ -11,6 +11,7 @@ import { calculateDistance, chebyshevDistance } from '../utils/distance.js';
 import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
 import { SABStateManager } from './sabStateManager.js';
 import { findBestNameMatch } from '../utils/nameMatcher.js';
+import { processPlayerList, processNpcList } from './creatureMonitor/ocr.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -24,9 +25,8 @@ import {
 const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
-const CHAR_PRESETS = {
-  ALPHA: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ',
-  };
+const BATTLELIST_ALLOWED_CHARS =
+  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
@@ -145,7 +145,7 @@ async function processBattleListOcr(buffer, regions) {
         buffer,
         entriesRegion,
         regionDefinitions.battleList?.ocrColors || [],
-        CHAR_PRESETS.ALPHA,
+        BATTLELIST_ALLOWED_CHARS,
       ) || [];
     const entries = ocrResults
       .map((result) => {
@@ -327,6 +327,14 @@ async function performOperation() {
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
 
+    // --- BATCHED OCR PROCESSING ---
+    const [battleListEntries, playerNames, npcNames] = await Promise.all([
+      processBattleListOcr(sharedBufferView, regions),
+      processPlayerList(sharedBufferView, regions),
+      processNpcList(sharedBufferView, regions),
+    ]);
+    // --- END BATCHED OCR ---
+
     if (sabStateManager.isLootingRequired()) {
       return; // Do not perform any targeting or creature detection if looting is required
     }
@@ -383,7 +391,7 @@ async function performOperation() {
             sharedBufferView,
             ocrRegion,
             regionDefinitions.gameWorld?.ocrColors || [],
-            CHAR_PRESETS.ALPHA,
+            BATTLELIST_ALLOWED_CHARS,
           ) || [];
         const rawOcrName =
           nameplateOcrResults.length > 0
@@ -608,10 +616,6 @@ async function performOperation() {
     let unifiedTarget = null;
     const battleListRegion = currentState.regionCoordinates.regions.battleList;
     if (gameWorldTarget && battleListRegion) {
-      const battleListEntries = await processBattleListOcr(
-        sharedBufferView,
-        currentState.regionCoordinates.regions,
-      );
       const redColor = [255, 0, 0];
       const redBarSequence = new Array(5).fill(redColor);
       const result = await findSequences.findSequencesNative(
@@ -653,17 +657,12 @@ async function performOperation() {
       lastSentTarget = unifiedTarget;
     }
 
-    const battleListEntriesForStore = await processBattleListOcr(
-      sharedBufferView,
-      currentState.regionCoordinates.regions,
-    );
-
     // --- ATOMIC STATE UPDATE ---
     // Write the complete, consistent world state to the SABs at once.
     sabStateManager.writeWorldState({
       creatures: detectedEntities,
       target: unifiedTarget,
-      battleList: battleListEntriesForStore,
+      battleList: battleListEntries,
     });
 
     // Post updates to the main thread for Redux/UI *after* the SAB is updated.
@@ -681,15 +680,29 @@ async function performOperation() {
         payload: unifiedTarget,
       });
     }
-    postUpdateOnce(
-      'battleList/setBattleListEntries',
-      battleListEntriesForStore,
-    );
+    postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
 
-    if (battleListEntriesForStore.length > 0) {
+    if (battleListEntries.length > 0) {
       parentPort.postMessage({
         storeUpdate: true,
         type: 'battleList/updateLastSeenMs',
+      });
+    }
+
+    // Post player and NPC list updates
+    postUpdateOnce('uiValues/setPlayers', playerNames);
+    if (playerNames.length > 0) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateLastSeenPlayerMs',
+      });
+    }
+
+    postUpdateOnce('uiValues/setNpcs', npcNames);
+    if (npcNames.length > 0) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'uiValues/updateLastSeenNpcMs',
       });
     }
 
@@ -701,7 +714,7 @@ async function performOperation() {
     // 1. Check for decrease in creature counts
     const currentTargetedCreatureCounts = new Map();
     for (const targetingCreature of targetingList) {
-      const count = battleListEntriesForStore.filter((entry) => {
+      const count = battleListEntries.filter((entry) => {
         if (targetingCreature.name === entry.name) return true;
         if (entry.name.endsWith('...')) {
           const truncatedPart = entry.name.slice(0, -3);
@@ -728,7 +741,7 @@ async function performOperation() {
 
     // 2. Check if the explicit target disappeared (can be a fallback)
     if (previousTargetName) {
-      const targetStillPresent = battleListEntriesForStore.some((entry) => {
+      const targetStillPresent = battleListEntries.some((entry) => {
         if (previousTargetName === entry.name) return true;
         if (entry.name.endsWith('...')) {
           const truncatedPart = entry.name.slice(0, -3);

@@ -45,118 +45,13 @@ function postUpdateOnce(type, payload) {
   });
 }
 
-// --- SPECIALIZED REGION PROCESSORS ---
-
-
-
-/**
- * Processes the player list region to extract player names.
- */
-export async function processPlayerList(buffer, regions) {
-  const playerListRegion = regions.playerList;
-  if (
-    !playerListRegion ||
-    !playerListRegion.x ||
-    !playerListRegion.y ||
-    playerListRegion.width <= 0 ||
-    playerListRegion.height <= 0
-  ) {
-    postUpdateOnce('uiValues/setPlayers', []);
-    return;
-  }
-
-  try {
-    const playerOcrColors = regionDefinitions.playerList?.ocrColors || [];
-    const allowedCharsForPlayerList = CHAR_PRESETS.ALPHA + ' ';
-
-    const ocrResults =
-      recognizeText(
-        buffer,
-        playerListRegion,
-        playerOcrColors,
-        allowedCharsForPlayerList,
-      ) || [];
-
-    const playerNames = ocrResults
-      .map((result) => result.text.trim())
-      .filter((name) => name.length > 0);
-
-    postUpdateOnce('uiValues/setPlayers', playerNames);
-    if (playerNames.length > 0) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/updateLastSeenPlayerMs',
-      });
-    }
-  } catch (ocrError) {
-    console.error(
-      '[OcrProcessing] OCR failed for playerList entries:',
-      ocrError,
-    );
-  }
-}
-
-/**
- * Processes the NPC list region to extract NPC names.
- */
-export async function processNpcList(buffer, regions) {
-  const npcListRegion = regions.npcList;
-  if (
-    !npcListRegion ||
-    !npcListRegion.x ||
-    !npcListRegion.y ||
-    npcListRegion.width <= 0 ||
-    npcListRegion.height <= 0
-  ) {
-    postUpdateOnce('uiValues/setNpcs', []);
-    return;
-  }
-
-  try {
-    const npcOcrColors = regionDefinitions.npcList?.ocrColors || [];
-    const allowedCharsForNpcList = CHAR_PRESETS.ALPHA + ' ';
-
-    const ocrResults =
-      recognizeText(
-        buffer,
-        npcListRegion,
-        npcOcrColors,
-        allowedCharsForNpcList,
-      ) || [];
-
-    const npcNames = ocrResults
-      .map((result) => result.text.trim())
-      .filter((name) => name.length > 0);
-
-    postUpdateOnce('uiValues/setNpcs', npcNames);
-    if (npcNames.length > 0) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/updateLastSeenNpcMs',
-      });
-    }
-  } catch (ocrError) {
-    console.error('[OcrProcessing] OCR failed for npcList entries:', ocrError);
-  }
-}
-
 // --- GENERIC OCR REGION PROCESSING ---
 
 export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
   const processingPromises = [];
 
-  if (regionKeys.has('playerList')) {
-    processingPromises.push(processPlayerList(buffer, regions));
-  }
-
-  if (regionKeys.has('npcList')) {
-    processingPromises.push(processNpcList(buffer, regions));
-  }
-
   for (const regionKey of regionKeys) {
-    if (regionKey === 'playerList' || regionKey === 'npcList') continue;
-
     const cfg = OCR_REGION_CONFIGS[regionKey];
     const region = regions[regionKey];
     if (!region || !cfg) continue;
