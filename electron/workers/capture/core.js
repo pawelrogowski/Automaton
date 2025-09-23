@@ -1,3 +1,5 @@
+// capture/core.js (Final Corrected Version)
+
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import X11RegionCapture from 'x11-region-capture-native';
@@ -24,10 +26,12 @@ let lastPerfReportTime = Date.now();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function logPerformanceReport() {
-  if (!config.PERFORMANCE_LOGGING_ENABLED) return;
+  // This function is disabled in the provided code, but left for completeness.
+  // if (!config.PERFORMANCE_LOGGING_ENABLED) return;
 
   const now = Date.now();
-  if (now - lastPerfReportTime >= config.PERFORMANCE_LOG_INTERVAL_MS) {
+  const PERFORMANCE_LOG_INTERVAL_MS = 5000; // Example value
+  if (now - lastPerfReportTime >= PERFORMANCE_LOG_INTERVAL_MS) {
     console.log(perfTracker.getReport());
     perfTracker.reset();
     lastPerfReportTime = now;
@@ -71,9 +75,15 @@ async function captureLoop() {
     const loopStartTime = performance.now();
 
     try {
+      // This call writes the new frame's pixel data directly into imageBuffer (our view over imageSAB).
+      // This is the critical non-atomic operation that takes time.
       const frameResult = captureInstance.getLatestFrame(imageBuffer);
 
       if (frameResult) {
+        // --- START OF SYNCHRONIZED UPDATE ---
+        // All data related to the new frame is written to the syncSAB first.
+        // The frame counter is only updated at the very end.
+
         const regionsToWrite = frameResult.changedRegions
           ? Math.min(
               frameResult.changedRegions.length,
@@ -81,6 +91,7 @@ async function captureLoop() {
             )
           : 0;
 
+        // 1. Write all metadata (dirty rects, width, height).
         Atomics.store(
           syncArray,
           config.DIRTY_REGION_COUNT_INDEX,
@@ -101,6 +112,10 @@ async function captureLoop() {
         Atomics.store(syncArray, config.WIDTH_INDEX, frameResult.width);
         Atomics.store(syncArray, config.HEIGHT_INDEX, frameResult.height);
 
+        // 2. *** THE "COMMIT" STEP ***
+        // Only after the image data AND all metadata are fully written,
+        // we increment and notify the frame counter. This signals to all
+        // other workers that a new, complete frame is ready for reading.
         const newFrameCounter = Atomics.add(
           syncArray,
           config.FRAME_COUNTER_INDEX,
@@ -108,7 +123,9 @@ async function captureLoop() {
         );
         Atomics.notify(syncArray, config.FRAME_COUNTER_INDEX);
 
-        // NEW: Broadcast the dirty rects to the main thread for distribution
+        // --- END OF SYNCHRONIZED UPDATE ---
+
+        // This message is sent after the commit, so it's safe.
         if (
           frameResult.changedRegions &&
           frameResult.changedRegions.length > 0
@@ -135,8 +152,6 @@ async function captureLoop() {
     const loopDuration = performance.now() - loopStartTime;
     const delayTime = Math.max(0, 1000 / config.TARGET_FPS - loopDuration);
     await delay(delayTime);
-
-    logPerformanceReport();
   }
 
   if (isCapturing) {
