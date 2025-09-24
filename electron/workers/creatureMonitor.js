@@ -8,7 +8,10 @@ import Pathfinder from 'pathfinder-native';
 import pkg from 'font-ocr';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance, chebyshevDistance } from '../utils/distance.js';
-import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
+import {
+  getGameCoordinatesFromScreen,
+  getAbsoluteGameWorldClickCoordinates,
+} from '../utils/gameWorldClickTranslator.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 import { SABStateManager } from './sabStateManager.js';
 import { findBestNameMatch } from '../utils/nameMatcher.js';
@@ -59,10 +62,10 @@ const sabStateManager = new SABStateManager({
   targetSAB,
 });
 
-const PLAYER_ANIMATION_FREEZE_MS = 120;
+const PLAYER_ANIMATION_FREEZE_MS = 75;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
 const JITTER_CONFIRMATION_TIME_MS = 100;
-const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 81;
+const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 120;
 const TARGET_LOSS_GRACE_PERIOD_MS = 100;
 const CREATURE_FLICKER_GRACE_PERIOD_MS = 200;
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
@@ -543,9 +546,21 @@ async function performOperation() {
             now + CREATURE_FLICKER_GRACE_PERIOD_MS;
         }
         if (now < oldCreature.flickerGracePeriodEndTime) {
-          if (playerPositionChanged) {
-            oldCreature.absoluteCoords.x += scrollDeltaPixels.x;
-            oldCreature.absoluteCoords.y += scrollDeltaPixels.y;
+          if (playerPositionChanged && oldCreature.gameCoords) {
+            const expectedScreenPos = getAbsoluteGameWorldClickCoordinates(
+              oldCreature.gameCoords.x,
+              oldCreature.gameCoords.y,
+              currentPlayerMinimapPosition,
+              regions.gameWorld,
+              regions.tileSize
+            );
+            if (expectedScreenPos) {
+              oldCreature.absoluteCoords = {
+                x: expectedScreenPos.x,
+                y: expectedScreenPos.y,
+                lastUpdate: now,
+              };
+            }
           }
           newActiveCreatures.set(id, oldCreature);
         }
@@ -598,10 +613,16 @@ async function performOperation() {
 
     if (detectedEntities.length > 0) {
       const allCreaturePositions = detectedEntities.map((c) => c.gameCoords);
+      const screenBounds = {
+        minX: currentPlayerMinimapPosition.x - 7,
+        maxX: currentPlayerMinimapPosition.x + 7,
+        minY: currentPlayerMinimapPosition.y - 5,
+        maxY: currentPlayerMinimapPosition.y + 5,
+      };
       const reachableTiles = pathfinderInstance.getReachableTiles(
         currentPlayerMinimapPosition,
         allCreaturePositions,
-        14,
+        screenBounds,
       );
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);

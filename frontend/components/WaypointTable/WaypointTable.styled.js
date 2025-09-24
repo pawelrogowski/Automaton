@@ -112,11 +112,13 @@ export const StyledWaypointTable = styled.div`
     color: #fafafa;
     font-family: monospace;
     font-size: 11px;
-    border: none;
+    border: 1px solid transparent; /* Start with a transparent border */
     border-radius: 0;
     outline: none;
+    transition: border-color 0.2s ease-in-out, background-color 0.2s ease-in-out;
 
     &:focus {
+      background-color: rgb(45, 45, 45);
       border: 1px solid #007bff;
     }
   }

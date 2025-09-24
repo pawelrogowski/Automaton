@@ -318,8 +318,8 @@ int Pathfinder::_getPathLengthInternal(Napi::Env env, const Node& start, const N
 
 Napi::Value Pathfinder::GetReachableTiles(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsArray() || !info[2].IsNumber()) {
-        Napi::TypeError::New(env, "Expected start node, creature positions array, and max distance").ThrowAsJavaScriptException();
+    if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsArray() || !info[2].IsObject()) {
+        Napi::TypeError::New(env, "Expected start node, creature positions array, and a screenBounds object").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
@@ -343,7 +343,18 @@ Napi::Value Pathfinder::GetReachableTiles(const Napi::CallbackInfo& info) {
         });
     }
 
-    int maxDistance = info[2].As<Napi::Number>().Int32Value();
+    Napi::Object boundsObj = info[2].As<Napi::Object>();
+    struct ScreenBounds {
+        int minX;
+        int maxX;
+        int minY;
+        int maxY;
+    } screenBounds = {
+        boundsObj.Get("minX").As<Napi::Number>().Int32Value(),
+        boundsObj.Get("maxX").As<Napi::Number>().Int32Value(),
+        boundsObj.Get("minY").As<Napi::Number>().Int32Value(),
+        boundsObj.Get("maxY").As<Napi::Number>().Int32Value()
+    };
 
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
@@ -386,7 +397,6 @@ Napi::Value Pathfinder::GetReachableTiles(const Napi::CallbackInfo& info) {
         int currIdx = curr.first;
         int currDist = curr.second;
 
-        if (currDist >= maxDistance) continue;
 
         int cx = currIdx % mapData.width;
         int cy = currIdx / mapData.width;
@@ -396,6 +406,12 @@ Napi::Value Pathfinder::GetReachableTiles(const Napi::CallbackInfo& info) {
             int ny = cy + dy[i];
 
             if (!AStar::inBounds(nx, ny, mapData)) continue;
+
+            int globalX_check = nx + mapData.minX;
+            int globalY_check = ny + mapData.minY;
+            if (globalX_check < screenBounds.minX || globalX_check > screenBounds.maxX || globalY_check < screenBounds.minY || globalY_check > screenBounds.maxY) {
+                continue;
+            }
 
             int nextIdx = ny * mapData.width + nx;
             if (distance.count(nextIdx)) continue;

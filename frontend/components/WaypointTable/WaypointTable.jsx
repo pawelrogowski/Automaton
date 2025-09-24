@@ -583,11 +583,11 @@ const WaypointTable = () => {
   // --- MODIFICATION: Update the column definition to use 'script' ---
   const waypointCols = useMemo(
     () => [
-      { Header: '#', accessor: (r, i) => i + 1, id: 'displayId', width: 39 },
+      { Header: '#', accessor: (r, i) => i + 1, id: 'displayId', width: 40 },
       {
         Header: 'Type',
         accessor: 'type',
-        width: 80,
+        width: 90,
         Cell: EditableSelectCell,
         options: [
           'Node',
@@ -603,22 +603,22 @@ const WaypointTable = () => {
       {
         Header: 'Label',
         accessor: 'label',
-        width: 75,
+        width: 80,
         Cell: EditableStringCell,
       },
       {
         Header: 'Coordinates',
         accessor: 'x',
-        width: 134,
+        width: 140,
         Cell: EditableCoordinatesCell,
       },
       {
         Header: 'Range',
         accessor: 'range',
-        width: 51,
+        width: 60,
         Cell: EditableNumberCell,
       },
-      { Header: 'Script', accessor: 'script', width: 275, Cell: LuaScriptCell }, // Header, accessor, and Cell updated
+      { Header: 'Script', accessor: 'script', width: 280, Cell: LuaScriptCell }, // Header, accessor, and Cell updated
     ],
     [],
   );
@@ -629,37 +629,37 @@ const WaypointTable = () => {
       {
         Header: 'On',
         accessor: 'enabled',
-        width: 35,
+        width: 40,
         Cell: EditableCheckboxCell,
       },
       {
         Header: 'Name',
         accessor: 'name',
-        width: 100,
+        width: 120,
         Cell: EditableStringCell,
       },
       {
         Header: 'Type',
         accessor: 'type',
-        width: 80,
+        width: 90,
         Cell: EditableSelectCell,
         options: ['cavebot', 'targeting'],
       },
       {
         Header: 'Coordinates',
         accessor: 'x',
-        width: 134,
+        width: 140,
         Cell: EditableCoordinatesCell,
       },
-      { Header: 'W', accessor: 'sizeX', width: 45, Cell: EditableNumberCell },
-      { Header: 'H', accessor: 'sizeY', width: 45, Cell: EditableNumberCell },
+      { Header: 'W', accessor: 'sizeX', width: 50, Cell: EditableNumberCell },
+      { Header: 'H', accessor: 'sizeY', width: 50, Cell: EditableNumberCell },
       {
         Header: 'Avoidance',
         accessor: 'avoidance',
-        width: 70,
+        width: 80,
         Cell: EditableNumberCell,
       },
-      { Header: '', id: 'actions', width: 45, Cell: ActionCell },
+      { Header: '', id: 'actions', width: 50, Cell: ActionCell },
     ],
     [],
   );

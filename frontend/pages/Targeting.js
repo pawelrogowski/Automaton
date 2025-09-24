@@ -10,8 +10,6 @@ import {
 } from 'react-feather';
 import StyledTargeting from './Targeting.styled.js';
 import TargetingTable from '../components/TargetingTable/TargetingTable.jsx';
-import SelectControl from '../components/NodeRangeControl/SelectControl.jsx';
-import { setUseBattleList } from '../redux/slices/targetingSlice.js';
 import { StyledWaypointTable } from '../components/WaypointTable/WaypointTable.styled.js';
 
 const TargetingContainer = styled.div`
@@ -38,21 +36,24 @@ const SideColumn = styled.div`
 `;
 
 const CreatureList = () => {
-  const { creatures, target } = useSelector((state) => state.targeting);
+  const { creatures, target, targetingList } = useSelector(
+    (state) => state.targeting,
+  );
   const { dynamicTarget } = useSelector((state) => state.cavebot);
   const pathfindingTargetId = dynamicTarget?.targetInstanceId;
   const currentTargetId = target?.instanceId;
 
   const data = useMemo(() => {
-    return [...creatures].sort((a, b) => {
-      if (a.distance < b.distance) return -1;
-      if (a.distance > b.distance) return 1;
-      return a.instanceId - b.instanceId;
-    });
+    return [...creatures].sort((a, b) => a.instanceId - b.instanceId);
   }, [creatures]);
 
   const columns = useMemo(
     () => [
+      {
+        Header: 'ID',
+        accessor: 'instanceId',
+        width: 40,
+      },
       {
         Header: 'Name',
         accessor: 'name',
@@ -123,10 +124,22 @@ const CreatureList = () => {
         <div {...getTableBodyProps()} className="tbody">
           {rows.map((row) => {
             prepareRow(row);
-            const isUnreachable = !row.original.isReachable;
-            const rowStyle = isUnreachable
-              ? { color: '#777', fontStyle: 'italic' }
-              : {};
+            const creature = row.original;
+            const isUnreachable = !creature.isReachable;
+            const isBlocking = creature.isBlockingPath;
+            const isTargeted = targetingList.some(
+              (t) => t.name === creature.name,
+            );
+
+            let rowStyle = {};
+            if (isUnreachable) {
+              rowStyle = { color: 'red', fontStyle: 'italic' };
+            } else if (isBlocking) {
+              rowStyle = { color: 'blue' };
+            } else if (!isTargeted) {
+              rowStyle = { color: '#777', fontStyle: 'italic' };
+            }
+
             return (
               <div {...row.getRowProps({ style: rowStyle })} className="tr">
                 {row.cells.map((cell) => (
@@ -144,38 +157,16 @@ const CreatureList = () => {
 };
 
 const Targeting = () => {
-  const dispatch = useDispatch();
-  const { target, useBattleList } = useSelector((state) => state.targeting);
-
-  const handleUseBattleListChange = (value) => {
-    dispatch(setUseBattleList(value));
-  };
-
   return (
     <StyledTargeting>
       <TargetingContainer>
         <MainColumn>
-          <div className="settings-container">
-            <div className="setting-row">
-              <SelectControl
-                label="Use BattleList"
-                value={useBattleList}
-                onChange={handleUseBattleListChange}
-                options={[
-                  { value: true, label: 'Yes' },
-                  { value: false, label: 'No' },
-                ]}
-              />
-            </div>
-          </div>
           <TargetingTable />
         </MainColumn>
         <SideColumn>
           <CreatureList />
         </SideColumn>
       </TargetingContainer>
-
-      
     </StyledTargeting>
   );
 };
