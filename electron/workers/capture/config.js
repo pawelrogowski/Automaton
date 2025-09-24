@@ -11,4 +11,4 @@ export const DIRTY_REGIONS_START_INDEX = 6;
 
 // --- Capture Limits ---
 // This must match the value used when creating the SharedArrayBuffer
-export const MAX_DIRTY_REGIONS = 500;
+export const MAX_DIRTY_REGIONS = 100;

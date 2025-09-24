@@ -31,7 +31,7 @@ const chebyshevDistance = (p1, p2) => {
 
 // Core configuration
 const config = {
-  mainLoopIntervalMs: 25,
+  mainLoopIntervalMs: 100,
   stateChangePollIntervalMs: 25,
   mainLoopErrorDelayMs: 1000,
 };

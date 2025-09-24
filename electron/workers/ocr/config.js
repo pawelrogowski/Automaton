@@ -56,12 +56,4 @@ export const OCR_REGION_CONFIGS = {
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
     throttleMs: 2000, // NEW
   },
-  // REMOVED BATTLE LIST FROM GENERIC CONFIG
-  gameWorld: {
-    colors: regionDefinitions.gameWorld?.ocrColors,
-    parser: regionParsers.gameWorld,
-    storeAction: 'ocr/setOcrRegionsText',
-    allowedChars: CHAR_PRESETS.ALPHA + ' ',
-    throttleMs: 0, // NEW
-  },
 };

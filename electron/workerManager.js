@@ -243,7 +243,7 @@ class WorkerManager {
   createSharedBuffers() {
     const maxImageSize = 3840 * 2160 * 4;
     const imageSAB = new SharedArrayBuffer(maxImageSize);
-    const MAX_DIRTY_REGIONS = 500;
+    const MAX_DIRTY_REGIONS = 100;
     const SYNC_BUFFER_SIZE = 5 + 1 + MAX_DIRTY_REGIONS * 4;
     const syncSAB = new SharedArrayBuffer(
       SYNC_BUFFER_SIZE * Int32Array.BYTES_PER_ELEMENT,
