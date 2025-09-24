@@ -46,6 +46,7 @@ import {
   PATH_START_X_INDEX,
   PATH_START_Y_INDEX,
   PATH_START_Z_INDEX,
+  CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX,
 } from './sharedConstants.js';
 
 const hpStringToCode = {
@@ -571,5 +572,23 @@ export class SABStateManager {
 
     // Atomically increment the main world state counter to signal a consistent write.
     Atomics.add(this.creaturesArray, WORLD_STATE_UPDATE_COUNTER_INDEX, 1);
+  }
+
+  // --- Creature Monitor Handshake ---
+  writeCreatureMonitorLastProcessedZ(zLevel) {
+    if (!this.creaturesArray) return;
+    Atomics.store(
+      this.creaturesArray,
+      CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX,
+      zLevel,
+    );
+  }
+
+  readCreatureMonitorLastProcessedZ() {
+    if (!this.creaturesArray) return null;
+    return Atomics.load(
+      this.creaturesArray,
+      CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX,
+    );
   }
 }

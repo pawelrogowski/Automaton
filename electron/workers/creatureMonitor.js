@@ -308,6 +308,8 @@ async function performOperation() {
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
 
+    const zLevelAtScanStart = Atomics.load(playerPosArray, PLAYER_Z_INDEX);
+
     let battleListEntries = lastBattleListEntries;
     let playerNames = lastPlayerNames;
     let npcNames = lastNpcNames;
@@ -746,6 +748,8 @@ async function performOperation() {
       target: unifiedTarget,
       battleList: battleListEntries,
     });
+
+    sabStateManager.writeCreatureMonitorLastProcessedZ(zLevelAtScanStart);
 
     postUpdateOnce('targeting/setTarget', unifiedTarget);
     postUpdateOnce('battleList/setBattleListEntries', battleListEntries);

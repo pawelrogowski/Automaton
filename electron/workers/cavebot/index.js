@@ -54,6 +54,7 @@ const workerState = {
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   pathfinderInstance: null,
+  creatureMonitorSyncTimeout: 0,
   // Unstuck mechanism state
   standStillTimer: 0,
   lastPlayerPosForTimer: null,
@@ -241,7 +242,15 @@ async function performOperation(deltaTime) {
     return;
   }
 
-  if (controlState !== 'CAVEBOT') {
+  if (workerState.fsmState === 'WAITING_FOR_CREATURE_MONITOR_SYNC') {
+    if (controlState !== 'CAVEBOT' && workerState.lastControlState === 'CAVEBOT') {
+      workerState.logger(
+        'info',
+        `[Cavebot] Control lost during CreatureMonitor sync. Current state: ${controlState}. Will not reset FSM.`,
+      );
+    }
+    workerState.lastControlState = controlState;
+  } else if (controlState !== 'CAVEBOT') {
     if (workerState.lastControlState === 'CAVEBOT') {
       workerState.logger(
         'info',

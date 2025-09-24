@@ -343,22 +343,28 @@ export function createFsm(workerState, config) {
         if (actionSucceeded) {
           logger(
             'debug',
-            `[FSM] Action '${targetWaypoint.type}' succeeded. Advancing to next waypoint.`,
+            `[FSM] Action '${targetWaypoint.type}' succeeded.`,
           );
           if (
             getDistance(workerState.playerMinimapPosition, targetWaypoint) >=
-            config.teleportDistanceThreshold
+              config.teleportDistanceThreshold ||
+            targetWaypoint.type === 'Ladder' || // Explicitly include Ladder type
+            targetWaypoint.type === 'Rope' ||
+            targetWaypoint.type === 'Shovel'
           ) {
             logger(
               'debug',
-              '[FSM] Teleport distance detected, applying grace period.',
+              '[FSM] Teleport-like action detected, transitioning to WAITING_FOR_CREATURE_MONITOR_SYNC.',
             );
-            // After a teleport-like action, give grace
-            workerState.floorChangeGraceUntil =
-              Date.now() + config.postTeleportGraceMs;
+            return 'WAITING_FOR_CREATURE_MONITOR_SYNC';
+          } else {
+            logger(
+              'debug',
+              '[FSM] Actionless waypoint reached. Advancing to next.',
+            );
+            await advanceToNextWaypoint(workerState, config);
+            return 'IDLE';
           }
-          await advanceToNextWaypoint(workerState, config);
-          return 'IDLE';
         } else {
           logger(
             'warn',
@@ -371,6 +377,51 @@ export function createFsm(workerState, config) {
           await delay(config.actionFailureRetryDelayMs);
           return 'EVALUATING_WAYPOINT';
         }
+      },
+    },
+    WAITING_FOR_CREATURE_MONITOR_SYNC: {
+      enter: () => {
+        logger(
+          'debug',
+          '[FSM] Entering WAITING_FOR_CREATURE_MONITOR_SYNC state.',
+        );
+        postStoreUpdate('cavebot/setActionPaused', true); // Keep cavebot actions paused
+        workerState.creatureMonitorSyncTimeout =
+          Date.now() + config.creatureMonitorSyncTimeoutMs; // Set timeout
+      },
+      execute: async (context) => {
+        const { playerPos } = context;
+        const now = Date.now();
+
+        // Check for timeout
+        if (now >= workerState.creatureMonitorSyncTimeout) {
+          logger(
+            'warn',
+            '[FSM] Timeout waiting for CreatureMonitor sync. Proceeding without explicit confirmation.',
+          );
+          await advanceToNextWaypoint(workerState, config); // Proceed anyway
+          return 'IDLE';
+        }
+
+        // Read the last processed Z-level from CreatureMonitor via SAB
+        const lastProcessedZ =
+          workerState.sabStateManager.readCreatureMonitorLastProcessedZ();
+
+        if (lastProcessedZ === playerPos.z) {
+          logger(
+            'info',
+            '[FSM] CreatureMonitor sync confirmed for current Z-level. Advancing waypoint.',
+          );
+          await advanceToNextWaypoint(workerState, config);
+          return 'IDLE';
+        }
+
+        logger(
+          'debug',
+          '[FSM] Waiting for CreatureMonitor to sync for current Z-level.',
+        );
+        await delay(config.stateChangePollIntervalMs); // Poll frequently
+        return 'WAITING_FOR_CREATURE_MONITOR_SYNC'; // Stay in this state
       },
     },
     EXECUTING_SCRIPT: {

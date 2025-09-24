@@ -35,4 +35,5 @@ export const config = {
     machete: 'n',
     shovel: 'v',
   },
+  creatureMonitorSyncTimeoutMs: 1000, // Timeout for CreatureMonitor Z-level sync
 };
