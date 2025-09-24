@@ -195,7 +195,7 @@ export function createTargetingActions(workerContext) {
     // If we are targeting *something* and it's a valid creature from our list,
     // be patient and don't press Tab. The selectBestTarget logic will now
     // force the pathfinder to follow this creature.
-    if (currentTarget) {
+    if (currentTarget && currentTarget.isReachable) {
       const isCurrentTargetInList = targetingList.some(
         (rule) => rule.name === currentTarget.name && rule.action === 'Attack',
       );
