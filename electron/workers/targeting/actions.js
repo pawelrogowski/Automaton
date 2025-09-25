@@ -96,6 +96,7 @@ export function createTargetingActions(workerContext) {
   const selectBestTarget = (globalState, currentPathfindingTarget) => {
     const { targetingList } = globalState.targeting;
     const creatures = sabStateManager.getCreatures();
+    const currentTarget = sabStateManager.getCurrentTarget();
 
     if (!targetingList?.length || !creatures?.length) {
       return { creature: null, rule: null };
@@ -155,8 +156,25 @@ export function createTargetingActions(workerContext) {
     validCandidates.sort((a, b) => a.score - b.score);
 
     const bestCandidate = validCandidates[0];
-    const bestTarget = bestCandidate.creature;
+    let bestTarget = bestCandidate.creature;
     const bestRule = bestCandidate.rule;
+
+    // "Same Name" Stability Logic
+    if (
+      currentTarget &&
+      bestTarget &&
+      currentTarget.name === bestTarget.name &&
+      currentTarget.instanceId !== bestTarget.instanceId
+    ) {
+      // If the best candidate has the same name as our current target,
+      // just stick with the current target to prevent thrashing.
+      const currentTargetDetails = creatures.find(
+        (c) => c.instanceId === currentTarget.instanceId,
+      );
+      if (currentTargetDetails) {
+        bestTarget = currentTargetDetails;
+      }
+    }
 
     if (bestTarget && bestTarget.instanceId !== previousSelectedTargetId) {
       logger(
@@ -195,21 +213,10 @@ export function createTargetingActions(workerContext) {
     );
 
     if (potentialEntries.length > 0) {
-      let bestEntry = potentialEntries[0];
-      if (potentialEntries.length > 1) {
-        // Find the battle list entry that is physically closest to the on-screen creature
-        let minDistance = Infinity;
-        for (const entry of potentialEntries) {
-          const dist = Math.sqrt(
-            Math.pow(entry.x - pathfindingTarget.absoluteCoords.x, 2) +
-              Math.pow(entry.y - pathfindingTarget.absoluteCoords.y, 2),
-          );
-          if (dist < minDistance) {
-            minDistance = dist;
-            bestEntry = entry;
-          }
-        }
-      }
+      // Find the entry that is highest on the screen (lowest y-coordinate)
+      const bestEntry = potentialEntries.reduce((prev, curr) => {
+        return prev.y < curr.y ? prev : curr;
+      });
 
       targetingContext.acquisitionUnlockTime =
         now + TARGET_ACQUISITION_COOLDOWN_MS;
@@ -226,7 +233,7 @@ export function createTargetingActions(workerContext) {
       });
 
       // Wait for the game to update the target before proceeding.
-      await awaitTargetConfirmation(pathfindingTarget.instanceId, 400);
+      await awaitTargetConfirmation(pathfindingTarget.instanceId, 750);
     }
   };
 
