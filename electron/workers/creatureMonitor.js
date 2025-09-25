@@ -756,7 +756,11 @@ async function performOperation() {
 
     let unifiedTarget = null;
     const battleListRegion = currentState.regionCoordinates.regions.battleList;
-    if (gameWorldTarget && battleListRegion) {
+
+    // --- Two-Factor Target Confirmation ---
+    // First, check the battle list for a red bar. This is a very reliable signal.
+    let battleListTargetName = null;
+    if (battleListRegion) {
       const redColor = [255, 0, 0];
       const redBarSequence = new Array(5).fill(redColor);
       const result = await findSequences.findSequencesNative(
@@ -777,8 +781,36 @@ async function performOperation() {
             closestEntry = entry;
           }
         }
-        if (closestEntry)
-          unifiedTarget = { ...gameWorldTarget, name: closestEntry.name };
+        if (closestEntry) {
+          battleListTargetName = closestEntry.name;
+        }
+      }
+    }
+
+    // Now, reconcile with the game world target.
+    if (gameWorldTarget && battleListTargetName) {
+      // If both agree (or we trust the battle list's name), create the target.
+      unifiedTarget = { ...gameWorldTarget, name: battleListTargetName };
+    } else if (gameWorldTarget && !battleListTargetName) {
+      // Game world has a target, but battle list doesn't. This can happen
+      // during quick switches. We trust the game world's instanceId but
+      // wait for the battle list to catch up for the name.
+      unifiedTarget = gameWorldTarget;
+    } else if (!gameWorldTarget && battleListTargetName) {
+      // Red box flickered, but battle list is still solid. Find the creature
+      // on screen that matches the name and re-establish it as the target.
+      const matchingCreature = detectedEntities.find(
+        (c) => c.name === battleListTargetName,
+      );
+      if (matchingCreature) {
+        unifiedTarget = {
+          instanceId: matchingCreature.instanceId,
+          name: matchingCreature.name || null,
+          hp: matchingCreature.hp || null,
+          distance: parseFloat(matchingCreature.distance.toFixed(1)),
+          gameCoordinates: matchingCreature.gameCoords,
+          isReachable: matchingCreature.isReachable,
+        };
       }
     }
 

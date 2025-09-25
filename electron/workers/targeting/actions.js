@@ -11,7 +11,22 @@ const CLICK_POLL_INTERVAL_MS = 5;
 const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
 const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
-const TARGET_ACQUISITION_COOLDOWN_MS = 250; // Cooldown between tab presses
+
+// --- Target Acquisition Settings ---
+
+// The maximum time to wait for the creatureMonitor to confirm that the
+// in-game target has changed after clicking on a battle list entry.
+// If the target is not confirmed within this window, the acquisition attempt
+// is considered complete, and the main targeting loop will re-evaluate.
+const TARGET_CONFIRMATION_TIMEOUT_MS = 750;
+
+// A mandatory cooldown period between attempts to acquire a target by clicking
+// the battle list. This is set *before* the click is sent. Its primary
+// purpose is to prevent the bot from spam-clicking the battle list if a
+// target is difficult to acquire (e.g., due to game lag or OCR issues).
+// A side effect is that after a quick kill, the bot must wait for this
+// cooldown to expire before attempting to target the next creature.
+const TARGET_ACQUISITION_COOLDOWN_MS = 250;
 
 export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort, sabStateManager } =
@@ -197,7 +212,7 @@ export function createTargetingActions(workerContext) {
 
     if (!pathfindingTarget) return;
 
-    // Guard: Do not click if the desired target is already the in-game target.
+    // Guard: If we already have the correct target, do nothing.
     if (
       currentTarget &&
       currentTarget.instanceId === pathfindingTarget.instanceId
@@ -208,32 +223,59 @@ export function createTargetingActions(workerContext) {
     const now = Date.now();
     if (now < targetingContext.acquisitionUnlockTime) return;
 
-    const potentialEntries = battleList.filter(
-      (entry) => entry.name === pathfindingTarget.name,
-    );
+    // Find all battle list entries that match the target's name
+    const potentialEntries = battleList
+      .map((entry, index) => ({ ...entry, index })) // Preserve original index
+      .filter((entry) => entry.name === pathfindingTarget.name);
 
-    if (potentialEntries.length > 0) {
-      // Find the entry that is highest on the screen (lowest y-coordinate)
-      const bestEntry = potentialEntries.reduce((prev, curr) => {
-        return prev.y < curr.y ? prev : curr;
-      });
+    if (potentialEntries.length === 0) {
+      return; // No entries to click
+    }
+
+    // Find the best, untried entry by correlating screen position
+    let bestUntriedEntry = null;
+    let minDistance = Infinity;
+
+    for (const entry of potentialEntries) {
+      const coordString = `${entry.x},${entry.y}`;
+      if (targetingContext.attemptedClickCoords.has(coordString)) {
+        continue; // Skip entries we've already tried for this instance
+      }
+
+      const dist = Math.sqrt(
+        Math.pow(entry.x - pathfindingTarget.absoluteCoords.x, 2) +
+          Math.pow(entry.y - pathfindingTarget.absoluteCoords.y, 2),
+      );
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestUntriedEntry = entry;
+      }
+    }
+
+    if (bestUntriedEntry) {
+      const coordString = `${bestUntriedEntry.x},${bestUntriedEntry.y}`;
+      targetingContext.attemptedClickCoords.add(coordString); // Mark this coord as attempted
 
       targetingContext.acquisitionUnlockTime =
         now + TARGET_ACQUISITION_COOLDOWN_MS;
 
       logger(
         'info',
-        `[Targeting] Attempting to acquire target ${pathfindingTarget.name} by clicking battle list at ${bestEntry.x},${bestEntry.y}.`,
+        `[Targeting] Attempting to acquire ${pathfindingTarget.name} (instance #${pathfindingTarget.instanceId}) by clicking battle list at ${coordString}.`,
       );
 
       postInputAction('hotkey', {
         module: 'mouseController',
         method: 'leftClick',
-        args: [bestEntry.x, bestEntry.y],
+        args: [bestUntriedEntry.x, bestUntriedEntry.y],
       });
 
       // Wait for the game to update the target before proceeding.
-      await awaitTargetConfirmation(pathfindingTarget.instanceId, 750);
+      await awaitTargetConfirmation(
+        pathfindingTarget.instanceId,
+        TARGET_CONFIRMATION_TIMEOUT_MS,
+      );
     }
   };
 

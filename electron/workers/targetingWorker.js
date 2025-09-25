@@ -62,6 +62,9 @@ const targetingContext = {
   lastMovementTime: 0,
   lastDispatchedVisitedTile: null,
   lastClickTime: 0,
+  // State for iterative clicking
+  currentTargetInstanceId: null,
+  attemptedClickCoords: new Set(),
 };
 
 // Control state tracking
@@ -242,6 +245,12 @@ async function performTargeting() {
       targetingContext.pathfindingTarget,
     ) || {};
   targetingContext.pathfindingTarget = creature;
+
+  // If the target instance has changed, clear our memory of attempted clicks
+  if (targetingContext.pathfindingTarget?.instanceId !== targetingContext.currentTargetInstanceId) {
+    targetingContext.attemptedClickCoords.clear();
+    targetingContext.currentTargetInstanceId = targetingContext.pathfindingTarget?.instanceId;
+  }
 
   // If the target has changed, clear the old path immediately to prevent a stale move
   if (creature?.instanceId !== previousTargetId) {
