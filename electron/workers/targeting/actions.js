@@ -108,7 +108,11 @@ export function createTargetingActions(workerContext) {
   // =================================================================================
   // --- FINAL selectBestTarget FUNCTION with TARGET SYNCHRONIZATION ---
   // =================================================================================
-  const selectBestTarget = (globalState, currentPathfindingTarget) => {
+  const selectBestTarget = (
+    globalState,
+    currentPathfindingTarget,
+    targetingContext,
+  ) => {
     const { targetingList } = globalState.targeting;
     const creatures = sabStateManager.getCreatures();
     const currentTarget = sabStateManager.getCurrentTarget();
@@ -209,6 +213,7 @@ export function createTargetingActions(workerContext) {
   ) => {
     const currentTarget = sabStateManager.getCurrentTarget();
     const battleList = sabStateManager.getBattleList();
+    const creatures = sabStateManager.getCreatures();
 
     if (!pathfindingTarget) return;
 
@@ -224,42 +229,56 @@ export function createTargetingActions(workerContext) {
     if (now < targetingContext.acquisitionUnlockTime) return;
 
     // Find all battle list entries that match the target's name
+    const cycleState = targetingContext.ambiguousTargetCycle.get(
+      pathfindingTarget.name,
+    );
+    if (!cycleState) return; // Should not happen if worker logic is correct
+
+    // Find all battle list entries that match the target's name and have not been tried yet.
     const potentialEntries = battleList
       .map((entry, index) => ({ ...entry, index })) // Preserve original index
-      .filter((entry) => entry.name === pathfindingTarget.name);
-
-    if (potentialEntries.length === 0) {
-      return; // No entries to click
-    }
-
-    // Find the best, untried entry by correlating screen position
-    let bestUntriedEntry = null;
-    let minDistance = Infinity;
-
-    for (const entry of potentialEntries) {
-      const coordString = `${entry.x},${entry.y}`;
-      if (targetingContext.attemptedClickCoords.has(coordString)) {
-        continue; // Skip entries we've already tried for this instance
-      }
-
-      const dist = Math.sqrt(
-        Math.pow(entry.x - pathfindingTarget.absoluteCoords.x, 2) +
-          Math.pow(entry.y - pathfindingTarget.absoluteCoords.y, 2),
+      .filter(
+        (entry) =>
+          entry.name === pathfindingTarget.name && !cycleState.has(entry.index),
       );
 
-      if (dist < minDistance) {
-        minDistance = dist;
-        bestUntriedEntry = entry;
+    if (potentialEntries.length === 0) {
+      return; // No new entries to try in this cycle.
+    }
+
+    // --- Find the best candidate to click ---
+    // The goal is to find the battle list entry that most likely corresponds to our
+    // desired pathfindingTarget instance.
+    let bestUntriedEntry = null;
+    if (potentialEntries.length === 1) {
+      bestUntriedEntry = potentialEntries[0];
+    } else {
+      // Disambiguate by finding the creature on screen that is closest to a battle list entry.
+      // This is imperfect but the best heuristic we have.
+      let minDistance = Infinity;
+      for (const entry of potentialEntries) {
+        for (const creature of creatures) {
+          if (creature.name === entry.name) {
+            const dist = Math.sqrt(
+              Math.pow(entry.x - creature.absoluteCoords.x, 2) +
+                Math.pow(entry.y - creature.absoluteCoords.y, 2),
+            );
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestUntriedEntry = entry;
+            }
+          }
+        }
       }
     }
 
     if (bestUntriedEntry) {
-      const coordString = `${bestUntriedEntry.x},${bestUntriedEntry.y}`;
-      targetingContext.attemptedClickCoords.add(coordString); // Mark this coord as attempted
+      cycleState.add(bestUntriedEntry.index); // Mark this index as attempted for this name.
 
       targetingContext.acquisitionUnlockTime =
         now + TARGET_ACQUISITION_COOLDOWN_MS;
 
+      const coordString = `${bestUntriedEntry.x},${bestUntriedEntry.y}`;
       logger(
         'info',
         `[Targeting] Attempting to acquire ${pathfindingTarget.name} (instance #${pathfindingTarget.instanceId}) by clicking battle list at ${coordString}.`,

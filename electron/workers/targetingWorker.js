@@ -64,7 +64,10 @@ const targetingContext = {
   lastClickTime: 0,
   // State for iterative clicking
   currentTargetInstanceId: null,
-  attemptedClickCoords: new Set(),
+  // Stores the cycling state for ambiguous targets (multiple creatures of the same name).
+  // Key: creature name (e.g., "Orc Berserker")
+  // Value: A Set of battle list indices that have been attempted for this name.
+  ambiguousTargetCycle: new Map(),
 };
 
 // Control state tracking
@@ -237,6 +240,25 @@ async function performTargeting() {
     return;
   }
 
+  // --- State Sanity Check ---
+  // If our intended target (pathfindingTarget) is out of sync with the actual
+  // in-game target (from the SAB), it means the state has become corrupted.
+  // This can happen if the player manually changes targets or if the game
+  // auto-targets a new creature upon the previous one's death.
+  // To recover, we must aggressively reset our intention.
+  const currentTarget = sabStateManager.getCurrentTarget();
+  if (
+    targetingContext.pathfindingTarget &&
+    (!currentTarget ||
+      currentTarget.instanceId !== targetingContext.pathfindingTarget.instanceId)
+  ) {
+    logger(
+      'info',
+      '[TargetingWorker] Desync detected. Resetting pathfinding target.',
+    );
+    targetingContext.pathfindingTarget = null; // Force re-evaluation
+  }
+
   // Always evaluate target selection
   const previousTargetId = targetingContext.pathfindingTarget?.instanceId;
   const { creature, rule } =
@@ -246,10 +268,17 @@ async function performTargeting() {
     ) || {};
   targetingContext.pathfindingTarget = creature;
 
-  // If the target instance has changed, clear our memory of attempted clicks
-  if (targetingContext.pathfindingTarget?.instanceId !== targetingContext.currentTargetInstanceId) {
-    targetingContext.attemptedClickCoords.clear();
-    targetingContext.currentTargetInstanceId = targetingContext.pathfindingTarget?.instanceId;
+  // If the target's name has changed, we must reset the cycling state for the old name.
+  const previousTargetName = targetingContext.ambiguousTargetCycle.get('name');
+  if (creature?.name !== previousTargetName) {
+    if (previousTargetName) {
+      targetingContext.ambiguousTargetCycle.delete(previousTargetName);
+    }
+    // Initialize the cycle state for the new creature name.
+    if (creature) {
+      targetingContext.ambiguousTargetCycle.set('name', creature.name);
+      targetingContext.ambiguousTargetCycle.set(creature.name, new Set());
+    }
   }
 
   // If the target has changed, clear the old path immediately to prevent a stale move
@@ -303,6 +332,31 @@ async function performTargeting() {
     targetingContext.pathfindingTarget,
     globalState,
   );
+
+  // --- Cycle Restart Logic ---
+  // If we are stuck (have a pathfinding target but no actual target) and we have
+  // tried all available battle list entries for that name, we must restart the cycle.
+  const battleList = sabStateManager.getBattleList();
+  const cycleState = targetingContext.ambiguousTargetCycle.get(
+    targetingContext.pathfindingTarget?.name,
+  );
+
+  if (
+    targetingContext.pathfindingTarget &&
+    !sabStateManager.getCurrentTarget() &&
+    cycleState
+  ) {
+    const potentialEntriesCount = battleList.filter(
+      (entry) => entry.name === targetingContext.pathfindingTarget.name,
+    ).length;
+    if (cycleState.size >= potentialEntriesCount && potentialEntriesCount > 0) {
+      logger(
+        'info',
+        `[TargetingWorker] Exhausted all ${potentialEntriesCount} entries for ${targetingContext.pathfindingTarget.name}. Restarting cycle.`,
+      );
+      cycleState.clear();
+    }
+  }
 
   // Continuous movement management
   await targetingActions.manageMovement(
