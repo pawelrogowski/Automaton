@@ -273,6 +273,7 @@ Napi::Object Pathfinder::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("isReachable", &Pathfinder::IsReachable),
         InstanceMethod("getPathLength", &Pathfinder::GetPathLength),
         InstanceMethod("getReachableTiles", &Pathfinder::GetReachableTiles),
+        InstanceMethod("getBlockingCreature", &Pathfinder::GetBlockingCreature),
         InstanceMethod("destroy", &Pathfinder::Destroy),
         InstanceAccessor("isLoaded", &Pathfinder::IsLoadedGetter, nullptr),
     });
@@ -779,6 +780,80 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
     }
 
     return result;
+}
+
+Napi::Value Pathfinder::GetBlockingCreature(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsObject() || !info[1].IsObject() || !info[2].IsArray()) {
+        Napi::TypeError::New(env, "Expected start node, end node, and creature positions array").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    Napi::Object startObj = info[0].As<Napi::Object>();
+    Node start = {
+        startObj.Get("x").As<Napi::Number>().Int32Value(),
+        startObj.Get("y").As<Napi::Number>().Int32Value(),
+        0, 0, nullptr,
+        startObj.Get("z").As<Napi::Number>().Int32Value()
+    };
+
+    Napi::Object endObj = info[1].As<Napi::Object>();
+    Node end = {
+        endObj.Get("x").As<Napi::Number>().Int32Value(),
+        endObj.Get("y").As<Napi::Number>().Int32Value(),
+        0, 0, nullptr,
+        endObj.Get("z").As<Napi::Number>().Int32Value()
+    };
+
+    Napi::Array creaturePositionsArray = info[2].As<Napi::Array>();
+    std::vector<Node> creaturePositions;
+    for (uint32_t i = 0; i < creaturePositionsArray.Length(); ++i) {
+        Napi::Object creatureObj = creaturePositionsArray.Get(i).As<Napi::Object>();
+        creaturePositions.push_back({
+            creatureObj.Get("x").As<Napi::Number>().Int32Value(),
+            creatureObj.Get("y").As<Napi::Number>().Int32Value(),
+            0, 0, nullptr,
+            creatureObj.Get("z").As<Napi::Number>().Int32Value()
+        });
+    }
+
+    auto it_map = this->allMapData.find(start.z);
+    if (it_map == this->allMapData.end()) {
+        return env.Null();
+    }
+    const MapData& mapData = it_map->second;
+
+    Node localStart = {start.x - mapData.minX, start.y - mapData.minY, 0, 0, nullptr, start.z};
+    Node localEnd = {end.x - mapData.minX, end.y - mapData.minY, 0, 0, nullptr, end.z};
+
+    if (!AStar::inBounds(localStart.x, localStart.y, mapData) || !AStar::inBounds(localEnd.x, localEnd.y, mapData)) {
+        return env.Null();
+    }
+
+    auto it_cache = this->cost_grid_cache.find(start.z);
+    const std::vector<int>& cost_grid = (it_cache != this->cost_grid_cache.end()) ? it_cache->second : std::vector<int>();
+    
+    std::vector<Node> pathResult = AStar::findPathWithCosts(localStart, localEnd, mapData, cost_grid, creaturePositions, [](){});
+
+    if (!pathResult.empty()) {
+        int W = mapData.width;
+        int endIdx = localEnd.y * W + localEnd.x;
+        if (AStar::sb.gScore[endIdx] >= AStar::CREATURE_BLOCK_COST) {
+            for (const auto& p : pathResult) {
+                for (const auto& creature : creaturePositions) {
+                    if (p.x == creature.x - mapData.minX && p.y == creature.y - mapData.minY && creature.z == start.z) {
+                        Napi::Object blockingCreatureCoords = Napi::Object::New(env);
+                        blockingCreatureCoords.Set("x", creature.x);
+                        blockingCreatureCoords.Set("y", creature.y);
+                        blockingCreatureCoords.Set("z", creature.z);
+                        return blockingCreatureCoords;
+                    }
+                }
+            }
+        }
+    }
+
+    return env.Null();
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports) {

@@ -57,6 +57,7 @@ private:
     // NEW: N-API wrapper for path length
     Napi::Value GetPathLength(const Napi::CallbackInfo& info);
     Napi::Value GetReachableTiles(const Napi::CallbackInfo& info);
+    Napi::Value GetBlockingCreature(const Napi::CallbackInfo& info); // New Method
     Napi::Value Destroy(const Napi::CallbackInfo& info);
 
     // Internal State

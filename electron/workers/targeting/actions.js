@@ -96,56 +96,52 @@ export function createTargetingActions(workerContext) {
   const selectBestTarget = (globalState, currentPathfindingTarget) => {
     const { targetingList } = globalState.targeting;
     const creatures = sabStateManager.getCreatures();
-    const currentTarget = sabStateManager.getCurrentTarget();
 
     if (!targetingList?.length || !creatures?.length) {
       return { creature: null, rule: null };
     }
 
-    // --- TARGET SYNCHRONIZATION ---
-    // If we have a red-box target and it's a valid, reachable creature on our list,
-    // ALWAYS prioritize it. This forces pathfinding to sync with the actual target.
-    if (currentTarget) {
-      const currentTargetDetails = creatures.find(
-        (c) => c.instanceId === currentTarget.instanceId,
-      );
-      if (currentTargetDetails && currentTargetDetails.isReachable) {
-        const rule = findRuleForCreature(currentTargetDetails, targetingList);
-        if (rule) {
-          // It's our confirmed, valid, in-game target. Stick to it.
-          return { creature: currentTargetDetails, rule: rule };
-        }
-      }
-    }
-
     const validCandidates = creatures
       .map((creature) => {
         const rule = findRuleForCreature(creature, targetingList);
-        if (!creature.isReachable || !rule) {
+        if (!rule) {
           return null;
         }
 
-        // Calculate an evaluation score, lower is better.
-        let evaluationDistance = creature.distance;
+        if (rule.onlyIfTrapped && !creature.isBlockingPath) {
+          return null;
+        }
 
-        // Apply stickiness bonus if this creature is the current target
+        if (!creature.isReachable) {
+          return null;
+        }
+
+        // Higher priority number means more important (lower score)
+        let score = -rule.priority * 1000;
+
+        // Apply stickiness bonus
         if (
           currentPathfindingTarget &&
           creature.instanceId === currentPathfindingTarget.instanceId
         ) {
-          // Stickiness from 1-10. Each point gives a 7.5% "distance reduction" for evaluation purposes.
-          // This creates a "gravity well" around the current target.
-          const stickinessFactor = 1.0 - (rule.stickiness || 1) * 0.075;
-          evaluationDistance *= stickinessFactor;
+          score -= (rule.stickiness || 0) * 100;
+        }
+
+        // Add distance as a final tie-breaker
+        score += creature.distance;
+
+        // Add a large bonus for adjacent creatures to prevent thrashing
+        if (creature.isAdjacent) {
+          score -= 500;
         }
 
         return {
           creature,
           rule,
-          evaluationDistance,
+          score,
         };
       })
-      .filter(Boolean); // Remove null entries (creatures that weren't valid)
+      .filter(Boolean);
 
     if (validCandidates.length === 0) {
       if (previousSelectedTargetId !== null) {
@@ -155,8 +151,8 @@ export function createTargetingActions(workerContext) {
       return { creature: null, rule: null };
     }
 
-    // Sort by the calculated evaluation distance to find the best candidate
-    validCandidates.sort((a, b) => a.evaluationDistance - b.evaluationDistance);
+    // Sort by score (lower is better)
+    validCandidates.sort((a, b) => a.score - b.score);
 
     const bestCandidate = validCandidates[0];
     const bestTarget = bestCandidate.creature;
@@ -179,12 +175,11 @@ export function createTargetingActions(workerContext) {
     globalState,
   ) => {
     const currentTarget = sabStateManager.getCurrentTarget();
-    const { targetingList } = globalState.targeting;
+    const battleList = sabStateManager.getBattleList();
 
-    // If there's no best target, do nothing.
     if (!pathfindingTarget) return;
 
-    // If we are already targeting the best creature, do nothing.
+    // Guard: Do not click if the desired target is already the in-game target.
     if (
       currentTarget &&
       currentTarget.instanceId === pathfindingTarget.instanceId
@@ -192,38 +187,47 @@ export function createTargetingActions(workerContext) {
       return;
     }
 
-    // If we are targeting *something* and it's a valid creature from our list,
-    // be patient and don't press Tab. The selectBestTarget logic will now
-    // force the pathfinder to follow this creature.
-    if (currentTarget && currentTarget.isReachable) {
-      const isCurrentTargetInList = targetingList.some(
-        (rule) => rule.name === currentTarget.name && rule.action === 'Attack',
-      );
-      if (isCurrentTargetInList) {
-        return;
-      }
-    }
-
-    // If we reach here, it means we either have no target, or our current target
-    // is not on our attack list. In either case, it's safe to press Tab to
-    // acquire a new, better target.
     const now = Date.now();
     if (now < targetingContext.acquisitionUnlockTime) return;
-    targetingContext.acquisitionUnlockTime =
-      now + TARGET_ACQUISITION_COOLDOWN_MS;
 
-    logger(
-      'info',
-      `[Targeting] Attempting to acquire target ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId}). Pressing Tab.`,
+    const potentialEntries = battleList.filter(
+      (entry) => entry.name === pathfindingTarget.name,
     );
-    postInputAction('hotkey', {
-      module: 'keypress',
-      method: 'sendKey',
-      args: ['tab', null],
-    });
 
-    // Wait for the game to update the target, with a timeout.
-    await awaitTargetConfirmation(pathfindingTarget.instanceId, 400);
+    if (potentialEntries.length > 0) {
+      let bestEntry = potentialEntries[0];
+      if (potentialEntries.length > 1) {
+        // Find the battle list entry that is physically closest to the on-screen creature
+        let minDistance = Infinity;
+        for (const entry of potentialEntries) {
+          const dist = Math.sqrt(
+            Math.pow(entry.x - pathfindingTarget.absoluteCoords.x, 2) +
+              Math.pow(entry.y - pathfindingTarget.absoluteCoords.y, 2),
+          );
+          if (dist < minDistance) {
+            minDistance = dist;
+            bestEntry = entry;
+          }
+        }
+      }
+
+      targetingContext.acquisitionUnlockTime =
+        now + TARGET_ACQUISITION_COOLDOWN_MS;
+
+      logger(
+        'info',
+        `[Targeting] Attempting to acquire target ${pathfindingTarget.name} by clicking battle list at ${bestEntry.x},${bestEntry.y}.`,
+      );
+
+      postInputAction('hotkey', {
+        module: 'mouseController',
+        method: 'leftClick',
+        args: [bestEntry.x, bestEntry.y],
+      });
+
+      // Wait for the game to update the target before proceeding.
+      await awaitTargetConfirmation(pathfindingTarget.instanceId, 400);
+    }
   };
 
   const updateDynamicTarget = (pathfindingTarget, rule) => {

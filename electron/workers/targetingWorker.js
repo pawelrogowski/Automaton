@@ -254,6 +254,11 @@ async function performTargeting() {
 
   if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
     if (targetingContext.pathfindingTarget) {
+      // Handover Guard for "onlyIfTrapped" creatures
+      if (rule.onlyIfTrapped && !creature.isBlockingPath) {
+        // Do not request control for a trapper that is not blocking the path
+        return;
+      }
       parentPort.postMessage({
         storeUpdate: true,
         type: 'cavebot/requestTargetingControl',

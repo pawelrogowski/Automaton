@@ -218,6 +218,30 @@ const ActionCell = React.memo(({ row: { original }, onRemove }) => (
   </div>
 ));
 
+const EditableCheckboxCell = React.memo(
+  ({
+    value: initialValue,
+    row: { original },
+    column: { id },
+    updateMyData,
+  }) => {
+    const handleChange = (e) => {
+      updateMyData(original.id, { [id]: e.target.checked });
+    };
+
+    return (
+      <div style={{ textAlign: 'center' }}>
+        <input
+          type="checkbox"
+          checked={initialValue || false}
+          onChange={handleChange}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    );
+  },
+);
+
 // --- Main Table Component ---
 
 const TargetingTable = () => {
@@ -262,6 +286,7 @@ const TargetingTable = () => {
           action: 'Attack',
           healthRange: 'Any',
           stickiness: 2, // Default stickiness
+          onlyIfTrapped: false,
         }),
       );
       setNewCreatureName('');
@@ -318,7 +343,12 @@ const TargetingTable = () => {
         width: 70,
         Cell: (props) => <EditableNumberCell {...props} min={0} max={10} />,
       },
-
+      {
+        Header: 'Trapped Only',
+        accessor: 'onlyIfTrapped',
+        width: 70,
+        Cell: EditableCheckboxCell,
+      },
       {
         Header: '',
         id: 'actions',

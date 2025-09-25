@@ -20,6 +20,9 @@ import {
   CREATURE_IS_ADJACENT_OFFSET,
   CREATURE_DISTANCE_OFFSET,
   CREATURE_HP_OFFSET,
+  CREATURE_IS_BLOCKING_PATH_OFFSET,
+  CREATURE_ABSOLUTE_X_OFFSET,
+  CREATURE_ABSOLUTE_Y_OFFSET,
   CREATURE_NAME_START_OFFSET,
   CREATURE_NAME_LENGTH,
   LOOTING_REQUIRED_INDEX,
@@ -132,13 +135,17 @@ export class SABStateManager {
         BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
       let name = '';
 
-      for (let j = 0; j < BATTLE_LIST_ENTRY_SIZE; j++) {
+      for (let j = 0; j < 32; j++) { // Read name (first 32 ints)
         const charCode = Atomics.load(this.battleListArray, startIdx + j);
         if (charCode === 0) break;
         name += String.fromCharCode(charCode);
       }
 
-      if (name) entries.push({ name });
+      if (name) {
+        const x = Atomics.load(this.battleListArray, startIdx + 32);
+        const y = Atomics.load(this.battleListArray, startIdx + 33);
+        entries.push({ name, x, y });
+      }
     }
 
     return entries;
@@ -155,10 +162,12 @@ export class SABStateManager {
       const startIdx =
         BATTLE_LIST_ENTRIES_START_INDEX + i * BATTLE_LIST_ENTRY_SIZE;
 
-      for (let j = 0; j < BATTLE_LIST_ENTRY_SIZE; j++) {
+      for (let j = 0; j < 32; j++) {
         const charCode = j < name.length ? name.charCodeAt(j) : 0;
         Atomics.store(this.battleListArray, startIdx + j, charCode);
       }
+      Atomics.store(this.battleListArray, startIdx + 32, entries[i].x || 0);
+      Atomics.store(this.battleListArray, startIdx + 33, entries[i].y || 0);
     }
 
     Atomics.add(this.battleListArray, BATTLE_LIST_UPDATE_COUNTER_INDEX, 1);
@@ -201,6 +210,10 @@ export class SABStateManager {
           y: Atomics.load(this.creaturesArray, startIdx + CREATURE_Y_OFFSET),
           z: Atomics.load(this.creaturesArray, startIdx + CREATURE_Z_OFFSET),
         },
+        absoluteCoords: {
+          x: Atomics.load(this.creaturesArray, startIdx + CREATURE_ABSOLUTE_X_OFFSET),
+          y: Atomics.load(this.creaturesArray, startIdx + CREATURE_ABSOLUTE_Y_OFFSET),
+        },
         isReachable:
           Atomics.load(
             this.creaturesArray,
@@ -210,6 +223,11 @@ export class SABStateManager {
           Atomics.load(
             this.creaturesArray,
             startIdx + CREATURE_IS_ADJACENT_OFFSET,
+          ) === 1,
+        isBlockingPath:
+          Atomics.load(
+            this.creaturesArray,
+            startIdx + CREATURE_IS_BLOCKING_PATH_OFFSET,
           ) === 1,
         distance:
           Atomics.load(
@@ -254,6 +272,16 @@ export class SABStateManager {
       );
       Atomics.store(
         this.creaturesArray,
+        startIdx + CREATURE_ABSOLUTE_X_OFFSET,
+        creature.absoluteCoords?.x || 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + CREATURE_ABSOLUTE_Y_OFFSET,
+        creature.absoluteCoords?.y || 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
         startIdx + CREATURE_IS_REACHABLE_OFFSET,
         creature.isReachable ? 1 : 0,
       );
@@ -271,6 +299,11 @@ export class SABStateManager {
         this.creaturesArray,
         startIdx + CREATURE_HP_OFFSET,
         hpStringToCode[creature.hp] ?? 0,
+      );
+      Atomics.store(
+        this.creaturesArray,
+        startIdx + CREATURE_IS_BLOCKING_PATH_OFFSET,
+        creature.isBlockingPath ? 1 : 0,
       );
 
       const name = creature.name || '';
@@ -334,6 +367,7 @@ export class SABStateManager {
       const stickiness = Atomics.load(this.targetingListArray, startIdx + 37);
       const stance = Atomics.load(this.targetingListArray, startIdx + 38);
       const distance = Atomics.load(this.targetingListArray, startIdx + 39);
+      const onlyIfTrapped = Atomics.load(this.targetingListArray, startIdx + 40);
 
       rules.push({
         name,
@@ -349,6 +383,7 @@ export class SABStateManager {
                 ? 'Reach'
                 : 'Follow',
         distance,
+        onlyIfTrapped: onlyIfTrapped === 1,
       });
     }
 
@@ -397,6 +432,11 @@ export class SABStateManager {
             : 0,
       );
       Atomics.store(this.targetingListArray, startIdx + 39, rule.distance || 0);
+      Atomics.store(
+        this.targetingListArray,
+        startIdx + 40,
+        rule.onlyIfTrapped ? 1 : 0,
+      );
     }
 
     Atomics.add(
@@ -517,6 +557,16 @@ export class SABStateManager {
     }
 
     return { path, status, chebyshevDistance, pathStart };
+  }
+
+  getCavebotTargetWaypoint() {
+    if (!this.pathDataArray) return null;
+    // This assumes the pathDataSAB is the single source of truth for the cavebot's destination
+    return {
+      x: Atomics.load(this.pathDataArray, PATH_TARGET_X_INDEX),
+      y: Atomics.load(this.pathDataArray, PATH_TARGET_Y_INDEX),
+      z: Atomics.load(this.pathDataArray, PATH_TARGET_Z_INDEX),
+    };
   }
 
   // --- Utility Methods ---

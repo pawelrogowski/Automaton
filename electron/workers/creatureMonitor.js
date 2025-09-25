@@ -146,7 +146,11 @@ async function processBattleListOcr(buffer, regions) {
       .map((result) => {
         const trimmedName = result.text.trim();
         const fixedName = trimmedName.replace(/([a-z])([A-Z])/g, '$1 $2');
-        return { name: fixedName, x: result.x, y: result.y };
+        return {
+          name: fixedName,
+          x: result.click.x,
+          y: result.click.y,
+        };
       })
       .filter((creature) => creature.name.length > 0);
   } catch (ocrError) {
@@ -515,9 +519,9 @@ async function performOperation() {
       }
 
       if (bestMatch) {
-        let creatureName = oldCreature.name;
+        let creatureName = await performOcrForHealthBar(bestMatch);
         if (!creatureName) {
-          creatureName = await performOcrForHealthBar(bestMatch);
+          creatureName = oldCreature.name;
         }
         const detection = {
           absoluteCoords: { x: bestMatch.x, y: bestMatch.y },
@@ -598,17 +602,52 @@ async function performOperation() {
     activeCreatures = newActiveCreatures;
 
     let detectedEntities = Array.from(activeCreatures.values());
-    let blockingCreatureCoords = null;
-    if (
-      pathDataArray &&
-      Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) ===
-        PATH_STATUS_BLOCKED_BY_CREATURE
-    ) {
-      blockingCreatureCoords = {
-        x: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX),
-        y: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX),
-        z: Atomics.load(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX),
-      };
+    const blockingCreatures = new Set();
+
+    // 1. Check for creatures blocking the cavebot path
+    const cavebotTargetWpt = sabStateManager.getCavebotTargetWaypoint();
+    if (cavebotTargetWpt) {
+      const blockingCavebotCreature = pathfinderInstance.getBlockingCreature(
+        currentPlayerMinimapPosition,
+        cavebotTargetWpt,
+        detectedEntities.map((c) => c.gameCoords),
+      );
+      if (blockingCavebotCreature) {
+        const blocker = detectedEntities.find(
+          (c) =>
+            c.gameCoords.x === blockingCavebotCreature.x &&
+            c.gameCoords.y === blockingCavebotCreature.y &&
+            c.gameCoords.z === blockingCavebotCreature.z,
+        );
+        if (blocker) {
+          blockingCreatures.add(blocker.instanceId);
+        }
+      }
+    }
+
+    // 2. Check for creatures blocking primary targets
+    const primaryTargets = detectedEntities.filter((entity) => {
+      const rule = targetingList.find((r) => r.name === entity.name);
+      return rule && !rule.onlyIfTrapped && entity.isReachable;
+    });
+
+    for (const primaryTarget of primaryTargets) {
+      const blockingTargetCreature = pathfinderInstance.getBlockingCreature(
+        currentPlayerMinimapPosition,
+        primaryTarget.gameCoords,
+        detectedEntities.map((c) => c.gameCoords),
+      );
+      if (blockingTargetCreature) {
+        const blocker = detectedEntities.find(
+          (c) =>
+            c.gameCoords.x === blockingTargetCreature.x &&
+            c.gameCoords.y === blockingTargetCreature.y &&
+            c.gameCoords.z === blockingTargetCreature.z,
+        );
+        if (blocker) {
+          blockingCreatures.add(blocker.instanceId);
+        }
+      }
     }
 
     if (detectedEntities.length > 0) {
@@ -639,12 +678,7 @@ async function performOperation() {
             isAdjacent = true;
           }
         }
-        let isBlockingPath =
-          blockingCreatureCoords && entity.gameCoords
-            ? entity.gameCoords.x === blockingCreatureCoords.x &&
-              entity.gameCoords.y === blockingCreatureCoords.y &&
-              entity.gameCoords.z === blockingCreatureCoords.z
-            : false;
+        const isBlockingPath = blockingCreatures.has(entity.instanceId);
         return { ...entity, isReachable, isAdjacent, isBlockingPath };
       });
     }

@@ -26,6 +26,7 @@ const targetingSlice = createSlice({
             action: 'Attack',
             healthRange: 'Any',
             stickiness: 0,
+            onlyIfTrapped: false, // Add new default
             ...creature,
           }),
         );
@@ -82,6 +83,7 @@ const targetingSlice = createSlice({
         action: 'Attack',
         healthRange: 'Any',
         stickiness: 2,
+        onlyIfTrapped: false, // Add new default
       });
     },
     removeCreatureFromTargetingList: (state, action) => {
@@ -104,6 +106,7 @@ const targetingSlice = createSlice({
         if (updates.stickiness !== undefined) {
           updates.stickiness = parseInt(updates.stickiness, 10) || 0;
         }
+        // No need to parse boolean for onlyIfTrapped, it should be sent correctly from UI
         state.targetingList[creatureIndex] = {
           ...state.targetingList[creatureIndex],
           ...updates,

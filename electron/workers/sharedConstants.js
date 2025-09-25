@@ -36,7 +36,7 @@ export const BATTLE_LIST_COUNT_INDEX = 0;
 export const BATTLE_LIST_UPDATE_COUNTER_INDEX = 1;
 export const BATTLE_LIST_ENTRIES_START_INDEX = 2;
 export const MAX_BATTLE_LIST_ENTRIES = 50;
-export const BATTLE_LIST_ENTRY_SIZE = 32; // 32 chars max per name
+export const BATTLE_LIST_ENTRY_SIZE = 34; // 32 chars for name + x + y
 export const BATTLE_LIST_SAB_SIZE =
   BATTLE_LIST_ENTRIES_START_INDEX +
   MAX_BATTLE_LIST_ENTRIES * BATTLE_LIST_ENTRY_SIZE;
@@ -61,8 +61,8 @@ export const MAX_CREATURES = 100;
 // - distance (1 int, float * 100)
 // - hp (1 int, mapped enum)
 // - name (32 ints, char codes)
-// Total size = 1+3+1+1+1+1+32 = 40
-export const CREATURE_DATA_SIZE = 40;
+// Total size = 1+3+1+1+1+1+1+32 = 41
+export const CREATURE_DATA_SIZE = 43; // Added 2 for absoluteCoords
 
 // Indices within a single creature's data block
 export const CREATURE_INSTANCE_ID_OFFSET = 0;
@@ -73,7 +73,10 @@ export const CREATURE_IS_REACHABLE_OFFSET = 4;
 export const CREATURE_IS_ADJACENT_OFFSET = 5;
 export const CREATURE_DISTANCE_OFFSET = 6;
 export const CREATURE_HP_OFFSET = 7;
-export const CREATURE_NAME_START_OFFSET = 8;
+export const CREATURE_IS_BLOCKING_PATH_OFFSET = 8;
+export const CREATURE_ABSOLUTE_X_OFFSET = 9;
+export const CREATURE_ABSOLUTE_Y_OFFSET = 10;
+export const CREATURE_NAME_START_OFFSET = 11;
 export const CREATURE_NAME_LENGTH = 32;
 
 export const CREATURES_SAB_SIZE =
@@ -93,7 +96,7 @@ export const TARGETING_LIST_COUNT_INDEX = 0;
 export const TARGETING_LIST_UPDATE_COUNTER_INDEX = 1;
 export const TARGETING_LIST_DATA_START_INDEX = 2;
 export const MAX_TARGETING_RULES = 50;
-export const TARGETING_RULE_SIZE = 40; // name(32) + action(4) + priority(1) + stickiness(1) + stance(1) + distance(1)
+export const TARGETING_RULE_SIZE = 41; // name(32) + action(4) + priority(1) + stickiness(1) + stance(1) + distance(1) + onlyIfTrapped(1)
 export const TARGETING_LIST_SAB_SIZE =
   TARGETING_LIST_DATA_START_INDEX + MAX_TARGETING_RULES * TARGETING_RULE_SIZE;
 
