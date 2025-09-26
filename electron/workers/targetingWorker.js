@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
-import { createTargetingActions } from './targeting/actions.js';
+import { createTargetingActions,createAmbiguousAcquirer } from './targeting/actions.js';
 import { SABStateManager } from './sabStateManager.js';
 import { performance } from 'perf_hooks';
 import {
@@ -17,7 +17,8 @@ import {
   WORLD_STATE_UPDATE_COUNTER_INDEX,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
+
+const logger = createLogger({ info: true, error: true, debug: true });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const chebyshevDistance = (p1, p2) => {
@@ -29,14 +30,14 @@ const chebyshevDistance = (p1, p2) => {
   );
 };
 
-// Core configuration
+
 const config = {
   mainLoopIntervalMs: 100,
   stateChangePollIntervalMs: 25,
   mainLoopErrorDelayMs: 1000,
 };
 
-// Worker state management
+
 const workerState = {
   globalState: null,
   isInitialized: false,
@@ -49,39 +50,38 @@ const workerState = {
   cachedPathStatus: 0,
   lastPlayerPosCounter: -1,
   lastPathDataCounter: -1,
-  lastWorldStateCounter: -1, // For tracking consistent world state
+  lastWorldStateCounter: -1, 
   shouldRequestNewPath: false,
   justGainedControl: false,
   logger: logger,
 };
 
-// Targeting context (preserved from original)
+
 const targetingContext = {
   pathfindingTarget: null,
   acquisitionUnlockTime: 0,
   lastMovementTime: 0,
   lastDispatchedVisitedTile: null,
   lastClickTime: 0,
-  // State for iterative clicking
   currentTargetInstanceId: null,
-  // Stores the cycling state for ambiguous targets (multiple creatures of the same name).
-  // Key: creature name (e.g., "Orc Berserker")
-  // Value: A Set of battle list indices that have been attempted for this name.
-  ambiguousTargetCycle: new Map(),
+  ambiguousTargetCycle: new Map(), 
+  previousTargetName: null,
+  _ambiguousMeta: new Map(),
+  _ambigAdaptive: { latencies: [] },
 };
 
-// Control state tracking
+
 let lastControlState = 'CAVEBOT';
 let lastTargetingEnabled = false;
 let lastCavebotEnabled = false;
 
-// Initialize SharedArrayBuffer access
+
 const { playerPosSAB, pathDataSAB, creaturesSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
 
-// Initialize SAB state manager
+
 const sabStateManager = new SABStateManager({
   playerPosSAB: workerData.playerPosSAB,
   battleListSAB: workerData.battleListSAB,
@@ -92,7 +92,7 @@ const sabStateManager = new SABStateManager({
   pathDataSAB: workerData.pathDataSAB,
 });
 
-// Initialize targeting actions
+
 const targetingActions = createTargetingActions({
   playerPosArray,
   pathDataArray,
@@ -100,10 +100,16 @@ const targetingActions = createTargetingActions({
   sabStateManager,
 });
 
-// SAB data update function (now independent of Redux)
+
+const ambiguousAcquirer = createAmbiguousAcquirer({
+  sabStateManager,
+  parentPort,
+  targetingContext,
+  logger,
+});
+
+
 const updateSABData = () => {
-  // Check for a new, consistent world state first.
-  // The individual get methods in sabStateManager will read the latest data.
   if (creaturesArray) {
     const newWorldStateCounter = Atomics.load(
       creaturesArray,
@@ -111,8 +117,6 @@ const updateSABData = () => {
     );
     if (newWorldStateCounter > workerState.lastWorldStateCounter) {
       workerState.lastWorldStateCounter = newWorldStateCounter;
-      // We don't need to explicitly read data here. The get methods
-      // used in selectBestTarget will now see the consistent state.
     }
   }
 
@@ -181,14 +185,12 @@ const updateSABData = () => {
   }
 };
 
-// Core targeting logic (now continuous)
+
 async function performTargeting() {
-  // Always update SAB data first
   updateSABData();
 
   const { globalState, isInitialized } = workerState;
 
-  // Sync targeting list to SAB for consistent access
   if (globalState?.targeting?.targetingList) {
     try {
       sabStateManager.writeTargetingList(globalState.targeting.targetingList);
@@ -211,6 +213,24 @@ async function performTargeting() {
   }
 
   if (globalState.targeting?.isPausedByScript) return;
+
+  
+  if (!workerState.playerMinimapPosition && playerPosArray) {
+    try {
+      const fallbackCounter = Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
+      if (fallbackCounter >= 0) {
+        workerState.playerMinimapPosition = {
+          x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
+          y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
+          z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
+        };
+        workerState.lastPlayerPosCounter = fallbackCounter;
+        logger('debug', '[TargetingWorker] Fallback player position read performed.');
+      }
+    } catch (err) {
+      
+    }
+  }
 
   if (workerState.justGainedControl) {
     workerState.justGainedControl = false;
@@ -240,12 +260,7 @@ async function performTargeting() {
     return;
   }
 
-  // --- State Sanity Check ---
-  // If our intended target (pathfindingTarget) is out of sync with the actual
-  // in-game target (from the SAB), it means the state has become corrupted.
-  // This can happen if the player manually changes targets or if the game
-  // auto-targets a new creature upon the previous one's death.
-  // To recover, we must aggressively reset our intention.
+  
   const currentTarget = sabStateManager.getCurrentTarget();
   if (
     targetingContext.pathfindingTarget &&
@@ -256,10 +271,10 @@ async function performTargeting() {
       'info',
       '[TargetingWorker] Desync detected. Resetting pathfinding target.',
     );
-    targetingContext.pathfindingTarget = null; // Force re-evaluation
+    targetingContext.pathfindingTarget = null; 
   }
 
-  // Always evaluate target selection
+  
   const previousTargetId = targetingContext.pathfindingTarget?.instanceId;
   const { creature, rule } =
     targetingActions.selectBestTarget(
@@ -268,33 +283,37 @@ async function performTargeting() {
     ) || {};
   targetingContext.pathfindingTarget = creature;
 
-  // If the target's name has changed, we must reset the cycling state for the old name.
-  const previousTargetName = targetingContext.ambiguousTargetCycle.get('name');
+  if (!creature) {
+    logger('debug', '[TargetingWorker] selectBestTarget returned NO creature candidate.');
+  }
+
+  
+  const previousTargetName = targetingContext.previousTargetName;
   if (creature?.name !== previousTargetName) {
     if (previousTargetName) {
       targetingContext.ambiguousTargetCycle.delete(previousTargetName);
     }
-    // Initialize the cycle state for the new creature name.
     if (creature) {
-      targetingContext.ambiguousTargetCycle.set('name', creature.name);
-      targetingContext.ambiguousTargetCycle.set(creature.name, new Set());
+      targetingContext.previousTargetName = creature.name;
+      if (!targetingContext.ambiguousTargetCycle.get(creature.name)) {
+        targetingContext.ambiguousTargetCycle.set(creature.name, new Set());
+      }
+    } else {
+      targetingContext.previousTargetName = null;
     }
   }
 
-  // If the target has changed, clear the old path immediately to prevent a stale move
   if (creature?.instanceId !== previousTargetId) {
     workerState.path = [];
-    workerState.lastPathDataCounter = -1; // Force a re-read of path data
+    workerState.lastPathDataCounter = -1;
   }
 
-  // ALWAYS update the dynamic target so the pathfinder can start working immediately.
+  
   targetingActions.updateDynamicTarget(creature, rule);
 
   if (controlState === 'CAVEBOT' && cavebotIsEnabled) {
     if (targetingContext.pathfindingTarget) {
-      // Handover Guard for "onlyIfTrapped" creatures
       if (rule.onlyIfTrapped && !creature.isBlockingPath) {
-        // Do not request control for a trapper that is not blocking the path
         return;
       }
       parentPort.postMessage({
@@ -315,27 +334,54 @@ async function performTargeting() {
 
   if (controlState !== 'TARGETING') return;
 
-  if (!workerState.playerMinimapPosition) return;
+  if (!workerState.playerMinimapPosition) {
+    logger('debug', '[TargetingWorker] Missing playerMinimapPosition — skipping this tick.');
+    return;
+  }
 
-  // AI-INTEGRATION: Record player's path during targeting.
-  // This data is used by the cavebot to determine if it should skip
-  // a 'node' waypoint, preventing backtracking over explored areas.
+  
   parentPort.postMessage({
     storeUpdate: true,
     type: 'cavebot/addVisitedTile',
     payload: workerState.playerMinimapPosition,
   });
 
-  // Continuous target acquisition attempt
+  
   await targetingActions.manageTargetAcquisition(
     targetingContext,
     targetingContext.pathfindingTarget,
     globalState,
   );
 
-  // --- Cycle Restart Logic ---
-  // If we are stuck (have a pathfinding target but no actual target) and we have
-  // tried all available battle list entries for that name, we must restart the cycle.
+  
+  const nowCurrent = sabStateManager.getCurrentTarget();
+  if (targetingContext.pathfindingTarget) {
+    const pfTarget = targetingContext.pathfindingTarget;
+    const needVerify = !nowCurrent || nowCurrent.instanceId !== pfTarget.instanceId;
+    if (needVerify) {
+      
+      const battleList = sabStateManager.getBattleList() || [];
+      const matchingCount = battleList.filter((e) => e && e.name === pfTarget.name).length;
+      if (matchingCount > 1) {
+        logger('debug', `[TargetingWorker] attempting low-latency ambiguous acquire for ${pfTarget.name}`);
+        try {
+          const res = await ambiguousAcquirer.attemptAcquireAmbiguousLowLatency(pfTarget.name, {
+            strictMatch: false,
+            desiredInstanceId: pfTarget.instanceId,
+          });
+          if (res.success) {
+            logger('debug', `[TargetingWorker] ambiguous acquire SUCCESS for ${pfTarget.name}: ${res.reason}`);
+          } else {
+            logger('debug', `[TargetingWorker] ambiguous acquire result for ${pfTarget.name}: ${res.reason}`);
+          }
+        } catch (err) {
+          logger('error', '[TargetingWorker] Error in ambiguous acquire helper:', err);
+        }
+      }
+    }
+  }
+
+  
   const battleList = sabStateManager.getBattleList();
   const cycleState = targetingContext.ambiguousTargetCycle.get(
     targetingContext.pathfindingTarget?.name,
@@ -358,7 +404,7 @@ async function performTargeting() {
     }
   }
 
-  // Continuous movement management
+  
   await targetingActions.manageMovement(
     targetingContext,
     workerState.path,
@@ -368,7 +414,7 @@ async function performTargeting() {
     rule,
   );
 
-  // Release control if no target
+  
   if (!targetingContext.pathfindingTarget && cavebotIsEnabled) {
     parentPort.postMessage({
       storeUpdate: true,
@@ -377,7 +423,7 @@ async function performTargeting() {
   }
 }
 
-// Main continuous loop (like cavebot)
+
 async function mainLoop() {
   logger('info', '[TargetingWorker] Starting continuous main loop...');
 
@@ -403,14 +449,14 @@ async function mainLoop() {
   logger('info', '[TargetingWorker] Main loop stopped.');
 }
 
-// Handle control state changes
+
 function handleControlStateChange(newControlState, oldControlState) {
   if (
     (newControlState === 'TARGETING' && oldControlState !== 'TARGETING') ||
     (newControlState === 'HANDOVER_TO_TARGETING' &&
       oldControlState !== 'HANDOVER_TO_TARGETING')
   ) {
-    // Clear path when gaining control
+    
     workerState.path = [];
     workerState.pathfindingStatus = PATH_STATUS_IDLE;
     workerState.lastPathDataCounter = -1;
@@ -425,9 +471,6 @@ function handleControlStateChange(newControlState, oldControlState) {
       oldControlState === 'HANDOVER_TO_TARGETING') &&
     newControlState === 'CAVEBOT'
   ) {
-    // AI-INTEGRATION: Cavebot is regaining control. Check if we were near the next node.
-    // If the player, while under targeting control, moved within 4 tiles of the
-    // next 'node' waypoint, we can skip walking to it.
     const { cavebot: cavebotState } = workerState.globalState || {};
     if (cavebotState?.visitedTiles?.length > 0) {
       const { waypoints, currentWaypointIndex } = cavebotState;
@@ -456,8 +499,6 @@ function handleControlStateChange(newControlState, oldControlState) {
         }
       }
     }
-    // AI-INTEGRATION: Always clear the visited tiles after the check.
-    // This ensures that the data from one targeting session doesn't affect the next.
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/clearVisitedTiles',
@@ -465,7 +506,7 @@ function handleControlStateChange(newControlState, oldControlState) {
   }
 }
 
-// Redux state management (non-blocking)
+
 parentPort.on('message', (message) => {
   if (workerState.isShuttingDown) return;
 
@@ -485,7 +526,7 @@ parentPort.on('message', (message) => {
           '[TargetingWorker] Initial state received, starting main loop.',
         );
 
-        // Start the continuous loop
+        
         mainLoop().catch((error) => {
           logger('error', '[TargetingWorker] Fatal error in main loop:', error);
           process.exit(1);
@@ -493,7 +534,7 @@ parentPort.on('message', (message) => {
       }
     }
 
-    // Handle control state changes
+    
     if (workerState.globalState) {
       const newControlState = workerState.globalState.cavebot?.controlState;
       const newTargetingEnabled = workerState.globalState.targeting?.enabled;
@@ -512,7 +553,7 @@ parentPort.on('message', (message) => {
   }
 });
 
-// Initialize worker
+
 function startWorker() {
   if (!workerData) {
     throw new Error('[TargetingWorker] Worker data not provided');

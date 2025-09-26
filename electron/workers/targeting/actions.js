@@ -6,32 +6,21 @@ import {
   PATH_STATUS_WAYPOINT_REACHED,
 } from '../sharedConstants.js';
 
+
 const MOVEMENT_COOLDOWN_MS = 50;
 const CLICK_POLL_INTERVAL_MS = 5;
 const MOVE_CONFIRM_TIMEOUT_STRAIGHT_MS = 400;
 const MOVE_CONFIRM_TIMEOUT_DIAGONAL_MS = 750;
 const MOVE_CONFIRM_GRACE_DIAGONAL_MS = 150;
 
-// --- Target Acquisition Settings ---
-
-// The maximum time to wait for the creatureMonitor to confirm that the
-// in-game target has changed after clicking on a battle list entry.
-// If the target is not confirmed within this window, the acquisition attempt
-// is considered complete, and the main targeting loop will re-evaluate.
 const TARGET_CONFIRMATION_TIMEOUT_MS = 750;
-
-// A mandatory cooldown period between attempts to acquire a target by clicking
-// the battle list. This is set *before* the click is sent. Its primary
-// purpose is to prevent the bot from spam-clicking the battle list if a
-// target is difficult to acquire (e.g., due to game lag or OCR issues).
-// A side effect is that after a quick kill, the bot must wait for this
-// cooldown to expire before attempting to target the next creature.
 const TARGET_ACQUISITION_COOLDOWN_MS = 250;
+
 
 export function createTargetingActions(workerContext) {
   const { playerPosArray, pathDataArray, parentPort, sabStateManager } =
     workerContext;
-  const logger = createLogger({ info: false, error: true, debug: false });
+  const logger = createLogger({ info: true, error: true, debug: true });
 
   let previousSelectedTargetId = null;
 
@@ -68,7 +57,7 @@ export function createTargetingActions(workerContext) {
           playerPosArray &&
           Atomics.load(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX) >
             posCounter;
-        
+
         if (posChanged) {
           clearTimeout(timeoutId);
           clearInterval(intervalId);
@@ -105,9 +94,9 @@ export function createTargetingActions(workerContext) {
     return matchingRule || null;
   };
 
-  // =================================================================================
-  // --- FINAL selectBestTarget FUNCTION with TARGET SYNCHRONIZATION ---
-  // =================================================================================
+  
+  
+  
   const selectBestTarget = (
     globalState,
     currentPathfindingTarget,
@@ -136,10 +125,10 @@ export function createTargetingActions(workerContext) {
           return null;
         }
 
-        // Higher priority number means more important (lower score)
+        
         let score = -rule.priority * 1000;
 
-        // Apply stickiness bonus
+        
         if (
           currentPathfindingTarget &&
           creature.instanceId === currentPathfindingTarget.instanceId
@@ -147,10 +136,10 @@ export function createTargetingActions(workerContext) {
           score -= (rule.stickiness || 0) * 100;
         }
 
-        // Add distance as a final tie-breaker
+        
         score += creature.distance;
 
-        // Add a large bonus for adjacent creatures to prevent thrashing
+        
         if (creature.isAdjacent) {
           score -= 500;
         }
@@ -165,28 +154,28 @@ export function createTargetingActions(workerContext) {
 
     if (validCandidates.length === 0) {
       if (previousSelectedTargetId !== null) {
-        logger('info', '[selectBestTarget] No valid targets found.');
+        logger('debug', '[selectBestTarget] No valid targets found.');
         previousSelectedTargetId = null;
       }
       return { creature: null, rule: null };
     }
 
-    // Sort by score (lower is better)
+    
     validCandidates.sort((a, b) => a.score - b.score);
 
     const bestCandidate = validCandidates[0];
     let bestTarget = bestCandidate.creature;
     const bestRule = bestCandidate.rule;
 
-    // "Same Name" Stability Logic
+    
     if (
       currentTarget &&
       bestTarget &&
       currentTarget.name === bestTarget.name &&
       currentTarget.instanceId !== bestTarget.instanceId
     ) {
-      // If the best candidate has the same name as our current target,
-      // just stick with the current target to prevent thrashing.
+      
+      
       const currentTargetDetails = creatures.find(
         (c) => c.instanceId === currentTarget.instanceId,
       );
@@ -197,7 +186,7 @@ export function createTargetingActions(workerContext) {
 
     if (bestTarget && bestTarget.instanceId !== previousSelectedTargetId) {
       logger(
-        'info',
+        'debug',
         `[selectBestTarget] New best target selected: ${bestTarget.name} (ID: ${bestTarget.instanceId})`,
       );
       previousSelectedTargetId = bestTarget.instanceId;
@@ -206,6 +195,9 @@ export function createTargetingActions(workerContext) {
     return { creature: bestTarget, rule: bestRule };
   };
 
+  
+  
+  
   const manageTargetAcquisition = async (
     targetingContext,
     pathfindingTarget,
@@ -217,7 +209,7 @@ export function createTargetingActions(workerContext) {
 
     if (!pathfindingTarget) return;
 
-    // Guard: If we already have the correct target, do nothing.
+    
     if (
       currentTarget &&
       currentTarget.instanceId === pathfindingTarget.instanceId
@@ -228,33 +220,45 @@ export function createTargetingActions(workerContext) {
     const now = Date.now();
     if (now < targetingContext.acquisitionUnlockTime) return;
 
-    // Find all battle list entries that match the target's name
-    const cycleState = targetingContext.ambiguousTargetCycle.get(
+    
+    let cycleState = targetingContext.ambiguousTargetCycle.get(
       pathfindingTarget.name,
     );
-    if (!cycleState) return; // Should not happen if worker logic is correct
+    if (!cycleState) {
+      
+      cycleState = new Set();
+      targetingContext.ambiguousTargetCycle.set(pathfindingTarget.name, cycleState);
+    }
 
-    // Find all battle list entries that match the target's name and have not been tried yet.
-    const potentialEntries = battleList
-      .map((entry, index) => ({ ...entry, index })) // Preserve original index
+    
+    let potentialEntries = battleList
+      .map((entry, index) => ({ ...entry, index })) 
       .filter(
         (entry) =>
           entry.name === pathfindingTarget.name && !cycleState.has(entry.index),
       );
 
     if (potentialEntries.length === 0) {
-      return; // No new entries to try in this cycle.
+      logger('info', `[manageTargetAcquisition] Exhausted all entries for ${pathfindingTarget.name}. Restarting cycle.`);
+      cycleState.clear();
+      potentialEntries = battleList
+        .map((entry, index) => ({ ...entry, index }))
+        .filter(
+          (entry) =>
+            entry.name === pathfindingTarget.name && !cycleState.has(entry.index),
+        );
+       if (potentialEntries.length === 0) {
+         logger('warn', `[manageTargetAcquisition] No entries found for ${pathfindingTarget.name} even after resetting cycle. Aborting.`);
+         return;
+       }
     }
 
-    // --- Find the best candidate to click ---
-    // The goal is to find the battle list entry that most likely corresponds to our
-    // desired pathfindingTarget instance.
+    
     let bestUntriedEntry = null;
     if (potentialEntries.length === 1) {
       bestUntriedEntry = potentialEntries[0];
     } else {
-      // Disambiguate by finding the creature on screen that is closest to a battle list entry.
-      // This is imperfect but the best heuristic we have.
+      
       let minDistance = Infinity;
       for (const entry of potentialEntries) {
         for (const creature of creatures) {
@@ -273,7 +277,7 @@ export function createTargetingActions(workerContext) {
     }
 
     if (bestUntriedEntry) {
-      cycleState.add(bestUntriedEntry.index); // Mark this index as attempted for this name.
+      cycleState.add(bestUntriedEntry.index); 
 
       targetingContext.acquisitionUnlockTime =
         now + TARGET_ACQUISITION_COOLDOWN_MS;
@@ -281,7 +285,7 @@ export function createTargetingActions(workerContext) {
       const coordString = `${bestUntriedEntry.x},${bestUntriedEntry.y}`;
       logger(
         'info',
-        `[Targeting] Attempting to acquire ${pathfindingTarget.name} (instance #${pathfindingTarget.instanceId}) by clicking battle list at ${coordString}.`,
+        `[Targeting] Acquiring target: ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId}). Best untried entry at index ${bestUntriedEntry.index}. Clicking at {${coordString}}. Cycle state size for name: ${cycleState.size}.`,
       );
 
       postInputAction('hotkey', {
@@ -290,7 +294,7 @@ export function createTargetingActions(workerContext) {
         args: [bestUntriedEntry.x, bestUntriedEntry.y],
       });
 
-      // Wait for the game to update the target before proceeding.
+      
       await awaitTargetConfirmation(
         pathfindingTarget.instanceId,
         TARGET_CONFIRMATION_TIMEOUT_MS,
@@ -298,6 +302,9 @@ export function createTargetingActions(workerContext) {
     }
   };
 
+  
+  
+  
   const updateDynamicTarget = (pathfindingTarget, rule) => {
     if (!pathfindingTarget || !rule) {
       parentPort.postMessage({
@@ -322,6 +329,9 @@ export function createTargetingActions(workerContext) {
     });
   };
 
+  
+  
+  
   const manageMovement = async (
     targetingContext,
     path,
@@ -334,11 +344,9 @@ export function createTargetingActions(workerContext) {
     if (sabStateManager.isLootingRequired()) return;
 
     const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
-    // For melee, rely only on the isAdjacent flag which uses rawDistance and is more responsive.
     if (desiredDistance === 1) {
       if (pathfindingTarget.isAdjacent) return;
     } else {
-      // For ranged, use the stabilized Chebyshev distance.
       if (pathfindingTarget.distance <= desiredDistance) return;
     }
 
@@ -411,5 +419,158 @@ export function createTargetingActions(workerContext) {
     manageTargetAcquisition,
     updateDynamicTarget,
     manageMovement,
+  };
+}
+
+
+export function createAmbiguousAcquirer({ sabStateManager, parentPort, targetingContext, logger }) {
+  const LL_DEFAULT_VERIFICATION_TIMEOUT = 300; 
+  const LL_DEFAULT_POLL_INTERVAL = 80; 
+  const LL_CLICK_GAP_MIN = 30; 
+  const LL_CLICK_GAP_JITTER = 20; 
+  const LL_INDEX_RETRY_COOLDOWN = 250; 
+  const LL_MAX_FULL_CYCLES = 2;
+  const LL_FULL_CYCLE_COOLDOWN = 800; 
+
+  function nowMs() { return Date.now(); }
+  function sleep(ms) { return new Promise((res) => setTimeout(res, ms)); }
+  function jitter(ms, j) { return ms + Math.floor(Math.random() * j); }
+
+  function defaultVerifyMatch(currentTarget, candidateEntry, targetName, strictMatch, desiredInstanceId) {
+    if (!currentTarget) return false;
+    if (strictMatch && desiredInstanceId) {
+      return currentTarget.instanceId === desiredInstanceId;
+    }
+    if (candidateEntry && candidateEntry.instanceId && currentTarget.instanceId) {
+      return candidateEntry.instanceId === currentTarget.instanceId;
+    }
+    if (currentTarget.name !== targetName) return false;
+    if (candidateEntry && candidateEntry.x != null && candidateEntry.y != null) {
+      const dx = Math.abs((currentTarget.x || 0) - (candidateEntry.x || 0));
+      const dy = Math.abs((currentTarget.y || 0) - (candidateEntry.y || 0));
+      const dz = (currentTarget.z != null && candidateEntry.z != null) ? Math.abs(currentTarget.z - candidateEntry.z) : 0;
+      return Math.max(dx, dy, dz) <= 3;
+    }
+    return true;
+  }
+
+  async function attemptAcquireAmbiguousLowLatency(targetName, options = {}) {
+    const verificationTimeoutBase = options.verificationTimeoutMs ?? LL_DEFAULT_VERIFICATION_TIMEOUT;
+    const pollInterval = options.pollIntervalMs ?? LL_DEFAULT_POLL_INTERVAL;
+    const indexRetryCooldown = options.indexRetryCooldownMs ?? LL_INDEX_RETRY_COOLDOWN;
+    const maxFullCycles = options.maxFullCycles ?? LL_MAX_FULL_CYCLES;
+    const fullCycleCooldown = options.fullCycleCooldownMs ?? LL_FULL_CYCLE_COOLDOWN;
+    const strictMatch = !!options.strictMatch;
+    const desiredInstanceId = options.desiredInstanceId || null;
+
+    if (!targetingContext._ambiguousMeta) targetingContext._ambiguousMeta = new Map();
+    let meta = targetingContext._ambiguousMeta.get(targetName);
+    if (!meta) {
+      meta = { attempted: new Map(), fullCycles: 0, cooldownUntil: 0 };
+      targetingContext._ambiguousMeta.set(targetName, meta);
+    }
+
+    
+    const latArr = targetingContext._ambigAdaptive?.latencies || [];
+    const medianLatency = latArr.length ? latArr.slice().sort((a,b)=>a-b)[Math.floor(latArr.length/2)] : null;
+    const adaptiveTimeout = medianLatency ? Math.max(verificationTimeoutBase, Math.ceil(medianLatency * 1.4)) : verificationTimeoutBase;
+
+    if (meta.cooldownUntil && meta.cooldownUntil > nowMs()) {
+      return { success: false, reason: 'cooldown_active' };
+    }
+
+    function readCandidates() {
+      const battleList = sabStateManager.getBattleList() || [];
+      const candidates = [];
+      for (let i = 0; i < battleList.length; i += 1) {
+        const e = battleList[i];
+        if (!e) continue;
+        if (e.name === targetName) candidates.push({ index: i, entry: e });
+      }
+      return candidates;
+    }
+
+    
+    function postClickAtCoords(x, y) {
+      parentPort.postMessage({
+        type: 'inputAction',
+        payload: {
+          type: 'hotkey',
+          action: { module: 'mouseController', method: 'leftClick', args: [x, y] },
+        },
+      });
+    }
+
+    while (true) {
+      const candidates = readCandidates();
+      if (!candidates.length) return { success: false, reason: 'no_candidates' };
+
+      
+      for (const k of Array.from(meta.attempted.keys())) {
+        if (!candidates.some(c => c.index === k)) meta.attempted.delete(k);
+      }
+
+      let next = candidates.find(c => !meta.attempted.has(c.index));
+      if (!next) {
+        
+        meta.attempted.clear();
+        meta.fullCycles = (meta.fullCycles || 0) + 1;
+        if (meta.fullCycles >= maxFullCycles) {
+          meta.cooldownUntil = nowMs() + fullCycleCooldown;
+          meta.fullCycles = 0;
+          logger && logger('debug', `[AmbigAcquirer] Exhausted cycles for ${targetName}, applying short cooldown ${fullCycleCooldown}ms`);
+          return { success: false, reason: 'cycles_exhausted' };
+        }
+        const fresh = readCandidates();
+        if (!fresh.length) return { success: false, reason: 'no_candidates_after_clear' };
+        next = fresh[0];
+      }
+
+      const attemptId = Math.random().toString(36).slice(2,9);
+      logger && logger('debug', `[AmbigAcquirer] clicking ${targetName} index=${next.index} attempt=${attemptId}`);
+
+      
+      postClickAtCoords(next.entry.x, next.entry.y);
+
+      
+      let current = sabStateManager.getCurrentTarget();
+      if (defaultVerifyMatch(current, next.entry, targetName, strictMatch, desiredInstanceId)) {
+        
+        targetingContext._ambigAdaptive.latencies = (targetingContext._ambigAdaptive.latencies || []).slice(-9);
+        targetingContext._ambigAdaptive.latencies.push(20);
+        meta.fullCycles = 0;
+        return { success: true, reason: 'verified_immediate', acquiredCurrentTarget: current };
+      }
+
+      
+      const start = nowMs();
+      let verified = false;
+      while (nowMs() - start < adaptiveTimeout) {
+        await sleep(pollInterval);
+        current = sabStateManager.getCurrentTarget();
+        if (defaultVerifyMatch(current, next.entry, targetName, strictMatch, desiredInstanceId)) {
+          const latency = nowMs() - start;
+          const buf = targetingContext._ambigAdaptive.latencies || [];
+          buf.push(latency);
+          if (buf.length > 9) buf.shift();
+          targetingContext._ambigAdaptive.latencies = buf;
+          meta.fullCycles = 0;
+          logger && logger('debug', `[AmbigAcquirer] verified ${targetName} at index=${next.index} latency=${latency}ms attempt=${attemptId}`);
+          return { success: true, reason: 'verified', acquiredCurrentTarget: current };
+        }
+      }
+
+      
+      meta.attempted.set(next.index, { count: (meta.attempted.get(next.index)?.count || 0) + 1, lastTs: nowMs() });
+      logger && logger('debug', `[AmbigAcquirer] verification FAILED for ${targetName} index=${next.index} attempt=${attemptId}`);
+
+      await sleep(indexRetryCooldown);
+      await sleep(jitter(LL_CLICK_GAP_MIN, LL_CLICK_GAP_JITTER));
+      
+    }
+  }
+
+  return {
+    attemptAcquireAmbiguousLowLatency,
   };
 }

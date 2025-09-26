@@ -604,7 +604,7 @@ async function performOperation() {
     let detectedEntities = Array.from(activeCreatures.values());
     const blockingCreatures = new Set();
 
-    // 1. Check for creatures blocking the cavebot path
+    
     const cavebotTargetWpt = sabStateManager.getCavebotTargetWaypoint();
     if (cavebotTargetWpt) {
       const blockingCavebotCreature = pathfinderInstance.getBlockingCreature(
@@ -625,7 +625,7 @@ async function performOperation() {
       }
     }
 
-    // 2. Check for creatures blocking primary targets
+    
     const primaryTargets = detectedEntities.filter((entity) => {
       const rule = targetingList.find((r) => r.name === entity.name);
       return rule && !rule.onlyIfTrapped && entity.isReachable;
@@ -757,8 +757,8 @@ async function performOperation() {
     let unifiedTarget = null;
     const battleListRegion = currentState.regionCoordinates.regions.battleList;
 
-    // --- Two-Factor Target Confirmation ---
-    // First, check the battle list for a red bar. This is a very reliable signal.
+    
+    
     let battleListTargetName = null;
     if (battleListRegion) {
       const redColor = [255, 0, 0];
@@ -787,18 +787,18 @@ async function performOperation() {
       }
     }
 
-    // Now, reconcile with the game world target.
+    
     if (gameWorldTarget && battleListTargetName) {
-      // If both agree (or we trust the battle list's name), create the target.
+      
       unifiedTarget = { ...gameWorldTarget, name: battleListTargetName };
     } else if (gameWorldTarget && !battleListTargetName) {
-      // Game world has a target, but battle list doesn't. This can happen
-      // during quick switches. We trust the game world's instanceId but
-      // wait for the battle list to catch up for the name.
+      
+      
+      
       unifiedTarget = gameWorldTarget;
     } else if (!gameWorldTarget && battleListTargetName) {
-      // Red box flickered, but battle list is still solid. Find the creature
-      // on screen that matches the name and re-establish it as the target.
+      
+      
       const matchingCreature = detectedEntities.find(
         (c) => c.name === battleListTargetName,
       );
@@ -830,10 +830,19 @@ async function performOperation() {
       lastSentTarget = unifiedTarget;
     }
 
+    
+    
+    const detectedCreatureNames = new Set(detectedEntities.map(c => c.name));
+    const sanitizedBattleList = battleListEntries.filter(entry => detectedCreatureNames.has(entry.name));
+
+    if (sanitizedBattleList.length < battleListEntries.length) {
+        logger('debug', `[CreatureMonitor] Sanitized battle list. Removed ${battleListEntries.length - sanitizedBattleList.length} ghost entries.`);
+    }
+
     sabStateManager.writeWorldState({
       creatures: detectedEntities,
       target: unifiedTarget,
-      battleList: battleListEntries,
+      battleList: sanitizedBattleList,
     });
 
     sabStateManager.writeCreatureMonitorLastProcessedZ(zLevelAtScanStart);
