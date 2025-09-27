@@ -318,15 +318,20 @@ async function performTargeting() {
   }
 
   const hasValidTarget =
-  targetingState.state === FSM_STATE.ACQUIRING ||
-  targetingState.state === FSM_STATE.ENGAGING;
+    targetingState.state === FSM_STATE.ACQUIRING ||
+    targetingState.state === FSM_STATE.ENGAGING;
+
+  const anyValidTargetExists = selectBestTarget(
+    sabStateManager,
+    globalState.targeting.targetingList
+  );
 
   if (hasValidTarget && controlState === 'CAVEBOT') {
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/requestTargetingControl',
     });
-  } else if (!hasValidTarget && controlState === 'TARGETING') {
+  } else if (!hasValidTarget && !anyValidTargetExists && controlState === 'TARGETING') {
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/releaseTargetingControl',
