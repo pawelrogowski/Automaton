@@ -977,7 +977,6 @@ parentPort.on('message', async (message) => {
   try {
     if (message.type === 'frame-update') {
       frameUpdateManager.addDirtyRects(message.payload.dirtyRects);
-      return;
     }
     if (message.type === 'shutdown') {
       isShuttingDown = true;
