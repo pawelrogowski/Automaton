@@ -908,9 +908,7 @@ const Minimap = () => {
               {drawSettings.entity.draw &&
                 visibleEntities.map((entity) => (
                   <Rect
-                    key={
-                      entity.absoluteCoords.x + '-' + entity.absoluteCoords.y
-                    }
+                    key={entity.instanceId}
                     x={entity.gameCoords.x}
                     y={entity.gameCoords.y}
                     width={1}

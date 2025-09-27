@@ -14,7 +14,7 @@ import {
   WORLD_STATE_UPDATE_COUNTER_INDEX,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: true });
+const logger = createLogger({ info: true, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --- FSM States ---
@@ -188,15 +188,12 @@ async function handleEngagingState() {
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;
 
-  // <<< FIX: CONSTANT VERIFICATION - The most important check.
-  // Is the game's actual target still the one we think we're fighting?
   const actualInGameTarget = sabStateManager.getCurrentTarget();
   if (!targetingState.currentTarget || !actualInGameTarget || actualInGameTarget.instanceId !== targetingState.currentTarget.instanceId) {
     transitionTo(FSM_STATE.SELECTING, 'Target lost or changed');
     return;
   }
 
-  // Preemptive check for a better target
   const bestOverallTarget = selectBestTarget(sabStateManager, targetingList);
   if (
     bestOverallTarget &&
@@ -221,7 +218,6 @@ async function handleEngagingState() {
     }
   }
 
-  // Check if the creature has died or disappeared from screen
   const updatedTarget = creatures.find(
     (c) => c.instanceId === targetingState.currentTarget.instanceId
   );
@@ -231,9 +227,8 @@ async function handleEngagingState() {
     return;
   }
 
-  targetingState.currentTarget = updatedTarget; // Refresh with latest data
+  targetingState.currentTarget = updatedTarget;
 
-  // Check for reachability
   if (!updatedTarget.isReachable) {
     if (targetingState.unreachableSince === 0) {
       targetingState.unreachableSince = now;
@@ -249,7 +244,6 @@ async function handleEngagingState() {
     targetingState.unreachableSince = 0;
   }
 
-  // If all checks pass, manage movement
   await manageMovement(
     { ...workerState, parentPort, sabStateManager },
     {
@@ -299,6 +293,15 @@ async function performTargeting() {
     return;
   }
 
+  // <<< ADDED: Report visited tiles whenever targeting has control.
+  if (controlState === 'TARGETING' && workerState.playerMinimapPosition) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/addVisitedTile',
+      payload: workerState.playerMinimapPosition,
+    });
+  }
+
   switch (targetingState.state) {
     case FSM_STATE.IDLE:
       handleIdleState();
@@ -315,7 +318,6 @@ async function performTargeting() {
   }
 
   const hasValidTarget =
-  targetingState.state === FSM_STATE.SELECTING || // <-- The only change
   targetingState.state === FSM_STATE.ACQUIRING ||
   targetingState.state === FSM_STATE.ENGAGING;
 

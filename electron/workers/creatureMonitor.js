@@ -62,12 +62,12 @@ const sabStateManager = new SABStateManager({
   targetSAB,
 });
 
-const PLAYER_ANIMATION_FREEZE_MS = 75;
+const PLAYER_ANIMATION_FREEZE_MS = 25;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
-const JITTER_CONFIRMATION_TIME_MS = 100;
-const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 120;
-const TARGET_LOSS_GRACE_PERIOD_MS = 100;
-const CREATURE_FLICKER_GRACE_PERIOD_MS = 200;
+const JITTER_CONFIRMATION_TIME_MS = 75;
+const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
+const TARGET_LOSS_GRACE_PERIOD_MS = 125;
+const CREATURE_FLICKER_GRACE_PERIOD_MS = 125;
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
 const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
 const ADJACENT_TIME_THRESHOLD_MS = 0;
@@ -90,6 +90,7 @@ let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let targetLossGracePeriodEndTime = 0;
+let lastBattleListOcrTime = 0;
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
@@ -315,6 +316,7 @@ async function performOperation() {
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
 
+    const now = Date.now();
     const zLevelAtScanStart = Atomics.load(playerPosArray, PLAYER_Z_INDEX);
 
     let battleListEntries = lastBattleListEntries;
@@ -324,15 +326,22 @@ async function performOperation() {
     const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
     frameUpdateManager.accumulatedDirtyRects.length = 0;
 
-    if (dirtyRects.length > 0) {
+    let forceBattleListOcr = false;
+    if (now - lastBattleListOcrTime > 500) {
+      forceBattleListOcr = true;
+    }
+
+    if (dirtyRects.length > 0 || forceBattleListOcr) {
       if (
         regions.battleList &&
-        dirtyRects.some((r) => rectsIntersect(r, regions.battleList))
+        (dirtyRects.some((r) => rectsIntersect(r, regions.battleList)) ||
+          forceBattleListOcr)
       ) {
         battleListEntries = await processBattleListOcr(
           sharedBufferView,
           regions,
         );
+        lastBattleListOcrTime = now;
       }
       if (
         regions.playerList &&
@@ -429,7 +438,6 @@ async function performOperation() {
       y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
       z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
     };
-    const now = Date.now();
 
     const playerDelta = {
       x: currentPlayerMinimapPosition.x - previousPlayerMinimapPosition.x,
