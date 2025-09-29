@@ -18,7 +18,8 @@
     "lint": "eslint . --ext .js,.jsx,.mjs",
     "postinstall": "electron-builder install-app-deps && npm run generate-walkable",
     "generate-walkable": "node scripts/generateWalkableData.js",
-    "preprocess-minimaps": "node scripts/preprocessMinimaps.js"
+    "preprocess-minimaps": "node scripts/preprocessMinimaps.js",
+    "combine-scripts": "node scripts/combineScripts.js"
   },
   "build": {
     "appId": "com.electron.teams-postman",
