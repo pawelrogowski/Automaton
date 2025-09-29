@@ -28,6 +28,16 @@ export function getAbsoluteClickCoordinates(
   const relativePixelY =
     targetMapY - playerMinimapPosition.y + MINIMAP_HEIGHT / 2;
 
+  // Bounds check: Ensure the calculated relative pixel is within the visible minimap area
+  if (
+    relativePixelX < 0 ||
+    relativePixelX >= minimapRegionDef.width ||
+    relativePixelY < 0 ||
+    relativePixelY >= minimapRegionDef.height
+  ) {
+    return null; // Target is outside the visible minimap
+  }
+
   // Calculate absolute screen coordinates
   const absoluteClickX = minimapRegionDef.x + relativePixelX;
   const absoluteClickY = minimapRegionDef.y + relativePixelY;

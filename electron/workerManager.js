@@ -1,6 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workerManager.js
-// --- Drop-in Replacement ---
-
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,7 +8,9 @@ import { showNotification } from './notificationHandler.js';
 import { createLogger } from './utils/logger.js';
 import { BrowserWindow } from 'electron';
 import { playSound } from './globalShortcuts.js';
-import { deepHash } from './utils/deepHash.js'; // Import deepHash
+import { deepHash } from './utils/deepHash.js';
+import { rectsIntersect } from './utils/rectsIntersect.js';
+
 import {
   PLAYER_POS_SAB_SIZE,
   PATH_DATA_SAB_SIZE,
@@ -96,34 +95,8 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'pathfinderWorker',
 ]);
 
-// --- NEW ---
-/**
- * Checks if two rectangle objects intersect.
- * @param {object} rectA - The first rectangle {x, y, width, height}.
- * @param {object} rectB - The second rectangle {x, y, width, height}.
- * @returns {boolean} True if the rectangles overlap.
- */
-function rectsIntersect(rectA, rectB) {
-  if (
-    !rectA ||
-    !rectB ||
-    rectA.width <= 0 ||
-    rectA.height <= 0 ||
-    rectB.width <= 0 ||
-    rectB.height <= 0
-  ) {
-    return false;
-  }
-  return (
-    rectA.x < rectB.x + rectB.width &&
-    rectA.x + rectA.width > rectB.x &&
-    rectA.y < rectB.y + rectB.height &&
-    rectA.y + rectA.height > rectB.y
-  );
-}
 
-// --- NEW ---
-// Maps workers to the regions they depend on for frame updates.
+
 const WORKER_REGION_DEPENDENCIES = {
   screenMonitor: [
     'healthBar',
@@ -145,7 +118,7 @@ const WORKER_REGION_DEPENDENCIES = {
     'gameWorld',
     'battleList',
   ],
-  creatureMonitor: ['gameWorld'],
+  creatureMonitor: ['gameWorld','battleList','playerList','npcList'],
   // `null` is a special case: regionMonitor needs an update on ANY screen change.
   regionMonitor: null,
 };
@@ -164,7 +137,7 @@ class WorkerManager {
     this.restartTimeouts = new Map();
     this.sharedData = null;
     this.workerConfig = {};
-    this.paths = { utils: null, workers: null, minimapResources: null };
+    this.paths = { workers: null, minimapResources: null };
     this.previousState = null;
     this.storeUpdateTimeout = null;
     this.updateCount = 0;
@@ -183,12 +156,6 @@ class WorkerManager {
 
   setupPaths(app, cwd) {
     if (app.isPackaged) {
-      this.paths.utils = path.join(
-        app.getAppPath(),
-        '..',
-        'resources',
-        'x11utils',
-      );
       this.paths.minimapResources = path.join(
         app.getAppPath(),
         '..',
@@ -196,7 +163,6 @@ class WorkerManager {
         'preprocessed_minimaps',
       );
     } else {
-      this.paths.utils = path.join(cwd, '..', 'resources', 'x11utils');
       this.paths.minimapResources = path.join(
         cwd,
         '..',
@@ -231,12 +197,9 @@ class WorkerManager {
     if (isUUID) {
       return resolve(this.electronDir, './workers', 'luaScriptWorker.js');
     }
-    // ====================== MODIFICATION START ======================
-    // Point cavebotWorker to its new modular entry point.
     if (workerName === 'cavebotWorker') {
       return resolve(this.electronDir, './workers', 'cavebot', 'index.js');
     }
-    // ======================= MODIFICATION END =======================
     return resolve(this.electronDir, './workers', `${workerName}.js`);
   }
 
