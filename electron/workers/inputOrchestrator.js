@@ -103,6 +103,7 @@ async function processQueue() {
     originalPriority,
     deferralCount,
     insertionTime,
+    actionId, // Extract actionId
   } = eventQueue.shift();
 
   try {
@@ -154,6 +155,13 @@ async function processQueue() {
   } catch (error) {
     log('error', '[InputOrchestrator] Error executing action:', error);
   } finally {
+    // NEW: Send completion message if an actionId was provided
+    if (actionId !== undefined) {
+      parentPort.postMessage({
+        type: 'inputActionCompleted',
+        payload: { actionId, success: true },
+      });
+    }
     const delayMs = getRandomDelay(type);
     await delay(delayMs);
     isProcessing = false;
@@ -181,6 +189,7 @@ parentPort.on('message', (message) => {
       type: payload.type,
       deferralCount: 0, // Initialize deferral count
       insertionTime: Date.now(), // Timestamp for tie-breaking if needed
+      actionId: payload.actionId, // Store actionId
     });
 
     if (!isProcessing) {

@@ -653,8 +653,8 @@ export const createLuaApi = async (context) => {
       postSystemMessage({ type: 'play_alert', payload: { soundFile } }),
     wait: (min_ms, max_ms) =>
       wait(min_ms, max_ms, context.refreshLuaGlobalState),
-    keyPress: (key, modifier = null) =>
-      postInputAction({
+    keyPress: async (key, modifier = null) =>
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'keypress',
@@ -662,9 +662,9 @@ export const createLuaApi = async (context) => {
           args: [key, modifier],
         },
       }),
-    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) => {
+    keyPressMultiple: async (key, count = 1, modifier = null, delayMs = 50) => {
       for (let i = 0; i < count; i++) {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -673,7 +673,7 @@ export const createLuaApi = async (context) => {
           },
         });
         if (i < count - 1) {
-          wait(delayMs);
+          await wait(delayMs);
         }
       }
     },
@@ -709,7 +709,7 @@ export const createLuaApi = async (context) => {
 
       try {
         // typeArray is a native function, so we need to send it as a single action
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -728,7 +728,7 @@ export const createLuaApi = async (context) => {
     },
     typeSequence: async (texts, delayBetween = 100) => {
       for (const text of texts) {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -741,8 +741,8 @@ export const createLuaApi = async (context) => {
         }
       }
     },
-    rotate: (direction) =>
-      postInputAction({
+    rotate: async (direction) =>
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'keypress',
@@ -780,7 +780,7 @@ export const createLuaApi = async (context) => {
       }
 
       if (button === 'right') {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -789,7 +789,7 @@ export const createLuaApi = async (context) => {
           },
         });
       } else {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -798,12 +798,11 @@ export const createLuaApi = async (context) => {
           },
         });
       }
-      await wait(100);
       return true;
     },
     clickAbsolute: async (button, x, y) => {
       if (button === 'right') {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -812,7 +811,7 @@ export const createLuaApi = async (context) => {
           },
         });
       } else {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -821,7 +820,6 @@ export const createLuaApi = async (context) => {
           },
         });
       }
-      await wait(100);
       return true;
     },
     mapClick: async (x, y, position = 'center') => {
@@ -848,7 +846,7 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -856,7 +854,6 @@ export const createLuaApi = async (context) => {
           args: [clickCoords.x, clickCoords.y],
         },
       });
-      await wait(100);
       return true;
     },
     drag: async (startX, startY, endX, endY, button = 'left') => {
@@ -894,7 +891,7 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -904,7 +901,7 @@ export const createLuaApi = async (context) => {
       });
       await wait(50);
       if (button === 'right') {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -913,7 +910,7 @@ export const createLuaApi = async (context) => {
           },
         });
       } else {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -923,7 +920,7 @@ export const createLuaApi = async (context) => {
         });
       }
       await wait(100);
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -933,7 +930,7 @@ export const createLuaApi = async (context) => {
       });
       await wait(100);
       if (button === 'right') {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -942,7 +939,7 @@ export const createLuaApi = async (context) => {
           },
         });
       } else {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -951,11 +948,10 @@ export const createLuaApi = async (context) => {
           },
         });
       }
-      await wait(100);
       return true;
     },
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -965,7 +961,7 @@ export const createLuaApi = async (context) => {
       });
       await wait(50);
       if (button === 'right') {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -974,7 +970,7 @@ export const createLuaApi = async (context) => {
           },
         });
       } else {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -984,7 +980,7 @@ export const createLuaApi = async (context) => {
         });
       }
       await wait(100);
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -994,7 +990,7 @@ export const createLuaApi = async (context) => {
       });
       await wait(100);
       if (button === 'right') {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -1003,7 +999,7 @@ export const createLuaApi = async (context) => {
           },
         });
       } else {
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -1012,7 +1008,6 @@ export const createLuaApi = async (context) => {
           },
         });
       }
-      await wait(100);
       return true;
     },
     tileToCoordinate: (tileX, tileY, position = 'bottomRight') => {
@@ -1080,7 +1075,7 @@ export const createLuaApi = async (context) => {
         return false;
       }
       const { x, y } = tab.tabPosition;
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -1088,7 +1083,6 @@ export const createLuaApi = async (context) => {
           args: [x, y],
         },
       });
-      await wait(100);
       return true;
     },
     setTargeting: (enabled) => {

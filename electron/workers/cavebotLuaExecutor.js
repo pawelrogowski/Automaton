@@ -31,6 +31,11 @@ export class CavebotLuaExecutor {
       error: null,
       navigationOccurred: false,
     };
+
+    // NEW: For handling awaitable input actions
+    this.pendingInputActions = new Map();
+    this.nextActionId = 0;
+
     this.logger(
       'info',
       '[CavebotLuaExecutor] Instance created with performance monitoring.',
@@ -84,7 +89,14 @@ export class CavebotLuaExecutor {
         refreshLuaGlobalState: () => this._syncDynamicStateToLua(), // This now calls the lightweight sync
         sharedLuaGlobals: this.context.sharedLuaGlobals,
         lua: this.lua,
-        postInputAction: (action) => parentPort.postMessage({ type: 'inputAction', payload: action }),
+        postInputAction: (action) => this.postInputAction(action),
+      });
+
+      // NEW: Listen for completion messages from the input orchestrator
+      parentPort.on('message', (message) => {
+        if (message.type === 'inputActionCompleted') {
+          this.handleInputActionCompleted(message.payload);
+        }
       });
 
       this.asyncFunctionNames = newNames;
@@ -149,6 +161,47 @@ export class CavebotLuaExecutor {
   // The old _syncApiToLua function is no longer needed and has been replaced by the logic above.
 
   // ======================= FIX END =======================
+
+  // NEW: Method to handle awaitable input actions
+  postInputAction(action) {
+    return new Promise((resolve, reject) => {
+      const actionId = this.nextActionId++;
+      this.pendingInputActions.set(actionId, { resolve, reject, action });
+
+      // Timeout to prevent promises from hanging forever
+      const timeout = setTimeout(() => {
+        if (this.pendingInputActions.has(actionId)) {
+          this.logger('error', `[CavebotLuaExecutor] Input action timed out: ${JSON.stringify(action)}`);
+          this.pendingInputActions.delete(actionId);
+          reject(new Error('Input action timed out after 30 seconds'));
+        }
+      }, 30000); // 30-second timeout
+
+      this.pendingInputActions.get(actionId).timeout = timeout;
+
+      parentPort.postMessage({
+        type: 'inputAction',
+        payload: { ...action, actionId }, // Pass actionId to orchestrator
+      });
+    });
+  }
+
+  // NEW: Method to resolve promises when an action is completed
+  handleInputActionCompleted(payload) {
+    const { actionId, success, error } = payload;
+    const pending = this.pendingInputActions.get(actionId);
+
+    if (pending) {
+      clearTimeout(pending.timeout); // Clear the timeout
+      if (success) {
+        pending.resolve();
+      } else {
+        this.logger('error', `[CavebotLuaExecutor] Input action failed: ${error}`, pending.action);
+        pending.reject(new Error(error || 'Input action failed in orchestrator'));
+      }
+      this.pendingInputActions.delete(actionId);
+    }
+  }
 
   _logPerformanceStats() {
     const now = Date.now();

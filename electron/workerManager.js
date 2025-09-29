@@ -146,6 +146,7 @@ class WorkerManager {
     this.workerStateCache = new Map();
     this.debounceTimeout = null;
     this.sharedLuaGlobals = {}; // NEW: Centralized object for shared Lua globals
+    this.awaitingInputActions = new Map(); // NEW: Map to track which worker is waiting for which actionId
     this.handleWorkerError = this.handleWorkerError.bind(this);
     this.handleWorkerExit = this.handleWorkerExit.bind(this);
     this.handleWorkerMessage = this.handleWorkerMessage.bind(this);
@@ -312,9 +313,28 @@ class WorkerManager {
     }
 
     if (message.type === 'inputAction') {
+      const { payload } = message;
+      // NEW: If the action has an ID, it's from a Lua worker that needs a response.
+      if (payload.actionId !== undefined) {
+        this.awaitingInputActions.set(payload.actionId, workerName);
+      }
       const inputOrchestrator = this.workers.get('inputOrchestrator');
       if (inputOrchestrator && inputOrchestrator.worker) {
         inputOrchestrator.worker.postMessage(message);
+      }
+      return;
+    }
+
+    // NEW: Handle the completion message from the orchestrator
+    if (message.type === 'inputActionCompleted') {
+      const { actionId } = message.payload;
+      const originWorkerName = this.awaitingInputActions.get(actionId);
+      if (originWorkerName) {
+        const originWorker = this.workers.get(originWorkerName);
+        if (originWorker && originWorker.worker) {
+          originWorker.worker.postMessage(message);
+        }
+        this.awaitingInputActions.delete(actionId); // Clean up the map
       }
       return;
     }
