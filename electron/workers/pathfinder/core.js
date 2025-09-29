@@ -16,19 +16,14 @@ import {
   PATH_UPDATE_COUNTER_INDEX,
 } from '../sharedConstants.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: false }); // Enable debug logs for this worker
 
 let state = null;
 let pathfinderInstance = null;
 
-const logicContext = {
-  lastPlayerPosKey: null,
-  lastTargetWptId: null,
-  lastJsonForType: new Map(),
-  lastCreatureDataHash: null, // NEW: Cache based on creature data hash
-};
+const logicContext = {};
 
-const { playerPosSAB, pathDataSAB } = workerData; // creaturePosSAB is removed
+const { playerPosSAB, pathDataSAB } = workerData;
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
@@ -69,6 +64,20 @@ function throttleReduxUpdate(payload) {
 
 function handleMessage(message) {
   try {
+    // ====================== DEBUG LOGGING START ======================
+    if (message.type === 'state_diff') {
+      logger('debug', `[PathfinderCore] Received state_diff. Keys: ${Object.keys(message.payload).join(', ')}`);
+      if (message.payload.cavebot) {
+        logger('debug', `[PathfinderCore] New cavebot state received. WptId: ${message.payload.cavebot.wptId}, Section: ${message.payload.cavebot.currentSection}`);
+      }
+      if (message.payload.targeting) {
+        logger('debug', `[PathfinderCore] New targeting state received. Creature count: ${message.payload.targeting.creatures?.length || 0}`);
+      }
+    } else if (typeof message === 'object' && !message.type) {
+        logger('debug', `[PathfinderCore] Received FULL state sync.`);
+    }
+    // ======================= DEBUG LOGGING END =======================
+
     if (message.type === 'state_diff') {
       state = { ...state, ...message.payload };
     } else if (message.type === undefined) {
@@ -81,20 +90,16 @@ function handleMessage(message) {
     }
 
     if (!state || !state.gameState || !state.targeting || !state.cavebot) {
-      // Ensure necessary slices exist
       return;
     }
 
-    // NEW: Guard against running pathfinder if both modules are disabled
     if (pathDataArray && !state.cavebot.enabled && !state.targeting.enabled) {
-      // If pathfinder is already idle, no need to update SAB again.
       if (
         Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) ===
         PATH_STATUS_IDLE
       ) {
         return;
       }
-      // Set status to idle and update counter to notify consumers.
       Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, PATH_STATUS_IDLE);
       Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
       Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
@@ -115,8 +120,6 @@ function handleMessage(message) {
     if (!playerMinimapPosition || typeof playerMinimapPosition.x !== 'number') {
       return;
     }
-
-    // REMOVED: All logic reading from creaturePosSAB is gone.
 
     const synchronizedState = {
       ...state,

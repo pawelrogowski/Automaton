@@ -1,4 +1,4 @@
-// /workers/cavebot/helpers/navigation.js
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/helpers/navigation.js
 
 import { postStoreUpdate } from './communication.js';
 import { awaitStateChange } from './asyncUtils.js';
@@ -151,13 +151,17 @@ export const resetInternalState = (workerState, fsm) => {
   workerState.path = [];
   workerState.pathfindingStatus = PATH_STATUS_IDLE;
 
-  // Crucially, also clear cached path data to force a fresh read
-  workerState.cachedPath = [];
-  workerState.cachedPathStart = null;
-  workerState.cachedPathStatus = PATH_STATUS_IDLE;
+  // ====================== FIX START ======================
+  // DO NOT reset the lastPathDataCounter. Resetting it to -1 causes the worker
+  // to immediately re-read the same path data it just processed, creating a
+  // race condition with the FSM reset. By preserving the counter, we allow the
+  // FSM to evaluate the current (and correct) path data on the next tick
+  // without interference from an unnecessary re-read.
+  //
+  // workerState.lastPathDataCounter = -1; // <-- THIS LINE IS REMOVED
+  // ======================= FIX END =======================
 
   // Request a new path from the pathfinder
   workerState.shouldRequestNewPath = true;
-  workerState.lastPathDataCounter = -1;
   workerState.lastFsmState = null;
 };

@@ -1,7 +1,6 @@
-// /workers/cavebot/helpers/communication.js
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/helpers/communication.js
 
 import { parentPort } from 'worker_threads';
-import { findCurrentWaypoint } from './navigation.js';
 import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
@@ -15,12 +14,6 @@ import {
   PATHFINDING_STATUS_INDEX,
   PATH_STATUS_IDLE,
   MAX_PATH_WAYPOINTS,
-  PATH_START_X_INDEX,
-  PATH_START_Y_INDEX,
-  PATH_START_Z_INDEX,
-  PATH_TARGET_X_INDEX,
-  PATH_TARGET_Y_INDEX,
-  PATH_TARGET_Z_INDEX,
   PATH_WPT_ID_INDEX,
   PATH_INSTANCE_ID_INDEX,
 } from '../../sharedConstants.js';
@@ -48,7 +41,7 @@ export const getFreshState = () =>
   });
 
 export const updateSABData = (workerState, config) => {
-  // Restore original player position reading logic for state consistency
+  // --- Player Position Update ---
   if (workerState.playerPosArray) {
     const newPlayerPosCounter = Atomics.load(
       workerState.playerPosArray,
@@ -62,15 +55,14 @@ export const updateSABData = (workerState, config) => {
         z: Atomics.load(workerState.playerPosArray, PLAYER_Z_INDEX),
       };
 
-      // --- Teleport & Floor Change Detection ---
       if (lastPos) {
         const dist = Math.max(Math.abs(newPos.x - lastPos.x), Math.abs(newPos.y - lastPos.y));
         if (newPos.z !== lastPos.z) {
           workerState.logger('info', `[Cavebot] Floor change detected (${lastPos.z} -> ${newPos.z}). Applying grace period.`);
-          workerState.floorChangeGraceUntil = Date.now() + 250;
+          workerState.floorChangeGraceUntil = Date.now() + config.postTeleportGraceMs;
         } else if (dist >= config.teleportDistanceThreshold) {
           workerState.logger('info', `[Cavebot] Teleport detected (distance: ${dist}). Applying grace period.`);
-          workerState.floorChangeGraceUntil = Date.now() + 250;
+          workerState.floorChangeGraceUntil = Date.now() + config.postTeleportGraceMs;
         }
       }
 
@@ -79,6 +71,7 @@ export const updateSABData = (workerState, config) => {
     }
   }
 
+  // --- Path Data Update ---
   if (workerState.pathDataArray) {
     if (workerState.shouldRequestNewPath) {
       workerState.path = [];
@@ -92,102 +85,60 @@ export const updateSABData = (workerState, config) => {
       workerState.pathDataArray,
       PATH_UPDATE_COUNTER_INDEX,
     );
-    // The stale path validation MUST run every tick, so we only check the counter
-    // to see if we need to read the path array again. The validation against player
-    // position happens below, regardless.
-    if (counterBeforeRead !== workerState.lastPathDataCounter) {
-      // Perform a direct, consistent read of all path data
-      const pathStartX = Atomics.load(
-        workerState.pathDataArray,
-        PATH_START_X_INDEX,
-      );
-      const pathStartY = Atomics.load(
-        workerState.pathDataArray,
-        PATH_START_Y_INDEX,
-      );
-      const pathStartZ = Atomics.load(
-        workerState.pathDataArray,
-        PATH_START_Z_INDEX,
-      );
-      const tempPathfindingStatus = Atomics.load(
-        workerState.pathDataArray,
-        PATHFINDING_STATUS_INDEX,
-      );
-      const tempPathChebyshevDistance = Atomics.load(
-        workerState.pathDataArray,
-        PATH_CHEBYSHEV_DISTANCE_INDEX,
-      );
-      const pathLength = Atomics.load(
-        workerState.pathDataArray,
-        PATH_LENGTH_INDEX,
-      );
-      const tempPath = [];
-      const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);
-      for (let i = 0; i < safePathLength; i++) {
-        const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-        tempPath.push({
-          x: Atomics.load(workerState.pathDataArray, offset + 0),
-          y: Atomics.load(workerState.pathDataArray, offset + 1),
-          z: Atomics.load(workerState.pathDataArray, offset + 2),
-        });
-      }
 
-      const counterAfterRead = Atomics.load(
-        workerState.pathDataArray,
-        PATH_UPDATE_COUNTER_INDEX,
-      );
-
-      if (counterBeforeRead === counterAfterRead) {
-        // Cache the read values
-        workerState.cachedPath = tempPath;
-        workerState.cachedPathStart = {
-          x: pathStartX,
-          y: pathStartY,
-          z: pathStartZ,
-        };
-        workerState.cachedPathTarget = {
-          x: Atomics.load(workerState.pathDataArray, PATH_TARGET_X_INDEX),
-          y: Atomics.load(workerState.pathDataArray, PATH_TARGET_Y_INDEX),
-          z: Atomics.load(workerState.pathDataArray, PATH_TARGET_Z_INDEX),
-        };
-        workerState.cachedPathStatus = tempPathfindingStatus;
-        workerState.cachedPathChebyshevDistance = tempPathChebyshevDistance;
-        workerState.pathWptId = Atomics.load(
-          workerState.pathDataArray,
-          PATH_WPT_ID_INDEX,
-        );
-        workerState.pathInstanceId = Atomics.load(
-          workerState.pathDataArray,
-          PATH_INSTANCE_ID_INDEX,
-        );
-        workerState.lastPathDataCounter = counterAfterRead;
-      }
+    if (counterBeforeRead === workerState.lastPathDataCounter) {
+      return; // No new path data to process
     }
 
-    // Always perform stale path validation against the latest cached path data
-    if (workerState.cachedPathStart) {
-      const currentWaypoint = workerState.globalState.cavebot
-        ? findCurrentWaypoint(workerState.globalState)
-        : null;
-
-      const isPathStale =
-        !workerState.playerMinimapPosition ||
-        !currentWaypoint ||
-        // Check 1: Path must start from our current position
-        workerState.cachedPathStart.x !== workerState.playerMinimapPosition.x ||
-        workerState.cachedPathStart.y !== workerState.playerMinimapPosition.y ||
-        workerState.cachedPathStart.z !== workerState.playerMinimapPosition.z;
-
-      // Invalidate the path only if it's stale AND we are outside the grace period.
-      if (isPathStale && Date.now() > workerState.floorChangeGraceUntil) {
-        workerState.path = []; // Invalidate path
-        workerState.pathfindingStatus = PATH_STATUS_IDLE;
-      } else {
-        workerState.path = workerState.cachedPath;
-        workerState.pathfindingStatus = workerState.cachedPathStatus;
-        workerState.pathChebyshevDistance =
-          workerState.cachedPathChebyshevDistance;
-      }
+    // Perform an atomic read of the entire path data block
+    const tempPath = [];
+    const pathLength = Atomics.load(
+      workerState.pathDataArray,
+      PATH_LENGTH_INDEX,
+    );
+    const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);
+    for (let i = 0; i < safePathLength; i++) {
+      const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
+      tempPath.push({
+        x: Atomics.load(workerState.pathDataArray, offset + 0),
+        y: Atomics.load(workerState.pathDataArray, offset + 1),
+        z: Atomics.load(workerState.pathDataArray, offset + 2),
+      });
     }
+    const tempPathfindingStatus = Atomics.load(
+      workerState.pathDataArray,
+      PATHFINDING_STATUS_INDEX,
+    );
+    const tempPathChebyshevDistance = Atomics.load(
+      workerState.pathDataArray,
+      PATH_CHEBYSHEV_DISTANCE_INDEX,
+    );
+    const tempPathWptId = Atomics.load(
+      workerState.pathDataArray,
+      PATH_WPT_ID_INDEX,
+    );
+    const tempPathInstanceId = Atomics.load(
+      workerState.pathDataArray,
+      PATH_INSTANCE_ID_INDEX,
+    );
+
+    const counterAfterRead = Atomics.load(
+      workerState.pathDataArray,
+      PATH_UPDATE_COUNTER_INDEX,
+    );
+
+    // If the counter changed during our read, the data is inconsistent. Abort and wait for the next tick.
+    if (counterBeforeRead !== counterAfterRead) {
+      return;
+    }
+
+    // The read was successful and atomic. Update the worker state directly.
+    // The problematic isPathStale check is now completely removed.
+    workerState.path = tempPath;
+    workerState.pathfindingStatus = tempPathfindingStatus;
+    workerState.pathChebyshevDistance = tempPathChebyshevDistance;
+    workerState.pathWptId = tempPathWptId;
+    workerState.pathInstanceId = tempPathInstanceId;
+    workerState.lastPathDataCounter = counterAfterRead;
   }
 };

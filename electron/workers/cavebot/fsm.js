@@ -1,4 +1,4 @@
-// /workers/cavebot/fsm.js
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/fsm.js
 
 import { postStoreUpdate } from './helpers/communication.js';
 import { advanceToNextWaypoint } from './helpers/navigation.js';
@@ -42,7 +42,8 @@ export function createFsm(workerState, config) {
     },
     EVALUATING_WAYPOINT: {
       execute: async (context) => {
-        const { playerPos, targetWaypoint, status, chebyshevDist } = context;
+
+        const { playerPos, targetWaypoint } = context;
         const { unreachableWaypointIds = [], waypointSections = {} } =
           workerState.globalState.cavebot;
         const allWaypoints = Object.values(waypointSections).flatMap(
@@ -52,11 +53,26 @@ export function createFsm(workerState, config) {
           (wpt) => wpt.id === targetWaypoint.id,
         );
 
+        // console.log("entered eval: ")
+        // console.log("playerPosition:",playerPos,"targetWaypoint",targetWaypoint.id)
+
+        // 1. Determine the Desired State (Cavebot's Target)
+        const desiredWptIdHash = targetWaypoint.id
+          ? targetWaypoint.id.split('').reduce((a, b) => {
+              a = (a << 5) - a + b.charCodeAt(0);
+              return a & a;
+            }, 0)
+          : 0;
+
+        // 2. Get the Actual State (Pathfinder's Current Work)
+        const pathWptIdHash = workerState.pathWptId;
+        const status = workerState.pathfindingStatus;
+
+        // console.log("pathfindingStatus:",status)
+
         logger(
           'debug',
-          `[FSM] Evaluating waypoint index ${waypointIndex + 1} (${
-            targetWaypoint.type
-          }) with path status: ${status}`,
+          `[FSM] Evaluating Wpt ${waypointIndex + 1}. Desired ID Hash: ${desiredWptIdHash}, Path ID Hash: ${pathWptIdHash}, Status: ${status}`,
         );
 
         // Immediately skip if this waypoint is known to be unreachable
@@ -67,24 +83,16 @@ export function createFsm(workerState, config) {
               waypointIndex + 1
             }.`,
           );
-          await advanceToNextWaypoint(workerState, config, {
-            skipCurrent: false,
-          }); // Already marked, just advance
+          await advanceToNextWaypoint(workerState, config);
           return 'IDLE';
         }
 
-        // Handle Script waypoints first, as they ignore pathfinding and position.
+        // Handle Script waypoints first, as they are special.
         if (targetWaypoint.type === 'Script') {
-          logger(
-            'debug',
-            `[FSM] Waypoint index ${
-              waypointIndex + 1
-            } is a script. Transitioning to EXECUTING_SCRIPT.`,
-          );
           return 'EXECUTING_SCRIPT';
         }
 
-        // Case 1: We are already on the target waypoint.
+        // Check if we are already on the target waypoint.
         const isOnWaypoint =
           playerPos.x === targetWaypoint.x &&
           playerPos.y === targetWaypoint.y &&
@@ -100,151 +108,67 @@ export function createFsm(workerState, config) {
             case 'Ladder':
             case 'Rope':
             case 'Shovel':
-              logger(
-                'debug',
-                `[FSM] Waypoint is a '${targetWaypoint.type}' action. Transitioning to PERFORMING_ACTION.`,
-              );
               return 'PERFORMING_ACTION';
-            default: // For Node, etc., being on the tile means we're done.
-              logger(
-                'debug',
-                '[FSM] Actionless waypoint reached. Advancing to next.',
-              );
+            default:
               await advanceToNextWaypoint(workerState, config);
               return 'IDLE';
           }
         }
 
-        // Case 2: We are not on the waypoint, so we must evaluate the path.
+        // 3. Compare Desired State vs. Actual State
+        if (desiredWptIdHash !== pathWptIdHash) {
+          console.log("desiredWptIdHash is not equal to pathWptIdHash", desiredWptIdHash,pathWptIdHash)
+          return 'EVALUATING_WAYPOINT'; // Stay in this state and wait.
+        }
+
+        // 4. IDs MATCH: Now we can trust the pathfinder's status for this waypoint.
         switch (status) {
           case PATH_STATUS_PATH_FOUND:
-            logger('debug', '[FSM] Path found.');
-            let isAdjacent =
-              typeof chebyshevDist === 'number' && chebyshevDist <= 1;
-            const isActionType = [
-              'Ladder',
-              'Rope',
-              'Shovel',
-              'Machete',
-              'Door',
-            ].includes(targetWaypoint.type);
-
-            // Exclude South-East tile for Ladders
-            if (targetWaypoint.type === 'Ladder' && isAdjacent) {
-              if (
-                playerPos.x === targetWaypoint.x + 1 &&
-                playerPos.y === targetWaypoint.y + 1
-              ) {
-                logger(
-                  'debug',
-                  '[FSM] Player is on the south-east tile of a ladder. Ignoring adjacency.',
-                );
-                isAdjacent = false;
+            if (workerState.path && workerState.path.length > 1) {
+              // Adjacency check for special actions
+              const isAdjacent = context.chebyshevDist <= 1;
+              const isActionType = ['Ladder', 'Rope', 'Shovel', 'Machete', 'Door'].includes(targetWaypoint.type);
+              if (isActionType && isAdjacent) {
+                return 'PERFORMING_ACTION';
               }
-            }
-
-            if (isActionType && isAdjacent) {
-              logger(
-                'debug',
-                `[FSM] Adjacent to action waypoint. Transitioning to PERFORMING_ACTION.`,
-              );
-              return 'PERFORMING_ACTION';
-            }
-
-            // Path is valid and we're not performing a special action, so walk.
-            const wptIdHash = targetWaypoint.id
-              ? targetWaypoint.id.split('').reduce((a, b) => {
-                  a = (a << 5) - a + b.charCodeAt(0);
-                  return a & a;
-                }, 0)
-              : 0;
-
-            if (
-              workerState.path &&
-              workerState.path.length > 1 &&
-              workerState.pathWptId === wptIdHash
-            ) {
-              logger(
-                'debug',
-                `[FSM] Path is valid (length: ${workerState.path.length}, wptId: ${workerState.pathWptId}). Transitioning to WALKING.`,
-              );
+              // Path is valid and for the correct waypoint. Let's walk.
               return 'WALKING';
-            } else if (workerState.path && workerState.path.length > 1) {
-               console.log(`[Cavebot FSM] Stale path detected. Expected WptIdHash: ${wptIdHash}, but path has ${workerState.pathWptId}. Waiting for new path.`);
             }
-            // If path is stale or invalid, wait for a new one.
-            logger(
-              'debug',
-              '[FSM] Path found, but length is too short. Requesting new path.',
-            );
-            workerState.shouldRequestNewPath = true;
+            // Path status is found, but array is not ready yet. Wait one more tick.
             return 'EVALUATING_WAYPOINT';
 
-          case PATH_STATUS_DIFFERENT_FLOOR:
-            logger(
-              'debug',
-              '[FSM] Path status is DIFFERENT_FLOOR. Checking player Z-level.',
-            );
-            // If the pathfinder thinks we're on a different floor, but the core logic in index.js
-            // confirms we are on the correct Z-level, it means the path is just stale.
-            // We should wait for a new, correct path instead of skipping the waypoint.
-            if (playerPos.z === targetWaypoint.z) {
-              // DEADLOCK FIX: If we have a valid path despite the bad status, trust the path.
-              // This handles cases where the pathfinder provides a correct path but an incorrect (stale) status.
-              if (workerState.path && workerState.path.length > 1) {
-                logger(
-                  'warn',
-                  '[FSM] Path status is DIFFERENT_FLOOR, but a valid path exists on the same Z-level. Overriding status and proceeding to WALK.',
-                );
-                return 'WALKING';
-              }
-
-              logger(
-                'debug',
-                '[FSM] Player Z matches waypoint Z. Path is stale. Requesting refresh.',
-              );
-              postStoreUpdate('cavebot/setForcePathRefresh', true);
-              workerState.shouldRequestNewPath = true;
-              return 'EVALUATING_WAYPOINT'; // Wait for a new path
-            }
-          // Fallthrough to default skip logic if Z-levels actually mismatch
           case PATH_STATUS_NO_PATH_FOUND:
-          case PATH_STATUS_NO_VALID_START_OR_END:
+          case PATH_STATUS_DIFFERENT_FLOOR:
           case PATH_STATUS_ERROR:
+          case PATH_STATUS_NO_VALID_START_OR_END:
+            // The pathfinder confirms it cannot reach our CURRENT target. Skip it.
             logger(
               'warn',
               `[FSM] Unreachable waypoint index ${
                 waypointIndex + 1
               } due to path status: ${status}. Skipping.`,
             );
-            await advanceToNextWaypoint(workerState, config, {
-              skipCurrent: true,
-            });
-            // DEADLOCK FIX: Immediately invalidate our knowledge of the current waypoint.
-            // This forces the main loop to re-evaluate `findCurrentWaypoint` on the next tick
-            // and prevents us from getting stuck processing the waypoint we just decided to skip.
-            workerState.lastProcessedWptId = null;
+            await advanceToNextWaypoint(workerState, config, { skipCurrent: true });
             return 'IDLE';
 
           case PATH_STATUS_WAYPOINT_REACHED:
+            // The pathfinder confirms we have reached our CURRENT target. Advance.
             logger(
               'debug',
               `[FSM] Path status is WAYPOINT_REACHED for index ${
                 waypointIndex + 1
               }. Advancing.`,
             );
-            // Pathfinder says we're there, but we're not exactly on the tile.
-            // This is a success condition, so we advance.
             await advanceToNextWaypoint(workerState, config);
             return 'IDLE';
 
           case PATH_STATUS_IDLE:
           default:
+            // The pathfinder is still working on our CURRENT target. Wait.
             logger(
               'debug',
               `[FSM] Path status is ${status}. Waiting for pathfinder.`,
             );
-            // Waiting for pathfinder.
             return 'EVALUATING_WAYPOINT';
         }
       },
@@ -345,7 +269,7 @@ export function createFsm(workerState, config) {
           if (
             getDistance(workerState.playerMinimapPosition, targetWaypoint) >=
               config.teleportDistanceThreshold ||
-            targetWaypoint.type === 'Ladder' || // Explicitly include Ladder type
+            targetWaypoint.type === 'Ladder' ||
             targetWaypoint.type === 'Rope' ||
             targetWaypoint.type === 'Shovel'
           ) {

@@ -1,5 +1,4 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/logic.js
-// --- Full file with fix for controlState logic ---
 
 import {
   PATH_LENGTH_INDEX,
@@ -31,19 +30,6 @@ import {
 } from '../sharedConstants.js';
 
 let lastWrittenPathSignature = '';
-
-function hashCreatureData(creatures) {
-  if (!creatures || creatures.length === 0) return 0;
-  const first = creatures[0].gameCoords;
-  const last = creatures[creatures.length - 1].gameCoords;
-  return (
-    creatures.length ^
-    (first.x << 8) ^
-    (first.y << 16) ^
-    (last.x << 4) ^
-    (last.y << 24)
-  );
-}
 
 export function runPathfindingLogic(context) {
   const {
@@ -77,18 +63,26 @@ export function runPathfindingLogic(context) {
       (c) => c.gameCoords,
     );
 
-    // --- NEW: Implicit Mode Detection ---
-    // Instead of reading a mode flag, we infer the mode from the available data.
-    // If a dynamicTarget exists, we are in 'targeting' mode. Otherwise, 'cavebot' mode.
     const isTargetingMode = !!cavebot.dynamicTarget;
+    const currentWptId = cavebot.wptId;
+    const currentDynamicTargetJson = isTargetingMode ? JSON.stringify(cavebot.dynamicTarget) : null;
+
+    // Caching logic removed
+
+    if (cavebot.forcePathRefresh) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setForcePathRefresh',
+        payload: false,
+      });
+    }
 
     let result = null;
-    let targetIdentifier = null;
+    let targetIdentifier = isTargetingMode ? currentDynamicTargetJson : currentWptId;
 
     const allSpecialAreas = state.cavebot?.specialAreas || [];
     const activeSpecialAreas = allSpecialAreas.filter((area) => area.enabled);
 
-    // Group active areas by z-level for efficient updates.
     const newAreasByZ = {};
     for (const area of activeSpecialAreas) {
         if (!newAreasByZ[area.z]) {
@@ -97,7 +91,6 @@ export function runPathfindingLogic(context) {
         newAreasByZ[area.z].push(area);
     }
 
-    // Determine the set of all z-levels that need checking (current and previous).
     const oldAreasByZ = logicContext.lastAreasByZ || {};
     const allZLevels = new Set([
         ...Object.keys(newAreasByZ),
@@ -110,9 +103,6 @@ export function runPathfindingLogic(context) {
         const newAreasForZ = newAreasByZ[z] || [];
         const oldAreasForZ = oldAreasByZ[z] || [];
 
-        // A more robust check than stringify on every tick.
-        // We only update if the number of areas or their content hash changes.
-        // For simplicity in this refactor, we'll use stringify, but only when a change is likely.
         const newAreasJson = JSON.stringify(newAreasForZ);
         const oldAreasJson = JSON.stringify(oldAreasForZ);
 
@@ -136,46 +126,9 @@ export function runPathfindingLogic(context) {
     }
 
     if (isTargetingMode) {
-      targetIdentifier = JSON.stringify(cavebot.dynamicTarget);
-    } else if (cavebot.wptId) {
-      // Cavebot mode
-      const { waypointSections, currentSection, wptId } = cavebot;
-      const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
-        (wp) => wp.id === wptId,
-      );
-      if (targetWaypoint) {
-        targetIdentifier = targetWaypoint.id;
-      }
-    }
-
-    const currentPosKey = `${x},${y},${z}`;
-    const currentCreatureDataHash = hashCreatureData(targeting.creatures);
-
-    if (
-      !cavebot.forcePathRefresh &&
-      logicContext.lastPlayerPosKey === currentPosKey &&
-      logicContext.lastTargetWptId === targetIdentifier &&
-      logicContext.lastCreatureDataHash === currentCreatureDataHash
-    ) {
-      return; // No change in inputs, skip pathfinding.
-    }
-    
-    if (cavebot.forcePathRefresh) {
-      throttleReduxUpdate({
-        type: 'cavebot/setForcePathRefresh',
-        payload: false,
-      });
-    }
-
-    logicContext.lastPlayerPosKey = currentPosKey;
-    logicContext.lastTargetWptId = targetIdentifier;
-    logicContext.lastCreatureDataHash = currentCreatureDataHash;
-
-    if (isTargetingMode) {
       const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
 
       if (!targetInstanceId) {
-        // Fallback for old dynamicTarget format, but still solve Problem B.
         const obstacles = creaturePositions.filter((pos) => {
           return (
             pos.x !== cavebot.dynamicTarget.targetCreaturePos.x ||
@@ -194,13 +147,11 @@ export function runPathfindingLogic(context) {
         );
 
         if (targetCreature) {
-          // State is consistent, target found. Use its fresh position.
           const correctedDynamicTarget = {
             ...cavebot.dynamicTarget,
             targetCreaturePos: targetCreature.gameCoords,
           };
 
-          // Filter the fresh position from the list of obstacles.
           const obstacles = creaturePositions.filter((pos) => {
             return (
               pos.x !== correctedDynamicTarget.targetCreaturePos.x ||
@@ -215,8 +166,6 @@ export function runPathfindingLogic(context) {
             obstacles,
           );
         } else {
-          // Target has disappeared. Path to its last known position.
-          // `creaturePositions` is already correct (doesn't contain the disappeared target).
           result = pathfinderInstance.findPathToGoal(
             playerMinimapPosition,
             cavebot.dynamicTarget,
@@ -225,16 +174,11 @@ export function runPathfindingLogic(context) {
         }
       }
     } else if (targetIdentifier) {
-      // Cavebot mode with a valid waypoint
       const { waypointSections, currentSection, wptId } = cavebot;
       const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
         (wp) => wp.id === wptId,
       );
       if (targetWaypoint) {
-        // REMOVED: The premature Z-level check was causing a deadlock.
-        // The native pathfinder is capable of finding paths across floors.
-        // The cavebot FSM is responsible for handling the path result,
-        // including cases where no path is found due to floor differences.
         result = pathfinderInstance.findPathSync(
           playerMinimapPosition,
           { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
@@ -271,6 +215,11 @@ export function runPathfindingLogic(context) {
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
     const wptId = isTargetingMode ? 0 : (cavebot.wptId ? cavebot.wptId.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0) : 0);
     const instanceId = isTargetingMode ? (cavebot.dynamicTarget.targetInstanceId || 0) : 0;
+
+    if (pathDataArray) {
+      Atomics.store(pathDataArray, PATH_WPT_ID_INDEX, wptId);
+      Atomics.store(pathDataArray, PATH_INSTANCE_ID_INDEX, instanceId);
+    }
 
     let statusCode = PATH_STATUS_IDLE;
     switch (statusString) {
@@ -312,7 +261,6 @@ export function runPathfindingLogic(context) {
           Math.abs(y - targetY),
         );
 
-        // Get the definitive target coordinates for tagging
         let pathTargetCoords = { x: 0, y: 0, z: 0 };
         if (isTargetingMode) {
           pathTargetCoords = cavebot.dynamicTarget.targetCreaturePos;
@@ -356,15 +304,12 @@ export function runPathfindingLogic(context) {
           pathTargetCoords.z,
         );
         Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
-        Atomics.store(pathDataArray, PATH_WPT_ID_INDEX, wptId);
-        Atomics.store(pathDataArray, PATH_INSTANCE_ID_INDEX, instanceId);
 
         if (isBlocked && blockingCreatureCoords) {
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, blockingCreatureCoords.x);
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX, blockingCreatureCoords.y);
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX, blockingCreatureCoords.z);
         } else {
-          // Clear the coordinates if not blocked
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, 0);
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX, 0);
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX, 0);

@@ -1,10 +1,10 @@
-// /workers/cavebot/index.js
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/index.js
 
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { CavebotLuaExecutor } from '../cavebotLuaExecutor.js';
 import { createLogger } from '../../utils/logger.js';
-import { config } from './config.js'; // Still need config for other values
+import { config } from './config.js';
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
 import { SABStateManager } from '../sabStateManager.js';
@@ -40,11 +40,9 @@ const workerState = {
   path: [],
   pathChebyshevDistance: null,
   pathfindingStatus: 0,
-  cachedPath: [],
-  cachedPathStart: null,
-  cachedPathTarget: null,
-  cachedPathStatus: 0,
-  cachedPathChebyshevDistance: null,
+  // ====================== FIX START ======================
+  // Removed all "cachedPath..." properties. They are no longer needed.
+  // ======================= FIX END =======================
   playerPosArray: null,
   pathDataArray: null,
   luaExecutor: null,
@@ -156,7 +154,6 @@ async function performOperation() {
     );
     return;
   }
-  workerState.logger('debug', '[Cavebot] --- Tick ---');
 
   if (!globalState.regionCoordinates?.regions?.onlineMarker) {
     if (
@@ -226,11 +223,10 @@ async function performOperation() {
   if (workerState.sabStateManager.isLootingRequired()) {
     workerState.logger('debug', '[Cavebot] Looting required, skipping tick.');
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
-    return; // Do not perform any cavebot operations if looting is required
+    return;
   }
 
   if (!cavebotIsEnabled) {
-    workerState.logger('debug', '[Cavebot] Disabled, skipping tick.');
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return;
   }
@@ -249,7 +245,7 @@ async function performOperation() {
         'info',
         `[Cavebot] Control lost. Current state: ${controlState}. Resetting FSM.`,
       );
-      resetInternalState(workerState, fsm); // Reset state when losing control
+      resetInternalState(workerState, fsm);
     }
     workerState.lastControlState = controlState;
     return;
@@ -310,20 +306,12 @@ async function performOperation() {
       }. Resetting FSM.`,
     );
     resetInternalState(workerState, fsm);
-    // Manually reset pathfinding state on any waypoint change to prevent using stale data.
-    // This is critical when a waypoint is skipped, as the pathfinder might still be processing
-    // the old, now-irrelevant waypoint.
-    workerState.path = [];
-    workerState.pathfindingStatus = 0; // Assumes 0 is a neutral/idle state
-    workerState.lastPathDataCounter = -1; // Force waiting for a new path
-    workerState.shouldRequestNewPath = true; // Ensure we actively wait for a new path
   }
   workerState.lastProcessedWptId = targetWaypoint.id;
 
-  // --- Z-level Mismatch Logic Change ---
   if (
     targetWaypoint.z !== workerState.playerMinimapPosition.z &&
-    targetWaypoint.type !== 'Script' // Scripts are now exempt from this check
+    targetWaypoint.type !== 'Script'
   ) {
     const waypointIndex = waypoints.findIndex(
       (wpt) => wpt.id === targetWaypoint.id,
@@ -334,9 +322,7 @@ async function performOperation() {
         waypointIndex + 1
       } due to Z-level mismatch. Player Z: ${
         workerState.playerMinimapPosition.z
-      }, Waypoint Z: ${targetWaypoint.z}, Status: ${
-        workerState.pathfindingStatus
-      }`,
+      }, Waypoint Z: ${targetWaypoint.z}`,
     );
     await advanceToNextWaypoint(workerState, config);
     return;
@@ -392,7 +378,6 @@ async function mainLoop() {
         error,
       );
       workerState.fsmState = 'IDLE';
-      // --- Error Resilience Change ---
       await delay(config.mainLoopErrorDelayMs);
     }
     const loopEnd = performance.now();
@@ -462,7 +447,6 @@ async function initializePathfinder() {
 async function initializeWorker() {
   workerState.logger('info', 'Cavebot worker starting up...');
 
-  // Initialize pathfinder first
   await initializePathfinder();
 
   try {
@@ -508,8 +492,6 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'shutdown') {
       workerState.isShuttingDown = true;
       if (workerState.luaExecutor) workerState.luaExecutor.destroy();
-      // NOTE: The pathfinder native instance does not have a destroy method.
-      // It will be garbage collected automatically when the worker terminates.
     } else if (message.type === 'lua_global_broadcast') {
       const { key, value } = message.payload;
       if (workerData.sharedLuaGlobals) {
