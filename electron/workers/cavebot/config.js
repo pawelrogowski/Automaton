@@ -22,7 +22,6 @@ export const config = {
   controlHandoverGraceMs: 100,
 
   // --- Retries & Delays ---
-  standStillThresholdMs: 3000, // Time before unstuck mechanism triggers
   maxScriptRetries: 1,
   maxMacheteRetries: 3, // Centralized from hardcoded value
   actionFailureRetryDelayMs: 500, // Renamed from macheteRetryDelay

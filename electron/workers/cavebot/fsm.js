@@ -59,22 +59,6 @@ export function createFsm(workerState, config) {
           }) with path status: ${status}`,
         );
 
-        // Unstuck mechanism: If standing still for too long, skip the waypoint.
-        // This should not apply to 'Script' waypoints.
-        if (
-          workerState.standStillTimer > config.standStillThresholdMs &&
-          targetWaypoint.type !== 'Script'
-        ) {
-          logger(
-            'warn',
-            `[FSM] Unstuck mechanism triggered after ${
-              workerState.standStillTimer
-            }ms. Skipping waypoint index ${waypointIndex + 1}.`,
-          );
-          await advanceToNextWaypoint(workerState, config, { skipCurrent: true });
-          return 'IDLE';
-        }
-
         // Immediately skip if this waypoint is known to be unreachable
         if (unreachableWaypointIds.includes(targetWaypoint.id)) {
           logger(

@@ -55,10 +55,6 @@ const workerState = {
   scriptErrorCount: 0,
   pathfinderInstance: null,
   creatureMonitorSyncTimeout: 0,
-  // Unstuck mechanism state
-  standStillTimer: 0,
-  lastPlayerPosForTimer: null,
-  lastTickTime: null,
   logger: createLogger({ info: true, error: true, debug: false }),
   parentPort: parentPort,
 };
@@ -95,9 +91,6 @@ function handleControlHandover() {
   workerState.pathfindingStatus = 0;
   workerState.lastPathDataCounter = -1;
   workerState.shouldRequestNewPath = true;
-  // Reset unstuck timer on control handover
-  workerState.standStillTimer = 0;
-  workerState.lastPlayerPosForTimer = null;
 
   workerState.logger(
     'info',
@@ -150,7 +143,7 @@ function handleControlHandover() {
   postStoreUpdate('cavebot/clearVisitedTiles');
 }
 
-async function performOperation(deltaTime) {
+async function performOperation() {
   const { globalState, isInitialized } = workerState;
   if (!globalState || !isInitialized || !globalState.global?.windowId) {
     return;
@@ -273,30 +266,6 @@ async function performOperation(deltaTime) {
 
   updateSABData(workerState, config);
 
-  // --- Unstuck Timer Logic ---
-  if (
-    controlState === 'CAVEBOT' &&
-    workerState.playerMinimapPosition &&
-    !isPausedByScript
-  ) {
-    const pos = workerState.playerMinimapPosition;
-    const lastPos = workerState.lastPlayerPosForTimer;
-    if (
-      !lastPos ||
-      pos.x !== lastPos.x ||
-      pos.y !== lastPos.y ||
-      pos.z !== lastPos.z
-    ) {
-      workerState.standStillTimer = 0;
-      workerState.lastPlayerPosForTimer = { ...pos };
-    } else {
-      workerState.standStillTimer += deltaTime;
-    }
-  } else {
-    // Reset timer if cavebot doesn't have control or is paused
-    workerState.standStillTimer = 0;
-    workerState.lastPlayerPosForTimer = null;
-  }
 
   if (!workerState.playerMinimapPosition) {
     workerState.logger(
@@ -348,7 +317,6 @@ async function performOperation(deltaTime) {
     workerState.pathfindingStatus = 0; // Assumes 0 is a neutral/idle state
     workerState.lastPathDataCounter = -1; // Force waiting for a new path
     workerState.shouldRequestNewPath = true; // Ensure we actively wait for a new path
-    workerState.standStillTimer = 0; // Also reset unstuck timer on waypoint change
   }
   workerState.lastProcessedWptId = targetWaypoint.id;
 
@@ -412,14 +380,11 @@ async function performOperation(deltaTime) {
 
 async function mainLoop() {
   workerState.logger('info', '[CavebotWorker] Starting main loop...');
-  workerState.lastTickTime = performance.now(); // Initialize lastTickTime
   while (!workerState.isShuttingDown) {
     const loopStart = performance.now();
-    const deltaTime = loopStart - workerState.lastTickTime;
-    workerState.lastTickTime = loopStart;
 
     try {
-      await performOperation(deltaTime);
+      await performOperation();
     } catch (error) {
       workerState.logger(
         'error',
