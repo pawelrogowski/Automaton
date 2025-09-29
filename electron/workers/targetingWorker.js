@@ -41,6 +41,8 @@ const workerState = {
   path: [],
   pathfindingStatus: PATH_STATUS_IDLE,
   lastWorldStateCounter: -1,
+  pathWptId: 0,
+  pathInstanceId: 0,
 };
 
 // --- Targeting FSM State ---
@@ -267,6 +269,8 @@ function updateSABData() {
     const pathData = sabStateManager.getPath();
     workerState.path = pathData.path;
     workerState.pathfindingStatus = pathData.status;
+    workerState.pathWptId = pathData.wptId;
+    workerState.pathInstanceId = pathData.instanceId;
     workerState.lastWorldStateCounter = newWorldStateCounter;
   }
 }

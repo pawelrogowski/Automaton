@@ -168,12 +168,25 @@ export function createFsm(workerState, config) {
             }
 
             // Path is valid and we're not performing a special action, so walk.
-            if (workerState.path && workerState.path.length > 1) {
+            const wptIdHash = targetWaypoint.id
+              ? targetWaypoint.id.split('').reduce((a, b) => {
+                  a = (a << 5) - a + b.charCodeAt(0);
+                  return a & a;
+                }, 0)
+              : 0;
+
+            if (
+              workerState.path &&
+              workerState.path.length > 1 &&
+              workerState.pathWptId === wptIdHash
+            ) {
               logger(
                 'debug',
-                `[FSM] Path is valid (length: ${workerState.path.length}). Transitioning to WALKING.`,
+                `[FSM] Path is valid (length: ${workerState.path.length}, wptId: ${workerState.pathWptId}). Transitioning to WALKING.`,
               );
               return 'WALKING';
+            } else if (workerState.path && workerState.path.length > 1) {
+               console.log(`[Cavebot FSM] Stale path detected. Expected WptIdHash: ${wptIdHash}, but path has ${workerState.pathWptId}. Waiting for new path.`);
             }
             // If path is stale or invalid, wait for a new one.
             logger(

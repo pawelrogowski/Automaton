@@ -26,6 +26,8 @@ import {
   PATH_TARGET_X_INDEX,
   PATH_TARGET_Y_INDEX,
   PATH_TARGET_Z_INDEX,
+  PATH_WPT_ID_INDEX,
+  PATH_INSTANCE_ID_INDEX,
 } from '../sharedConstants.js';
 
 let lastWrittenPathSignature = '';
@@ -236,7 +238,7 @@ export function runPathfindingLogic(context) {
         result = pathfinderInstance.findPathSync(
           playerMinimapPosition,
           { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
-          creaturePositions,
+          creaturePositions
         );
       }
     }
@@ -267,7 +269,8 @@ export function runPathfindingLogic(context) {
     const blockingCreatureCoords = result.blockingCreatureCoords || null;
 
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
-    
+    const wptId = isTargetingMode ? 0 : (cavebot.wptId ? cavebot.wptId.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0) : 0);
+    const instanceId = isTargetingMode ? (cavebot.dynamicTarget.targetInstanceId || 0) : 0;
 
     let statusCode = PATH_STATUS_IDLE;
     switch (statusString) {
@@ -353,6 +356,8 @@ export function runPathfindingLogic(context) {
           pathTargetCoords.z,
         );
         Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
+        Atomics.store(pathDataArray, PATH_WPT_ID_INDEX, wptId);
+        Atomics.store(pathDataArray, PATH_INSTANCE_ID_INDEX, instanceId);
 
         if (isBlocked && blockingCreatureCoords) {
           Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, blockingCreatureCoords.x);

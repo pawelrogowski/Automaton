@@ -21,7 +21,9 @@ export const PATH_BLOCKING_CREATURE_Z_INDEX = 9;
 export const PATH_TARGET_X_INDEX = 10;
 export const PATH_TARGET_Y_INDEX = 11;
 export const PATH_TARGET_Z_INDEX = 12;
-export const PATH_WAYPOINTS_START_INDEX = 13;
+export const PATH_WPT_ID_INDEX = 13; // Waypoint ID (string hash, stored as int)
+export const PATH_INSTANCE_ID_INDEX = 14; // Creature Instance ID
+export const PATH_WAYPOINTS_START_INDEX = 15;
 
 // --- Path Data Configuration ---
 export const MAX_PATH_WAYPOINTS = 1000;

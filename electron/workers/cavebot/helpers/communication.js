@@ -21,6 +21,8 @@ import {
   PATH_TARGET_X_INDEX,
   PATH_TARGET_Y_INDEX,
   PATH_TARGET_Z_INDEX,
+  PATH_WPT_ID_INDEX,
+  PATH_INSTANCE_ID_INDEX,
 } from '../../sharedConstants.js';
 
 export const postStoreUpdate = (type, payload) =>
@@ -150,6 +152,14 @@ export const updateSABData = (workerState, config) => {
         };
         workerState.cachedPathStatus = tempPathfindingStatus;
         workerState.cachedPathChebyshevDistance = tempPathChebyshevDistance;
+        workerState.pathWptId = Atomics.load(
+          workerState.pathDataArray,
+          PATH_WPT_ID_INDEX,
+        );
+        workerState.pathInstanceId = Atomics.load(
+          workerState.pathDataArray,
+          PATH_INSTANCE_ID_INDEX,
+        );
         workerState.lastPathDataCounter = counterAfterRead;
       }
     }

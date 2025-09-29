@@ -156,7 +156,8 @@ export async function manageMovement(
   if (
     !playerMinimapPosition ||
     path.length < 2 ||
-    now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS
+    now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS ||
+    workerContext.pathInstanceId !== currentTarget.instanceId
   ) {
     return;
   }
