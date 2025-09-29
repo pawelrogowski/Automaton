@@ -233,6 +233,17 @@ export class CavebotLuaExecutor {
 
       await this.lua.doString(processedCode);
 
+      // NEW: Wait for any pending async operations triggered by the script to complete
+      const asyncWaitStart = performance.now();
+      while (this.context.activeAsyncOperations > 0) {
+        if (performance.now() - asyncWaitStart > 60000) { // 60-second timeout
+          this.logger('error', `[CavebotLuaExecutor] Timeout waiting for ${this.context.activeAsyncOperations} async operations to complete.`);
+          this.context.activeAsyncOperations = 0; // Reset to prevent infinite loop
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 10)); // Poll every 10ms
+      }
+
       const execTime = performance.now() - execStart;
       this.executionCount++;
       this.totalExecutionTime += execTime;

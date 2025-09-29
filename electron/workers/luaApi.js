@@ -1,3 +1,11 @@
+import {
+  keyPress,
+  keyPressMultiple,
+  typeArray,
+  rotate,
+  getIsTyping,
+} from '../keyboardControll/keyPress.js';
+import mouseController from 'mouse-controller';
 import { getAbsoluteGameWorldClickCoordinates } from '../utils/gameWorldClickTranslator.js';
 import { getAbsoluteClickCoordinates } from '../utils/minimapClickTranslator.js';
 import { wait } from './exposedLuaFunctions.js';
@@ -280,8 +288,7 @@ export const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
 export const createLuaApi = async (context) => {
-  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction } =
-    context; // Added postInputAction
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua } = context;
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
@@ -299,7 +306,6 @@ export const createLuaApi = async (context) => {
     'focusTab',
     'login',
     'waitFor',
-    'isTileReachable',
   ];
   const getWindowId = () => getState()?.global?.windowId;
   const getDisplay = () => getState()?.global?.display || ':0';
@@ -388,33 +394,17 @@ export const createLuaApi = async (context) => {
             modalInfo.name === 'ipChangedModal' ||
             modalInfo.name === 'notLoggedInAnymoreModal'
           ) {
-            postInputAction({
-              type: 'luaScript',
-              action: {
-                module: 'keypress',
-                method: 'sendKey',
-                args: ['Escape'],
-              },
-            });
+            await keyPress(getDisplay(), 'Escape');
             await wait(500);
-            postInputAction({
-              type: 'luaScript',
-              action: {
-                module: 'keypress',
-                method: 'sendKey',
-                args: ['Escape'],
-              },
-            });
+            await keyPress(getDisplay(), 'Escape');
             await wait(500);
           } else {
-            postInputAction({
-              type: 'luaScript',
-              action: {
-                module: 'mouseController',
-                method: 'leftClick',
-                args: [button.x, button.y],
-              },
-            });
+            mouseController.leftClick(
+              parseInt(String(getWindowId())),
+              button.x,
+              button.y,
+              getDisplay(),
+            );
             await wait(500);
           }
           foundModal = true;
@@ -437,11 +427,6 @@ export const createLuaApi = async (context) => {
       if (!playerPos) return 9999;
       if (z !== undefined && playerPos.z !== z) return 9999;
       return Math.max(Math.abs(playerPos.x - x), Math.abs(playerPos.y - y));
-    },
-    canUse: (itemName) => {
-      const state = getState();
-      const activeActionItems = state.gameState?.activeActionItems || {};
-      return !!activeActionItems[itemName];
     },
     isLocation: (range = 0) => {
       const state = getState();
@@ -496,137 +481,6 @@ export const createLuaApi = async (context) => {
       const dist = Math.max(Math.abs(px - tx), Math.abs(py - ty));
       return dist <= range;
     },
-    caround: (distance) => {
-      const state = getState();
-      const creatures = state.targeting?.creatures || [];
-
-      // If no distance parameter provided, return all detected creatures
-      if (distance === undefined || distance === null) {
-        return creatures.length;
-      }
-
-      const playerPos = state.gameState?.playerMinimapPosition;
-
-      if (!playerPos || !Number.isInteger(distance) || distance < 0) {
-        return 0;
-      }
-
-      let count = 0;
-      for (const creature of creatures) {
-        if (creature.gameCoords && creature.gameCoords.z === playerPos.z) {
-          const dist = Math.max(
-            Math.abs(playerPos.x - creature.gameCoords.x),
-            Math.abs(playerPos.y - creature.gameCoords.y),
-          );
-          if (dist <= distance) {
-            count++;
-          }
-        }
-      }
-      return count;
-    },
-    paround: () => {
-      const state = getState();
-      const players = state.uiValues?.players || [];
-      return players.length;
-    },
-    npcaround: () => {
-      const state = getState();
-      const npcs = state.uiValues?.npcs || [];
-      return npcs.length;
-    },
-    maround: () => {
-      const state = getState();
-      const battleListEntries = state.battleList?.entries || [];
-      return battleListEntries.length;
-    },
-    wptDistance: () => {
-      const state = getState();
-      // First try to get the distance from pathfinder state
-      const pathfinderDistance = state.pathfinder?.wptDistance;
-      if (typeof pathfinderDistance === 'number') {
-        return pathfinderDistance;
-      }
-
-      // Fallback to manual calculation
-      const playerPos = state.gameState?.playerMinimapPosition;
-      const { waypointSections, currentSection, wptId } = state.cavebot || {};
-
-      if (
-        !playerPos ||
-        wptId == null ||
-        !waypointSections ||
-        !waypointSections[currentSection]
-      ) {
-        return 0;
-      }
-
-      const targetWpt = waypointSections[currentSection].waypoints.find(
-        (wp) => wp.id === wptId,
-      );
-      if (!targetWpt || playerPos.z !== targetWpt.z) {
-        return 0;
-      }
-
-      return Math.max(
-        Math.abs(playerPos.x - targetWpt.x),
-        Math.abs(playerPos.y - targetWpt.y),
-      );
-    },
-    isTileReachable: async (x, y, z) => {
-      const state = getState();
-      const playerPos = state.gameState?.playerMinimapPosition;
-
-      if (
-        !playerPos ||
-        !Number.isInteger(x) ||
-        !Number.isInteger(y) ||
-        !Number.isInteger(z)
-      ) {
-        return false;
-      }
-
-      // If the distance is greater than 50, always return false
-      const distance = Math.max(
-        Math.abs(playerPos.x - x),
-        Math.abs(playerPos.y - y),
-      );
-      if (distance > 50) {
-        return false;
-      }
-
-      // If on different floors, not reachable
-      if (playerPos.z !== z) {
-        return false;
-      }
-
-      // Try to use pathfinder instance if available (like creatureMonitor does)
-      if (context && context.pathfinderInstance) {
-        try {
-          const targetNode = { x, y, z };
-          const isReachable = context.pathfinderInstance.isReachable(
-            playerPos,
-            targetNode,
-            [],
-          );
-          return isReachable;
-        } catch (error) {
-          logger(
-            'warn',
-            `[Lua/${scriptName}] pathfinder check failed: ${error.message}`,
-          );
-        }
-      }
-
-      // Fallback to distance-based reachability check
-      // Adjacent tiles (distance 1) are always reachable
-      if (distance <= 1) {
-        return true;
-      }
-
-      // For farther distances, use a conservative estimate
-      return distance <= 20;
-    },
     log: (level, ...messages) =>
       logger(
         String(level).toLowerCase(),
@@ -649,35 +503,19 @@ export const createLuaApi = async (context) => {
         });
       }
     },
-    alert: (soundFile = 'alert.wav') =>
-      postSystemMessage({ type: 'play_alert', payload: { soundFile } }),
+    alert: () => postSystemMessage({ type: 'play_alert' }),
     wait: (min_ms, max_ms) =>
       wait(min_ms, max_ms, context.refreshLuaGlobalState),
     keyPress: (key, modifier = null) =>
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'keypress',
-          method: 'sendKey',
-          args: [key, modifier],
-        },
+      keyPress(getDisplay(), key, { modifier }),
+    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) =>
+      keyPressMultiple(getDisplay(), key, {
+        count,
+        modifier,
+        delayMs,
       }),
-    keyPressMultiple: (key, count = 1, modifier = null, delayMs = 50) => {
-      for (let i = 0; i < count; i++) {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'sendKey',
-            args: [key, modifier],
-          },
-        });
-        if (i < count - 1) {
-          wait(delayMs);
-        }
-      }
-    },
     typeText: async (...args) => {
+      const display = getDisplay();
       if (args.length === 0) {
         logger(
           'warn',
@@ -708,15 +546,8 @@ export const createLuaApi = async (context) => {
       }
 
       try {
-        // typeArray is a native function, so we need to send it as a single action
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'typeArray',
-            args: [stringArgs, startAndEndWithEnter],
-          },
-        });
+        await typeArray(stringArgs, startAndEndWithEnter, display);
+        await wait(300,500);
         return true;
       } catch (error) {
         logger(
@@ -728,30 +559,16 @@ export const createLuaApi = async (context) => {
     },
     typeSequence: async (texts, delayBetween = 100) => {
       for (const text of texts) {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'typeArray',
-            args: [[text], true], // typeArray expects an array of strings
-          },
-        });
+        await typeArray(getDisplay(), [text], true);
         if (delayBetween > 0) {
           await wait(delayBetween);
         }
       }
     },
-    rotate: (direction) =>
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'keypress',
-          method: 'rotate',
-          args: [direction],
-        },
-      }),
-    isTyping: () => getState().gameState?.isTyping, // This state is read from Redux, not directly from input
+    rotate: (direction) => rotate(getDisplay(), direction),
+    isTyping: () => getIsTyping(),
     clickTile: async (button, x, y, position = 'center') => {
+      const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
@@ -780,51 +597,35 @@ export const createLuaApi = async (context) => {
       }
 
       if (button === 'right') {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'rightClick',
-            args: [clickCoords.x, clickCoords.y],
-          },
-        });
+        mouseController.rightClick(
+          parseInt(windowId),
+          clickCoords.x,
+          clickCoords.y,
+          getDisplay(),
+        );
       } else {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'leftClick',
-            args: [clickCoords.x, clickCoords.y],
-          },
-        });
+        mouseController.leftClick(
+          parseInt(windowId),
+          clickCoords.x,
+          clickCoords.y,
+          getDisplay(),
+        );
       }
       await wait(100);
       return true;
     },
     clickAbsolute: async (button, x, y) => {
+      const windowId = String(getWindowId());
       if (button === 'right') {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'rightClick',
-            args: [x, y],
-          },
-        });
+        mouseController.rightClick(parseInt(windowId), x, y, getDisplay());
       } else {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'leftClick',
-            args: [x, y],
-          },
-        });
+        mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
       }
       await wait(100);
       return true;
     },
     mapClick: async (x, y, position = 'center') => {
+      const windowId = String(getWindowId());
       const state = getState();
       const minimapRegionDef = state.regionCoordinates?.regions?.minimapFull;
       const playerPos = state.gameState?.playerMinimapPosition;
@@ -848,18 +649,17 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'leftClick',
-          args: [clickCoords.x, clickCoords.y],
-        },
-      });
+      mouseController.leftClick(
+        parseInt(windowId),
+        clickCoords.x,
+        clickCoords.y,
+        getDisplay(),
+      );
       await wait(100);
       return true;
     },
     drag: async (startX, startY, endX, endY, button = 'left') => {
+      const windowId = String(getWindowId());
       const state = getState();
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
@@ -894,123 +694,87 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [startCoords.x, startCoords.y],
-        },
-      });
+      mouseController.mouseMove(
+        parseInt(windowId),
+        startCoords.x,
+        startCoords.y,
+        getDisplay(),
+      );
       await wait(50);
       if (button === 'right') {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'rightMouseDown',
-            args: [startCoords.x, startCoords.y],
-          },
-        });
+        mouseController.rightMouseDown(
+          parseInt(windowId),
+          startCoords.x,
+          startCoords.y,
+        );
       } else {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'mouseDown',
-            args: [startCoords.x, startCoords.y],
-          },
-        });
+        mouseController.mouseDown(
+          parseInt(windowId),
+          startCoords.x,
+          startCoords.y,
+        );
       }
       await wait(100);
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [endCoords.x, endCoords.y],
-        },
-      });
+      mouseController.mouseMove(
+        parseInt(windowId),
+        endCoords.x,
+        endCoords.y,
+        getDisplay(),
+      );
       await wait(100);
       if (button === 'right') {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'rightMouseUp',
-            args: [endCoords.x, endCoords.y],
-          },
-        });
+        mouseController.rightMouseUp(
+          parseInt(windowId),
+          endCoords.x,
+          endCoords.y,
+        );
       } else {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'mouseUp',
-            args: [endCoords.x, endCoords.y],
-          },
-        });
+        mouseController.mouseUp(
+          parseInt(windowId),
+          endCoords.x,
+          endCoords.y,
+          getDisplay(),
+        );
       }
       await wait(100);
       return true;
     },
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [startX, startY],
-        },
-      });
+      const windowId = String(getWindowId());
+      mouseController.mouseMove(
+        parseInt(windowId),
+        startX,
+        startY,
+        getDisplay(),
+      );
       await wait(50);
       if (button === 'right') {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'rightMouseDown',
-            args: [startX, startY],
-          },
-        });
+        mouseController.rightMouseDown(
+          parseInt(windowId),
+          startX,
+          startY,
+          getDisplay(),
+        );
       } else {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'mouseDown',
-            args: [startX, startY],
-          },
-        });
+        mouseController.mouseDown(
+          parseInt(windowId),
+          startX,
+          startY,
+          getDisplay(),
+        );
       }
       await wait(100);
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [endX, endY],
-        },
-      });
+      mouseController.mouseMove(parseInt(windowId), endX, endY, getDisplay());
       await wait(100);
       if (button === 'right') {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'rightMouseUp',
-            args: [endX, endY],
-          },
-        });
+        mouseController.rightMouseUp(
+          parseInt(windowId),
+          endX,
+          endY,
+          getDisplay(),
+        );
       } else {
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'mouseUp',
-            args: [endX, endY],
-          },
-        });
+        mouseController.mouseUp(parseInt(windowId), endX, endY, getDisplay());
       }
       await wait(100);
       return true;
@@ -1080,14 +844,7 @@ export const createLuaApi = async (context) => {
         return false;
       }
       const { x, y } = tab.tabPosition;
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'leftClick',
-          args: [x, y],
-        },
-      });
+      mouseController.leftClick(parseInt(windowId), x, y, getDisplay());
       await wait(100);
       return true;
     },
@@ -1118,10 +875,7 @@ export const createLuaApi = async (context) => {
       const state = getState();
       const creatures = state.targeting?.creatures || [];
       return creatures.some(
-        (creature) =>
-          creature.gameCoords.x === x &&
-          creature.gameCoords.y === y &&
-          creature.gameCoords.z === z,
+        (creature) => creature.x === x && creature.y === y && creature.z === z,
       );
     },
     setScripts: (enabled) => {
@@ -1161,6 +915,9 @@ export const createLuaApi = async (context) => {
     },
     waitFor,
     login: async (email, password, character) => {
+      const windowId = String(getWindowId());
+      const display = getDisplay();
+
       if (
         await waitFor(
           'regionCoordinates.regions.onlineMarker',
@@ -1210,23 +967,9 @@ export const createLuaApi = async (context) => {
         const state = getState(); // We know it exists now.
         const loginModal = state.regionCoordinates.regions.loginModal;
 
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'sendKey',
-            args: ['Escape'],
-          },
-        });
+        await keyPress(display, 'Escape');
         await wait(100);
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'sendKey',
-            args: ['Escape'],
-          },
-        });
+        await keyPress(display, 'Escape');
         await wait(100);
 
         const emailInput = loginModal.children?.emailInput;
@@ -1234,23 +977,14 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] emailInput not found`);
           return false;
         }
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'leftClick',
-            args: [emailInput.x, emailInput.y],
-          },
-        });
+        mouseController.leftClick(
+          parseInt(windowId),
+          emailInput.x,
+          emailInput.y,
+          display,
+        );
         await wait(50);
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'typeArray',
-            args: [[email], false],
-          },
-        });
+        await typeArray(display, [email], false);
         await wait(100);
 
         const passwordInput = loginModal.children?.passwordInput;
@@ -1258,32 +992,16 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] passwordInput not found`);
           return false;
         }
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'mouseController',
-            method: 'leftClick',
-            args: [passwordInput.x, passwordInput.y],
-          },
-        });
+        mouseController.leftClick(
+          parseInt(windowId),
+          passwordInput.x,
+          passwordInput.y,
+          display,
+        );
         await wait(50);
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'typeArray',
-            args: [[password], false],
-          },
-        });
+        await typeArray(display, [password], false);
         await wait(100);
-        postInputAction({
-          type: 'luaScript',
-          action: {
-            module: 'keypress',
-            method: 'sendKey',
-            args: ['Enter'],
-          },
-        });
+        await keyPress(display, 'Enter');
       }
 
       const charSelectAppeared = await waitFor(
@@ -1344,23 +1062,14 @@ export const createLuaApi = async (context) => {
         return false;
       }
 
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'mouseController',
-          method: 'leftClick',
-          args: [characterItem.position.x, characterItem.position.y],
-        },
-      });
+      mouseController.leftClick(
+        parseInt(windowId),
+        characterItem.position.x,
+        characterItem.position.y,
+        display,
+      );
       await wait(100);
-      postInputAction({
-        type: 'luaScript',
-        action: {
-          module: 'keypress',
-          method: 'sendKey',
-          args: ['Enter'],
-        },
-      });
+      await keyPress(display, 'Enter');
 
       const isOnline = await waitFor(
         'regionCoordinates.regions.onlineMarker',
@@ -1386,107 +1095,12 @@ export const createLuaApi = async (context) => {
   };
   let navigationApi = {};
 
-  const goBackWaypoints = (numBack) => {
-    const state = getState();
-    const { waypointSections, currentSection, wptId } = state.cavebot;
-    const waypoints = waypointSections[currentSection]?.waypoints || [];
-    if (waypoints.length === 0) {
-      logger(
-        'warn',
-        `[Lua/${scriptName}] back function failed: no waypoints in current section.`,
-      );
-      return;
-    }
-
-    const currentIndex = waypoints.findIndex((wp) => wp.id === wptId);
-    if (currentIndex === -1) {
-      logger(
-        'warn',
-        `[Lua/${scriptName}] back function failed: current waypoint not found.`,
-      );
-      return;
-    }
-
-    const newIndex = Math.max(0, currentIndex - numBack);
-    if (currentIndex === newIndex) {
-      logger(
-        'info',
-        `[Lua/${scriptName}] back function: already at or before target waypoint index.`,
-      );
-      return;
-    }
-
-    if (waypoints[newIndex]) {
-      context.postStoreUpdate('cavebot/setwptId', waypoints[newIndex].id);
-    }
-  };
-
-  const goToSection = (sectionName, label) => {
-    const state = getState();
-    const { waypointSections } = state.cavebot;
-    const foundEntry = Object.entries(waypointSections).find(
-      ([, s]) => s.name === sectionName,
-    );
-
-    if (foundEntry) {
-      const [targetSectionId, targetSection] = foundEntry;
-      if (targetSection.waypoints?.length > 0) {
-        let targetWpt = targetSection.waypoints[0]; // Default to first
-        if (label) {
-          const foundWpt = targetSection.waypoints.find(
-            (wp) => wp.label === label,
-          );
-          if (foundWpt) {
-            targetWpt = foundWpt;
-          } else {
-            logger(
-              'warn',
-              `[Lua/${scriptName}] goToSection: Label '${label}' not found in section '${sectionName}'. Failing gracefully.`,
-            );
-            return;
-          }
-        }
-        context.postStoreUpdate(
-          'cavebot/setCurrentWaypointSection',
-          targetSectionId,
-        );
-        context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
-      } else {
-        logger(
-          'warn',
-          `[Lua/${scriptName}] goToSection: Section '${sectionName}' has no waypoints.`,
-        );
-      }
-    } else {
-      logger(
-        'warn',
-        `[Lua/${scriptName}] goToSection: Section '${sectionName}' not found.`,
-      );
-    }
-  };
-
   if (type === 'cavebot') {
     navigationApi = {
       skipWaypoint: context.advanceToNextWaypoint,
       goToLabel: context.goToLabel,
-      goToSection,
+      goToSection: context.goToSection,
       goToWpt: context.goToWpt,
-      back: (x) => goBackWaypoints(x),
-      backLoc: (x, y) => {
-        if (!baseApi.isLocation(x)) {
-          goBackWaypoints(y);
-        }
-      },
-      backz: (y) => {
-        const state = getState();
-        const playerPos = state.gameState?.playerMinimapPosition;
-        const { waypointSections, currentSection, wptId } = state.cavebot;
-        const waypoints = waypointSections[currentSection]?.waypoints || [];
-        const currentWpt = waypoints.find((wp) => wp.id === wptId);
-        if (playerPos && currentWpt && playerPos.z !== currentWpt.z) {
-          goBackWaypoints(y);
-        }
-      },
       pauseActions: (paused) =>
         context.postStoreUpdate('cavebot/setActionPaused', !!paused),
       setCavebotEnabled: (enabled) =>
@@ -1513,7 +1127,26 @@ export const createLuaApi = async (context) => {
         if (targetWpt)
           context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
       },
-      goToSection,
+      goToSection: (sectionName) => {
+        const state = getState();
+        const { waypointSections } = state.cavebot;
+        const foundEntry = Object.entries(waypointSections).find(
+          ([, s]) => s.name === sectionName,
+        );
+        if (foundEntry) {
+          const [targetSectionId, targetSection] = foundEntry;
+          if (targetSection.waypoints?.length > 0) {
+            context.postStoreUpdate(
+              'cavebot/setCurrentWaypointSection',
+              targetSectionId,
+            );
+            context.postStoreUpdate(
+              'cavebot/setwptId',
+              targetSection.waypoints[0].id,
+            );
+          }
+        }
+      },
       goToWpt: (index) => {
         const arrayIndex = parseInt(index, 10) - 1;
         if (isNaN(arrayIndex) || arrayIndex < 0) return;
@@ -1522,22 +1155,6 @@ export const createLuaApi = async (context) => {
         const waypoints = waypointSections[currentSection]?.waypoints || [];
         if (arrayIndex < waypoints.length)
           context.postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
-      },
-      back: (x) => goBackWaypoints(x),
-      backLoc: (x, y) => {
-        if (!baseApi.isLocation(x)) {
-          goBackWaypoints(y);
-        }
-      },
-      backz: (y) => {
-        const state = getState();
-        const playerPos = state.gameState?.playerMinimapPosition;
-        const { waypointSections, currentSection, wptId } = state.cavebot;
-        const waypoints = waypointSections[currentSection]?.waypoints || [];
-        const currentWpt = waypoints.find((wp) => wp.id === wptId);
-        if (playerPos && currentWpt && playerPos.z !== currentWpt.z) {
-          goBackWaypoints(y);
-        }
       },
       pauseActions: (paused) =>
         context.postStoreUpdate('cavebot/setActionPaused', !!paused),
