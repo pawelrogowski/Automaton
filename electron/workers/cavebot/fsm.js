@@ -55,6 +55,17 @@ export function createFsm(workerState, config) {
 
         // console.log("entered eval: ")
         // console.log("playerPosition:",playerPos,"targetWaypoint",targetWaypoint.id)
+      
+        if (Date.now() < workerState.floorChangeGraceUntil) {
+          logger(
+            'debug',
+            `[FSM] In floor change grace period. Waiting for sync. Remaining: ${
+              workerState.floorChangeGraceUntil - Date.now()
+            }ms.`,
+          );
+          return 'EVALUATING_WAYPOINT'; 
+        }
+        
 
         // 1. Determine the Desired State (Cavebot's Target)
         const desiredWptIdHash = targetWaypoint.id
@@ -115,6 +126,7 @@ export function createFsm(workerState, config) {
           }
         }
 
+        // 3. Compare Desired State vs. Actual State
         // 3. Compare Desired State vs. Actual State
         if (desiredWptIdHash !== pathWptIdHash) {
           console.log("desiredWptIdHash is not equal to pathWptIdHash", desiredWptIdHash,pathWptIdHash)

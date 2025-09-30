@@ -33,6 +33,7 @@ import { deepHash } from '../../utils/deepHash.js';
 let lastWrittenPathSignature = '';
 
 export function runPathfindingLogic(context) {
+  
   const {
     logicContext,
     state,
@@ -42,6 +43,7 @@ export function runPathfindingLogic(context) {
     throttleReduxUpdate,
   } = context;
 
+  logicContext.lastProcessedWptId = logicContext.lastProcessedWptId ?? 0;
   try {
     const { cavebot, gameState, targeting } = state;
     const { playerMinimapPosition } = gameState;
@@ -256,7 +258,11 @@ export function runPathfindingLogic(context) {
     }
 
     const pathSignature = `${statusCode}:${normalizedPath.map((p) => `${p.x},${p.y}`).join(';')}`;
-    if (pathSignature !== lastWrittenPathSignature) {
+
+    const currentTargetWptIdHash = isTargetingMode ? instanceId : wptId;
+    const targetWptIdChanged = currentTargetWptIdHash !== logicContext.lastProcessedWptId;
+
+    if (pathSignature !== lastWrittenPathSignature || targetWptIdChanged) {
       if (pathDataArray) {
         const pathLength = Math.min(normalizedPath.length, MAX_PATH_WAYPOINTS);
         const targetX =
@@ -337,6 +343,7 @@ export function runPathfindingLogic(context) {
         Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
       }
       lastWrittenPathSignature = pathSignature;
+      logicContext.lastProcessedWptId = currentTargetWptIdHash; // Update the last processed target ID
     }
 
     const distance =
