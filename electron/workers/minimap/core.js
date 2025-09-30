@@ -7,7 +7,7 @@ import {
 import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
 import { processMinimapData } from './processing.js';
-import { LANDMARK_SIZE } from './config.js';
+import { LANDMARK_SIZE, MINIMAP_FALLBACK_INTERVAL_MS } from './config.js';
 
 let currentState = null;
 let isShuttingDown = false;
@@ -134,5 +134,5 @@ export function start() {
     if (Date.now() - lastProcessedTime > 1000) {
       processFrames(true);
     }
-  }, 200);
+  }, MINIMAP_FALLBACK_INTERVAL_MS);
 }

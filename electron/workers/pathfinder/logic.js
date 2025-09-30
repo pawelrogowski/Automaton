@@ -28,6 +28,7 @@ import {
   PATH_WPT_ID_INDEX,
   PATH_INSTANCE_ID_INDEX,
 } from '../sharedConstants.js';
+import { deepHash } from '../../utils/deepHash.js';
 
 let lastWrittenPathSignature = '';
 
@@ -67,21 +68,28 @@ export function runPathfindingLogic(context) {
     const currentWptId = cavebot.wptId;
     const currentDynamicTargetJson = isTargetingMode ? JSON.stringify(cavebot.dynamicTarget) : null;
 
-    // Caching logic removed
-
-    if (cavebot.forcePathRefresh) {
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/setForcePathRefresh',
-        payload: false,
-      });
-    }
-
     let result = null;
     let targetIdentifier = isTargetingMode ? currentDynamicTargetJson : currentWptId;
 
     const allSpecialAreas = state.cavebot?.specialAreas || [];
     const activeSpecialAreas = allSpecialAreas.filter((area) => area.enabled);
+
+    const pathfindingInput = {
+      start: playerMinimapPosition,
+      target: isTargetingMode ? cavebot.dynamicTarget : currentWptId,
+      obstacles: creaturePositions,
+      specialAreas: activeSpecialAreas,
+    };
+
+    const currentSignature = deepHash(pathfindingInput);
+
+    if (
+      logicContext.lastSignature === currentSignature
+    ) {
+      result = logicContext.lastResult;
+    } else {
+      logicContext.lastSignature = currentSignature;
+    }
 
     const newAreasByZ = {};
     for (const area of activeSpecialAreas) {
@@ -125,66 +133,69 @@ export function runPathfindingLogic(context) {
         logicContext.lastAreasByZ = newAreasByZ;
     }
 
-    if (isTargetingMode) {
-      const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
+    if (!result) {
+      if (isTargetingMode) {
+        const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
 
-      if (!targetInstanceId) {
-        const obstacles = creaturePositions.filter((pos) => {
-          return (
-            pos.x !== cavebot.dynamicTarget.targetCreaturePos.x ||
-            pos.y !== cavebot.dynamicTarget.targetCreaturePos.y ||
-            pos.z !== cavebot.dynamicTarget.targetCreaturePos.z
-          );
-        });
-        result = pathfinderInstance.findPathToGoal(
-          playerMinimapPosition,
-          cavebot.dynamicTarget,
-          obstacles,
-        );
-      } else {
-        const targetCreature = (targeting.creatures || []).find(
-          (c) => c.instanceId === targetInstanceId,
-        );
-
-        if (targetCreature) {
-          const correctedDynamicTarget = {
-            ...cavebot.dynamicTarget,
-            targetCreaturePos: targetCreature.gameCoords,
-          };
-
+        if (!targetInstanceId) {
           const obstacles = creaturePositions.filter((pos) => {
             return (
-              pos.x !== correctedDynamicTarget.targetCreaturePos.x ||
-              pos.y !== correctedDynamicTarget.targetCreaturePos.y ||
-              pos.z !== correctedDynamicTarget.targetCreaturePos.z
+              pos.x !== cavebot.dynamicTarget.targetCreaturePos.x ||
+              pos.y !== cavebot.dynamicTarget.targetCreaturePos.y ||
+              pos.z !== cavebot.dynamicTarget.targetCreaturePos.z
             );
           });
-
-          result = pathfinderInstance.findPathToGoal(
-            playerMinimapPosition,
-            correctedDynamicTarget,
-            obstacles,
-          );
-        } else {
           result = pathfinderInstance.findPathToGoal(
             playerMinimapPosition,
             cavebot.dynamicTarget,
-            creaturePositions,
+            obstacles,
+          );
+        } else {
+          const targetCreature = (targeting.creatures || []).find(
+            (c) => c.instanceId === targetInstanceId,
+          );
+
+          if (targetCreature) {
+            const correctedDynamicTarget = {
+              ...cavebot.dynamicTarget,
+              targetCreaturePos: targetCreature.gameCoords,
+            };
+
+            const obstacles = creaturePositions.filter((pos) => {
+              return (
+                pos.x !== correctedDynamicTarget.targetCreaturePos.x ||
+                pos.y !== correctedDynamicTarget.targetCreaturePos.y ||
+                pos.z !== correctedDynamicTarget.targetCreaturePos.z
+              );
+            });
+
+            result = pathfinderInstance.findPathToGoal(
+              playerMinimapPosition,
+              correctedDynamicTarget,
+              obstacles,
+            );
+          } else {
+            result = pathfinderInstance.findPathToGoal(
+              playerMinimapPosition,
+              cavebot.dynamicTarget,
+              creaturePositions,
+            );
+          }
+        }
+      } else if (targetIdentifier) {
+        const { waypointSections, currentSection, wptId } = cavebot;
+        const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
+          (wp) => wp.id === wptId,
+        );
+        if (targetWaypoint) {
+          result = pathfinderInstance.findPathSync(
+            playerMinimapPosition,
+            { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
+            creaturePositions
           );
         }
       }
-    } else if (targetIdentifier) {
-      const { waypointSections, currentSection, wptId } = cavebot;
-      const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
-        (wp) => wp.id === wptId,
-      );
-      if (targetWaypoint) {
-        result = pathfinderInstance.findPathSync(
-          playerMinimapPosition,
-          { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
-          creaturePositions
-        );
-      }
+      logicContext.lastResult = result;
     }
 
     if (targetIdentifier && !result) {
