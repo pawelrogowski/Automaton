@@ -1,4 +1,6 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/pathfinder/logic.js
+//start file
+// /electron/workers/pathfinder/logic.js
 
 import {
   PATH_LENGTH_INDEX,
@@ -73,14 +75,32 @@ export function runPathfindingLogic(context) {
     let result = null;
     let targetIdentifier = isTargetingMode ? currentDynamicTargetJson : currentWptId;
 
-    const allSpecialAreas = state.cavebot?.specialAreas || [];
+    // --- NEW LOGIC START ---
+    // Get both permanent and temporary special areas
+    const permanentSpecialAreas = state.cavebot?.specialAreas || [];
+    const temporaryBlockedTiles = state.cavebot?.temporaryBlockedTiles || [];
+
+    // Convert temporary tiles into the format the pathfinder expects for special areas
+    const temporarySpecialAreas = temporaryBlockedTiles.map(tile => ({
+      x: tile.x,
+      y: tile.y,
+      z: tile.z,
+      sizeX: 1,
+      sizeY: 1,
+      avoidance: 100, // High avoidance cost to ensure it's avoided
+      type: 'temporary', // Custom type for debugging
+      enabled: true,
+    }));
+
+    const allSpecialAreas = [...permanentSpecialAreas, ...temporarySpecialAreas];
     const activeSpecialAreas = allSpecialAreas.filter((area) => area.enabled);
+    // --- NEW LOGIC END ---
 
     const pathfindingInput = {
       start: playerMinimapPosition,
       target: isTargetingMode ? cavebot.dynamicTarget : currentWptId,
       obstacles: creaturePositions,
-      specialAreas: activeSpecialAreas,
+      specialAreas: activeSpecialAreas, // Use the combined list
     };
 
     const currentSignature = deepHash(pathfindingInput);
@@ -373,3 +393,4 @@ export function runPathfindingLogic(context) {
     }
   }
 }
+//endFile

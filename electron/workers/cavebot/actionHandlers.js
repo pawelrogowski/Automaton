@@ -1,3 +1,5 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/actionHandlers.js
+//start file
 // /workers/cavebot/actionHandlers.js
 
 import { parentPort } from 'worker_threads';
@@ -35,6 +37,14 @@ const leftClick = (x, y, { type = 'default' } = {}) => {
     },
   });
 };
+
+// --- NEW LOGIC START ---
+// Helper function to compare two tile objects
+const areTilesEqual = (tile1, tile2) => {
+  if (!tile1 || !tile2) return false;
+  return tile1.x === tile2.x && tile1.y === tile2.y && tile1.z === tile2.z;
+};
+// --- NEW LOGIC END ---
 
 async function performWalk(
   workerState,
@@ -98,7 +108,49 @@ export async function handleWalkAction(workerState, config) {
     ? config.moveConfirmTimeoutDiagonalMs
     : config.moveConfirmTimeoutMs;
 
-  await performWalk(workerState, config, nextStep, timeout, isDiagonal);
+  try {
+    await performWalk(workerState, config, nextStep, timeout, isDiagonal);
+    // --- NEW LOGIC START ---
+    // If walk succeeds, reset the failure counter.
+    workerState.lastFailedStep = null;
+    // --- NEW LOGIC END ---
+  } catch (error) {
+    // --- MODIFIED LOGIC START ---
+    const failedTile = nextStep;
+
+    // Check if this is the first failure for this tile, or a new tile failed.
+    if (
+      !workerState.lastFailedStep ||
+      !areTilesEqual(workerState.lastFailedStep.tile, failedTile)
+    ) {
+      // This is the first failure for this tile. Record it and retry.
+      workerState.logger(
+        'warn',
+        `[FSM] Walk action failed once for tile {x: ${failedTile.x}, y: ${failedTile.y}, z: ${failedTile.z}}. Retrying...`,
+      );
+      workerState.lastFailedStep = { tile: failedTile, count: 1 };
+    } else {
+      // This is the second consecutive failure for the same tile.
+      workerState.logger(
+        'error',
+        `[FSM] Walk action failed twice for tile {x: ${failedTile.x}, y: ${failedTile.y}, z: ${failedTile.z}}. Temporarily blocking.`,
+      );
+
+      // Dispatch the action to add the temporary block.
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/addTemporaryBlockedTile',
+        payload: {
+          tile: { x: failedTile.x, y: failedTile.y, z: failedTile.z },
+          duration: 3000, // The 3000ms you suggested
+        },
+      });
+
+      // Reset the failure counter since we've taken corrective action.
+      workerState.lastFailedStep = null;
+    }
+    // --- MODIFIED LOGIC END ---
+  }
 }
 
 export async function handleStandAction(workerState, config, targetWaypoint) {
@@ -526,3 +578,5 @@ export async function handleScriptAction(workerState, config, targetWpt) {
     }
   }
 }
+
+//endFile

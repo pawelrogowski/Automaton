@@ -1,3 +1,5 @@
+// /home/feiron/Dokumenty/Automaton/frontend/redux/slices/cavebotSlice.js
+//start file
 import { createSlice } from '@reduxjs/toolkit';
 
 const MAX_WAYPOINTS_PER_SECTION = 1000;
@@ -36,6 +38,9 @@ const initialState = {
     },
   },
   specialAreas: [],
+  // --- NEW LOGIC START ---
+  temporaryBlockedTiles: [], // Stores tiles that are temporarily unwalkable
+  // --- NEW LOGIC END ---
   controlState: 'CAVEBOT',
   dynamicTarget: null,
   visitedTiles: [],
@@ -288,6 +293,26 @@ const cavebotSlice = createSlice({
         Object.assign(existingArea, updates);
       }
     },
+    // --- NEW LOGIC START ---
+    addTemporaryBlockedTile: (state, action) => {
+      const { tile, duration } = action.payload;
+      const expiry = Date.now() + duration;
+      // Avoid adding duplicates to prevent list bloat
+      if (
+        !state.temporaryBlockedTiles.some(
+          (t) => t.x === tile.x && t.y === tile.y && t.z === tile.z,
+        )
+      ) {
+        state.temporaryBlockedTiles.push({ ...tile, expiry });
+      }
+    },
+    removeExpiredBlockedTiles: (state) => {
+      const now = Date.now();
+      state.temporaryBlockedTiles = state.temporaryBlockedTiles.filter(
+        (tile) => tile.expiry > now,
+      );
+    },
+    // --- NEW LOGIC END ---
     setDynamicTarget: (state, action) => {
       state.dynamicTarget = action.payload;
     },
@@ -341,6 +366,10 @@ export const {
   removeSpecialArea,
   updateSpecialArea,
   setActionPaused,
+  // --- NEW LOGIC START ---
+  addTemporaryBlockedTile,
+  removeExpiredBlockedTiles,
+  // --- NEW LOGIC END ---
   setDynamicTarget,
   addVisitedTile,
   clearVisitedTiles, // Export the correctly named action
@@ -371,3 +400,5 @@ export const setWalkingPause = (ms) => (dispatch, getState) => {
 };
 
 export default cavebotSlice;
+
+//endFile

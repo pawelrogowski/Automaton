@@ -1,3 +1,5 @@
+// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/index.js
+//start file
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { CavebotLuaExecutor } from '../cavebotLuaExecutor.js';
@@ -49,6 +51,11 @@ const workerState = {
   scriptErrorCount: 0,
   pathfinderInstance: null,
   creatureMonitorSyncTimeout: 0,
+  lastBlockedTileCheck: 0,
+  // --- NEW LOGIC START ---
+  // Tracks the last tile that failed a walk attempt to require a second failure before blocking.
+  lastFailedStep: null,
+  // --- NEW LOGIC END ---
   logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,
 };
@@ -137,6 +144,15 @@ async function performOperation() {
   const { globalState, isInitialized } = workerState;
   if (!globalState || !isInitialized || !globalState.global?.windowId) {
     return;
+  }
+
+  // Periodically check for and remove expired temporary blocks
+  const now = Date.now();
+  if (now - workerState.lastBlockedTileCheck > 1000) { // Check every second
+    if (globalState.cavebot.temporaryBlockedTiles.length > 0) {
+        postStoreUpdate('cavebot/removeExpiredBlockedTiles');
+    }
+    workerState.lastBlockedTileCheck = now;
   }
 
   if (!globalState.cavebot) {
@@ -484,3 +500,5 @@ function startWorker() {
 }
 
 startWorker();
+
+//endFile
