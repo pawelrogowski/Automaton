@@ -1,7 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/nativeModules/pathfinder/src/pathfinder.cc
-// --- Contains all consolidated features and fixes ---
-// --- FINAL CORRECTED axis-preference tie-breaking penalty ---
-
 #include "pathfinder.h"
 #include "aStar.h"
 #include <napi.h>
@@ -298,6 +294,9 @@ Napi::Value Pathfinder::IsLoadedGetter(const Napi::CallbackInfo& info) {
 }
 
 int Pathfinder::_getPathLengthInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions) {
+    if (start.z != end.z) {
+        return -1;
+    }
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         return -1;
@@ -478,6 +477,9 @@ Napi::Value Pathfinder::GetPathLength(const Napi::CallbackInfo& info) {
 }
 
 bool Pathfinder::_isReachableInternal(Napi::Env env, const Node& start, const Node& end, const std::vector<Node>& creaturePositions) {
+    if (start.z != end.z) {
+        return false;
+    }
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         return false;
@@ -604,6 +606,19 @@ Napi::Value Pathfinder::_findPathInternal(Napi::Env env, const Node& start, cons
     bool isBlockedByCreature = false;
     Napi::Object blockingCreatureCoords = Napi::Object::New(env);
 
+    if (start.z != end.z) {
+        searchStatus = "DIFFERENT_FLOOR";
+        auto endTime = std::chrono::high_resolution_clock::now();
+        double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
+        Napi::Object performance = Napi::Object::New(env);
+        performance.Set("totalTimeMs", Napi::Number::New(env, durationMs));
+        result.Set("performance", performance);
+        result.Set("reason", Napi::String::New(env, searchStatus));
+        result.Set("isBlocked", Napi::Boolean::New(env, false));
+        result.Set("path", env.Null());
+        return result;
+    }
+
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         Napi::Error::New(env, "Map data for this Z-level is not loaded.").ThrowAsJavaScriptException();
@@ -722,6 +737,18 @@ Napi::Value Pathfinder::FindPathToGoal(const Napi::CallbackInfo& info) {
         });
     }
 
+    if (start.z != monster.z) {
+        auto endTime = std::chrono::high_resolution_clock::now();
+        double durationMs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count() / 1000.0;
+        Napi::Object result = Napi::Object::New(env);
+        Napi::Object performance = Napi::Object::New(env);
+        performance.Set("totalTimeMs", Napi::Number::New(env, durationMs));
+        result.Set("performance", performance);
+        result.Set("reason", Napi::String::New(env, "DIFFERENT_FLOOR"));
+        result.Set("path", env.Null());
+        return result;
+    }
+
     auto it_map = this->allMapData.find(start.z);
     if (it_map == this->allMapData.end()) {
         Napi::Error::New(env, "Map data for this Z-level is not loaded.").ThrowAsJavaScriptException();
@@ -804,6 +831,10 @@ Napi::Value Pathfinder::GetBlockingCreature(const Napi::CallbackInfo& info) {
         0, 0, nullptr,
         endObj.Get("z").As<Napi::Number>().Int32Value()
     };
+
+    if (start.z != end.z) {
+        return env.Null();
+    }
 
     Napi::Array creaturePositionsArray = info[2].As<Napi::Array>();
     std::vector<Node> creaturePositions;

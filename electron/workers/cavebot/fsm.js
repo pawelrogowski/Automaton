@@ -140,6 +140,20 @@ export function createFsm(workerState, config) {
               // Adjacency check for special actions
               const isAdjacent = context.chebyshevDist <= 1;
               const isActionType = ['Ladder', 'Rope', 'Shovel', 'Machete', 'Door'].includes(targetWaypoint.type);
+
+              // Special check for Ladder: if player is at +1,+1 (bottom-right diagonal) from ladder, skip action and proceed to walk
+              if (
+                targetWaypoint.type === 'Ladder' &&
+                playerPos.x === targetWaypoint.x + 1 &&
+                playerPos.y === targetWaypoint.y + 1
+              ) {
+                logger(
+                  'debug',
+                  `[FSM] Player at diagonal +1,+1 from Ladder waypoint index ${waypointIndex + 1}. Skipping action, proceeding to walk.`,
+                );
+                return 'WALKING';
+              }
+
               if (isActionType && isAdjacent) {
                 return 'PERFORMING_ACTION';
               }

@@ -16,7 +16,7 @@
     "package": "npm run build && electron-builder ",
     "make": "rm -rf dist && npm run pre-build && npm run build && electron-builder",
     "lint": "eslint . --ext .js,.jsx,.mjs",
-    "postinstall": "electron-builder install-app-deps && npm run generate-walkable",
+    "postinstall": "electron-builder install-app-deps",
     "generate-walkable": "node scripts/generateWalkableData.js",
     "preprocess-minimaps": "node scripts/preprocessMinimaps.js",
     "combine-scripts": "node scripts/combineScripts.js"

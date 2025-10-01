@@ -1,5 +1,3 @@
-// /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/index.js
-
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { CavebotLuaExecutor } from '../cavebotLuaExecutor.js';
@@ -40,9 +38,7 @@ const workerState = {
   path: [],
   pathChebyshevDistance: null,
   pathfindingStatus: 0,
-  // ====================== FIX START ======================
-  // Removed all "cachedPath..." properties. They are no longer needed.
-  // ======================= FIX END =======================
+
   playerPosArray: null,
   pathDataArray: null,
   luaExecutor: null,
@@ -53,7 +49,7 @@ const workerState = {
   scriptErrorCount: 0,
   pathfinderInstance: null,
   creatureMonitorSyncTimeout: 0,
-  logger: createLogger({ info: true, error: true, debug: false }),
+  logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,
 };
 
@@ -90,10 +86,6 @@ function handleControlHandover() {
   workerState.lastPathDataCounter = -1;
   workerState.shouldRequestNewPath = true;
 
-  workerState.logger(
-    'info',
-    '[Cavebot] Gained control, cleared path and requesting new pathfinding',
-  );
 
   const currentWaypoint = findCurrentWaypoint(workerState.globalState);
   const allWaypoints = Object.values(
@@ -148,10 +140,6 @@ async function performOperation() {
   }
 
   if (!globalState.cavebot) {
-    workerState.logger(
-      'debug',
-      '[Cavebot] cavebot state not present, skipping tick.',
-    );
     return;
   }
 
@@ -170,10 +158,6 @@ async function performOperation() {
         resetInternalState(workerState, fsm);
       }
     } else if (workerState.fsmState !== 'IDLE') {
-      workerState.logger(
-        'info',
-        '[Cavebot] Player is offline. Resetting cavebot state.',
-      );
       resetInternalState(workerState, fsm);
     }
     return;
@@ -181,7 +165,7 @@ async function performOperation() {
 
   if (
     !globalState.regionCoordinates ||
-    !globalState.regionCoordinates.regions.gameWorld
+    !globalState.regionCoordinates.regions.gameWorld.endFound
   ) {
     workerState.logger(
       'debug',
@@ -232,17 +216,11 @@ async function performOperation() {
   }
 
   if (workerState.fsmState === 'WAITING_FOR_CREATURE_MONITOR_SYNC') {
-    if (controlState !== 'CAVEBOT' && workerState.lastControlState === 'CAVEBOT') {
-      workerState.logger(
-        'info',
-        `[Cavebot] Control lost during CreatureMonitor sync. Current state: ${controlState}. Will not reset FSM.`,
-      );
-    }
     workerState.lastControlState = controlState;
   } else if (controlState !== 'CAVEBOT') {
     if (workerState.lastControlState === 'CAVEBOT') {
       workerState.logger(
-        'info',
+        'debug',
         `[Cavebot] Control lost. Current state: ${controlState}. Resetting FSM.`,
       );
       resetInternalState(workerState, fsm);
@@ -253,7 +231,7 @@ async function performOperation() {
 
   if (workerState.lastControlState !== 'CAVEBOT') {
     workerState.logger(
-      'info',
+      'debug',
       '[Cavebot] Control gained. Handling handover.',
     );
     handleControlHandover();
@@ -262,14 +240,6 @@ async function performOperation() {
 
   updateSABData(workerState, config);
 
-
-  if (!workerState.playerMinimapPosition) {
-    workerState.logger(
-      'debug',
-      '[Cavebot] No player position yet, skipping tick.',
-    );
-    return;
-  }
 
   let targetWaypoint = findCurrentWaypoint(globalState);
   if (!targetWaypoint) {
@@ -309,24 +279,6 @@ async function performOperation() {
   }
   workerState.lastProcessedWptId = targetWaypoint.id;
 
-  if (
-    targetWaypoint.z !== workerState.playerMinimapPosition.z &&
-    targetWaypoint.type !== 'Script'
-  ) {
-    const waypointIndex = waypoints.findIndex(
-      (wpt) => wpt.id === targetWaypoint.id,
-    );
-    workerState.logger(
-      'debug',
-      `Skipping waypoint index ${
-        waypointIndex + 1
-      } due to Z-level mismatch. Player Z: ${
-        workerState.playerMinimapPosition.z
-      }, Waypoint Z: ${targetWaypoint.z}`,
-    );
-    await advanceToNextWaypoint(workerState, config);
-    return;
-  }
 
   const context = {
     playerPos: workerState.playerMinimapPosition,

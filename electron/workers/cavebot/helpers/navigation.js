@@ -151,16 +151,6 @@ export const resetInternalState = (workerState, fsm) => {
   workerState.path = [];
   workerState.pathfindingStatus = PATH_STATUS_IDLE;
 
-  // ====================== FIX START ======================
-  // DO NOT reset the lastPathDataCounter. Resetting it to -1 causes the worker
-  // to immediately re-read the same path data it just processed, creating a
-  // race condition with the FSM reset. By preserving the counter, we allow the
-  // FSM to evaluate the current (and correct) path data on the next tick
-  // without interference from an unnecessary re-read.
-  //
-  // workerState.lastPathDataCounter = -1; // <-- THIS LINE IS REMOVED
-  // ======================= FIX END =======================
-
   // Request a new path from the pathfinder
   workerState.shouldRequestNewPath = true;
   workerState.lastFsmState = null;

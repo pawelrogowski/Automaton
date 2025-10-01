@@ -50,7 +50,8 @@ export function selectBestTarget(sabStateManager, targetingList) {
 }
 
 /**
- * Clicks the next available entry in the battle list for a given creature name.
+ * Clicks the next available entry in the battle list for a given creature name,
+ * or uses the Tab key if the target is the first entry (and nothing is targeted) or next after the current target.
  * @returns {{success: boolean, reason?: string, clickedIndex?: number}}
  */
 export function acquireTarget(
@@ -60,6 +61,51 @@ export function acquireTarget(
   lastClickedIndex
 ) {
   const battleList = sabStateManager.getBattleList() || [];
+  if (battleList.length === 0) {
+    return { success: false, reason: 'battlelist_empty' };
+  }
+
+  // --- START: CORRECTED TAB KEY LOGIC ---
+
+  // Find the first occurrence of our desired target in the battle list.
+  const desiredTargetEntry = battleList.find(
+    (entry) => entry.name === targetName
+  );
+  
+  // Only attempt Tab logic if the desired target is actually in the battle list.
+  if (desiredTargetEntry) {
+    const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
+    const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
+
+    // This single condition correctly handles both scenarios:
+    // 1. If no target is selected, currentTargetIndex is -1. The condition becomes
+    //    (desiredTargetIndex === 0), correctly using Tab for the first entry.
+    // 2. If a target is selected, it correctly uses Tab for the very next entry.
+    const canUseTab = desiredTargetIndex === currentTargetIndex + 1;
+
+    if (canUseTab) {
+      parentPort.postMessage({
+        type: 'inputAction',
+        payload: {
+          type: 'targeting', // Use 'targeting' priority
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['tab', null], // Send the Tab key
+          },
+        },
+      });
+      // Return the index of the target we attempted to acquire.
+      // The FSM will verify if the acquisition was successful.
+      return { success: true, clickedIndex: desiredTargetIndex };
+    }
+  }
+  
+  // --- END: CORRECTED TAB KEY LOGIC ---
+
+
+  // --- FALLBACK TO MOUSE CLICK LOGIC ---
+
   const potentialEntries = battleList
     .map((entry, index) => ({ ...entry, index }))
     .filter((entry) => entry.name === targetName);
@@ -81,7 +127,7 @@ export function acquireTarget(
   parentPort.postMessage({
     type: 'inputAction',
     payload: {
-      type: 'hotkey',
+      type: 'targeting',
       action: {
         module: 'mouseController',
         method: 'leftClick',

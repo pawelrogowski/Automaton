@@ -12,14 +12,14 @@ export const config = {
 
   // --- Action & Movement Timing ---
   animationArrivalTimeoutMs: 500, // Used for shovel/rope to let animation settle
-  actionStateChangeTimeoutMs: 200,
+  actionStateChangeTimeoutMs: 300,
   postDiagonalMoveDelayMs: 150,
-  postTeleportGraceMs: 750,
+  postTeleportGraceMs: 150,
   moveConfirmTimeoutMs: 400,
-  moveConfirmTimeoutDiagonalMs: 650,
+  moveConfirmTimeoutDiagonalMs: 550,
   defaultAwaitStateChangeTimeoutMs: 500,
-  floorChangeGraceMs: 500,
-  controlHandoverGraceMs: 100,
+  floorChangeGraceMs: 250,
+  controlHandoverGraceMs: 25,
 
   // --- Retries & Delays ---
   maxScriptRetries: 1,
@@ -34,5 +34,5 @@ export const config = {
     machete: 'n',
     shovel: 'v',
   },
-  creatureMonitorSyncTimeoutMs: 1000, // Timeout for CreatureMonitor Z-level sync
+  creatureMonitorSyncTimeoutMs: 500, // Timeout for CreatureMonitor Z-level sync
 };

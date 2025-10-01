@@ -245,6 +245,9 @@ export function runPathfindingLogic(context) {
       case 'WAYPOINT_REACHED':
         statusCode = PATH_STATUS_WAYPOINT_REACHED;
         break;
+      case 'DIFFERENT_FLOOR':
+        statusCode = PATH_STATUS_DIFFERENT_FLOOR;
+        break;
       case 'NO_PATH_FOUND':
         statusCode = PATH_STATUS_NO_PATH_FOUND;
         break;
