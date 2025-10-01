@@ -77,14 +77,34 @@ const SettingsRow = styled.div`
 
 const ModalBody = styled.div`
   flex-grow: 1;
-  overflow: hidden; /* CodeMirror handles its own scroll */
+  overflow: hidden; /* Container overflow hidden to contain children */
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 10px;
+  min-height: 0; /* Important for nested flexbox scrolling */
+`;
+
+const EditorContainer = styled.div`
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  
+  /* Ensure CodeMirror's internal scroller works correctly */
+  .cm-editor {
+    height: 100%;
+    overflow: auto;
+  }
+  
+  .cm-scroller {
+    overflow: auto !important;
+  }
 `;
 
 const LogContainer = styled.div`
+  flex-shrink: 0; /* Prevent shrinking */
   height: 200px; /* Fixed height for the log area */
   overflow-y: auto; /* Add scroll if logs exceed height */
   background-color: #1e1e1e; /* Dark background for logs */
@@ -249,15 +269,17 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
           )}
         </ModalHeader>
         <ModalBody>
-          <CodeMirror
-            ref={editorRef}
-            value={code}
-            height="100%"
-            theme={tokyoNight}
-            extensions={[StreamLanguage.define(lua)]}
-            onChange={handleCodeChange}
-            style={{ fontSize: '14px', flexGrow: 1 }}
-          />
+          <EditorContainer>
+            <CodeMirror
+              ref={editorRef}
+              value={code}
+              height="100%"
+              theme={tokyoNight}
+              extensions={[StreamLanguage.define(lua)]}
+              onChange={handleCodeChange}
+              style={{ fontSize: '14px' }}
+            />
+          </EditorContainer>
           <LogContainer ref={logContainerRef}>
             <h4>Script Output:</h4>
             <pre>{liveScript?.log?.join('\n') || ''}</pre>

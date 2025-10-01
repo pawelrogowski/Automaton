@@ -1433,7 +1433,7 @@ const actionBarItems = {
     ],
   },
   utetaResDru: {
-    name: 'Utera Res Dru',
+    name: 'Uteta Res Dru',
     iconName: 'Avatar_Of_Nature',
     categories: ['support'],
     direction: 'horizontal',
@@ -1445,6 +1445,44 @@ const actionBarItems = {
       [25, 25, 25],
       [0, 0, 0],
       [33, 33, 33],
+    ],
+  },
+  exori: {
+    name: 'Exori',
+    iconName: 'Berserk',
+    categories: ['attack'],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [195, 143, 97],
+      [202, 151, 101],
+      [210, 165, 117],
+      [219, 178, 133],
+      [218, 176, 130],
+    ],
+  },
+  exoriHur: {
+    name: 'Exori Hur',
+    iconName: 'Whirlwind_Throw',
+    categories: ['attack'],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [205, 205, 205],
+      [79, 77, 77],
+      [56, 55, 54],
+    ],
+  },
+    exoriIco: {
+    name: 'Exori Ico',
+    iconName: 'BrutalStrike',
+    categories: ['attack'],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [238, 221, 167],
+      [237, 215, 162],
+      [144, 111, 93],
     ],
   },
 };
