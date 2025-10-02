@@ -153,6 +153,8 @@ class WorkerManager {
     this.handleStoreUpdate = this.handleStoreUpdate.bind(this);
     this.debouncedStoreUpdate = this.debouncedStoreUpdate.bind(this);
     this.precalculatedWorkerPayloads = new Map(); // New map for pre-calculated payloads
+    this.debounceMs = 16; // adaptive debounce interval for store updates
+    this.updateTimeEma = 8; // ms, exponential moving average of update time
   }
 
   setupPaths(app, cwd) {
@@ -774,7 +776,7 @@ class WorkerManager {
     }
     this.debounceTimeout = setTimeout(() => {
       this.handleStoreUpdate();
-    }, DEBOUNCE_INTERVAL);
+    }, this.debounceMs);
   }
 
   async handleStoreUpdate() {
@@ -873,11 +875,15 @@ class WorkerManager {
       log('error', '[Worker Manager] Error in handleStoreUpdate:', error);
     }
     const updateTime = performance.now() - perfStart;
-    if (updateTime > 16) {
-      log(
-        'warn',
-        `[Worker Manager] Slow store update: ${updateTime.toFixed(2)}ms`,
-      );
+    // Update EMA and adapt debounce interval with simple hysteresis
+    const alpha = 0.2;
+    this.updateTimeEma = (1 - alpha) * this.updateTimeEma + alpha * updateTime;
+    if (this.updateTimeEma > 20 && this.debounceMs !== 32) {
+      this.debounceMs = 32;
+      log('info', `[Worker Manager] Increasing debounce to ${this.debounceMs}ms (EMA ${this.updateTimeEma.toFixed(1)}ms)`);
+    } else if (this.updateTimeEma < 12 && this.debounceMs !== 16) {
+      this.debounceMs = 16;
+      log('info', `[Worker Manager] Restoring debounce to ${this.debounceMs}ms (EMA ${this.updateTimeEma.toFixed(1)}ms)`);
     }
   }
 
@@ -928,15 +934,36 @@ class WorkerManager {
     this.incomingActionQueue = [];
     this.incomingActionInterval = setInterval(() => {
       if (this.incomingActionQueue.length > 0) {
-        const batch = this.incomingActionQueue.splice(
-          0,
-          this.incomingActionQueue.length,
-        );
+        const batch = this.incomingActionQueue.splice(0, this.incomingActionQueue.length);
+
+        // Coalesce high-frequency updates: keep only the last action per type,
+        // except for additive event types that must not be deduplicated.
+        const ACCUMULATIVE_TYPES = new Set([
+          'lua/addLogEntry',
+          'cavebot/addVisitedTile',
+        ]);
+
+        const latestByType = new Map();
+        const coalesced = [];
+
         for (const action of batch) {
+          if (ACCUMULATIVE_TYPES.has(action.type)) {
+            coalesced.push(action);
+          } else {
+            latestByType.set(action.type, action);
+          }
+        }
+
+        // Append latest of each type
+        for (const a of latestByType.values()) {
+          coalesced.push(a);
+        }
+
+        for (const action of coalesced) {
           setGlobalState(action.type, action.payload);
         }
       }
-    }, 5);
+    }, 16);
   }
 }
 

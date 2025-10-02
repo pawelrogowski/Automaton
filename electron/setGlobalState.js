@@ -16,14 +16,25 @@ function sendBatch() {
 
   const mainWindow = getMainWindow();
   const widgetWindow = getWidgetWindow();
-  const batch = [...actionQueue];
+  // Coalesce redundant actions: keep only the last action per type; preserve additive types
+  const ACCUMULATIVE_TYPES = new Set([
+    'lua/addLogEntry',
+    'cavebot/addVisitedTile',
+  ]);
+  const latestByType = new Map();
+  const coalesced = [];
+  for (const a of actionQueue) {
+    if (ACCUMULATIVE_TYPES.has(a.type)) coalesced.push(a);
+    else latestByType.set(a.type, a);
+  }
+  for (const a of latestByType.values()) coalesced.push(a);
   actionQueue = [];
 
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('state-update-batch', batch);
+    mainWindow.webContents.send('state-update-batch', coalesced);
   }
   if (widgetWindow && !widgetWindow.isDestroyed()) {
-    widgetWindow.webContents.send('state-update-batch', batch);
+    widgetWindow.webContents.send('state-update-batch', coalesced);
   }
 
   isScheduled = false;
@@ -32,10 +43,8 @@ function sendBatch() {
 function scheduleBatch() {
   if (!isScheduled) {
     isScheduled = true;
-    // --- THIS IS THE FIX ---
-    // Use setImmediate for high-throughput, non-UI-blocking batching.
-    // It is more reliable than requestIdleCallback in a busy main process.
-    setImmediate(sendBatch);
+    // Throttle renderer update batching to ~60fps to reduce IPC/paint thrash.
+    setTimeout(sendBatch, 16);
   }
 }
 

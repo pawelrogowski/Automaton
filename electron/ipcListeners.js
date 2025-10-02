@@ -19,9 +19,11 @@ const filename = fileURLToPath(import.meta.url);
 const cwd = dirname(filename);
 const preloadPath = path.join(cwd, '/preload.js');
 
-ipcMain.on('state-change-batch', (_, serializedBatch) => {
+ipcMain.on('state-change-batch', (_, batchOrString) => {
   try {
-    const batch = JSON.parse(serializedBatch);
+    const batch = Array.isArray(batchOrString)
+      ? batchOrString
+      : JSON.parse(batchOrString);
     if (Array.isArray(batch)) {
       for (const action of batch) {
         if (action.origin === 'renderer') {

@@ -30,8 +30,21 @@ const ipcMiddleware = () => (next) => (action) => {
   }
 
   batchTimeout = setTimeout(() => {
-    const serializedBatch = JSON.stringify(actionBatch);
-    window.electron.ipcRenderer.send('state-change-batch', serializedBatch);
+    // Coalesce redundant actions: keep only the last action per type; preserve additive types
+    const ACCUMULATIVE_TYPES = new Set([
+      'lua/addLogEntry',
+      'cavebot/addVisitedTile',
+    ]);
+
+    const latestByType = new Map();
+    const coalesced = [];
+    for (const a of actionBatch) {
+      if (ACCUMULATIVE_TYPES.has(a.type)) coalesced.push(a);
+      else latestByType.set(a.type, a);
+    }
+    for (const a of latestByType.values()) coalesced.push(a);
+
+    window.electron.ipcRenderer.send('state-change-batch', coalesced);
     actionBatch = []; // Clear the batch after sending
     batchTimeout = null;
   }, BATCH_DELAY);
