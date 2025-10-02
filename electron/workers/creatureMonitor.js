@@ -93,6 +93,10 @@ let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let targetLossGracePeriodEndTime = 0;
 let lastBattleListOcrTime = 0;
+// Performance caches for detection
+let lastBarAreas = [];
+let lastReachableSig = null;
+let lastReachableTiles = null;
 // Region snapshot management
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
@@ -566,21 +570,42 @@ async function performOperation() {
       return;
     }
 
-    // Crop health bar scan to dirty union area inside the game world if available
-    let healthScanArea = null;
+    // Compute dirty union for ROI and skip if not touching previous bar areas
+    let dirtyUnion = null;
     if (dirtyRects.length > 0) {
       const margin = Math.max(8, Math.floor((tileSize?.width || 32) * 0.5));
-      const dirtyUnion = unionRect(dirtyRects, margin);
-      if (dirtyUnion) healthScanArea = intersectRects(dirtyUnion, constrainedGameWorld);
+      dirtyUnion = unionRect(dirtyRects, margin);
     }
 
-    const healthBars = await findHealthBars.findHealthBars(
-      sharedBufferView,
-      healthScanArea || constrainedGameWorld,
-    );
-    lastHealthScanTime = now;
-    const newActiveCreatures = new Map();
+    let skipHealthScan = false;
+    if (!playerPositionChanged && dirtyUnion && lastBarAreas && lastBarAreas.length) {
+      let touchesBar = false;
+      for (const area of lastBarAreas) {
+        if (rectsIntersect(area, dirtyUnion)) { touchesBar = true; break; }
+      }
+      if (!touchesBar) skipHealthScan = true;
+    }
+
+    // Crop health bar scan to dirty union area inside the game world if available
+    let healthScanArea = null;
+    if (!skipHealthScan && dirtyUnion) {
+      healthScanArea = intersectRects(dirtyUnion, constrainedGameWorld);
+    }
+
+    let healthBars = [];
+    if (!skipHealthScan) {
+      healthBars = await findHealthBars.findHealthBars(
+        sharedBufferView,
+        healthScanArea || constrainedGameWorld,
+      );
+      lastHealthScanTime = now;
+    }
+    let newActiveCreatures = new Map();
     const matchedHealthBars = new Set();
+    if (skipHealthScan) {
+      // Reuse previous activeCreatures if skipping heavy scan
+      newActiveCreatures = new Map(activeCreatures);
+    }
 
     const canonicalNames = [...new Set(targetingList.map((rule) => rule.name))];
     const performOcrForHealthBar = async (hb) => {
@@ -705,7 +730,7 @@ async function performOperation() {
       }
     }
 
-    if (healthBars.length > matchedHealthBars.size) {
+    if (!skipHealthScan && healthBars.length > matchedHealthBars.size) {
       for (const hb of healthBars) {
         if (!matchedHealthBars.has(hb)) {
           const creatureName = await performOcrForHealthBar(hb);
@@ -734,6 +759,16 @@ async function performOperation() {
     }
 
     activeCreatures = newActiveCreatures;
+
+    // Update lastBarAreas for next-frame proximity checks
+    if (!skipHealthScan && Array.isArray(healthBars)) {
+      lastBarAreas = healthBars.map((hb) => ({
+        x: hb.x - (tileSize?.width || 32),
+        y: hb.y - 20,
+        width: (tileSize?.width || 32) * 2,
+        height: 40,
+      }));
+    }
 
     let detectedEntities = Array.from(activeCreatures.values());
     const blockingCreatures = new Set();
@@ -792,11 +827,19 @@ async function performOperation() {
         minY: currentPlayerMinimapPosition.y - 5,
         maxY: currentPlayerMinimapPosition.y + 5,
       };
-      const reachableTiles = pathfinderInstance.getReachableTiles(
-        currentPlayerMinimapPosition,
-        allCreaturePositions,
-        screenBounds,
-      );
+      const reachableSig = `${currentPlayerMinimapPosition.x},${currentPlayerMinimapPosition.y},${currentPlayerMinimapPosition.z}|${screenBounds.minX},${screenBounds.maxX},${screenBounds.minY},${screenBounds.maxY}|${allCreaturePositions.map((p)=>p?`${p.x},${p.y},${p.z}`:'0,0,0').join(';')}`;
+      let reachableTiles = null;
+      if (reachableSig === lastReachableSig && lastReachableTiles) {
+        reachableTiles = lastReachableTiles;
+      } else {
+        reachableTiles = pathfinderInstance.getReachableTiles(
+          currentPlayerMinimapPosition,
+          allCreaturePositions,
+          screenBounds,
+        );
+        lastReachableSig = reachableSig;
+        lastReachableTiles = reachableTiles;
+      }
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
         const isReachable = typeof reachableTiles[coordsKey] !== 'undefined';

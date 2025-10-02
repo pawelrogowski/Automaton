@@ -62,6 +62,35 @@ const lastScanTs = {
   hotkeyBar: 0,
 };
 
+// Fast checksum cache for resource bars
+const lastBarChecksums = {
+  healthBar: null,
+  manaBar: null,
+};
+const CHECKSUM_GRID = 4; // 4x4 sampling grid for bars
+
+function computeRegionChecksum(buffer, screenWidth, region) {
+  if (!region || region.width <= 0 || region.height <= 0) return 0;
+  const stepX = Math.max(1, Math.floor(region.width / (CHECKSUM_GRID + 1)));
+  const stepY = Math.max(1, Math.floor(region.height / (CHECKSUM_GRID + 1)));
+  let sum = 0 >>> 0;
+  for (let gy = 1; gy <= CHECKSUM_GRID; gy++) {
+    const y = region.y + gy * stepY;
+    if (y < 0) continue;
+    for (let gx = 1; gx <= CHECKSUM_GRID; gx++) {
+      const x = region.x + gx * stepX;
+      if (x < 0) continue;
+      const idx = ((y * screenWidth + x) * 4) >>> 0; // BGRA
+      const b = buffer[idx] || 0;
+      const g = buffer[idx + 1] || 0;
+      const r = buffer[idx + 2] || 0;
+      sum = (sum + r + (g << 1) + (b << 2) + ((x & 0xFF) << 3) + ((y & 0xFF) << 4)) >>> 0;
+    }
+  }
+  sum = (sum + ((region.width & 0xFFFF) << 8) + (region.height & 0xFFFF)) >>> 0;
+  return sum >>> 0;
+}
+
 const reusableGameStateUpdate = {
   storeUpdate: true,
   type: 'gameState/updateGameStateFromMonitorData',
@@ -80,6 +109,7 @@ function runRules(ruleInput) {
   if (!rules?.enabled) return;
   const currentPreset = rules.presets?.[rules.activePresetIndex];
   if (!currentPreset) return;
+  if (!regionCoordinates?.regions || Object.keys(regionCoordinates.regions).length === 0) return;
   try {
     ruleProcessorInstance.processRules(currentPreset, ruleInput, {
       ...global,
@@ -232,8 +262,39 @@ async function processGameState() {
 
   try {
     const now = Date.now();
-    const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
+    // Coalesce dirty rectangles to reduce intersection checks
+    const rawDirty = [...frameUpdateManager.accumulatedDirtyRects];
     frameUpdateManager.accumulatedDirtyRects.length = 0;
+
+    const coalesceRects = (rects) => {
+      if (!rects || rects.length <= 1) return rects || [];
+      const merged = [];
+      const list = rects.slice();
+      while (list.length) {
+        let r = list.pop();
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (let i = list.length - 1; i >= 0; i--) {
+            const o = list[i];
+            const ix = !(r.x + r.width < o.x || o.x + o.width < r.x || r.y + r.height < o.y || o.y + o.height < r.y);
+            if (ix) {
+              const nx = Math.min(r.x, o.x);
+              const ny = Math.min(r.y, o.y);
+              const nx2 = Math.max(r.x + r.width, o.x + o.width);
+              const ny2 = Math.max(r.y + r.height, o.y + o.height);
+              r = { x: nx, y: ny, width: nx2 - nx, height: ny2 - ny };
+              list.splice(i, 1);
+              changed = true;
+            }
+          }
+        }
+        merged.push(r);
+      }
+      return merged;
+    };
+
+    const dirtyRects = coalesceRects(rawDirty);
     const anyDirty = dirtyRects.length > 0;
 
     if (!hasScannedInitially && !anyDirty) {
@@ -275,20 +336,33 @@ async function processGameState() {
       equip: 500,
       hotkeyBar: 250,
     };
+    const MIN_HOTKEY_INTERVAL_MS = 100;
 
     const scanIfNeeded = async () => {
-      // Health percentage
+      // Health percentage with checksum gating
       const hbDirty = isDirty(regions.healthBar);
       if (hbDirty || now - lastScanTs.healthBar > FALLBACK.healthBar || !hasScannedInitially) {
-        lastCalculatedState.hppc = calculateHealthBar(bufferToUse, metadata, regions.healthBar);
-        lastScanTs.healthBar = now;
+        const ck = computeRegionChecksum(bufferToUse, width, regions.healthBar);
+        const same = lastBarChecksums.healthBar !== null && ck === lastBarChecksums.healthBar;
+        const withinFallback = now - lastScanTs.healthBar < FALLBACK.healthBar;
+        if (!(same && withinFallback && hbDirty && hasScannedInitially)) {
+          lastCalculatedState.hppc = calculateHealthBar(bufferToUse, metadata, regions.healthBar);
+          lastScanTs.healthBar = now;
+          lastBarChecksums.healthBar = ck;
+        }
       }
 
-      // Mana percentage
+      // Mana percentage with checksum gating
       const mbDirty = isDirty(regions.manaBar);
       if (mbDirty || now - lastScanTs.manaBar > FALLBACK.manaBar || !hasScannedInitially) {
-        lastCalculatedState.mppc = calculateManaBar(bufferToUse, metadata, regions.manaBar);
-        lastScanTs.manaBar = now;
+        const ck = computeRegionChecksum(bufferToUse, width, regions.manaBar);
+        const same = lastBarChecksums.manaBar !== null && ck === lastBarChecksums.manaBar;
+        const withinFallback = now - lastScanTs.manaBar < FALLBACK.manaBar;
+        if (!(same && withinFallback && mbDirty && hasScannedInitially)) {
+          lastCalculatedState.mppc = calculateManaBar(bufferToUse, metadata, regions.manaBar);
+          lastScanTs.manaBar = now;
+          lastBarChecksums.manaBar = ck;
+        }
       }
 
       // Cooldowns
@@ -319,7 +393,8 @@ async function processGameState() {
 
       // Hotkey bar action items (heaviest)
       const hkDirty = isDirty(regions.hotkeyBar);
-      if (hkDirty || now - lastScanTs.hotkeyBar > FALLBACK.hotkeyBar || !hasScannedInitially) {
+      const hkSince = now - lastScanTs.hotkeyBar;
+      if ((hkDirty && hkSince > MIN_HOTKEY_INTERVAL_MS) || hkSince > FALLBACK.hotkeyBar || !hasScannedInitially) {
         lastCalculatedState.activeActionItems = await calculateActiveActionItems(
           regions.hotkeyBar,
           bufferToUse,

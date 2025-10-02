@@ -30,6 +30,8 @@ const config = {
   mainLoopIntervalMs: 100,
   unreachableTimeoutMs: 400,
   acquireTimeoutMs: 400, // Time to wait for target verification after a click
+  controlHysteresisMs: 150, // Require stability before request/release control
+  dynamicGoalGraceMs: 300,  // Keep dynamic target briefly to avoid flicker
 };
 
 // --- Worker State (data from other sources) ---
@@ -57,6 +59,8 @@ const targetingState = {
     targetName: '',
   },
   lastMovementTime: 0,
+  dynamicTargetLastSetAt: 0,
+  dynamicTargetClearRequestedAt: 0,
 };
 
 const { creaturesSAB } = workerData;
@@ -76,7 +80,8 @@ function transitionTo(newState, reason = '') {
   if (newState === FSM_STATE.SELECTING) {
     targetingState.pathfindingTarget = null;
     targetingState.currentTarget = null;
-    updateDynamicTarget(parentPort, null, []);
+    // Do NOT clear dynamic target immediately; request a clear after grace
+    targetingState.dynamicTargetClearRequestedAt = Date.now();
   }
   if (newState === FSM_STATE.ACQUIRING) {
     targetingState.lastAcquireAttempt.timestamp = 0;
@@ -107,6 +112,7 @@ function handleSelectingState() {
       bestTarget,
       workerState.globalState.targeting.targetingList
     );
+    targetingState.dynamicTargetLastSetAt = Date.now();
     transitionTo(FSM_STATE.ACQUIRING, `Found target: ${bestTarget.name}`);
   } else {
     transitionTo(FSM_STATE.IDLE, 'No valid targets');
@@ -330,16 +336,41 @@ async function performTargeting() {
     globalState.targeting.targetingList
   );
 
+  // Hysteresis: request/release control only after stability window
+  const nowTs = Date.now();
   if (hasValidTarget && controlState === 'CAVEBOT') {
+    if (!performTargeting._requestSince) performTargeting._requestSince = nowTs;
+    if (nowTs - performTargeting._requestSince >= config.controlHysteresisMs) {
+      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
+      performTargeting._requestSince = 0;
+    }
+  } else {
+    performTargeting._requestSince = 0;
+  }
+
+  if (!hasValidTarget && !anyValidTargetExists && controlState === 'TARGETING') {
+    if (!performTargeting._releaseSince) performTargeting._releaseSince = nowTs;
+    if (nowTs - performTargeting._releaseSince >= config.controlHysteresisMs) {
+      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
+      performTargeting._releaseSince = 0;
+    }
+  } else {
+    performTargeting._releaseSince = 0;
+  }
+
+  // Gracefully clear dynamic target if we've been SELECTING for longer than grace
+  if (
+    targetingState.state === FSM_STATE.SELECTING &&
+    targetingState.dynamicTargetClearRequestedAt &&
+    nowTs - targetingState.dynamicTargetClearRequestedAt >= config.dynamicGoalGraceMs &&
+    nowTs - targetingState.dynamicTargetLastSetAt >= config.dynamicGoalGraceMs
+  ) {
     parentPort.postMessage({
       storeUpdate: true,
-      type: 'cavebot/requestTargetingControl',
+      type: 'cavebot/setDynamicTarget',
+      payload: null,
     });
-  } else if (!hasValidTarget && !anyValidTargetExists && controlState === 'TARGETING') {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/releaseTargetingControl',
-    });
+    targetingState.dynamicTargetClearRequestedAt = 0;
   }
 }
 
