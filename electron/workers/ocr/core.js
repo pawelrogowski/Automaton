@@ -46,7 +46,7 @@ async function processPendingRegions() {
   const regionsToProcessNow = new Set();
   for (const [regionKey, startTime] of pendingThrottledRegions.entries()) {
     const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
-    if (now - startTime >= (regionConfig.throttle || 0)) {
+    if (now - startTime >= (regionConfig.throttleMs || 0)) {
       regionsToProcessNow.add(regionKey);
     }
   }
@@ -115,7 +115,7 @@ async function performOperation() {
 
       if (isDirty || needsOneTimeInit) {
         const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
-        if (regionConfig.throttle && !needsOneTimeInit) {
+        if (regionConfig.throttleMs && !needsOneTimeInit) {
           if (!pendingThrottledRegions.has(regionKey)) {
             pendingThrottledRegions.set(regionKey, Date.now());
           }

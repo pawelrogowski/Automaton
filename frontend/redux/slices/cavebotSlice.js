@@ -21,6 +21,7 @@ const parseLegacyCoordinates = (payload) => {
 };
 
 const initialState = {
+  version: 0,
   enabled: false,
   nodeRange: 4,
   wptId: 'null',
@@ -60,6 +61,7 @@ const cavebotSlice = createSlice({
         state.controlState = 'HANDOVER_TO_TARGETING';
         state.isActionPaused = true;
         state.waypointIdAtTargetingStart = state.wptId; // Set the reference waypoint
+        state.version = (state.version || 0) + 1;
       }
     },
 
@@ -74,6 +76,7 @@ const cavebotSlice = createSlice({
         state.controlState === 'CAVEBOT'
       ) {
         state.controlState = 'TARGETING';
+        state.version = (state.version || 0) + 1;
       }
     },
 
@@ -87,13 +90,16 @@ const cavebotSlice = createSlice({
       // Do NOT clear visitedTiles or waypointIdAtTargetingStart here.
       // CavebotWorker needs them to perform the node skip check upon regaining control.
       state.isActionPaused = false;
+      state.version = (state.version || 0) + 1;
     },
 
     setenabled: (state, action) => {
       state.enabled = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setActionPaused: (state, action) => {
       state.isActionPaused = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setwptId: (state, action) => {
       const newWptId = action.payload;
@@ -107,19 +113,25 @@ const cavebotSlice = createSlice({
         if (currentWaypoint && currentWaypoint.label) {
           state.lastLabel = currentWaypoint.label;
         }
+        state.version = (state.version || 0) + 1;
       }
     },
     setwptSelection: (state, action) => {
       state.wptSelection = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setState: (state, action) => {
-      return { ...initialState, ...(action.payload || {}) };
+      const newState = { ...initialState, ...(action.payload || {}) };
+      newState.version = ((state.version || 0) + 1);
+      return newState;
     },
     setStandTime: (state, action) => {
       state.standTime = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setScriptFeedback: (state, action) => {
       state.scriptFeedback = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     addWaypoint: (state, action) => {
       const currentWaypoints =
@@ -157,6 +169,7 @@ const cavebotSlice = createSlice({
       if (currentWaypoints[newWaypointIndex]) {
         state.wptSelection = currentWaypoints[newWaypointIndex].id;
       }
+      state.version = (state.version || 0) + 1;
     },
     addWaypointLogEntry: (state, action) => {
       const { id, message } = action.payload;
@@ -176,6 +189,7 @@ const cavebotSlice = createSlice({
         if (waypoint.log.length > MAX_LOG_SIZE) {
           waypoint.log.splice(0, waypoint.log.length - MAX_LOG_SIZE);
         }
+        state.version = (state.version || 0) + 1;
       }
     },
     removeWaypoint: (state, action) => {
@@ -198,6 +212,7 @@ const cavebotSlice = createSlice({
           state.wptSelection = currentWaypoints[0].id;
         }
       }
+      state.version = (state.version || 0) + 1;
     },
     reorderWaypoints: (state, action) => {
       const { startIndex, endIndex } = action.payload;
@@ -205,6 +220,7 @@ const cavebotSlice = createSlice({
         state.waypointSections[state.currentSection].waypoints;
       const [removed] = currentWaypoints.splice(startIndex, 1);
       currentWaypoints.splice(endIndex, 0, removed);
+      state.version = (state.version || 0) + 1;
     },
     updateWaypoint: (state, action) => {
       const { id, updates } = action.payload;
@@ -214,6 +230,7 @@ const cavebotSlice = createSlice({
       if (existingWaypoint) {
         const parsedUpdates = parseLegacyCoordinates(updates);
         Object.assign(existingWaypoint, parsedUpdates);
+        state.version = (state.version || 0) + 1;
       }
     },
     addWaypointSection: (state, action) => {
@@ -221,6 +238,7 @@ const cavebotSlice = createSlice({
       if (!state.waypointSections[id]) {
         state.waypointSections[id] = { name, waypoints: [] };
         state.currentSection = id;
+        state.version = (state.version || 0) + 1;
       }
     },
     removeWaypointSection: (state, action) => {
@@ -239,6 +257,7 @@ const cavebotSlice = createSlice({
             state.currentSection = 'default';
           }
         }
+        state.version = (state.version || 0) + 1;
       }
     },
     setCurrentWaypointSection: (state, action) => {
@@ -247,12 +266,14 @@ const cavebotSlice = createSlice({
         state.currentSection = sectionId;
         state.wptSelection = null;
         state.wptId = 'null';
+        state.version = (state.version || 0) + 1;
       }
     },
     renameWaypointSection: (state, action) => {
       const { id, name } = action.payload;
       if (state.waypointSections[id]) {
         state.waypointSections[id].name = name;
+        state.version = (state.version || 0) + 1;
       }
     },
     addSpecialArea: (state, action) => {
@@ -304,17 +325,23 @@ const cavebotSlice = createSlice({
         )
       ) {
         state.temporaryBlockedTiles.push({ ...tile, expiry });
+        state.version = (state.version || 0) + 1;
       }
     },
     removeExpiredBlockedTiles: (state) => {
       const now = Date.now();
+      const before = state.temporaryBlockedTiles.length;
       state.temporaryBlockedTiles = state.temporaryBlockedTiles.filter(
         (tile) => tile.expiry > now,
       );
+      if (state.temporaryBlockedTiles.length !== before) {
+        state.version = (state.version || 0) + 1;
+      }
     },
     // --- NEW LOGIC END ---
     setDynamicTarget: (state, action) => {
       state.dynamicTarget = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     addVisitedTile: (state, action) => {
       const { x, y, z } = action.payload;
@@ -324,6 +351,7 @@ const cavebotSlice = createSlice({
         )
       ) {
         state.visitedTiles.push({ x, y, z });
+        state.version = (state.version || 0) + 1;
       }
     },
     /**
@@ -332,13 +360,16 @@ const cavebotSlice = createSlice({
      */
     clearVisitedTiles: (state) => {
       state.visitedTiles = [];
+      state.version = (state.version || 0) + 1;
     },
     setScriptPause: (state, action) => {
       state.isPausedByScript = action.payload.isPaused;
       state.pauseTimerId = action.payload.timerId;
+      state.version = (state.version || 0) + 1;
     },
     setNodeRange: (state, action) => {
       state.nodeRange = action.payload;
+      state.version = (state.version || 0) + 1;
     },
   },
 });

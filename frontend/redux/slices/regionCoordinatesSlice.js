@@ -14,6 +14,7 @@ const initialState = {
     // healthBar: { x: 1699, y: 312, width: 94, height: 14 },
     // ... etc.
   },
+  version: 0,
 };
 
 const regionCoordinatesSlice = createSlice({
@@ -32,6 +33,7 @@ const regionCoordinatesSlice = createSlice({
       // Directly replaces the regions object with the complete payload from the worker.
       // This is much more efficient and safer than updating one by one.
       state.regions = action.payload;
+      state.version = (state.version || 0) + 1;
     },
 
     /**
@@ -45,6 +47,7 @@ const regionCoordinatesSlice = createSlice({
       const { name, x, y, width, height } = action.payload;
       if (name) {
         state.regions[name] = { x, y, width, height, pixelCount: width * height };
+        state.version = (state.version || 0) + 1;
       }
     },
 
@@ -62,6 +65,7 @@ const regionCoordinatesSlice = createSlice({
         if (updates.width !== undefined || updates.height !== undefined) {
           state.regions[name].pixelCount = state.regions[name].width * state.regions[name].height;
         }
+        state.version = (state.version || 0) + 1;
       }
     },
 
@@ -74,6 +78,7 @@ const regionCoordinatesSlice = createSlice({
       const nameToRemove = action.payload;
       if (state.regions[nameToRemove]) {
         delete state.regions[nameToRemove];
+        state.version = (state.version || 0) + 1;
       }
     },
 
@@ -82,6 +87,7 @@ const regionCoordinatesSlice = createSlice({
      */
     resetRegions: (state) => {
       state.regions = initialState.regions;
+      state.version = (state.version || 0) + 1;
     },
 
     /**

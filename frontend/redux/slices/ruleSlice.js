@@ -64,6 +64,7 @@ const validateDelay = (value) => {
 const initialPreset = [];
 
 const initialState = {
+  version: 0,
   enabled: false, // State for global rule processing enable/disable
   activePresetIndex: 0,
   presets: [initialPreset, initialPreset, initialPreset, initialPreset, initialPreset],
@@ -346,10 +347,12 @@ const ruleSlice = createSlice({
       } else {
         console.warn('No rule type matched for ID:', ruleId);
       }
+      state.version = (state.version || 0) + 1;
     },
 
     removeRule: (state, action) => {
       state.presets[state.activePresetIndex] = state.presets[state.activePresetIndex].filter((rule) => rule.id !== action.payload);
+      state.version = (state.version || 0) + 1;
     },
     updateRule: (state, action) => {
       const { id, field, value } = action.payload;
@@ -369,6 +372,7 @@ const ruleSlice = createSlice({
 
         sortPresetRules(state);
       }
+      state.version = (state.version || 0) + 1;
     },
 
     setenabled: (state, action) => {
@@ -396,6 +400,7 @@ const ruleSlice = createSlice({
           rule.conditions.push({ name: condition, value });
         }
       }
+      state.version = (state.version || 0) + 1;
     },
 
     removeCondition: (state, action) => {
@@ -407,6 +412,7 @@ const ruleSlice = createSlice({
           (c) => c.name !== condition,
         );
       }
+      state.version = (state.version || 0) + 1;
     },
 
     loadRules: (state, action) => {
@@ -487,6 +493,7 @@ const ruleSlice = createSlice({
           sortPresetRules(state);
         }
       }
+      state.version = (state.version || 0) + 1;
     },
   },
 });

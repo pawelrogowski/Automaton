@@ -1,6 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
+  version: 0,
   regions: {
     // This object will store OCR results for different regions.
     // Example:
@@ -27,6 +28,7 @@ const ocrSlice = createSlice({
       const newOcrRegions = action.payload;
       if (newOcrRegions && typeof newOcrRegions === 'object') {
         Object.assign(state.regions, newOcrRegions);
+        state.version = (state.version || 0) + 1;
       }
     },
     /**
@@ -34,6 +36,7 @@ const ocrSlice = createSlice({
      */
     resetOcr: (state) => {
       state.regions = initialState.regions;
+      state.version = (state.version || 0) + 1;
     },
     /**
      * Replaces the entire slice state. Use with caution.

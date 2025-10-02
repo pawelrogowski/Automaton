@@ -11,6 +11,7 @@ const initialState = {
   creatureUpdateMs: 0,
   isPausedByScript: false,
   pauseTimerId: null,
+  version: 0,
 };
 
 const targetingSlice = createSlice({
@@ -55,6 +56,7 @@ const targetingSlice = createSlice({
     if (duration) {
       state.creatureUpdateMs = duration;
     }
+    state.version = (state.version || 0) + 1;
   },
   // --- START: MODIFICATION ---
   setTarget: (state, action) => {
@@ -70,6 +72,7 @@ const targetingSlice = createSlice({
         // If the payload is null, clear the target.
         state.target = null;
       }
+      state.version = (state.version || 0) + 1;
     },
     // --- END: MODIFICATION ---
     addCreatureToTargetingList: (state, action) => {
@@ -85,11 +88,13 @@ const targetingSlice = createSlice({
         stickiness: 2,
         onlyIfTrapped: false, // Add new default
       });
+      state.version = (state.version || 0) + 1;
     },
     removeCreatureFromTargetingList: (state, action) => {
       state.targetingList = state.targetingList.filter(
         (creature) => creature.id !== action.payload,
       );
+      state.version = (state.version || 0) + 1;
     },
     updateCreatureInTargetingList: (state, action) => {
       const { id, updates } = action.payload;
@@ -111,6 +116,7 @@ const targetingSlice = createSlice({
           ...state.targetingList[creatureIndex],
           ...updates,
         };
+        state.version = (state.version || 0) + 1;
       }
     },
     setScriptPause: (state, action) => {
@@ -119,6 +125,7 @@ const targetingSlice = createSlice({
     },
     setUseBattleList: (state, action) => {
       state.useBattleList = action.payload;
+      state.version = (state.version || 0) + 1;
     },
   },
 });

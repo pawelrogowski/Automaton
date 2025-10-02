@@ -10,6 +10,7 @@ import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 import findSequences from 'find-sequences-native';
 import actionBarItems from '../constants/actionBarItems.js';
+import { rectsIntersect } from '../utils/rectsIntersect.js';
 
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
@@ -46,6 +47,16 @@ let lastCalculatedState = {
   lastMovementTimestamp: 0,
   lastKnownPlayerMinimapPosition: null,
   monsterNum: 0,
+};
+
+// Per-region last scan timestamps for fallback scanning to detect disappearances
+const lastScanTs = {
+  healthBar: 0,
+  manaBar: 0,
+  cooldownBar: 0,
+  statusBar: 0,
+  equip: 0,
+  hotkeyBar: 0,
 };
 
 const reusableGameStateUpdate = {
@@ -205,7 +216,12 @@ async function processGameState() {
   if (!isInitialized || !currentState?.regionCoordinates?.regions) return;
 
   try {
-    if (!hasScannedInitially && !frameUpdateManager.shouldProcess()) {
+    const now = Date.now();
+    const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
+    frameUpdateManager.accumulatedDirtyRects.length = 0;
+    const anyDirty = dirtyRects.length > 0;
+
+    if (!hasScannedInitially && !anyDirty) {
       lastCalculatedState.isWalking = calculateWalkingState();
       if (currentState?.rules?.enabled && currentState.gameState) {
         runRules({
@@ -227,30 +243,73 @@ async function processGameState() {
     const metadata = { width, height };
     const bufferToUse = sharedBufferView;
 
-    lastCalculatedState.hppc = calculateHealthBar(
-      bufferToUse,
-      metadata,
-      regions.healthBar,
-    );
-    lastCalculatedState.mppc = calculateManaBar(
-      bufferToUse,
-      metadata,
-      regions.manaBar,
-    );
-    Object.assign(lastCalculatedState, calculateCooldowns(regions.cooldownBar));
-    lastCalculatedState.characterStatus = calculateCharacterStatus(
-      regions.statusBar,
-    );
-    lastCalculatedState.equippedItems = calculateEquippedItems(
-      regions.amuletSlot,
-      regions.ringSlot,
-      regions.bootsSlot,
-    );
-    lastCalculatedState.activeActionItems = await calculateActiveActionItems(
-      regions.hotkeyBar,
-      bufferToUse,
-      metadata
-    );
+    const isDirty = (region) =>
+      !!region && dirtyRects.some((dr) => rectsIntersect(region, dr));
+
+    // Fallback thresholds (ms)
+    const FALLBACK = {
+      healthBar: 300,
+      manaBar: 300,
+      cooldownBar: 120,
+      statusBar: 300,
+      equip: 500,
+      hotkeyBar: 250,
+    };
+
+    const scanIfNeeded = async () => {
+      // Health percentage
+      const hbDirty = isDirty(regions.healthBar);
+      if (hbDirty || now - lastScanTs.healthBar > FALLBACK.healthBar || !hasScannedInitially) {
+        lastCalculatedState.hppc = calculateHealthBar(bufferToUse, metadata, regions.healthBar);
+        lastScanTs.healthBar = now;
+      }
+
+      // Mana percentage
+      const mbDirty = isDirty(regions.manaBar);
+      if (mbDirty || now - lastScanTs.manaBar > FALLBACK.manaBar || !hasScannedInitially) {
+        lastCalculatedState.mppc = calculateManaBar(bufferToUse, metadata, regions.manaBar);
+        lastScanTs.manaBar = now;
+      }
+
+      // Cooldowns
+      const cdDirty = isDirty(regions.cooldownBar);
+      if (cdDirty || now - lastScanTs.cooldownBar > FALLBACK.cooldownBar || !hasScannedInitially) {
+        Object.assign(lastCalculatedState, calculateCooldowns(regions.cooldownBar));
+        lastScanTs.cooldownBar = now;
+      }
+
+      // Character status
+      const sbDirty = isDirty(regions.statusBar);
+      if (sbDirty || now - lastScanTs.statusBar > FALLBACK.statusBar || !hasScannedInitially) {
+        lastCalculatedState.characterStatus = calculateCharacterStatus(regions.statusBar);
+        lastScanTs.statusBar = now;
+      }
+
+      // Equipped items (amulet/ring/boots)
+      const equipDirty =
+        isDirty(regions.amuletSlot) || isDirty(regions.ringSlot) || isDirty(regions.bootsSlot);
+      if (equipDirty || now - lastScanTs.equip > FALLBACK.equip || !hasScannedInitially) {
+        lastCalculatedState.equippedItems = calculateEquippedItems(
+          regions.amuletSlot,
+          regions.ringSlot,
+          regions.bootsSlot,
+        );
+        lastScanTs.equip = now;
+      }
+
+      // Hotkey bar action items (heaviest)
+      const hkDirty = isDirty(regions.hotkeyBar);
+      if (hkDirty || now - lastScanTs.hotkeyBar > FALLBACK.hotkeyBar || !hasScannedInitially) {
+        lastCalculatedState.activeActionItems = await calculateActiveActionItems(
+          regions.hotkeyBar,
+          bufferToUse,
+          metadata,
+        );
+        lastScanTs.hotkeyBar = now;
+      }
+    };
+
+    await scanIfNeeded();
 
     // Correctly calculate monsterNum from the battleList state.
     lastCalculatedState.monsterNum =

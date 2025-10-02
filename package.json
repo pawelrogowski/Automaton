@@ -1,6 +1,6 @@
 {
-  "name": "teams-postman",
-  "version": "1.4.6",
+  "name": "miro",
+  "version": "1.4.7",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -22,8 +22,8 @@
     "combine-scripts": "node scripts/combineScripts.js"
   },
   "build": {
-    "appId": "com.electron.teams-postman",
-    "productName": "Teams Postman",
+    "appId": "com.electron.miro",
+    "productName": "Miro",
     "directories": {
       "output": "dist",
       "buildResources": "build"

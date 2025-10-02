@@ -71,6 +71,8 @@ const CREATURE_FLICKER_GRACE_PERIOD_MS = 125;
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
 const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
 const ADJACENT_TIME_THRESHOLD_MS = 0;
+const HEALTHBAR_SCAN_MIN_INTERVAL_MS = 25;
+const TARGET_SCAN_FALLBACK_MS = 250;
 
 let currentState = null;
 let isInitialized = false;
@@ -91,6 +93,8 @@ let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let targetLossGracePeriodEndTime = 0;
 let lastBattleListOcrTime = 0;
+let lastHealthScanTime = 0;
+let lastTargetScanTime = 0;
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
@@ -114,6 +118,61 @@ function rectsIntersect(rectA, rectB) {
     rectA.y < rectB.y + rectB.height &&
     rectA.y + rectA.height > rectB.y
   );
+}
+
+// Helper functions for dirty-rect gating and OCR regions
+function rectanglesIntersectWithMargin(a, b, marginX = 0, marginY = marginX) {
+  if (!a || !b) return false;
+  const expanded = {
+    x: a.x - marginX,
+    y: a.y - marginY,
+    width: a.width + marginX * 2,
+    height: a.height + marginY * 2,
+  };
+  return rectsIntersect(expanded, b);
+}
+
+function unionRect(rects, margin = 0) {
+  if (!rects || rects.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rects) {
+    if (!r) continue;
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.width);
+    maxY = Math.max(maxY, r.y + r.height);
+  }
+  if (!isFinite(minX)) return null;
+  return {
+    x: Math.max(0, Math.floor(minX - margin)),
+    y: Math.max(0, Math.floor(minY - margin)),
+    width: Math.max(0, Math.ceil(maxX - minX + margin * 2)),
+    height: Math.max(0, Math.ceil(maxY - minY + margin * 2)),
+  };
+}
+
+function intersectRects(a, b) {
+  if (!a || !b) return null;
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  if (x2 <= x1 || y2 <= y1) return null;
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
+function getNameplateRegion(hb, gameWorld, tileSize) {
+  if (!hb || !gameWorld || !tileSize) return null;
+  const idealOcrX = hb.x - tileSize.width / 2;
+  const idealOcrY = hb.y - 16;
+  const ocrWidth = tileSize.width;
+  const ocrHeight = 14;
+  const clampedX = Math.max(gameWorld.x, idealOcrX);
+  const clampedY = Math.max(gameWorld.y, idealOcrY);
+  const clampedWidth = Math.min(ocrWidth, gameWorld.x + gameWorld.width - clampedX);
+  const clampedHeight = Math.min(ocrHeight, gameWorld.y + gameWorld.height - clampedY);
+  if (clampedWidth <= 0 || clampedHeight <= 0) return null;
+  return { x: clampedX, y: clampedY, width: clampedWidth, height: clampedHeight };
 }
 
 function postUpdateOnce(type, payload) {
@@ -464,10 +523,45 @@ async function performOperation() {
       y: gameWorld.y + 14,
       height: Math.max(0, gameWorld.height - 28),
     };
+
+    // Skip expensive health bar/target scans unless the game world changed or the player moved
+    const intersectsGameWorld =
+      dirtyRects.length > 0 && dirtyRects.some((r) => rectsIntersect(r, constrainedGameWorld));
+    if (!intersectsGameWorld && !playerPositionChanged) {
+      // Still propagate lightweight list updates if we refreshed them above
+      postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
+      if (battleListEntries.length > 0)
+        parentPort.postMessage({ storeUpdate: true, type: 'battleList/updateLastSeenMs' });
+      postUpdateOnce('uiValues/setPlayers', playerNames);
+      if (playerNames.length > 0)
+        parentPort.postMessage({ storeUpdate: true, type: 'uiValues/updateLastSeenPlayerMs' });
+      postUpdateOnce('uiValues/setNpcs', npcNames);
+      if (npcNames.length > 0)
+        parentPort.postMessage({ storeUpdate: true, type: 'uiValues/updateLastSeenNpcMs' });
+      return;
+    }
+
+    // Minimal interval to smooth out bursts when frames arrive very fast
+    if (!playerPositionChanged && now - lastHealthScanTime < HEALTHBAR_SCAN_MIN_INTERVAL_MS) {
+      postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
+      postUpdateOnce('uiValues/setPlayers', playerNames);
+      postUpdateOnce('uiValues/setNpcs', npcNames);
+      return;
+    }
+
+    // Crop health bar scan to dirty union area inside the game world if available
+    let healthScanArea = null;
+    if (dirtyRects.length > 0) {
+      const margin = Math.max(8, Math.floor((tileSize?.width || 32) * 0.5));
+      const dirtyUnion = unionRect(dirtyRects, margin);
+      if (dirtyUnion) healthScanArea = intersectRects(dirtyUnion, constrainedGameWorld);
+    }
+
     const healthBars = await findHealthBars.findHealthBars(
       sharedBufferView,
-      constrainedGameWorld,
+      healthScanArea || constrainedGameWorld,
     );
+    lastHealthScanTime = now;
     const newActiveCreatures = new Map();
     const matchedHealthBars = new Set();
 
@@ -527,9 +621,24 @@ async function performOperation() {
       }
 
       if (bestMatch) {
-        let creatureName = await performOcrForHealthBar(bestMatch);
-        if (!creatureName) {
+        let creatureName = null;
+        // Only OCR if the nameplate region is actually dirty; otherwise reuse cached name
+        const nameplateRegion = getNameplateRegion(bestMatch, gameWorld, tileSize);
+        const marginH = Math.max(8, Math.floor((tileSize?.width || 32) * 0.3));
+        const marginV = 6;
+        const nameRegionDirty =
+          dirtyRects.length > 0 &&
+          nameplateRegion &&
+          dirtyRects.some((r) => rectanglesIntersectWithMargin(nameplateRegion, r, marginH, marginV));
+        const recentOcr = oldCreature.lastOcrAt && now - oldCreature.lastOcrAt < 1000;
+        if (oldCreature.name && !nameRegionDirty && recentOcr) {
           creatureName = oldCreature.name;
+        } else {
+          creatureName = await performOcrForHealthBar(bestMatch);
+          if (creatureName) oldCreature.lastOcrAt = now;
+          if (!creatureName) {
+            creatureName = oldCreature.name;
+          }
         }
         const detection = {
           absoluteCoords: { x: bestMatch.x, y: bestMatch.y },
@@ -710,10 +819,28 @@ async function performOperation() {
       detectedEntities.every((e) => e.hp === 'Obstructed');
 
     if (!allObstructed) {
-      const targetRect = await findTarget.findTarget(
-        sharedBufferView,
-        gameWorld,
-      );
+      let didScanTarget = false;
+      let targetRect = null;
+      const needsTargetScan =
+        intersectsGameWorld ||
+        playerPositionChanged ||
+        creaturesChanged ||
+        now - lastTargetScanTime >= TARGET_SCAN_FALLBACK_MS;
+
+      if (needsTargetScan) {
+        let targetScanArea = null;
+        if (dirtyRects.length > 0) {
+          const margin = Math.max(8, Math.floor((tileSize?.width || 32) * 0.5));
+          const dirtyUnion = unionRect(dirtyRects, margin);
+          if (dirtyUnion) targetScanArea = intersectRects(dirtyUnion, gameWorld);
+        }
+        targetRect = await findTarget.findTarget(
+          sharedBufferView,
+          targetScanArea || gameWorld,
+        );
+        didScanTarget = true;
+        lastTargetScanTime = now;
+      }
       if (targetRect) {
         targetLossGracePeriodEndTime = 0;
         const playerPosForTargetCalc = isPlayerInAnimationFreeze

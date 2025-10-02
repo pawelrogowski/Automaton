@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import { createLogger } from '../../../electron/utils/logger.js';
 
 const initialState = {
+  version: 0,
   hppc: null,
   mppc: null,
   healingCd: false,
@@ -57,9 +58,11 @@ const gameStateSlice = createSlice({
   reducers: {
     setHealthPercent: (state, action) => {
       state.hppc = action.payload.hppc;
+      state.version = (state.version || 0) + 1;
     },
     setManaPercent: (state, action) => {
       state.mppc = action.payload.mppc;
+      state.version = (state.version || 0) + 1;
     },
     updateGameStateFromMonitorData: (state, action) => {
       const {
@@ -131,12 +134,15 @@ const gameStateSlice = createSlice({
     },
     sethealingCd: (state, action) => {
       state.healingCd = action.payload.healingCd;
+      state.version = (state.version || 0) + 1;
     },
     setsupportCd: (state, action) => {
       state.supportCd = action.payload.supportCd;
+      state.version = (state.version || 0) + 1;
     },
     setattackCd: (state, action) => {
       state.attackCd = action.payload.attackCd;
+      state.version = (state.version || 0) + 1;
     },
     setCharacterStatus: (state, action) => {
       const { characterStatus } = action.payload || {};
@@ -148,24 +154,30 @@ const gameStateSlice = createSlice({
     },
     setPartyNum: (state, action) => {
       state.partyNum = action.payload.partyNum;
+      state.version = (state.version || 0) + 1;
     },
     setState: (state, action) => {
       return action.payload;
     },
     setIsTyping: (state, action) => {
       state.isTyping = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setPlayerMinimapPosition: (state, action) => {
       state.playerMinimapPosition = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setLastMoveTime: (state, action) => {
       state.lastMoveTime = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setCharacterName: (state, action) => {
       state.characterName = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setLastCharacterName: (state, action) => {
       state.lastCharacterName = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     // --- NEW ATOMIC REDUCER ---
     updateCharacterNames: (state, action) => {

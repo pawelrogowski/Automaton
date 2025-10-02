@@ -4,6 +4,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
+  version: 0,
   pathWaypoints: [],
   wptDistance: null,
   routeSearchMs: 0,
@@ -29,12 +30,14 @@ const pathfinderSlice = createSlice({
       if (pathfindingStatus) {
         state.pathfindingStatus = pathfindingStatus;
       }
+      state.version = (state.version || 0) + 1;
     },
     /**
      * Resets the pathfinder state to its initial values.
      */
     resetPathfinder: (state) => {
       Object.assign(state, initialState);
+      state.version = (state.version || 0) + 1;
     },
     /**
      * Replaces the entire slice state. Use with caution.

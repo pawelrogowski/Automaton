@@ -4,6 +4,7 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
+  version: 0,
   skillsWidget: {
     level: null,
     experience: null,
@@ -74,6 +75,7 @@ const uiValuesSlice = createSlice({
     setSkillsWidget: (state, action) => {
       if (action.payload) {
         state.skillsWidget = action.payload;
+        state.version = (state.version || 0) + 1;
       }
     },
     // REMOVED: setBattleListEntries reducer is gone.
@@ -85,6 +87,7 @@ const uiValuesSlice = createSlice({
      */
     setPlayers: (state, action) => {
       state.players = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     updateLastSeenPlayerMs: (state) => {
       state.lastSeenPlayerMs = Date.now();
@@ -97,6 +100,7 @@ const uiValuesSlice = createSlice({
      */
     setNpcs: (state, action) => {
       state.npcs = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     updateLastSeenNpcMs: (state) => {
       state.lastSeenNpcMs = Date.now();

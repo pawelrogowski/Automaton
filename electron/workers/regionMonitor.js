@@ -9,6 +9,7 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 const { sharedData } = workerData;
 const FULL_SCAN_INTERVAL_MS = 500;
 const MIN_LOOP_DELAY_MS = 250;
+const PARTIAL_SCAN_MARGIN_PX = 24; // expand union of dirty rects to better capture anchors
 
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
@@ -26,9 +27,89 @@ let lastWidth = 0;
 let lastHeight = 0;
 let isShuttingDown = false;
 let isScanning = false;
+let lastFullScanTime = 0;
 const frameUpdateManager = new FrameUpdateManager();
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Geometry utils
+function rectsIntersect(a, b) {
+  if (!a || !b) return false;
+  if (a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0) return false;
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function unionRect(rects, margin = 0) {
+  if (!rects || rects.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rects) {
+    if (!r) continue;
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.width);
+    maxY = Math.max(maxY, r.y + r.height);
+  }
+  if (!isFinite(minX)) return null;
+  return {
+    x: Math.max(0, Math.floor(minX - margin)),
+    y: Math.max(0, Math.floor(minY - margin)),
+    width: Math.max(0, Math.ceil(maxX - minX + margin * 2)),
+    height: Math.max(0, Math.ceil(maxY - minY + margin * 2)),
+  };
+}
+
+function deepClone(obj) {
+  return JSON.parse(JSON.stringify(obj || {}));
+}
+
+function flattenRegionsWithPaths(regions, basePath = '', out = new Map()) {
+  if (!regions || typeof regions !== 'object') return out;
+  for (const [key, val] of Object.entries(regions)) {
+    if (!val || typeof val !== 'object') continue;
+    if ('x' in val && 'y' in val && 'width' in val && 'height' in val) {
+      const path = basePath ? `${basePath}.${key}` : key;
+      out.set(path, val);
+      if (val.children) {
+        flattenRegionsWithPaths(val.children, path, out);
+      }
+    }
+  }
+  return out;
+}
+
+function deleteByPath(obj, path) {
+  const parts = path.split('.');
+  let node = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    if (!node[p]) return;
+    node = node[p].children ? node[p] : node[p];
+    if (!node) return;
+    if (i < parts.length - 2) {
+      if (!node.children) return; // path invalid
+      node = node.children;
+    }
+  }
+  const leaf = parts[parts.length - 1];
+  if (node.children && node.children[leaf]) {
+    delete node.children[leaf];
+  } else if (node[leaf]) {
+    delete node[leaf];
+  }
+}
+
+function setByPath(obj, path, value) {
+  const parts = path.split('.');
+  let node = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i];
+    if (!node[p]) node[p] = { children: {} };
+    if (!node[p].children) node[p].children = {};
+    node = node[p].children;
+  }
+  const leaf = parts[parts.length - 1];
+  node[leaf] = value;
+}
 
 // Helper function to remove unnecessary raw position data before sending to store
 function sanitizeRegionsForStore(regions) {
@@ -324,6 +405,40 @@ async function performFullScan(buffer, metadata) {
   return foundRegions;
 }
 
+async function performPartialScan(buffer, metadata, area) {
+  const foundRegions = {};
+  // Limit search to dirty-union area, but keep baseOffset at (0,0) so absolute positions remain correct
+  await findRegionsRecursive(
+    buffer,
+    regionDefinitions,
+    area,
+    { x: 0, y: 0 },
+    foundRegions,
+    metadata,
+  );
+  await processSpecialRegions(buffer, foundRegions, metadata);
+  return foundRegions;
+}
+
+function mergePartialIntoLast(lastRegions, partialRegions, affectedArea) {
+  const merged = deepClone(lastRegions);
+  const lastFlat = flattenRegionsWithPaths(merged);
+  const partialFlat = flattenRegionsWithPaths(partialRegions);
+
+  // Remove any last-known regions that intersect affectedArea but were not rediscovered
+  for (const [path, rect] of lastFlat.entries()) {
+    if (rectsIntersect(rect, affectedArea) && !partialFlat.has(path)) {
+      deleteByPath(merged, path);
+    }
+  }
+
+  // Overlay partial results
+  for (const [path, val] of partialFlat.entries()) {
+    setByPath(merged, path, val);
+  }
+  return merged;
+}
+
 async function mainLoop() {
   while (!isShuttingDown) {
     try {
@@ -332,11 +447,15 @@ async function mainLoop() {
         continue;
       }
 
+      // Collect and clear dirty rects
+      const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
+      frameUpdateManager.accumulatedDirtyRects.length = 0;
+
       const width = Atomics.load(syncArray, WIDTH_INDEX);
       const height = Atomics.load(syncArray, HEIGHT_INDEX);
       const dimensionsChanged = width !== lastWidth || height !== lastHeight;
 
-      if (!frameUpdateManager.shouldProcess() && !dimensionsChanged) {
+      if (dirtyRects.length === 0 && !dimensionsChanged && Date.now() - lastFullScanTime < FULL_SCAN_INTERVAL_MS) {
         await delay(MIN_LOOP_DELAY_MS);
         continue;
       }
@@ -362,14 +481,34 @@ async function mainLoop() {
       isScanning = true;
       try {
         const metadata = { width, height };
-        const newRegions = await performFullScan(sharedBufferView, metadata);
 
-        lastWidth = width;
-        lastHeight = height;
-        lastKnownRegions = newRegions;
+        const now = Date.now();
+        let updatedRegions;
+
+        if (dimensionsChanged || now - lastFullScanTime >= FULL_SCAN_INTERVAL_MS || Object.keys(lastKnownRegions).length === 0) {
+          // Full scan path
+          const newRegions = await performFullScan(sharedBufferView, metadata);
+          lastWidth = width;
+          lastHeight = height;
+          lastKnownRegions = newRegions;
+          lastFullScanTime = now;
+          updatedRegions = newRegions;
+        } else if (dirtyRects.length > 0) {
+          // Partial scan path
+          const area = unionRect(dirtyRects, PARTIAL_SCAN_MARGIN_PX);
+          if (area && area.width > 0 && area.height > 0) {
+            const partial = await performPartialScan(sharedBufferView, metadata, area);
+            lastKnownRegions = mergePartialIntoLast(lastKnownRegions, partial, area);
+            updatedRegions = lastKnownRegions;
+          } else {
+            updatedRegions = lastKnownRegions;
+          }
+        } else {
+          updatedRegions = lastKnownRegions;
+        }
 
         // Sanitize the regions object to remove unnecessary data before posting
-        const sanitizedRegions = sanitizeRegionsForStore(newRegions);
+        const sanitizedRegions = sanitizeRegionsForStore(updatedRegions);
 
         parentPort.postMessage({
           storeUpdate: true,

@@ -3,6 +3,7 @@ import { createSlice } from '@reduxjs/toolkit';
 const DEBOUNCE_DELAY = 500; // 500ms debounce delay
 
 const initialState = {
+  version: 0,
   enabled: false, // State for Lua scripts enable/disable
   persistentScripts: [], // Array to hold persistent Lua script objects
   hotkeyScripts: [], // Array to hold hotkey Lua script objects
@@ -46,6 +47,7 @@ const luaSlice = createSlice({
         return;
       }
       state.error = null; // Clear previous error
+      state.version = (state.version || 0) + 1;
 
       const newScript = {
         id,
@@ -97,6 +99,7 @@ const luaSlice = createSlice({
       } else {
         console.warn('Attempted to add log to unknown script ID:', id);
       }
+      state.version = (state.version || 0) + 1;
     },
 
     /**
@@ -112,6 +115,7 @@ const luaSlice = createSlice({
       if (script) {
         script.log = [];
       }
+      state.version = (state.version || 0) + 1;
     },
 
     /**
@@ -224,6 +228,7 @@ const luaSlice = createSlice({
         // Update last toggle timestamp
         state._lastScriptToggle[scriptIdToToggle] = now;
       }
+      state.version = (state.version || 0) + 1;
     },
 
     setState: (state, action) => {
@@ -264,6 +269,7 @@ const luaSlice = createSlice({
       } else {
         console.warn(`[luaSlice] setScriptEnabledByName: Script with name "${name}" not found.`);
       }
+      state.version = (state.version || 0) + 1;
     },
   },
 });

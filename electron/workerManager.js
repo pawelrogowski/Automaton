@@ -729,7 +729,18 @@ class WorkerManager {
       const relevant = this.precalculatedWorkerPayloads.get(name);
 
       if (relevant && Object.keys(relevant).length) {
-        const hash = quickHash(relevant);
+        // Compute a lightweight signature from per-slice versions when available.
+        const keys = Object.keys(relevant).sort();
+        const FNV_OFFSET = 0x811c9dc5 >>> 0;
+        const FNV_PRIME = 0x01000193 >>> 0;
+        let signature = FNV_OFFSET;
+        for (const k of keys) {
+          const slice = relevant[k];
+          const ver = slice && typeof slice.version === 'number' ? slice.version : quickHash(slice);
+          const part = ver >>> 0;
+          signature = (((signature ^ part) >>> 0) * FNV_PRIME) >>> 0;
+        }
+        const hash = signature >>> 0;
         if (this.workerStateCache.get(name) !== hash) {
           this.workerStateCache.set(name, hash);
           workerEntry.worker.postMessage({

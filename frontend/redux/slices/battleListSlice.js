@@ -2,8 +2,9 @@
 import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
-  entries: [], // Shape: [{ name, x, y }] - No longer tracks 'isTarget'
+  entries: [], // Shape: [{ name, x, y }]
   lastSeenMs: null,
+  version: 0,
 };
 
 const battleListSlice = createSlice({
@@ -16,6 +17,7 @@ const battleListSlice = createSlice({
      */
     setBattleListEntries: (state, action) => {
       state.entries = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     updateLastSeenMs: (state) => {
       state.lastSeenMs = Date.now();
@@ -25,6 +27,7 @@ const battleListSlice = createSlice({
      */
     resetBattleList: (state) => {
       state.entries = initialState.entries;
+      state.version = (state.version || 0) + 1;
     },
     /**
      * Replaces the entire slice state. Use with caution.
