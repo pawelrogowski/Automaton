@@ -377,6 +377,7 @@ const ruleSlice = createSlice({
 
     setenabled: (state, action) => {
       state.enabled = action.payload;
+      state.version = (state.version || 0) + 1;
     },
 
     updateCondition: (state, action) => {

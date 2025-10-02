@@ -37,6 +37,7 @@ const targetingSlice = createSlice({
     },
     setenabled: (state, action) => {
       state.enabled = action.payload;
+      state.version = (state.version || 0) + 1;
     },
     setStickiness: (state, action) => {
       const value = parseInt(action.payload, 10);

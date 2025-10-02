@@ -314,6 +314,15 @@ class WorkerManager {
       return;
     }
 
+    if (message.type === 'request_regions_snapshot') {
+      const worker = this.workers.get(workerName)?.worker;
+      if (worker) {
+        const full = store.getState().regionCoordinates;
+        worker.postMessage({ type: 'regions_snapshot', payload: full });
+      }
+      return;
+    }
+
     if (message.type === 'inputAction') {
       const { payload } = message;
       // NEW: If the action has an ID, it's from a Lua worker that needs a response.
@@ -658,22 +667,29 @@ class WorkerManager {
   getStateChanges(currentState, previousState) {
     const changedSlices = {};
     let hasChanges = false;
+
     for (const key in currentState) {
-      if (currentState[key] !== previousState[key]) {
-        changedSlices[key] = currentState[key];
+      const curr = currentState[key];
+      const prev = previousState[key];
+
+      if (prev === undefined) {
+        changedSlices[key] = curr;
+        hasChanges = true;
+        continue;
+      }
+
+      const currVer = curr && typeof curr.version === 'number' ? curr.version : null;
+      const prevVer = prev && typeof prev.version === 'number' ? prev.version : null;
+
+      if (currVer !== null && prevVer !== null) {
+        if (currVer !== prevVer) {
+          changedSlices[key] = curr;
+          hasChanges = true;
+        }
+      } else if (curr !== prev) {
+        changedSlices[key] = curr;
         hasChanges = true;
       }
-    }
-
-    // Optimization: For pathfinder, only consider it "changed" if the path length is different.
-    // This avoids deep hashing the large path array on every minor change.
-    if (
-      changedSlices.pathfinder &&
-      previousState.pathfinder &&
-      currentState.pathfinder.path?.length ===
-        previousState.pathfinder.path?.length
-    ) {
-      delete changedSlices.pathfinder;
     }
 
     return hasChanges ? changedSlices : null;
@@ -694,27 +710,10 @@ class WorkerManager {
     // Sync specific Redux data to SAB before broadcasting
     this.syncReduxToSAB(currentState);
 
-    this.precalculatedWorkerPayloads.clear();
-    for (const workerName in WORKER_STATE_DEPENDENCIES) {
-      const workerDeps = WORKER_STATE_DEPENDENCIES[workerName];
-      const relevantPayload = {};
-      let hasRelevantChanges = false;
-      for (const k of Object.keys(changedSlices)) {
-        if (workerDeps.includes(k)) {
-          relevantPayload[k] = changedSlices[k];
-          hasRelevantChanges = true;
-        }
-      }
-      if (hasRelevantChanges) {
-        this.precalculatedWorkerPayloads.set(workerName, relevantPayload);
-      }
-    }
-
     for (const [name, workerEntry] of this.workers) {
       if (!workerEntry.worker || name === 'captureWorker') continue;
 
-      const isLuaWorker =
-        /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
+      const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
 
       if (!this.workerInitialized.get(name) || isLuaWorker) {
         // For initial setup or Lua workers, always send the full state
@@ -728,28 +727,41 @@ class WorkerManager {
         continue;
       }
 
-      const relevant = this.precalculatedWorkerPayloads.get(name);
-
-      if (relevant && Object.keys(relevant).length) {
-        // Compute a lightweight signature from per-slice versions when available.
-        const keys = Object.keys(relevant).sort();
-        const FNV_OFFSET = 0x811c9dc5 >>> 0;
-        const FNV_PRIME = 0x01000193 >>> 0;
-        let signature = FNV_OFFSET;
-        for (const k of keys) {
-          const slice = relevant[k];
+      const workerDeps = WORKER_STATE_DEPENDENCIES[name];
+      // Compute signature first, without constructing payload
+      const FNV_OFFSET = 0x811c9dc5 >>> 0;
+      const FNV_PRIME = 0x01000193 >>> 0;
+      let signature = FNV_OFFSET;
+      let hasRelevant = false;
+      for (const dep of workerDeps) {
+        if (Object.prototype.hasOwnProperty.call(changedSlices, dep)) {
+          const slice = changedSlices[dep];
           const ver = slice && typeof slice.version === 'number' ? slice.version : quickHash(slice);
-          const part = ver >>> 0;
-          signature = (((signature ^ part) >>> 0) * FNV_PRIME) >>> 0;
+          signature = (((signature ^ (ver >>> 0)) >>> 0) * FNV_PRIME) >>> 0;
+          hasRelevant = true;
         }
-        const hash = signature >>> 0;
-        if (this.workerStateCache.get(name) !== hash) {
-          this.workerStateCache.set(name, hash);
-          workerEntry.worker.postMessage({
-            type: 'state_diff',
-            payload: relevant,
-          });
+      }
+      if (!hasRelevant) continue;
+
+      const hash = signature >>> 0;
+      if (this.workerStateCache.get(name) === hash) continue;
+      this.workerStateCache.set(name, hash);
+
+      // Construct payload only when signature has changed
+      const relevant = {};
+      for (const dep of workerDeps) {
+        if (Object.prototype.hasOwnProperty.call(changedSlices, dep)) {
+          if (dep === 'regionCoordinates' && name === 'minimapMonitor') {
+            const v = changedSlices[dep]?.version;
+            relevant[dep] = typeof v === 'number' ? { version: v } : { version: 0 };
+          } else {
+            relevant[dep] = changedSlices[dep];
+          }
         }
+      }
+
+      if (Object.keys(relevant).length) {
+        workerEntry.worker.postMessage({ type: 'state_diff', payload: relevant });
       }
     }
   }
@@ -782,9 +794,23 @@ class WorkerManager {
   async handleStoreUpdate() {
     const perfStart = performance.now();
     this.updateCount++;
+    let isCriticalWindow = false;
     try {
       const currentState = store.getState();
       const { windowId, display } = currentState.global;
+
+      // Detect critical windows where we want faster cadence (if budget allows)
+      const cavebotControl = currentState.cavebot?.controlState;
+      const targetingEnabled = !!currentState.targeting?.enabled;
+      const hasTarget = !!currentState.targeting?.target;
+      const hasCreatures = (currentState.targeting?.creatures?.length || 0) > 0;
+      if (
+        cavebotControl === 'HANDOVER_TO_TARGETING' ||
+        cavebotControl === 'TARGETING' ||
+        (targetingEnabled && (hasTarget || hasCreatures))
+      ) {
+        isCriticalWindow = true;
+      }
 
       if (windowId && display) {
         if (!this.sharedData) this.createSharedBuffers();
@@ -878,12 +904,25 @@ class WorkerManager {
     // Update EMA and adapt debounce interval with simple hysteresis
     const alpha = 0.2;
     this.updateTimeEma = (1 - alpha) * this.updateTimeEma + alpha * updateTime;
-    if (this.updateTimeEma > 20 && this.debounceMs !== 32) {
-      this.debounceMs = 32;
-      log('info', `[Worker Manager] Increasing debounce to ${this.debounceMs}ms (EMA ${this.updateTimeEma.toFixed(1)}ms)`);
-    } else if (this.updateTimeEma < 12 && this.debounceMs !== 16) {
-      this.debounceMs = 16;
-      log('info', `[Worker Manager] Restoring debounce to ${this.debounceMs}ms (EMA ${this.updateTimeEma.toFixed(1)}ms)`);
+
+    let newDebounce = this.debounceMs;
+    if (this.updateTimeEma > 20) {
+      newDebounce = 32; // under load, slow down
+    } else if (this.updateTimeEma < 12) {
+      newDebounce = 16; // restore baseline
+    }
+
+    // Critical window fast-track: if budget allows, go faster (down to 12ms)
+    if (isCriticalWindow && this.updateTimeEma < 20) {
+      newDebounce = Math.min(newDebounce, 12);
+    }
+
+    if (newDebounce !== this.debounceMs) {
+      this.debounceMs = newDebounce;
+      log(
+        'info',
+        `[Worker Manager] Debounce adjusted to ${this.debounceMs}ms (EMA ${this.updateTimeEma.toFixed(1)}ms${isCriticalWindow ? ', critical' : ''})`,
+      );
     }
   }
 

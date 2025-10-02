@@ -18,6 +18,10 @@ let needsReProcessing = false;
 let dirtyRectsQueue = [];
 let lastProcessedTime = Date.now();
 
+// Region snapshot management
+let regionsStale = false;
+let lastRequestedRegionsVersion = -1;
+
 const { imageSAB, syncSAB } = workerData.sharedData;
 const syncArray = new Int32Array(syncSAB);
 const sharedBufferView = Buffer.from(imageSAB);
@@ -42,8 +46,27 @@ async function performOperation(dirtyRects) {
     return;
   }
 
-  const { minimapFull, minimapFloorIndicatorColumn } =
-    currentState.regionCoordinates.regions;
+  const regions = currentState?.regionCoordinates?.regions;
+  const version = currentState?.regionCoordinates?.version;
+
+  // Request snapshot if we don't have regions yet
+  if (!regions) {
+    if (version !== lastRequestedRegionsVersion) {
+      parentPort.postMessage({ type: 'request_regions_snapshot' });
+      lastRequestedRegionsVersion = version ?? -1;
+    }
+    return; // Can't proceed without any regions at all
+  }
+
+  // If regions are marked stale, request a fresh snapshot but continue using cached regions
+  if (regionsStale && typeof version === 'number') {
+    if (version !== lastRequestedRegionsVersion) {
+      parentPort.postMessage({ type: 'request_regions_snapshot' });
+      lastRequestedRegionsVersion = version;
+    }
+  }
+
+  const { minimapFull, minimapFloorIndicatorColumn } = regions;
   const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
   if (!minimapFull || !minimapFloorIndicatorColumn || screenWidth <= 0) return;
 
@@ -106,12 +129,33 @@ function handleMessage(message) {
     return;
   }
 
+  if (message.type === 'regions_snapshot') {
+    if (!currentState) currentState = {};
+    currentState.regionCoordinates = message.payload;
+    regionsStale = false;
+    return;
+  }
+
   if (message.type === 'shutdown') {
     console.log('[MinimapCore] Received shutdown command.');
     isShuttingDown = true;
   } else if (message.type === 'state_diff') {
     if (!currentState) currentState = {};
-    Object.assign(currentState, message.payload);
+    const payload = message.payload || {};
+    // Special-case regionCoordinates: accept version-only diffs without wiping regions
+    if (payload.regionCoordinates) {
+      const rc = payload.regionCoordinates;
+      if (typeof rc.version === 'number' && !rc.regions) {
+        if (!currentState.regionCoordinates) currentState.regionCoordinates = {};
+        if (currentState.regionCoordinates.version !== rc.version) {
+          currentState.regionCoordinates.version = rc.version;
+          regionsStale = true;
+        }
+        // Remove to avoid Object.assign clobbering
+        delete payload.regionCoordinates;
+      }
+    }
+    Object.assign(currentState, payload);
   } else if (typeof message === 'object' && !message.type) {
     currentState = message;
     if (!isInitialized) {
