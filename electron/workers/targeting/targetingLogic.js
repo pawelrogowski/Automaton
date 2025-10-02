@@ -54,6 +54,73 @@ export function selectBestTarget(sabStateManager, targetingList) {
  * or uses the Tab key if the target is the first entry (and nothing is targeted) or next after the current target.
  * @returns {{success: boolean, reason?: string, clickedIndex?: number}}
  */
+/**
+ * Generate a randomized return position after battle list click
+ * 70% chance: Return to game world
+ * 30% chance: Wiggle in battle list or drift to minimap area
+ * @param {object} sabStateManager - State manager with region access
+ * @param {number} clickX - X coordinate of the click
+ * @param {number} clickY - Y coordinate of the click
+ * @returns {object} {x, y, duration} or null
+ */
+function getRandomReturnPosition(sabStateManager, clickX, clickY) {
+  const regions = sabStateManager.globalState?.regionCoordinates?.regions;
+  
+  // 70% chance to return to game world (more often out of UI)
+  if (Math.random() < 0.7) {
+    if (!regions?.gameWorld) return null;
+    
+    const gameWorld = regions.gameWorld;
+    
+    // Horizontal position: game world + 125px margins on left/right
+    const horizontalMargin = 125;
+    const extendedX = gameWorld.x - horizontalMargin;
+    const extendedWidth = gameWorld.width + (horizontalMargin * 2);
+    const x = extendedX + Math.floor(Math.random() * extendedWidth);
+    
+    // Vertical position: anywhere within game world height
+    const y = gameWorld.y + Math.floor(Math.random() * gameWorld.height);
+    
+    return { x, y, duration: 150 };
+  }
+  
+  // 30% chance to wiggle/drift in battle list area or minimap
+  // Choose destination: 70% stay in battle list, 30% drift to minimap
+  const driftToMinimap = Math.random() < 0.3;
+  
+  if (driftToMinimap && regions?.minimapFull) {
+    // Drift to minimap area
+    const minimap = regions.minimapFull;
+    const x = minimap.x + Math.floor(Math.random() * minimap.width);
+    const y = minimap.y + Math.floor(Math.random() * minimap.height);
+    const duration = 50 + Math.floor(Math.random() * 51); // 50-100ms
+    return { x, y, duration };
+  } else if (regions?.battleList) {
+    // Wiggle within battle list area
+    const battleList = regions.battleList;
+    
+    // Small random offset from click position (±30px)
+    const offsetX = Math.floor(Math.random() * 61) - 30; // -30 to +30
+    const offsetY = Math.floor(Math.random() * 61) - 30;
+    
+    // Clamp to battle list bounds
+    const x = Math.max(
+      battleList.x,
+      Math.min(battleList.x + battleList.width, clickX + offsetX)
+    );
+    const y = Math.max(
+      battleList.y,
+      Math.min(battleList.y + battleList.height, clickY + offsetY)
+    );
+    
+    const duration = 50 + Math.floor(Math.random() * 51); // 50-100ms
+    return { x, y, duration };
+  }
+  
+  // Fallback: return null to use default behavior
+  return null;
+}
+
 export function acquireTarget(
   sabStateManager,
   parentPort,
@@ -65,47 +132,58 @@ export function acquireTarget(
     return { success: false, reason: 'battlelist_empty' };
   }
 
-  // --- START: CORRECTED TAB KEY LOGIC ---
-
-  // Find the first occurrence of our desired target in the battle list.
-  const desiredTargetEntry = battleList.find(
-    (entry) => entry.name === targetName
-  );
-  
-  // Only attempt Tab logic if the desired target is actually in the battle list.
-  if (desiredTargetEntry) {
-    const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
-    const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
-
-    // This single condition correctly handles both scenarios:
-    // 1. If no target is selected, currentTargetIndex is -1. The condition becomes
-    //    (desiredTargetIndex === 0), correctly using Tab for the first entry.
-    // 2. If a target is selected, it correctly uses Tab for the very next entry.
-    const canUseTab = desiredTargetIndex === currentTargetIndex + 1;
-
-    if (canUseTab) {
-      parentPort.postMessage({
-        type: 'inputAction',
-        payload: {
-          type: 'targeting', // Use 'targeting' priority
-          action: {
-            module: 'keypress',
-            method: 'sendKey',
-            args: ['tab', null], // Send the Tab key
-          },
-        },
-      });
-      // Return the index of the target we attempted to acquire.
-      // The FSM will verify if the acquisition was successful.
-      return { success: true, clickedIndex: desiredTargetIndex };
-    }
+  // Find the desired target and current target indices
+  const desiredTargetEntry = battleList.find((entry) => entry.name === targetName);
+  if (!desiredTargetEntry) {
+    return { success: false, reason: 'not_in_battlelist' };
   }
+
+  const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
+  const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
+
+  // Determine the targeting method
+  // Tab: Move forward (currentIndex + 1 = desiredIndex)
+  // Grave: Move backward (currentIndex - 1 = desiredIndex)
+  // Mouse: Everything else OR 15% random override
   
-  // --- END: CORRECTED TAB KEY LOGIC ---
+  let method = null; // 'tab', 'grave', or 'mouse'
+  
+  // Check if we can use Tab or Grave
+  const canUseTab = desiredTargetIndex === currentTargetIndex + 1;
+  const canUseGrave = currentTargetIndex !== -1 && desiredTargetIndex === currentTargetIndex - 1;
+  
+  // 15% chance to force mouse click even when Tab/Grave would work
+  const forceMouseClick = Math.random() < 0.15;
+  
+  if (canUseTab && !forceMouseClick) {
+    method = 'tab';
+  } else if (canUseGrave && !forceMouseClick) {
+    method = 'grave';
+  } else {
+    method = 'mouse';
+  }
 
+  // --- KEYBOARD METHOD (Tab or Grave) ---
+  if (method === 'tab' || method === 'grave') {
+    const key = method === 'tab' ? 'tab' : 'grave';
+    
+    parentPort.postMessage({
+      type: 'inputAction',
+      payload: {
+        type: 'targeting',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [key, null],
+        },
+      },
+    });
+    
+    return { success: true, clickedIndex: desiredTargetIndex, method };
+  }
 
-  // --- FALLBACK TO MOUSE CLICK LOGIC ---
-
+  // --- MOUSE CLICK METHOD ---
+  // Get all entries with matching name
   const potentialEntries = battleList
     .map((entry, index) => ({ ...entry, index }))
     .filter((entry) => entry.name === targetName);
@@ -115,15 +193,23 @@ export function acquireTarget(
   }
 
   // Find the next entry to click after the last one we tried
-  let nextEntry = potentialEntries.find(
+  let targetEntry = potentialEntries.find(
     (entry) => entry.index > lastClickedIndex
   );
 
   // If no entry is found after the last index, wrap around to the first one
-  if (!nextEntry) {
-    nextEntry = potentialEntries[0];
+  if (!targetEntry) {
+    targetEntry = potentialEntries[0];
   }
 
+  // Get randomized return position (70% game world, 30% wiggle/drift)
+  const returnPos = getRandomReturnPosition(sabStateManager, targetEntry.x, targetEntry.y);
+  
+  // Prepare click args: [x, y, maxDuration, returnPosition]
+  const clickArgs = returnPos
+    ? [targetEntry.x, targetEntry.y, 200, returnPos]
+    : [targetEntry.x, targetEntry.y, 200];
+  
   parentPort.postMessage({
     type: 'inputAction',
     payload: {
@@ -131,12 +217,12 @@ export function acquireTarget(
       action: {
         module: 'mouseController',
         method: 'leftClick',
-        args: [nextEntry.x, nextEntry.y],
+        args: clickArgs,
       },
     },
   });
 
-  return { success: true, clickedIndex: nextEntry.index };
+  return { success: true, clickedIndex: targetEntry.index, method: 'mouse' };
 }
 
 /**

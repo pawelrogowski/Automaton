@@ -288,10 +288,24 @@ export function createTargetingActions(workerContext) {
         `[Targeting] Acquiring target: ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId}). Best untried entry at index ${bestUntriedEntry.index}. Clicking at {${coordString}}. Cycle state size for name: ${cycleState.size}.`,
       );
 
+      // Get randomized return position in horizontal middle of game world
+      const regions = sabStateManager.globalState?.regionCoordinates?.regions;
+      let returnPos = null;
+      if (regions?.gameWorld) {
+        const gw = regions.gameWorld;
+        // Horizontal: anywhere in game world with margins
+        const marginX = Math.floor(gw.width * 0.1);
+        const x = gw.x + marginX + Math.floor(Math.random() * (gw.width - marginX * 2));
+        // Vertical: center with ±100px offset
+        const centerY = gw.y + Math.floor(gw.height / 2);
+        const y = centerY + Math.floor(Math.random() * 201) - 100;
+        returnPos = { x, y };
+      }
+      
       postInputAction('hotkey', {
         module: 'mouseController',
         method: 'leftClick',
-        args: [bestUntriedEntry.x, bestUntriedEntry.y],
+        args: [bestUntriedEntry.x, bestUntriedEntry.y, 250, returnPos], // maxDuration: 250ms, return to game world
       });
 
       
@@ -492,11 +506,25 @@ export function createAmbiguousAcquirer({ sabStateManager, parentPort, targeting
 
     
     function postClickAtCoords(x, y) {
+      // Get randomized return position in horizontal middle of game world
+      const regions = sabStateManager.globalState?.regionCoordinates?.regions;
+      let returnPos = null;
+      if (regions?.gameWorld) {
+        const gw = regions.gameWorld;
+        // Horizontal: anywhere in game world with margins
+        const marginX = Math.floor(gw.width * 0.1);
+        const x = gw.x + marginX + Math.floor(Math.random() * (gw.width - marginX * 2));
+        // Vertical: center with ±100px offset
+        const centerY = gw.y + Math.floor(gw.height / 2);
+        const y = centerY + Math.floor(Math.random() * 201) - 100;
+        returnPos = { x, y };
+      }
+      
       parentPort.postMessage({
         type: 'inputAction',
         payload: {
           type: 'hotkey',
-          action: { module: 'mouseController', method: 'leftClick', args: [x, y] },
+          action: { module: 'mouseController', method: 'leftClick', args: [x, y, 200, returnPos] }, // Return to random game world position
         },
       });
     }

@@ -10,7 +10,11 @@
 #include <queue>
 #include <immintrin.h>
 
-const uint32_t TARGET_BORDER_COLOR = 0xFF0000;
+// Target border colors:
+// Only detect when creature is actually TARGETED (not just hovered)
+const uint32_t TARGET_COLOR_1 = 0xFF0000;  // [255, 0, 0] - targeted
+const uint32_t TARGET_COLOR_2 = 0xFF8080;  // [255, 128, 128] - targeted + hovered
+// Note: We do NOT check for white [255, 255, 255] because that's hover-only, not targeted
 // Minimum number of pixels a cluster must have to be considered part of the border
 const size_t MIN_CLUSTER_SIZE = 10;
 
@@ -27,10 +31,16 @@ struct WorkerData {
     std::mutex* resultsMutex;
 };
 
+// Inline helper: check if pixel matches any target color
+inline bool isTargetColor(uint32_t color) {
+    return color == TARGET_COLOR_1 || color == TARGET_COLOR_2;
+}
+
 void TargetWorker(WorkerData data) {
-    const uint32_t rowChunkSize = 32; // Larger chunks can be better for simple tasks
+    const uint32_t rowChunkSize = 32;
     const __m256i bgr_mask = _mm256_set1_epi32(0x00FFFFFF);
-    const __m256i target_color_v = _mm256_set1_epi32(TARGET_BORDER_COLOR);
+    const __m256i color1_v = _mm256_set1_epi32(TARGET_COLOR_1);
+    const __m256i color2_v = _mm256_set1_epi32(TARGET_COLOR_2);
 
     std::vector<Point> local_results;
 
@@ -46,9 +56,12 @@ void TargetWorker(WorkerData data) {
 
             for (uint32_t x = data.searchX; x + 8 <= endX; x += 8) {
                 __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row + x * 4));
-                chunk = _mm256_and_si256(chunk, bgr_mask); // Ignore alpha channel
+                chunk = _mm256_and_si256(chunk, bgr_mask);
 
-                __m256i cmp = _mm256_cmpeq_epi32(chunk, target_color_v);
+                // Check against both target colors (red and light red)
+                __m256i cmp1 = _mm256_cmpeq_epi32(chunk, color1_v);
+                __m256i cmp2 = _mm256_cmpeq_epi32(chunk, color2_v);
+                __m256i cmp = _mm256_or_si256(cmp1, cmp2);
                 int mask = _mm256_movemask_ps(_mm256_castsi256_ps(cmp));
 
                 if (mask != 0) {
@@ -59,13 +72,13 @@ void TargetWorker(WorkerData data) {
                     }
                 }
             }
-            // Handle remaining pixels that don't fit in an 8-pixel chunk
+            // Handle remaining pixels
             for (uint32_t x = (data.searchX + data.searchW) & ~7; x < endX; ++x) {
-                 const uint8_t* p = row + x * 4;
-                 uint32_t pixelColor = (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[1]) << 8) | p[0];
-                 if (pixelColor == TARGET_BORDER_COLOR) {
-                     local_results.push_back({x, y});
-                 }
+                const uint8_t* p = row + x * 4;
+                uint32_t pixelColor = (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[1]) << 8) | p[0];
+                if (isTargetColor(pixelColor)) {
+                    local_results.push_back({x, y});
+                }
             }
         }
     }
@@ -155,7 +168,7 @@ Napi::Value FindTarget(const Napi::CallbackInfo& info) {
                         if (!visited[neighbor_idx]) {
                            const uint8_t* np = bgraData + ny * stride + nx * 4;
                            uint32_t neighborColor = (static_cast<uint32_t>(np[2]) << 16) | (static_cast<uint32_t>(np[1]) << 8) | np[0];
-                           if (neighborColor == TARGET_BORDER_COLOR) {
+                           if (isTargetColor(neighborColor)) {
                                visited[neighbor_idx] = true;
                                q.push({nx, ny});
                            }

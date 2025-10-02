@@ -956,17 +956,38 @@ async function performOperation() {
     
     let battleListTargetName = null;
     if (battleListRegion) {
-      const redColor = [255, 0, 0];
-      const redBarSequence = new Array(5).fill(redColor);
+      // Check for target marker colors (only when actually TARGETED, not just hovered):
+      // [255, 0, 0] - targeted, [255, 128, 128] - targeted+hovered
+      // Note: We do NOT check white [255, 255, 255] because that's hover-only, not targeted
+      const targetColors = [
+        [255, 0, 0],     // Pure targeted (red)
+        [255, 128, 128], // Targeted + hovered (light red)
+      ];
+      
+      const sequences = {};
+      for (let i = 0; i < targetColors.length; i++) {
+        sequences[`target_bar_${i}`] = {
+          sequence: new Array(5).fill(targetColors[i]),
+          direction: 'vertical'
+        };
+      }
+      
       const result = await findSequences.findSequencesNative(
         sharedBufferView,
-        {
-          red_vertical_bar: { sequence: redBarSequence, direction: 'vertical' },
-        },
+        sequences,
         battleListRegion,
       );
-      if (result && result.red_vertical_bar) {
-        const markerY = result.red_vertical_bar.y;
+      
+      // Check if any of the target colors were found
+      let markerY = null;
+      for (const key in result) {
+        if (result[key]) {
+          markerY = result[key].y;
+          break; // Use first match found
+        }
+      }
+      
+      if (markerY !== null) {
         let closestEntry = null;
         let minDistance = Infinity;
         for (const entry of battleListEntries) {

@@ -36,145 +36,178 @@ const getRandomDelay = (type) => {
 
 const MAX_DEFERRALS = 4;
 
+// Separate queues for keyboard and mouse to allow parallel execution
 let globalState = null;
-const eventQueue = [];
-let isProcessing = false;
+const keyboardQueue = [];
+const mouseQueue = [];
+let isProcessingKeyboard = false;
+let isProcessingMouse = false;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function processQueue() {
-  if (isProcessing || eventQueue.length === 0) {
-    isProcessing = false;
-    return;
-  }
+// Generate random cooldown between actions (50-125ms)
+function getRandomCooldown() {
+  return 50 + Math.floor(Math.random() * 76); // 50-125ms
+}
 
-  // NEW: Defer processing if globalState is not yet available
-  if (
-    !globalState ||
-    !globalState.global?.windowId ||
-    !globalState.global?.display
-  ) {
-    log(
-      'warn',
-      '[InputOrchestrator] Deferring action processing: Missing windowId or display from globalState.',
-    );
-    isProcessing = false; // Allow other messages to be processed
-    return; // Exit and wait for state update
-  }
-
-  isProcessing = true;
-
-  // --- Starvation Prevention Logic ---
-  // First, identify the highest priority currently in the queue
-  let highestPriorityInQueue = Infinity;
-  if (eventQueue.length > 0) {
-    highestPriorityInQueue = eventQueue.reduce(
-      (min, item) => Math.min(min, item.priority),
-      Infinity,
-    );
-  }
-
-  // Iterate through the queue to update deferral counts and elevate priority if needed
-  eventQueue.forEach((item) => {
-    // Only increment deferral count if there's a higher priority item currently in the queue
-    // and this item is not already at the highest possible priority (-1)
-    if (item.priority > highestPriorityInQueue && item.priority !== -1) {
+// Starvation prevention helper
+function applyStarvationPrevention(queue) {
+  if (queue.length === 0) return;
+  
+  const highestPriority = queue.reduce(
+    (min, item) => Math.min(min, item.priority),
+    Infinity
+  );
+  
+  queue.forEach((item) => {
+    if (item.priority > highestPriority && item.priority !== -1) {
       item.deferralCount++;
       if (item.deferralCount >= MAX_DEFERRALS) {
-        // Elevate priority to be higher than any existing priority, but lower than userRule (0)
-        // Let's use -1 for anti-starvation priority.
         item.priority = -1;
         log(
           'warn',
-          `[InputOrchestrator] Elevated priority for ${item.type} due to starvation (${item.deferralCount} deferrals).`,
+          `[InputOrchestrator] Elevated priority for ${item.type} due to starvation.`
         );
       }
     }
   });
-  // --- End Starvation Prevention Logic ---
+}
 
-  eventQueue.sort((a, b) => a.priority - b.priority);
-  const {
-    action,
-    priority,
-    type,
-    originalPriority,
-    deferralCount,
-    insertionTime,
-    actionId, // Extract actionId
-  } = eventQueue.shift();
+// Process keyboard queue (runs independently)
+async function processKeyboardQueue() {
+  if (isProcessingKeyboard || keyboardQueue.length === 0) {
+    isProcessingKeyboard = false;
+    return;
+  }
+
+  if (!globalState?.global?.windowId || !globalState?.global?.display) {
+    isProcessingKeyboard = false;
+    return;
+  }
+
+  isProcessingKeyboard = true;
+
+  // Apply starvation prevention
+  applyStarvationPrevention(keyboardQueue);
+
+  // Sort by priority and get highest priority item
+  keyboardQueue.sort((a, b) => a.priority - b.priority);
+  const item = keyboardQueue.shift();
 
   try {
-    if (
-      !globalState ||
-      !globalState.global?.windowId ||
-      !globalState.global?.display
-    ) {
-      throw new Error('Missing windowId or display from globalState');
-    }
-
-    const windowId = parseInt(globalState.global.windowId, 10);
     const display = globalState.global.display;
+    const { action, type, actionId } = item;
 
-    log(
-      'info',
-      `[InputOrchestrator] Executing action of type: ${type} (Original Prio: ${originalPriority}, Current Prio: ${priority}, Deferrals: ${deferralCount})`,
-    );
+    log('info', `[Keyboard] Executing ${type}: ${action.method}`);
 
-    switch (action.module) {
-      case 'keypress':
-        switch (action.method) {
-          case 'sendKey':
-          case 'keyDown':
-          case 'keyUp':
-            await keypress[action.method](
-              action.args[0],
-              display,
-              action.args[1],
-            );
-            break;
-          case 'typeArray':
-            await keypress.typeArray(action.args[0], display, action.args[1]);
-            break;
-          case 'rotate':
-            await keypress.rotate(display, action.args[0]);
-            break;
-          default:
-            await keypress[action.method](...action.args, display);
-            break;
-        }
+    switch (action.method) {
+      case 'sendKey':
+      case 'keyDown':
+      case 'keyUp':
+        await keypress[action.method](action.args[0], display, action.args[1]);
         break;
-      case 'mouseController':
-        await mouseController[action.method](windowId, ...action.args, display);
+      case 'typeArray':
+        await keypress.typeArray(action.args[0], display, action.args[1]);
+        break;
+      case 'rotate':
+        await keypress.rotate(display, action.args[0]);
         break;
       default:
-        log('warn', `[InputOrchestrator] Unknown module: ${action.module}`);
+        await keypress[action.method](...action.args, display);
+        break;
     }
-  } catch (error) {
-    log('error', '[InputOrchestrator] Error executing action:', error);
-  } finally {
-    // NEW: Send completion message if an actionId was provided
+
     if (actionId !== undefined) {
       parentPort.postMessage({
         type: 'inputActionCompleted',
         payload: { actionId, success: true },
       });
     }
-    const delayMs = getRandomDelay(type);
-    await delay(delayMs);
-    isProcessing = false;
-    processQueue();
+  } catch (error) {
+    log('error', '[Keyboard] Error executing action:', error);
+  } finally {
+    // Randomized cooldown 50-125ms
+    await delay(getRandomCooldown());
+    isProcessingKeyboard = false;
+    processKeyboardQueue();
+  }
+}
+
+// Process mouse queue (runs independently)
+async function processMouseQueue() {
+  if (isProcessingMouse || mouseQueue.length === 0) {
+    isProcessingMouse = false;
+    return;
+  }
+
+  if (!globalState?.global?.windowId || !globalState?.global?.display) {
+    isProcessingMouse = false;
+    return;
+  }
+
+  isProcessingMouse = true;
+
+  // Apply starvation prevention
+  applyStarvationPrevention(mouseQueue);
+
+  // Sort by priority and get highest priority item
+  mouseQueue.sort((a, b) => a.priority - b.priority);
+  const item = mouseQueue.shift();
+
+  try {
+    const windowId = parseInt(globalState.global.windowId, 10);
+    const display = globalState.global.display;
+    const { action, type, actionId } = item;
+
+    log('info', `[Mouse] Executing ${type}: ${action.method}`);
+
+    // Extract mouse parameters
+    const mouseArgs = action.args || [];
+    const maxDuration = mouseArgs[2];
+    const returnPosition = mouseArgs[3];
+
+    // Build parameter list
+    const params = [windowId, mouseArgs[0], mouseArgs[1], display];
+    if (maxDuration !== undefined) {
+      params.push(maxDuration);
+    }
+    if (returnPosition !== undefined) {
+      if (maxDuration === undefined) {
+        params.push(300);
+      }
+      params.push(returnPosition);
+    }
+
+    await mouseController[action.method](...params);
+
+    if (actionId !== undefined) {
+      parentPort.postMessage({
+        type: 'inputActionCompleted',
+        payload: { actionId, success: true },
+      });
+    }
+  } catch (error) {
+    log('error', '[Mouse] Error executing action:', error);
+  } finally {
+    // Randomized cooldown 50-125ms
+    await delay(getRandomCooldown());
+    isProcessingMouse = false;
+    processMouseQueue();
   }
 }
 
 parentPort.on('message', (message) => {
   if (message.type === 'state_full_sync' || message.type === 'state_diff') {
     globalState = message.payload;
-    // NEW: If state is updated, try processing the queue again
-    if (!isProcessing && eventQueue.length > 0) {
-      processQueue();
+    
+    // Try processing both queues if state is updated
+    if (!isProcessingKeyboard && keyboardQueue.length > 0) {
+      processKeyboardQueue();
+    }
+    if (!isProcessingMouse && mouseQueue.length > 0) {
+      processMouseQueue();
     }
     return;
   }
@@ -182,18 +215,30 @@ parentPort.on('message', (message) => {
   if (message.type === 'inputAction') {
     const { payload } = message;
     const priority = PRIORITY_MAP[payload.type] || PRIORITY_MAP.default;
-    eventQueue.push({
+    
+    const item = {
       action: payload.action,
       priority: priority,
-      originalPriority: priority, // Store original priority
+      originalPriority: priority,
       type: payload.type,
-      deferralCount: 0, // Initialize deferral count
-      insertionTime: Date.now(), // Timestamp for tie-breaking if needed
-      actionId: payload.actionId, // Store actionId
-    });
+      deferralCount: 0,
+      insertionTime: Date.now(),
+      actionId: payload.actionId,
+    };
 
-    if (!isProcessing) {
-      processQueue();
+    // Route to appropriate queue based on module
+    if (payload.action.module === 'keypress') {
+      keyboardQueue.push(item);
+      if (!isProcessingKeyboard) {
+        processKeyboardQueue();
+      }
+    } else if (payload.action.module === 'mouseController') {
+      mouseQueue.push(item);
+      if (!isProcessingMouse) {
+        processMouseQueue();
+      }
+    } else {
+      log('warn', `[InputOrchestrator] Unknown module: ${payload.action.module}`);
     }
   }
 });

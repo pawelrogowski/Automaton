@@ -8,7 +8,8 @@
       ],
 
       "libraries": [
-        "-lX11"
+        "-lX11",
+        "-lXtst"
       ],
 
       "cflags_cc": [

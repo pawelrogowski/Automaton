@@ -127,9 +127,8 @@ export function createFsm(workerState, config) {
         }
 
         // 3. Compare Desired State vs. Actual State
-        // 3. Compare Desired State vs. Actual State
         if (desiredWptIdHash !== pathWptIdHash) {
-          console.log("desiredWptIdHash is not equal to pathWptIdHash", desiredWptIdHash,pathWptIdHash)
+          // console.log("desiredWptIdHash is not equal to pathWptIdHash", desiredWptIdHash,pathWptIdHash)
           return 'EVALUATING_WAYPOINT'; // Stay in this state and wait.
         }
 
