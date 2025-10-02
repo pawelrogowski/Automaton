@@ -1,6 +1,22 @@
 // targeting/targetingLogic.js
 
+import {
+  getAbsoluteGameWorldClickCoordinates,
+} from '../../utils/gameWorldClickTranslator.js';
+
 const MOVEMENT_COOLDOWN_MS = 50;
+
+// ==================== GAME WORLD CLICK CONFIG ====================
+// Production-ready configuration based on testing
+
+const GAMEWORLD_CONFIG = {
+  ENABLED: true,                    // Enable game world click targeting
+  STATIONARY_THRESHOLD_MS: 50,      // 50ms stationary minimum (tested and working)
+  ALLOW_ADJACENT: true,             // Always click adjacent creatures in game world
+  PROBABILITY: 0.85,                // 85% chance for eligible creatures (adds variation)
+};
+
+// ====================================================================
 
 /**
  * Selects the best target from a list of creatures based on targeting rules.
@@ -55,77 +71,79 @@ export function selectBestTarget(sabStateManager, targetingList) {
  * @returns {{success: boolean, reason?: string, clickedIndex?: number}}
  */
 /**
- * Generate a randomized return position after battle list click
- * 70% chance: Return to game world
- * 30% chance: Wiggle in battle list or drift to minimap area
- * @param {object} sabStateManager - State manager with region access
+ * Generate a randomized return position after game world click
+ * Moves cursor 1-3 tiles away from click position, staying within game world
+ * @param {object} globalState - State with region access
  * @param {number} clickX - X coordinate of the click
  * @param {number} clickY - Y coordinate of the click
  * @returns {object} {x, y, duration} or null
  */
-function getRandomReturnPosition(sabStateManager, clickX, clickY) {
-  const regions = sabStateManager.globalState?.regionCoordinates?.regions;
+function getReturnPositionGameWorld(globalState, clickX, clickY) {
+  const regions = globalState?.regionCoordinates?.regions;
+  const tileSize = regions?.tileSize;
+  const gameWorld = regions?.gameWorld;
   
-  // 70% chance to return to game world (more often out of UI)
-  if (Math.random() < 0.7) {
-    if (!regions?.gameWorld) return null;
-    
-    const gameWorld = regions.gameWorld;
-    
-    // Horizontal position: game world + 125px margins on left/right
-    const horizontalMargin = 125;
-    const extendedX = gameWorld.x - horizontalMargin;
-    const extendedWidth = gameWorld.width + (horizontalMargin * 2);
-    const x = extendedX + Math.floor(Math.random() * extendedWidth);
-    
-    // Vertical position: anywhere within game world height
-    const y = gameWorld.y + Math.floor(Math.random() * gameWorld.height);
-    
-    return { x, y, duration: 150 };
-  }
+  if (!gameWorld || !tileSize) return null;
   
-  // 30% chance to wiggle/drift in battle list area or minimap
-  // Choose destination: 70% stay in battle list, 30% drift to minimap
-  const driftToMinimap = Math.random() < 0.3;
+  // Random tile distance: 1-3 tiles away
+  const tileDistance = 1 + Math.floor(Math.random() * 3); // 1, 2, or 3
+  const pixelDistance = tileDistance * tileSize.width;
   
-  if (driftToMinimap && regions?.minimapFull) {
-    // Drift to minimap area
-    const minimap = regions.minimapFull;
-    const x = minimap.x + Math.floor(Math.random() * minimap.width);
-    const y = minimap.y + Math.floor(Math.random() * minimap.height);
-    const duration = 50 + Math.floor(Math.random() * 51); // 50-100ms
-    return { x, y, duration };
-  } else if (regions?.battleList) {
-    // Wiggle within battle list area
-    const battleList = regions.battleList;
-    
-    // Small random offset from click position (±30px)
-    const offsetX = Math.floor(Math.random() * 61) - 30; // -30 to +30
-    const offsetY = Math.floor(Math.random() * 61) - 30;
-    
-    // Clamp to battle list bounds
-    const x = Math.max(
-      battleList.x,
-      Math.min(battleList.x + battleList.width, clickX + offsetX)
-    );
-    const y = Math.max(
-      battleList.y,
-      Math.min(battleList.y + battleList.height, clickY + offsetY)
-    );
-    
-    const duration = 50 + Math.floor(Math.random() * 51); // 50-100ms
-    return { x, y, duration };
-  }
+  // Random angle for direction
+  const angle = Math.random() * 2 * Math.PI;
   
-  // Fallback: return null to use default behavior
-  return null;
+  // Calculate offset
+  const offsetX = Math.cos(angle) * pixelDistance;
+  const offsetY = Math.sin(angle) * pixelDistance;
+  
+  // Candidate position
+  let x = Math.round(clickX + offsetX);
+  let y = Math.round(clickY + offsetY);
+  
+  // Clamp to game world bounds
+  x = Math.max(gameWorld.x, Math.min(gameWorld.x + gameWorld.width - 1, x));
+  y = Math.max(gameWorld.y, Math.min(gameWorld.y + gameWorld.height - 1, y));
+  
+  return { x, y, duration: 100 + Math.floor(Math.random() * 51) }; // 100-150ms
+}
+
+/**
+ * Generate a randomized return position after battle list click
+ * Wiggles within battle list area (±50px radius, clamped to bounds)
+ * @param {object} globalState - State with region access
+ * @param {number} clickX - X coordinate of the click
+ * @param {number} clickY - Y coordinate of the click
+ * @returns {object} {x, y, duration} or null
+ */
+function getReturnPositionBattleList(globalState, clickX, clickY) {
+  const regions = globalState?.regionCoordinates?.regions;
+  const battleList = regions?.battleList;
+  
+  if (!battleList) return null;
+  
+  // Random offset within ±50px radius
+  const offsetX = Math.floor(Math.random() * 101) - 50; // -50 to +50
+  const offsetY = Math.floor(Math.random() * 101) - 50;
+  
+  // Clamp to battle list bounds
+  const x = Math.max(
+    battleList.x,
+    Math.min(battleList.x + battleList.width - 1, clickX + offsetX)
+  );
+  const y = Math.max(
+    battleList.y,
+    Math.min(battleList.y + battleList.height - 1, clickY + offsetY)
+  );
+  
+  return { x, y, duration: 50 + Math.floor(Math.random() * 51) }; // 50-100ms
 }
 
 export function acquireTarget(
   sabStateManager,
   parentPort,
   targetName,
-  lastClickedIndex
+  lastClickedIndex,
+  globalState = null  // Optional: for region/player position access
 ) {
   const battleList = sabStateManager.getBattleList() || [];
   if (battleList.length === 0) {
@@ -141,7 +159,98 @@ export function acquireTarget(
   const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
   const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
 
-  // Determine the targeting method
+  // --- NEW: Check if we can use game world click for stationary creature ---
+  const creatures = sabStateManager.getCreatures();
+  const targetCreature = creatures.find(c => c.name === targetName && c.isReachable);
+  
+  console.log(`[GameWorld] Targeting: ${targetName}, Found: ${!!targetCreature}, Total creatures: ${creatures.length}`);
+  
+  // Prefer game world click if creature is stationary or adjacent
+  if (targetCreature && GAMEWORLD_CONFIG.ENABLED) {
+    // CRITICAL: Never use game world clicks when HP is obstructed
+    // Obstructed HP means the creature might not be properly clickable in the game world
+    if (targetCreature.hp === 'Obstructed') {
+      console.log(`[GameWorld] ${targetName}: HP obstructed - forcing battle list/Tab`);
+      // Fall through to battle list/keyboard targeting
+    } else {
+      const stationaryDur = targetCreature.stationaryDuration ?? 0;
+      const isStationary = stationaryDur >= GAMEWORLD_CONFIG.STATIONARY_THRESHOLD_MS;
+      const isAdjacent = targetCreature.isAdjacent ?? false;
+    
+      // Determine if we should use game world click:
+      // 1. Adjacent creatures - always click (instant, no mouse travel time)
+      // 2. Stationary creatures (>= 50ms) - 85% chance
+      let shouldUseGameWorldClick = false;
+      
+      if (GAMEWORLD_CONFIG.ALLOW_ADJACENT && isAdjacent) {
+        shouldUseGameWorldClick = true; // Adjacent = always safe
+        console.log(`[GameWorld] ${targetName}: Adjacent creature - using game world click`);
+      } else if (isStationary) {
+        shouldUseGameWorldClick = Math.random() < GAMEWORLD_CONFIG.PROBABILITY;
+        console.log(`[GameWorld] ${targetName}: Stationary ${stationaryDur}ms - gameworld=${shouldUseGameWorldClick}`);
+      } else {
+        console.log(`[GameWorld] ${targetName}: Moving/new (${stationaryDur}ms) - using Tab/BL`);
+      }
+      
+      if (shouldUseGameWorldClick && targetCreature.gameCoords) {
+        const regions = globalState?.regionCoordinates?.regions;
+        const playerPos = sabStateManager.getCurrentPlayerPosition();
+        
+        console.log(`[GameWorld] Has regions=${!!regions}, gameWorld=${!!regions?.gameWorld}, tileSize=${!!regions?.tileSize}, playerPos=${!!playerPos}`);
+        
+        if (regions?.gameWorld && regions?.tileSize && playerPos) {
+          const clickCoords = getAbsoluteGameWorldClickCoordinates(
+            targetCreature.gameCoords.x,
+            targetCreature.gameCoords.y,
+            playerPos,
+            regions.gameWorld,
+            regions.tileSize,
+            'center'
+          );
+          
+          if (clickCoords) {
+            // Add small random offset (±5 pixels) for natural variation
+            const offsetX = Math.floor(Math.random() * 11) - 5; // -5 to +5
+            const offsetY = Math.floor(Math.random() * 11) - 5;
+            
+            clickCoords.x += offsetX;
+            clickCoords.y += offsetY;
+            
+            console.log(`[GameWorld] ✓ Dispatching game world click at (${clickCoords.x}, ${clickCoords.y})`);
+            
+            // Get game-world-aware return position (1-3 tiles away, within game world)
+            const returnPos = getReturnPositionGameWorld(globalState, clickCoords.x, clickCoords.y);
+            
+            const clickArgs = returnPos
+              ? [clickCoords.x, clickCoords.y, 200, returnPos]
+              : [clickCoords.x, clickCoords.y, 200];
+            
+            parentPort.postMessage({
+              type: 'inputAction',
+              payload: {
+                type: 'targeting',
+                action: {
+                  module: 'mouseController',
+                  method: 'leftClick',
+                  args: clickArgs,
+                },
+              },
+            });
+            
+            return {
+              success: true, 
+              clickedIndex: desiredTargetIndex, 
+              method: 'gameworld',
+              stationary: isStationary,
+              velocity: targetCreature.velocity
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // --- ORIGINAL: Determine the targeting method ---
   // Tab: Move forward (currentIndex + 1 = desiredIndex)
   // Grave: Move backward (currentIndex - 1 = desiredIndex)
   // Mouse: Everything else OR 15% random override
@@ -202,13 +311,21 @@ export function acquireTarget(
     targetEntry = potentialEntries[0];
   }
 
-  // Get randomized return position (70% game world, 30% wiggle/drift)
-  const returnPos = getRandomReturnPosition(sabStateManager, targetEntry.x, targetEntry.y);
+  // Add randomization to battle list click coordinates
+  // Vertical: ±3 pixels, Horizontal: ±30 pixels
+  const verticalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3
+  const horizontalOffset = Math.floor(Math.random() * 61) - 30; // -30 to +30
+  
+  const clickX = targetEntry.x + horizontalOffset;
+  const clickY = targetEntry.y + verticalOffset;
+
+  // Get battle-list-aware return position (wiggle within 50px, stay in battle list)
+  const returnPos = getReturnPositionBattleList(globalState, clickX, clickY);
   
   // Prepare click args: [x, y, maxDuration, returnPosition]
   const clickArgs = returnPos
-    ? [targetEntry.x, targetEntry.y, 200, returnPos]
-    : [targetEntry.x, targetEntry.y, 200];
+    ? [clickX, clickY, 200, returnPos]
+    : [clickX, clickY, 200];
   
   parentPort.postMessage({
     type: 'inputAction',

@@ -123,6 +123,16 @@ export class SABStateManager {
     };
   }
 
+  // Get current player position (always, ignoring counter)
+  getCurrentPlayerPosition() {
+    if (!this.playerPosArray) return null;
+    return {
+      x: Atomics.load(this.playerPosArray, PLAYER_X_INDEX),
+      y: Atomics.load(this.playerPosArray, PLAYER_Y_INDEX),
+      z: Atomics.load(this.playerPosArray, PLAYER_Z_INDEX),
+    };
+  }
+
   // --- Battle List ---
   getBattleList() {
     if (!this.battleListArray) return [];

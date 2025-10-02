@@ -35,6 +35,7 @@ const DEFAULT_WORKER_CONFIG = {
   pathfinderWorker: true,
   windowTitleMonitor: true,
   inputOrchestrator: true,
+  mouseNoiseWorker: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -82,6 +83,7 @@ const WORKER_STATE_DEPENDENCIES = {
   pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
   windowTitleMonitor: ['global', 'gameState'],
   inputOrchestrator: ['global'],
+  mouseNoiseWorker: ['global', 'regionCoordinates', 'cavebot', 'targeting'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -93,6 +95,7 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'cavebotWorker',
   'targetingWorker',
   'pathfinderWorker',
+  'mouseNoiseWorker',
 ]);
 
 
@@ -875,6 +878,12 @@ if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'scree
           !this.workers.has('inputOrchestrator')
         )
           this.startWorker('inputOrchestrator');
+        
+        if (
+          this.workerConfig.mouseNoiseWorker &&
+          !this.workers.has('mouseNoiseWorker')
+        )
+          this.startWorker('mouseNoiseWorker');
       } else {
         if (this.workers.size > 0) {
           log(

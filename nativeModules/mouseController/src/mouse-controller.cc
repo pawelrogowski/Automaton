@@ -452,25 +452,9 @@ void DoSyntheticClick(const Napi::CallbackInfo& info, unsigned int button, const
         // Move to specified position with moderate speed
         MovementPlan return_plan = plan_movement(display.get(), abs_return_x, abs_return_y, 150, profile);
         execute_movement(display.get(), return_plan, abs_return_x, abs_return_y);
-    } else {
-        // Default behavior: small drift or safe zone
-        if (timing_generator.get_random() < 0.7) {
-            int drift_x = (rand() % 5) - 2; // ±2 pixels
-            int drift_y = (rand() % 5) - 2;
-            XTestFakeMotionEvent(display.get(), -1, target_x + drift_x, target_y + drift_y, CurrentTime);
-            XFlush(display.get());
-            
-            cursor_state.last_x = target_x + drift_x;
-            cursor_state.last_y = target_y + drift_y;
-        } else {
-            // Return to randomized safe zone
-            int safe_x = 1300 + (rand() % 200); // 1300-1500
-            int safe_y = 20 + (rand() % 30);     // 20-50
-            
-            MovementPlan return_plan = plan_movement(display.get(), safe_x, safe_y, 100, profile);
-            execute_movement(display.get(), return_plan, safe_x, safe_y);
-        }
     }
+    // Note: If no return position specified, mouse stays at click location
+    // This allows JavaScript layer to have full control over cursor positioning
 }
 
 /**
@@ -649,6 +633,45 @@ Napi::Value MouseMove(const Napi::CallbackInfo& info) {
     return info.Env().Null();
 }
 
+// XTest-based absolute cursor movement (for mouse noise/natural movement)
+Napi::Value XTestMoveCursor(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    
+    // Requires: x, y (absolute screen coords), display
+    if (info.Length() < 3 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsString()) {
+        Napi::TypeError::New(env, "XTestMoveCursor requires 3 arguments: (x, y, display)").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    
+    const int abs_x = info[0].As<Napi::Number>().Int32Value();
+    const int abs_y = info[1].As<Napi::Number>().Int32Value();
+    const std::string display_name = info[2].As<Napi::String>().Utf8Value();
+    
+    // Connect to X Server
+    DisplayPtr display(XOpenDisplay(display_name.empty() ? nullptr : display_name.c_str()));
+    if (!display) {
+        Napi::Error::New(env, "Failed to connect to X server").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    
+    // Check XTest Extension
+    if (!initialize_xtest(display.get())) {
+        Napi::Error::New(env, "XTest extension not available").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    
+    // Move cursor to absolute position using XTest
+    XTestFakeMotionEvent(display.get(), -1, abs_x, abs_y, CurrentTime);
+    XFlush(display.get());
+    
+    // Update cursor state
+    cursor_state.last_x = abs_x;
+    cursor_state.last_y = abs_y;
+    cursor_state.initialized = true;
+    
+    return env.Null();
+}
+
 // --- Module Initialization ---
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     // Initialize X11 threading
@@ -672,6 +695,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("rightMouseDown", Napi::Function::New(env, RightMouseDown));
     exports.Set("rightMouseUp", Napi::Function::New(env, RightMouseUp));
     exports.Set("mouseMove", Napi::Function::New(env, MouseMove));
+    exports.Set("xtestMoveCursor", Napi::Function::New(env, XTestMoveCursor));
     return exports;
 }
 

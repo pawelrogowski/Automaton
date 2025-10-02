@@ -178,7 +178,8 @@ function handleAcquiringState() {
     sabStateManager,
     parentPort,
     pathfindingTarget.name,
-    targetingState.lastAcquireAttempt.battleListIndex
+    targetingState.lastAcquireAttempt.battleListIndex,
+    workerState.globalState  // Pass globalState for region access
   );
 
   targetingState.lastAcquireAttempt.timestamp = now;
