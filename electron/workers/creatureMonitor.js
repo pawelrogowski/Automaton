@@ -93,6 +93,9 @@ let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let targetLossGracePeriodEndTime = 0;
 let lastBattleListOcrTime = 0;
+// Region snapshot management
+let regionsStale = false;
+let lastRequestedRegionsVersion = -1;
 let lastHealthScanTime = 0;
 let lastTargetScanTime = 0;
 
@@ -371,7 +374,21 @@ async function performOperation() {
       !pathfinderInstance?.isLoaded
     )
       return;
-    const { regions } = currentState.regionCoordinates;
+    const rc = currentState.regionCoordinates;
+    const regions = rc?.regions;
+    const version = rc?.version;
+    if (!regions) {
+      if (version !== lastRequestedRegionsVersion) {
+        parentPort.postMessage({ type: 'request_regions_snapshot' });
+        lastRequestedRegionsVersion = version ?? -1;
+      }
+      return;
+    }
+    if (regionsStale && typeof version === 'number' && version !== lastRequestedRegionsVersion) {
+      parentPort.postMessage({ type: 'request_regions_snapshot' });
+      lastRequestedRegionsVersion = version;
+    }
+
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
 
@@ -1121,28 +1138,34 @@ parentPort.on('message', async (message) => {
     } else if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
       Object.assign(currentState, message.payload);
+    } else if (message.type === 'regions_snapshot') {
+      currentState = currentState || {};
+      currentState.regionCoordinates = message.payload;
+      regionsStale = false;
+      return;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
-    }
-    if (currentState && !isInitialized) {
-      isInitialized = true;
-      initialize()
-        .then(() => {
-          if (currentState.gameState?.playerMinimapPosition) {
-            previousPlayerMinimapPosition = {
-              ...currentState.gameState.playerMinimapPosition,
-            };
-            lastStablePlayerMinimapPosition = {
-              ...currentState.gameState.playerMinimapPosition,
-            };
-          }
-        })
-        .catch((err) =>
-          logger('error', '[CreatureMonitor] Initialization failed:', err),
-        );
+      if (currentState && !isInitialized) {
+        isInitialized = true;
+        initialize()
+          .then(() => {
+            if (currentState.gameState?.playerMinimapPosition) {
+              previousPlayerMinimapPosition = {
+                ...currentState.gameState.playerMinimapPosition,
+              };
+              lastStablePlayerMinimapPosition = {
+                ...currentState.gameState.playerMinimapPosition,
+              };
+            }
+          })
+          .catch((err) =>
+            logger('error', '[CreatureMonitor] Initialization failed:', err),
+          );
+      }
     }
     performOperation();
   } catch (e) {
     logger('error', '[CreatureMonitor] Error handling message:', e);
   }
 });
+

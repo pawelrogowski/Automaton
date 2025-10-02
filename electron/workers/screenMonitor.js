@@ -28,6 +28,9 @@ let currentState = null;
 let isShuttingDown = false;
 let isInitialized = false;
 let hasScannedInitially = false;
+// Region snapshot management
+let regionsStale = false;
+let lastRequestedRegionsVersion = -1;
 
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor(parentPort);
@@ -213,7 +216,19 @@ function calculateWalkingState() {
 }
 
 async function processGameState() {
-  if (!isInitialized || !currentState?.regionCoordinates?.regions) return;
+  if (!isInitialized) return;
+
+  // Ensure we have regions or request snapshot; continue with cached regions if stale
+  const rc = currentState?.regionCoordinates;
+  const regions = rc?.regions;
+  const version = rc?.version;
+  if (!regions) {
+    if (version !== lastRequestedRegionsVersion) {
+      parentPort.postMessage({ type: 'request_regions_snapshot' });
+      lastRequestedRegionsVersion = version ?? -1;
+    }
+    return;
+  }
 
   try {
     const now = Date.now();
@@ -237,7 +252,12 @@ async function processGameState() {
 
     const width = Atomics.load(syncArray, WIDTH_INDEX);
     const height = Atomics.load(syncArray, HEIGHT_INDEX);
-    const { regions } = currentState.regionCoordinates;
+    // If regions are stale, request snapshot but keep using cached regions
+    if (regionsStale && typeof version === 'number' && version !== lastRequestedRegionsVersion) {
+      parentPort.postMessage({ type: 'request_regions_snapshot' });
+      lastRequestedRegionsVersion = version;
+    }
+
     if (Object.keys(regions).length === 0 || width <= 0 || height <= 0) return;
 
     const metadata = { width, height };
@@ -374,10 +394,27 @@ parentPort.on('message', (message) => {
       isShuttingDown = true;
     } else if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
-      Object.assign(currentState, message.payload);
-      if (message.payload.regionCoordinates) {
+      const payload = message.payload || {};
+      if (payload.regionCoordinates) {
+        const rc = payload.regionCoordinates;
+        if (typeof rc.version === 'number' && !rc.regions) {
+          if (!currentState.regionCoordinates) currentState.regionCoordinates = {};
+          if (currentState.regionCoordinates.version !== rc.version) {
+            currentState.regionCoordinates.version = rc.version;
+            regionsStale = true;
+          }
+          delete payload.regionCoordinates;
+        }
+      }
+      Object.assign(currentState, payload);
+      if (payload.regionCoordinates) {
         hasScannedInitially = false;
       }
+    } else if (message.type === 'regions_snapshot') {
+      if (!currentState) currentState = {};
+      currentState.regionCoordinates = message.payload;
+      regionsStale = false;
+      hasScannedInitially = false;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
       if (!isInitialized) initializeWorker();

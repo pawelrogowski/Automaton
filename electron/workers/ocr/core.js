@@ -22,6 +22,40 @@ let lastRegionHash = null;
 let oneTimeInitializedRegions = new Set();
 const pendingThrottledRegions = new Map();
 
+// Fast checksum gating for OCR regions
+const lastRegionChecksums = new Map(); // regionKey -> number
+const lastRegionProcessTimes = new Map(); // regionKey -> ms timestamp
+const CHECKSUM_GRID = 4; // 4x4 sampling grid
+const CHECKSUM_FALLBACK_MS = 1000; // always process at least once per second to catch disappearances
+
+function computeRegionChecksum(buffer, screenWidth, region) {
+  if (!region || region.width <= 0 || region.height <= 0) return 0;
+  const stepX = Math.max(1, Math.floor(region.width / (CHECKSUM_GRID + 1)));
+  const stepY = Math.max(1, Math.floor(region.height / (CHECKSUM_GRID + 1)));
+  let sum = 0 >>> 0;
+  for (let gy = 1; gy <= CHECKSUM_GRID; gy++) {
+    const y = region.y + gy * stepY;
+    if (y < 0) continue;
+    for (let gx = 1; gx <= CHECKSUM_GRID; gx++) {
+      const x = region.x + gx * stepX;
+      if (x < 0) continue;
+      const idx = ((y * screenWidth + x) * 4) >>> 0; // BGRA
+      const b = buffer[idx] || 0;
+      const g = buffer[idx + 1] || 0;
+      const r = buffer[idx + 2] || 0;
+      // Mix in position to reduce collisions when regions slide
+      sum = (sum + r + (g << 1) + (b << 2) + ((x & 0xFF) << 3) + ((y & 0xFF) << 4)) >>> 0;
+    }
+  }
+  // Mix in region dimensions
+  sum = (sum + ((region.width & 0xFFFF) << 8) + (region.height & 0xFFFF)) >>> 0;
+  return sum >>> 0;
+}
+
+// Region snapshot management
+let regionsStale = false;
+let lastRequestedRegionsVersion = -1;
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function hashRegionCoordinates(regionCoordinates) {
@@ -56,7 +90,15 @@ async function processPendingRegions() {
       currentState.regionCoordinates.regions,
       regionsToProcessNow,
     );
+    // Update checksums and last processed times for throttled regions we just processed
+    const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
     for (const regionKey of regionsToProcessNow) {
+      const region = currentState.regionCoordinates.regions[regionKey];
+      if (region) {
+        const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
+        lastRegionChecksums.set(regionKey, ck);
+        lastRegionProcessTimes.set(regionKey, Date.now());
+      }
       pendingThrottledRegions.delete(regionKey);
     }
   }
@@ -77,7 +119,23 @@ async function performOperation() {
 
     const width = Atomics.load(syncArray, config.WIDTH_INDEX);
     const height = Atomics.load(syncArray, config.HEIGHT_INDEX);
-    const { regions } = currentState.regionCoordinates;
+
+    // Ensure we have regions or request snapshot; continue with cached regions if stale
+    const rc = currentState.regionCoordinates;
+    const regions = rc?.regions;
+    const version = rc?.version;
+    if (!regions) {
+      if (version !== lastRequestedRegionsVersion) {
+        parentPort.postMessage({ type: 'request_regions_snapshot' });
+        lastRequestedRegionsVersion = version ?? -1;
+      }
+      return;
+    }
+    if (regionsStale && typeof version === 'number' && version !== lastRequestedRegionsVersion) {
+      parentPort.postMessage({ type: 'request_regions_snapshot' });
+      lastRequestedRegionsVersion = version;
+    }
+
     if (Object.keys(regions).length === 0 || width <= 0 || height <= 0) return;
 
     lastProcessedFrameCounter = newFrameCounter;
@@ -87,6 +145,7 @@ async function performOperation() {
       config.DIRTY_REGION_COUNT_INDEX,
     );
     const dirtyRects = [];
+    const now = Date.now();
     for (let i = 0; i < dirtyRegionCount; i++) {
       const offset = config.DIRTY_REGIONS_START_INDEX + i * 4;
       dirtyRects.push({
@@ -115,9 +174,23 @@ async function performOperation() {
 
       if (isDirty || needsOneTimeInit) {
         const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
+
+        // Fast checksum gating: skip OCR if region checksum unchanged and fallback window not exceeded
+        const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
+        const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
+        const lastCk = lastRegionChecksums.get(regionKey);
+        const lastTs = lastRegionProcessTimes.get(regionKey) || 0;
+        const withinFallback = now - lastTs < (regionConfig.throttleMs || CHECKSUM_FALLBACK_MS);
+        const unchanged = lastCk !== undefined && ck === lastCk;
+
+        if (!needsOneTimeInit && unchanged && withinFallback) {
+          // Skip scheduling OCR for this region this cycle
+          continue;
+        }
+
         if (regionConfig.throttleMs && !needsOneTimeInit) {
           if (!pendingThrottledRegions.has(regionKey)) {
-            pendingThrottledRegions.set(regionKey, Date.now());
+            pendingThrottledRegions.set(regionKey, now);
           }
         } else {
           immediateGenericRegions.add(regionKey);
@@ -130,7 +203,18 @@ async function performOperation() {
 
     if (immediateGenericRegions.size > 0) {
       processingTasks.push(
-        processOcrRegions(sharedBufferView, regions, immediateGenericRegions),
+        (async () => {
+          await processOcrRegions(sharedBufferView, regions, immediateGenericRegions);
+          // Update checksums and last processed times for the regions we just OCR'd
+          const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
+          for (const regionKey of immediateGenericRegions) {
+            const region = regions[regionKey];
+            if (!region) continue;
+            const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
+            lastRegionChecksums.set(regionKey, ck);
+            lastRegionProcessTimes.set(regionKey, now);
+          }
+        })(),
       );
     }
     // --- END MODIFICATION ---
@@ -162,15 +246,34 @@ function handleMessage(message) {
   try {
     if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
-      const payload = message.payload;
+      const payload = message.payload || {};
       if (payload.regionCoordinates) {
-        const newHash = hashRegionCoordinates(payload.regionCoordinates);
-        if (newHash !== lastRegionHash) {
-          lastRegionHash = newHash;
-          oneTimeInitializedRegions.clear();
+        const rc = payload.regionCoordinates;
+        if (typeof rc.version === 'number' && !rc.regions) {
+          // version-only diff: mark stale, keep cached regions
+          if (!currentState.regionCoordinates) currentState.regionCoordinates = {};
+          if (currentState.regionCoordinates.version !== rc.version) {
+            currentState.regionCoordinates.version = rc.version;
+            regionsStale = true;
+          }
+          // do not include in hashing to avoid false invalidation
+          delete payload.regionCoordinates;
+        } else {
+          const newHash = hashRegionCoordinates(rc);
+          if (newHash !== lastRegionHash) {
+            lastRegionHash = newHash;
+            oneTimeInitializedRegions.clear();
+          }
         }
       }
       Object.assign(currentState, payload);
+    } else if (message.type === 'regions_snapshot') {
+      currentState = currentState || {};
+      currentState.regionCoordinates = message.payload;
+      regionsStale = false;
+      // Reset one-time init set due to region structure change
+      lastRegionHash = hashRegionCoordinates(message.payload);
+      oneTimeInitializedRegions.clear();
     } else if (message.type === 'shutdown') {
       isShuttingDown = true;
     } else if (typeof message === 'object' && !message.type) {

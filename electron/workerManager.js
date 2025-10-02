@@ -751,7 +751,7 @@ class WorkerManager {
       const relevant = {};
       for (const dep of workerDeps) {
         if (Object.prototype.hasOwnProperty.call(changedSlices, dep)) {
-          if (dep === 'regionCoordinates' && name === 'minimapMonitor') {
+if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'screenMonitor' || name === 'ocrWorker')) {
             const v = changedSlices[dep]?.version;
             relevant[dep] = typeof v === 'number' ? { version: v } : { version: 0 };
           } else {
