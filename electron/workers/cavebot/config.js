@@ -21,6 +21,14 @@ export const config = {
   floorChangeGraceMs: 250,
   controlHandoverGraceMs: 25,
 
+  // --- Map Click Controls ---
+  mapClickStartMoveTimeoutMs: 500, // Wait up to 500ms to confirm movement after a minimap click
+  mapClickStallIntervalMs: 500, // Consider auto-walk stalled if no tile change for 500ms
+  mapClickMinPathLength: 15, // Only use minimap click when path length is at least 15
+  mapClickKeyboardOnlyThreshold: 4, // Always use keyboard when remaining path length <= 4
+  mapClickFallbackMinMs: 10000, // Keyboard fallback window min
+  mapClickFallbackMaxMs: 15000, // Keyboard fallback window max
+
   // --- Retries & Delays ---
   maxScriptRetries: 1,
   maxMacheteRetries: 3, // Centralized from hardcoded value

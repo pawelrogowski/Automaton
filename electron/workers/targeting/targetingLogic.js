@@ -11,7 +11,7 @@ const MOVEMENT_COOLDOWN_MS = 50;
 
 const GAMEWORLD_CONFIG = {
   ENABLED: true,                    // Enable game world click targeting
-  STATIONARY_THRESHOLD_MS: 50,      // 50ms stationary minimum (tested and working)
+  STATIONARY_THRESHOLD_MS: 100,     // 100ms stationary minimum (safer threshold)
   ALLOW_ADJACENT: true,             // Always click adjacent creatures in game world
   PROBABILITY: 0.85,                // 85% chance for eligible creatures (adds variation)
 };
@@ -19,8 +19,53 @@ const GAMEWORLD_CONFIG = {
 // ====================================================================
 
 /**
+ * Helper function to find the appropriate targeting rule for a creature.
+ * Supports "Others" wildcard matching for creatures without explicit rules.
+ * @param {string} creatureName - The name of the creature
+ * @param {Array} targetingList - List of targeting rules
+ * @returns {object|null} The matching rule or null
+ */
+export function findRuleForCreatureName(creatureName, targetingList) {
+  if (!creatureName || !targetingList?.length) return null;
+  
+  // First try to find an explicit rule
+  const explicitRule = targetingList.find(
+    (r) => r.action === 'Attack' && r.name === creatureName
+  );
+  
+  if (explicitRule) {
+    return explicitRule;
+  }
+  
+  // Check if "Others" wildcard rule exists
+  const othersRule = targetingList.find(
+    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
+  );
+  
+  if (othersRule) {
+    // Get all explicit creature names
+    const explicitNames = new Set(
+      targetingList
+        .filter((r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others')
+        .map((r) => r.name)
+    );
+    
+    // If this creature has no explicit rule, use "Others"
+    if (!explicitNames.has(creatureName)) {
+      return othersRule;
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Selects the best target from a list of creatures based on targeting rules.
  * This function is "pure" - it doesn't consider the current state, only the best possible choice right now.
+ * 
+ * Special case: If a rule with name "Others" or "others" exists, it will match any creature
+ * that doesn't have an explicit rule defined. This acts as a catch-all fallback.
+ * 
  * @returns {object|null} The best creature object or null if no valid target is found.
  */
 export function selectBestTarget(sabStateManager, targetingList) {
@@ -29,11 +74,46 @@ export function selectBestTarget(sabStateManager, targetingList) {
     return null;
   }
 
+  // Get explicit creature names (excluding "Others" wildcard)
+  const explicitNames = new Set(
+    targetingList
+      .filter((r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others')
+      .map((r) => r.name)
+  );
+
+  // Find the "Others" rule if it exists
+  const othersRule = targetingList.find(
+    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
+  );
+  
+  if (othersRule) {
+    console.log(`[SelectBestTarget] Others rule found with priority ${othersRule.priority}. Creatures: ${creatures.map(c => c.name).join(', ')}. Explicit names: ${[...explicitNames].join(', ')}`);
+  }
+
   const findRuleForCreature = (creature) => {
-    if (!creature || !creature.name) return null;
-    return targetingList.find(
+    if (!creature || !creature.name) {
+      console.log(`[findRuleForCreature] Invalid creature: ${JSON.stringify(creature)}`);
+      return null;
+    }
+    
+    // First try to find an explicit rule
+    const explicitRule = targetingList.find(
       (r) => r.action === 'Attack' && r.name === creature.name
     );
+    
+    if (explicitRule) {
+      console.log(`[findRuleForCreature] Found explicit rule for ${creature.name}`);
+      return explicitRule;
+    }
+    
+    // If no explicit rule and "Others" exists, use it as fallback
+    if (othersRule && !explicitNames.has(creature.name)) {
+      console.log(`[findRuleForCreature] Using Others rule for ${creature.name}`);
+      return { ...othersRule, isWildcard: true, originalName: creature.name };
+    }
+    
+    console.log(`[findRuleForCreature] No rule found for ${creature.name}`);
+    return null;
   };
 
   const validCandidates = creatures
@@ -151,7 +231,16 @@ export function acquireTarget(
   }
 
   // Find the desired target and current target indices
-  const desiredTargetEntry = battleList.find((entry) => entry.name === targetName);
+  // Support truncated names (e.g., "troll trained sala..." matching "troll trained salamander")
+  const desiredTargetEntry = battleList.find((entry) => {
+    if (entry.name === targetName) return true;
+    // Check if battle list entry is truncated (ends with ...)
+    if (entry.name.endsWith('...')) {
+      const truncatedPart = entry.name.slice(0, -3);
+      return targetName.startsWith(truncatedPart);
+    }
+    return false;
+  });
   if (!desiredTargetEntry) {
     return { success: false, reason: 'not_in_battlelist' };
   }
@@ -178,16 +267,20 @@ export function acquireTarget(
       const isAdjacent = targetCreature.isAdjacent ?? false;
     
       // Determine if we should use game world click:
-      // 1. Adjacent creatures - always click (instant, no mouse travel time)
-      // 2. Stationary creatures (>= 50ms) - 85% chance
+      // Creatures must be stationary for at least STATIONARY_THRESHOLD_MS
+      // Adjacent creatures get higher probability but still need to be stationary
       let shouldUseGameWorldClick = false;
       
-      if (GAMEWORLD_CONFIG.ALLOW_ADJACENT && isAdjacent) {
-        shouldUseGameWorldClick = true; // Adjacent = always safe
-        console.log(`[GameWorld] ${targetName}: Adjacent creature - using game world click`);
-      } else if (isStationary) {
-        shouldUseGameWorldClick = Math.random() < GAMEWORLD_CONFIG.PROBABILITY;
-        console.log(`[GameWorld] ${targetName}: Stationary ${stationaryDur}ms - gameworld=${shouldUseGameWorldClick}`);
+      if (isStationary) {
+        if (GAMEWORLD_CONFIG.ALLOW_ADJACENT && isAdjacent) {
+          // Adjacent + stationary = very reliable, always click
+          shouldUseGameWorldClick = true;
+          console.log(`[GameWorld] ${targetName}: Adjacent + stationary ${stationaryDur}ms - using game world click`);
+        } else {
+          // Non-adjacent but stationary = 85% chance
+          shouldUseGameWorldClick = Math.random() < GAMEWORLD_CONFIG.PROBABILITY;
+          console.log(`[GameWorld] ${targetName}: Stationary ${stationaryDur}ms - gameworld=${shouldUseGameWorldClick}`);
+        }
       } else {
         console.log(`[GameWorld] ${targetName}: Moving/new (${stationaryDur}ms) - using Tab/BL`);
       }
@@ -292,10 +385,18 @@ export function acquireTarget(
   }
 
   // --- MOUSE CLICK METHOD ---
-  // Get all entries with matching name
+  // Get all entries with matching name (including truncated names)
   const potentialEntries = battleList
     .map((entry, index) => ({ ...entry, index }))
-    .filter((entry) => entry.name === targetName);
+    .filter((entry) => {
+      if (entry.name === targetName) return true;
+      // Check if battle list entry is truncated (ends with ...)
+      if (entry.name.endsWith('...')) {
+        const truncatedPart = entry.name.slice(0, -3);
+        return targetName.startsWith(truncatedPart);
+      }
+      return false;
+    });
 
   if (potentialEntries.length === 0) {
     return { success: false, reason: 'not_in_battlelist' };
@@ -355,7 +456,8 @@ export function updateDynamicTarget(parentPort, pathfindingTarget, targetingList
     return;
   }
 
-  const rule = targetingList.find((r) => r.name === pathfindingTarget.name);
+  // Use helper to find rule (supports "Others" wildcard)
+  const rule = findRuleForCreatureName(pathfindingTarget.name, targetingList);
   if (!rule) return;
 
   const dynamicGoal = {
@@ -388,26 +490,56 @@ export async function manageMovement(
   } = workerContext;
   const { targetingList } = targetingContext;
 
-  if (!currentTarget || sabStateManager.isLootingRequired()) return;
+  if (!currentTarget || sabStateManager.isLootingRequired()) {
+    console.log(`[ManageMovement] Early exit: currentTarget=${!!currentTarget}, looting=${sabStateManager.isLootingRequired()}`);
+    return;
+  }
 
-  const rule = targetingList.find((r) => r.name === currentTarget.name);
-  if (!rule || rule.stance === 'Stand') return;
+  // Use helper to find rule (supports "Others" wildcard)
+  const rule = findRuleForCreatureName(currentTarget.name, targetingList);
+  console.log(`[ManageMovement] ${currentTarget.name}: Found rule=${!!rule}, stance=${rule?.stance}`);
+  
+  if (!rule || rule.stance === 'Stand') {
+    console.log(`[ManageMovement] ${currentTarget.name}: No rule or Stand stance, exiting`);
+    return;
+  }
 
   const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
-  if (
-    (desiredDistance === 1 && currentTarget.isAdjacent) ||
-    currentTarget.distance <= desiredDistance
-  ) {
-    return; // We are at the desired distance, no need to move.
+  console.log(`[ManageMovement] ${currentTarget.name}: stance=${rule.stance}, distance=${currentTarget.distance}, desired=${desiredDistance}, isAdjacent=${currentTarget.isAdjacent}`);
+  
+  // For "Reach" stance, we want to move until adjacent (can attack)
+  // For "Follow" stance, we want to maintain the specified distance
+  if (rule.stance === 'Reach') {
+    // Reach stance: Stop only when adjacent (can attack)
+    if (currentTarget.isAdjacent) {
+      console.log(`[ManageMovement] ${currentTarget.name}: Adjacent - can reach target`);
+      return;
+    }
+  } else {
+    // Follow stance: Stop if we're at or within desired distance
+    if (
+      (desiredDistance === 1 && currentTarget.isAdjacent) ||
+      currentTarget.distance <= desiredDistance
+    ) {
+      console.log(`[ManageMovement] ${currentTarget.name}: At desired Follow distance`);
+      return;
+    }
   }
 
   const now = Date.now();
+  const cooldownRemaining = MOVEMENT_COOLDOWN_MS - (now - targetingContext.lastMovementTime);
+  
+  console.log(`[ManageMovement] ${currentTarget.name}: Pre-checks - playerPos=${!!playerMinimapPosition}, pathLen=${path?.length}, cooldown=${cooldownRemaining > 0 ? cooldownRemaining + 'ms' : 'OK'}, pathInstanceId=${workerContext.pathInstanceId}, targetInstanceId=${currentTarget.instanceId}`);
+  
   if (
     !playerMinimapPosition ||
     path.length < 2 ||
     now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS ||
     workerContext.pathInstanceId !== currentTarget.instanceId
   ) {
+    if (workerContext.pathInstanceId !== currentTarget.instanceId) {
+      console.log(`[ManageMovement] ${currentTarget.name}: ❌ Path instance ID mismatch!`);
+    }
     return;
   }
 
@@ -432,6 +564,8 @@ export async function manageMovement(
   const nextStep = path[1];
   const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
 
+  console.log(`[ManageMovement] ${currentTarget.name}: ✅ Sending movement key '${dirKey}' from (${playerMinimapPosition.x},${playerMinimapPosition.y}) to (${nextStep.x},${nextStep.y})`);
+
   if (dirKey) {
     parentPort.postMessage({
       type: 'inputAction',
@@ -441,5 +575,7 @@ export async function manageMovement(
       },
     });
     targetingContext.lastMovementTime = now;
+  } else {
+    console.log(`[ManageMovement] ${currentTarget.name}: ❌ No direction key calculated!`);
   }
 }

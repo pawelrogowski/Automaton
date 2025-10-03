@@ -4,7 +4,7 @@ import mouseController from 'mouse-controller';
 import { createLogger } from '../utils/logger.js';
 
 const log = createLogger({
-  info: true,  // Enable to see mouseNoise actions
+  info: false,  // Enable to see mouseNoise actions
   error: true,
   debug: false,
 });

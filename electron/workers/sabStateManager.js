@@ -49,6 +49,8 @@ import {
   PATH_START_X_INDEX,
   PATH_START_Y_INDEX,
   PATH_START_Z_INDEX,
+  PATH_WPT_ID_INDEX,
+  PATH_INSTANCE_ID_INDEX,
   CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX,
 } from './sharedConstants.js';
 
@@ -540,7 +542,7 @@ export class SABStateManager {
   // --- Path Data ---
   getPath() {
     if (!this.pathDataArray)
-      return { path: [], status: 0, chebyshevDistance: 0, pathStart: null };
+      return { path: [], status: 0, chebyshevDistance: 0, pathStart: null, wptId: 0, instanceId: 0 };
 
     const pathLength = Atomics.load(this.pathDataArray, PATH_LENGTH_INDEX);
     const status = Atomics.load(this.pathDataArray, PATHFINDING_STATUS_INDEX);
@@ -553,6 +555,8 @@ export class SABStateManager {
       y: Atomics.load(this.pathDataArray, PATH_START_Y_INDEX),
       z: Atomics.load(this.pathDataArray, PATH_START_Z_INDEX),
     };
+    const wptId = Atomics.load(this.pathDataArray, PATH_WPT_ID_INDEX);
+    const instanceId = Atomics.load(this.pathDataArray, PATH_INSTANCE_ID_INDEX);
 
     const path = [];
     const safePathLength = Math.min(pathLength, MAX_PATH_WAYPOINTS);
@@ -566,7 +570,7 @@ export class SABStateManager {
       });
     }
 
-    return { path, status, chebyshevDistance, pathStart };
+    return { path, status, chebyshevDistance, pathStart, wptId, instanceId };
   }
 
   getCavebotTargetWaypoint() {

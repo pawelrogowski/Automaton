@@ -55,6 +55,15 @@ const workerState = {
   // --- NEW LOGIC START ---
   // Tracks the last tile that failed a walk attempt to require a second failure before blocking.
   lastFailedStep: null,
+  // Map-click controller state
+  mapClick: {
+    mode: 'idle', // 'idle' | 'pending' | 'moving'
+    attemptAt: 0,
+    startPos: null,
+    lastObservedAt: 0,
+    lastObservedPos: null,
+    fallbackUntil: 0,
+  },
   // --- NEW LOGIC END ---
   logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,

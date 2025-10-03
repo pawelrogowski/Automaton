@@ -30,8 +30,12 @@ import {
 const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
+// Battle list can have truncation markers (...)
 const BATTLELIST_ALLOWED_CHARS =
-  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ. ';
+// Nameplate OCR should NOT include dots (creatures never have dots in names)
+const NAMEPLATE_ALLOWED_CHARS =
+  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ';
 
 const frameUpdateManager = new FrameUpdateManager();
 let pathfinderInstance = null;
@@ -68,6 +72,7 @@ const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
 const TARGET_LOSS_GRACE_PERIOD_MS = 125;
 const CREATURE_FLICKER_GRACE_PERIOD_MS = 125;
+const STATIONARY_CREATURE_GRACE_PERIOD_MS = 300;
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
 const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
 const ADJACENT_TIME_THRESHOLD_MS = 0;
@@ -102,6 +107,8 @@ let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
 let lastHealthScanTime = 0;
 let lastTargetScanTime = 0;
+let lastBattleListCount = 0;
+let battleListCreatureNames = new Map(); // name -> count
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
@@ -646,10 +653,49 @@ async function performOperation() {
     const matchedHealthBars = new Set();
     if (skipHealthScan) {
       // Reuse previous activeCreatures if skipping heavy scan
-      newActiveCreatures = new Map(activeCreatures);
+      // Update lastSeen and positions to prevent flicker grace period expiration
+      newActiveCreatures = new Map();
+      for (const [id, creature] of activeCreatures.entries()) {
+        const updated = { ...creature, lastSeen: now };
+        // If player moved, update creature's expected screen position
+        if (playerPositionChanged && creature.gameCoords) {
+          const expectedScreenPos = getAbsoluteGameWorldClickCoordinates(
+            creature.gameCoords.x,
+            creature.gameCoords.y,
+            currentPlayerMinimapPosition,
+            regions.gameWorld,
+            regions.tileSize
+          );
+          if (expectedScreenPos) {
+            updated.absoluteCoords = {
+              x: expectedScreenPos.x,
+              y: expectedScreenPos.y,
+              lastUpdate: now,
+            };
+          }
+        }
+        newActiveCreatures.set(id, updated);
+      }
     }
 
-    const canonicalNames = [...new Set(targetingList.map((rule) => rule.name))];
+    // Build canonical names list for OCR matching
+    // Strategy: 
+    // 1. PRIMARY: Targeting list (full, correct names - best for matching mangled OCR)
+    // 2. SECONDARY: Battle list (for "Others" wildcard - creatures not in targeting list)
+    // Remove "Others" wildcard and duplicates
+    
+    const explicitTargetNames = targetingList
+      .filter((rule) => rule.name.toLowerCase() !== 'others')
+      .map((rule) => rule.name);
+    
+    const battleListNames = battleListEntries.map(e => e.name);
+    
+    // Targeting list FIRST (full names, better fuzzy matching)
+    // Then battle list (for creatures not in targeting, i.e., "Others" case)
+    const canonicalNames = [...new Set([
+      ...explicitTargetNames,    // PRIMARY: Full correct names from targeting
+      ...battleListNames,        // SECONDARY: Battle list for "Others" wildcard
+    ])];
     const performOcrForHealthBar = async (hb) => {
       const idealOcrX = hb.x - tileSize.width / 2;
       const idealOcrY = hb.y - 16;
@@ -677,7 +723,7 @@ async function performOperation() {
           sharedBufferView,
           ocrRegion,
           regionDefinitions.gameWorld?.ocrColors || [],
-          BATTLELIST_ALLOWED_CHARS,
+          NAMEPLATE_ALLOWED_CHARS,
         ) || [];
       const rawOcrName =
         nameplateOcrResults.length > 0
@@ -703,10 +749,24 @@ async function performOperation() {
           bestMatch = hb;
         }
       }
+      
+      // Pre-check name validation to prevent wrong creature taking over instanceId
+      let preOcrName = null;
+      if (bestMatch && oldCreature.name) {
+        // Do OCR once for validation (will be reused below if match succeeds)
+        preOcrName = await performOcrForHealthBar(bestMatch);
+        
+        // If OCR succeeds and names DON'T match, this is probably a different creature
+        // Don't match them - let this health bar be treated as a new creature
+        if (preOcrName && preOcrName !== oldCreature.name) {
+          // Names mismatch! Skip this match - this health bar is a different creature
+          bestMatch = null;
+        }
+      }
 
       if (bestMatch) {
         let creatureName = null;
-        // Only OCR if the nameplate region is actually dirty; otherwise reuse cached name
+        // Check if we should use cached name or do fresh OCR
         const nameplateRegion = getNameplateRegion(bestMatch, gameWorld, tileSize);
         const marginH = Math.max(8, Math.floor((tileSize?.width || 32) * 0.3));
         const marginV = 6;
@@ -715,13 +775,37 @@ async function performOperation() {
           nameplateRegion &&
           dirtyRects.some((r) => rectanglesIntersectWithMargin(nameplateRegion, r, marginH, marginV));
         const recentOcr = oldCreature.lastOcrAt && now - oldCreature.lastOcrAt < 1000;
+        
         if (oldCreature.name && !nameRegionDirty && recentOcr) {
+          // Use cached name
           creatureName = oldCreature.name;
+        } else if (preOcrName) {
+          // Reuse the OCR result from validation check above
+          creatureName = preOcrName;
+          oldCreature.lastOcrAt = now;
         } else {
+          // Do fresh OCR (only happens if no validation was needed)
           creatureName = await performOcrForHealthBar(bestMatch);
           if (creatureName) oldCreature.lastOcrAt = now;
           if (!creatureName) {
             creatureName = oldCreature.name;
+          } else if (oldCreature.name && creatureName !== oldCreature.name) {
+            // Name changed! Validate against battle list before accepting
+            const newNameInBattleList = battleListEntries.some(entry => {
+              if (entry.name === creatureName) return true;
+              // Handle truncated names
+              if (entry.name.endsWith('...')) {
+                const truncated = entry.name.slice(0, -3);
+                return creatureName.startsWith(truncated);
+              }
+              return false;
+            });
+            
+            // If new name NOT in battle list, it's probably OCR garbage from overlap
+            // Keep the old name
+            if (!newNameInBattleList) {
+              creatureName = oldCreature.name;
+            }
           }
         }
         const detection = {
@@ -742,13 +826,20 @@ async function performOperation() {
         if (updated) {
           if (updated.flickerGracePeriodEndTime)
             delete updated.flickerGracePeriodEndTime;
+          // Clear positionUncertain flag since we have a valid health bar detection
+          if (updated.positionUncertain)
+            delete updated.positionUncertain;
           newActiveCreatures.set(id, updated);
         }
         matchedHealthBars.add(bestMatch);
       } else {
         if (!oldCreature.flickerGracePeriodEndTime) {
-          oldCreature.flickerGracePeriodEndTime =
-            now + CREATURE_FLICKER_GRACE_PERIOD_MS;
+          // Use extended grace period for stationary creatures
+          const isStationary = oldCreature.stationaryDuration > 100;
+          const gracePeriod = isStationary 
+            ? STATIONARY_CREATURE_GRACE_PERIOD_MS 
+            : CREATURE_FLICKER_GRACE_PERIOD_MS;
+          oldCreature.flickerGracePeriodEndTime = now + gracePeriod;
         }
         if (now < oldCreature.flickerGracePeriodEndTime) {
           if (playerPositionChanged && oldCreature.gameCoords) {
@@ -794,13 +885,57 @@ async function performOperation() {
             isPlayerInAnimationFreeze,
           );
           if (newCreature) {
+            // Ensure new creatures don't have positionUncertain flag
+            if (newCreature.positionUncertain)
+              delete newCreature.positionUncertain;
             newActiveCreatures.set(newId, newCreature);
           }
         }
       }
     }
 
+    // Battle list based persistence and cleanup
+    const currentBattleListCount = battleListEntries.length;
+    const currentBattleListNames = new Map();
+    for (const entry of battleListEntries) {
+      currentBattleListNames.set(entry.name, (currentBattleListNames.get(entry.name) || 0) + 1);
+    }
+    
+    // FIRST: Remove creatures that are NO LONGER in battle list at all (died/despawned)
+    for (const [id, creature] of newActiveCreatures.entries()) {
+      if (creature.name) {
+        const stillInBattleList = currentBattleListNames.get(creature.name) > 0;
+        if (!stillInBattleList) {
+          // This creature is NOT in battle list anymore - it's dead!
+          newActiveCreatures.delete(id);
+        }
+      }
+    }
+    
+    // SECOND: If battle list is stable (same count), keep creatures that might have lost health bars
+    if (currentBattleListCount === lastBattleListCount && currentBattleListCount > 0) {
+      // Check if any OLD creatures should be kept alive because battle list still shows them
+      for (const [id, oldCreature] of activeCreatures.entries()) {
+        if (!newActiveCreatures.has(id) && oldCreature.name) {
+          // This creature lost its health bar detection
+          const battleListCountForName = currentBattleListNames.get(oldCreature.name) || 0;
+          const detectedCountForName = Array.from(newActiveCreatures.values())
+            .filter(c => c.name === oldCreature.name).length;
+          
+          // If battle list shows MORE of this creature than we detected, keep the old one
+          if (battleListCountForName > detectedCountForName) {
+            // Keep creature alive but mark position as uncertain
+            oldCreature.lastSeen = now;
+            oldCreature.positionUncertain = true;
+            newActiveCreatures.set(id, oldCreature);
+          }
+        }
+      }
+    }
+    
     activeCreatures = newActiveCreatures;
+    lastBattleListCount = currentBattleListCount;
+    battleListCreatureNames = currentBattleListNames;
 
     // Update lastBarAreas for next-frame proximity checks
     if (!skipHealthScan && Array.isArray(healthBars)) {
@@ -884,7 +1019,10 @@ async function performOperation() {
       }
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
-        const isReachable = typeof reachableTiles[coordsKey] !== 'undefined';
+        // Force creatures with uncertain positions to be unreachable
+        const isReachable = entity.positionUncertain 
+          ? false 
+          : typeof reachableTiles[coordsKey] !== 'undefined';
         let isAdjacent = false;
         if (entity.gameCoords) {
           const deltaX = Math.abs(
@@ -1047,8 +1185,8 @@ async function performOperation() {
 
     
     if (gameWorldTarget && battleListTargetName) {
-      
-      unifiedTarget = { ...gameWorldTarget, name: battleListTargetName };
+      // Use gameWorldTarget (OCR'd name is full), keep it instead of truncated battle list name
+      unifiedTarget = gameWorldTarget;
     } else if (gameWorldTarget && !battleListTargetName) {
       
       
@@ -1056,10 +1194,16 @@ async function performOperation() {
       unifiedTarget = gameWorldTarget;
     } else if (!gameWorldTarget && battleListTargetName) {
       
-      
-      const matchingCreature = detectedEntities.find(
-        (c) => c.name === battleListTargetName,
-      );
+      // Try to find matching creature using truncated name matching
+      const matchingCreature = detectedEntities.find((c) => {
+        if (c.name === battleListTargetName) return true;
+        // Check if battle list entry is truncated (ends with ...)
+        if (battleListTargetName.endsWith('...')) {
+          const truncatedPart = battleListTargetName.slice(0, -3);
+          return c.name && c.name.startsWith(truncatedPart);
+        }
+        return false;
+      });
       if (matchingCreature) {
         unifiedTarget = {
           instanceId: matchingCreature.instanceId,

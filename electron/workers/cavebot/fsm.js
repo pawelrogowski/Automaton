@@ -14,6 +14,7 @@ import {
   handleDoorAction,
   handleScriptAction,
 } from './actionHandlers.js';
+import { mapClickTick } from './helpers/mapClickController.js';
 import {
   PATH_STATUS_PATH_FOUND,
   PATH_STATUS_WAYPOINT_REACHED,
@@ -204,6 +205,11 @@ export function createFsm(workerState, config) {
         postStoreUpdate('cavebot/setActionPaused', false);
       },
       execute: async () => {
+        // Delegate to map-click controller per spec. It returns whether to suppress keyboard this tick.
+        const decision = mapClickTick(workerState, config);
+        if (decision === 'handled') {
+          return 'EVALUATING_WAYPOINT';
+        }
         try {
           await handleWalkAction(workerState, config);
         } catch (error) {

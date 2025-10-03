@@ -8,6 +8,7 @@ import {
   acquireTarget,
   updateDynamicTarget,
   manageMovement,
+  findRuleForCreatureName,
 } from './targeting/targetingLogic.js';
 import {
   PATH_STATUS_IDLE,
@@ -137,6 +138,15 @@ function handleAcquiringState() {
     currentInGameTarget.isReachable
   ) {
     targetingState.currentTarget = currentInGameTarget;
+    
+    // Update dynamic target with the actual acquired target to sync instance IDs
+    // (The pathfindingTarget might have a different instance ID)
+    const rule = findRuleForCreatureName(currentInGameTarget.name, targetingList);
+    if (rule && rule.stance !== 'Stand') {
+      updateDynamicTarget(parentPort, currentInGameTarget, targetingList);
+      targetingState.dynamicTargetLastSetAt = Date.now();
+    }
+    
     transitionTo(
       FSM_STATE.ENGAGING,
       `Acquired target ${currentInGameTarget.name}`
@@ -196,6 +206,8 @@ async function handleEngagingState() {
   const creatures = sabStateManager.getCreatures();
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;
+  
+  console.log(`[FSM-ENGAGING] State check - currentTarget=${targetingState.currentTarget?.name}, controlState=${globalState.cavebot.controlState}`);
 
   const actualInGameTarget = sabStateManager.getCurrentTarget();
   if (!targetingState.currentTarget || !actualInGameTarget || actualInGameTarget.instanceId !== targetingState.currentTarget.instanceId) {
@@ -208,11 +220,14 @@ async function handleEngagingState() {
     bestOverallTarget &&
     bestOverallTarget.instanceId !== targetingState.currentTarget.instanceId
   ) {
-    const currentRule = targetingList.find(
-      (r) => r.name === targetingState.currentTarget.name
+    // Use helper to find rules (supports "Others" wildcard)
+    const currentRule = findRuleForCreatureName(
+      targetingState.currentTarget.name,
+      targetingList
     );
-    const bestRule = targetingList.find(
-      (r) => r.name === bestOverallTarget.name
+    const bestRule = findRuleForCreatureName(
+      bestOverallTarget.name,
+      targetingList
     );
 
     if (bestRule && currentRule && bestRule.priority > currentRule.priority) {
@@ -236,7 +251,24 @@ async function handleEngagingState() {
     return;
   }
 
+  // Check if the creature's position changed significantly, update dynamic target
+  const positionChanged = 
+    !targetingState.currentTarget.gameCoords ||
+    !updatedTarget.gameCoords ||
+    targetingState.currentTarget.gameCoords.x !== updatedTarget.gameCoords.x ||
+    targetingState.currentTarget.gameCoords.y !== updatedTarget.gameCoords.y ||
+    targetingState.currentTarget.gameCoords.z !== updatedTarget.gameCoords.z;
+  
   targetingState.currentTarget = updatedTarget;
+  
+  // Update dynamic target if position changed to keep pathfinder in sync
+  if (positionChanged) {
+    const rule = findRuleForCreatureName(updatedTarget.name, targetingList);
+    if (rule && rule.stance !== 'Stand') {
+      updateDynamicTarget(parentPort, updatedTarget, targetingList);
+      targetingState.dynamicTargetLastSetAt = Date.now();
+    }
+  }
 
   if (!updatedTarget.isReachable) {
     if (targetingState.unreachableSince === 0) {
@@ -253,14 +285,20 @@ async function handleEngagingState() {
     targetingState.unreachableSince = 0;
   }
 
+  // Pass lastMovementTime by reference through targetingState
+  const movementContext = {
+    targetingList: globalState.targeting.targetingList,
+    lastMovementTime: targetingState.lastMovementTime,
+  };
+  
   await manageMovement(
     { ...workerState, parentPort, sabStateManager },
-    {
-      targetingList: globalState.targeting.targetingList,
-      lastMovementTime: targetingState.lastMovementTime,
-    },
+    movementContext,
     targetingState.currentTarget
   );
+  
+  // Update lastMovementTime in targetingState if it was changed
+  targetingState.lastMovementTime = movementContext.lastMovementTime;
 }
 
 // --- Main Loop ---
@@ -272,13 +310,22 @@ function updateSABData() {
     WORLD_STATE_UPDATE_COUNTER_INDEX
   );
   if (newWorldStateCounter > workerState.lastWorldStateCounter) {
-    workerState.playerMinimapPosition = sabStateManager.getPlayerPosition();
+    // Use getCurrentPlayerPosition() to always get the current position
+    const playerPos = sabStateManager.getCurrentPlayerPosition();
+    if (playerPos) {
+      workerState.playerMinimapPosition = playerPos;
+    }
+    
     const pathData = sabStateManager.getPath();
     workerState.path = pathData.path;
     workerState.pathfindingStatus = pathData.status;
     workerState.pathWptId = pathData.wptId;
     workerState.pathInstanceId = pathData.instanceId;
     workerState.lastWorldStateCounter = newWorldStateCounter;
+    
+    if (pathData.instanceId !== 0 && pathData.path.length > 0) {
+      console.log(`[UpdateSAB] Path updated: instanceId=${pathData.instanceId}, pathLen=${pathData.path.length}, status=${pathData.status}, playerPos=(${workerState.playerMinimapPosition?.x},${workerState.playerMinimapPosition?.y})`);
+    }
   }
 }
 
