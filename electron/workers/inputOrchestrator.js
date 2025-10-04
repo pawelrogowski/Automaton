@@ -20,6 +20,16 @@ const PRIORITY_MAP = {
   default: 10,
 };
 
+// Actions that should pause mouse noise while executing
+const PAUSE_MOUSE_NOISE_FOR = new Set([
+  'userRule',
+  'looting',
+  'script',
+  'targeting',
+  'movement',
+  'hotkey',
+]);
+
 const DELAY_MAP = {
   userRule: { min: 50, max: 75 },
   looting: { min: 50, max: 150 },
@@ -48,6 +58,10 @@ let isProcessingMouse = false;
 // Track previous action types for context switching
 let previousKeyboardActionType = null;
 let previousMouseActionType = null;
+
+// Mouse noise pause state
+let mouseNoisePaused = false;
+let mouseNoiseResumeTimeout = null;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -237,6 +251,15 @@ async function processMouseQueue() {
   // Sort by priority and get highest priority item
   mouseQueue.sort((a, b) => a.priority - b.priority);
   const item = mouseQueue.shift();
+  
+  // Pause mouse noise if we're processing a critical action
+  if (PAUSE_MOUSE_NOISE_FOR.has(item.type) && !mouseNoisePaused) {
+    mouseNoisePaused = true;
+    parentPort.postMessage({
+      type: 'pauseMouseNoise',
+    });
+    log('debug', '[InputOrchestrator] Paused mouse noise for critical action');
+  }
 
   try {
     const windowId = parseInt(globalState.global.windowId, 10);
@@ -289,6 +312,26 @@ async function processMouseQueue() {
     if (shouldAddThinkingPause(item.type)) {
       const thinkingPause = getThinkingPauseDuration();
       await delay(thinkingPause);
+    }
+    
+    // Resume mouse noise after a cooldown if it was paused for this action
+    if (PAUSE_MOUSE_NOISE_FOR.has(item.type) && mouseNoisePaused) {
+      // Clear any pending resume
+      if (mouseNoiseResumeTimeout) {
+        clearTimeout(mouseNoiseResumeTimeout);
+      }
+      // Resume after 300ms to ensure the action has fully completed
+      mouseNoiseResumeTimeout = setTimeout(() => {
+        // Only resume if queue is empty or only has mouseNoise actions
+        const hasHighPriorityActions = mouseQueue.some(q => PAUSE_MOUSE_NOISE_FOR.has(q.type));
+        if (!hasHighPriorityActions) {
+          mouseNoisePaused = false;
+          parentPort.postMessage({
+            type: 'resumeMouseNoise',
+          });
+          log('debug', '[InputOrchestrator] Resumed mouse noise');
+        }
+      }, 300);
     }
     
     isProcessingMouse = false;

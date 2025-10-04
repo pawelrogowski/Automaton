@@ -49,6 +49,9 @@ import {
   PATH_START_X_INDEX,
   PATH_START_Y_INDEX,
   PATH_START_Z_INDEX,
+  PATH_TARGET_X_INDEX,
+  PATH_TARGET_Y_INDEX,
+  PATH_TARGET_Z_INDEX,
   PATH_WPT_ID_INDEX,
   PATH_INSTANCE_ID_INDEX,
   CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX,
@@ -574,7 +577,9 @@ export class SABStateManager {
   }
 
   getCavebotTargetWaypoint() {
-    if (!this.pathDataArray) return null;
+    if (!this.pathDataArray) {
+      return null;
+    }
     // This assumes the pathDataSAB is the single source of truth for the cavebot's destination
     return {
       x: Atomics.load(this.pathDataArray, PATH_TARGET_X_INDEX),

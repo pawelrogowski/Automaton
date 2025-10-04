@@ -44,13 +44,11 @@ const workerState = {
   playerPosArray: null,
   pathDataArray: null,
   luaExecutor: null,
-  floorChangeGraceUntil: 0,
   lastProcessedWptId: null,
   shouldRequestNewPath: false,
   scriptErrorWaypointId: null,
   scriptErrorCount: 0,
   pathfinderInstance: null,
-  creatureMonitorSyncTimeout: 0,
   lastBlockedTileCheck: 0,
   // --- NEW LOGIC START ---
   // Tracks the last tile that failed a walk attempt to require a second failure before blocking.
@@ -240,9 +238,7 @@ async function performOperation() {
     return;
   }
 
-  if (workerState.fsmState === 'WAITING_FOR_CREATURE_MONITOR_SYNC') {
-    workerState.lastControlState = controlState;
-  } else if (controlState !== 'CAVEBOT') {
+  if (controlState !== 'CAVEBOT') {
     if (workerState.lastControlState === 'CAVEBOT') {
       workerState.logger(
         'debug',

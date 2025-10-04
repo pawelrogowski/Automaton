@@ -20,7 +20,7 @@ function postMouseLeftClick(workerState, x, y) {
       action: {
         module: 'mouseController',
         method: 'leftClick',
-        args: [x, y],
+        args: [x, y, 150], // Fast movement for cavebot
       },
     },
   });

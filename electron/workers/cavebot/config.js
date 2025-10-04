@@ -12,18 +12,15 @@ export const config = {
 
   // --- Action & Movement Timing ---
   animationArrivalTimeoutMs: 500, // Used for shovel/rope to let animation settle
-  actionStateChangeTimeoutMs: 300,
-  postDiagonalMoveDelayMs: 150,
-  postTeleportGraceMs: 150,
+  actionStateChangeTimeoutMs: 250,
   moveConfirmTimeoutMs: 400,
   moveConfirmTimeoutDiagonalMs: 550,
-  defaultAwaitStateChangeTimeoutMs: 500,
-  floorChangeGraceMs: 250,
-  controlHandoverGraceMs: 25,
+  defaultAwaitStateChangeTimeoutMs: 250,
+  controlHandoverGraceMs: 5,
 
   // --- Map Click Controls ---
   mapClickStartMoveTimeoutMs: 500, // Wait up to 500ms to confirm movement after a minimap click
-  mapClickStallIntervalMs: 500, // Consider auto-walk stalled if no tile change for 500ms
+  mapClickStallIntervalMs: 400, // Consider auto-walk stalled if no tile change for 400ms
   mapClickMinPathLength: 15, // Only use minimap click when path length is at least 15
   mapClickKeyboardOnlyThreshold: 4, // Always use keyboard when remaining path length <= 4
   mapClickFallbackMinMs: 10000, // Keyboard fallback window min
@@ -32,7 +29,7 @@ export const config = {
   // --- Retries & Delays ---
   maxScriptRetries: 1,
   maxMacheteRetries: 3, // Centralized from hardcoded value
-  actionFailureRetryDelayMs: 500, // Renamed from macheteRetryDelay
+  actionFailureRetryDelayMs: 250, // Renamed from macheteRetryDelay
   scriptErrorDelayMs: 250,
 
   // --- Gameplay Parameters ---
@@ -42,5 +39,4 @@ export const config = {
     machete: 'n',
     shovel: 'v',
   },
-  creatureMonitorSyncTimeoutMs: 500, // Timeout for CreatureMonitor Z-level sync
 };

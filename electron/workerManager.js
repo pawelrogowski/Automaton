@@ -353,6 +353,23 @@ class WorkerManager {
       return;
     }
 
+    // Forward pause/resume messages to mouseNoiseWorker
+    if (message.type === 'pauseMouseNoise') {
+      const mouseNoiseWorker = this.workers.get('mouseNoiseWorker');
+      if (mouseNoiseWorker && mouseNoiseWorker.worker) {
+        mouseNoiseWorker.worker.postMessage({ type: 'mouseNoisePause' });
+      }
+      return;
+    }
+
+    if (message.type === 'resumeMouseNoise') {
+      const mouseNoiseWorker = this.workers.get('mouseNoiseWorker');
+      if (mouseNoiseWorker && mouseNoiseWorker.worker) {
+        mouseNoiseWorker.worker.postMessage({ type: 'mouseNoiseResume' });
+      }
+      return;
+    }
+
     // --- MODIFIED: Centralized Frame Update Distribution ---
     if (message.type === 'frame-update') {
       const dirtyRects = message.payload.dirtyRects;
@@ -516,6 +533,7 @@ class WorkerManager {
         'pathfinderWorker',
         'cavebotWorker',
         'targetingWorker',
+        'creatureMonitor',
       ].includes(name);
       const needsBattleListSAB = [
         'creatureMonitor',

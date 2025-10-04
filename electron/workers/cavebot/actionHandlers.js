@@ -27,13 +27,13 @@ const post = (payload) => {
   });
 };
 
-const leftClick = (x, y, { type = 'default' } = {}) => {
+const leftClick = (x, y, { type = 'default', maxDuration = 150 } = {}) => {
   post({
     type,
     action: {
       module: 'mouseController',
       method: 'leftClick',
-      args: [x, y],
+      args: [x, y, maxDuration],
     },
   });
 };
@@ -76,9 +76,6 @@ async function performWalk(
     pathCounterBeforeMove,
     timeout,
   );
-  if (isDiagonal) {
-    await delay(config.postDiagonalMoveDelayMs);
-  }
 }
 
 export async function handleWalkAction(workerState, config) {
@@ -203,13 +200,6 @@ export async function handleStandAction(workerState, config, targetWaypoint) {
       config.defaultAwaitStateChangeTimeoutMs,
     );
 
-    if (finalPos.z !== initialPos.z) {
-      workerState.floorChangeGraceUntil =
-        Date.now() + config.floorChangeGraceMs;
-    }
-    if (getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold) {
-      // Grace is handled by the caller, this just confirms success
-    }
     return true;
   } catch (error) {
     workerState.logger(
@@ -286,7 +276,6 @@ async function handleToolAction(
       'debug',
       `[handleToolAction:${useType}] Z-level change confirmed. Action successful.`,
     );
-    workerState.floorChangeGraceUntil = Date.now() + config.floorChangeGraceMs;
     return true;
   }
   logger(
@@ -314,15 +303,131 @@ export const handleRopeAction = (workerState, config, targetCoords) =>
     'rope',
     'bottomRight',
   );
-export const handleShovelAction = (workerState, config, targetCoords) =>
-  handleToolAction(
-    workerState,
-    config,
+export async function handleShovelAction(workerState, config, targetCoords) {
+  const { logger, globalState } = workerState;
+  const hotkey = config.toolHotkeys.shovel;
+  if (!hotkey) {
+    logger('error', '[handleShovelAction] Shovel hotkey not configured.');
+    return false;
+  }
+
+  const initialPos = { ...workerState.playerMinimapPosition };
+  const initialZ = initialPos.z;
+
+  // Check if we're already on the waypoint
+  const isOnWaypoint =
+    initialPos.x === targetCoords.x &&
+    initialPos.y === targetCoords.y &&
+    initialPos.z === targetCoords.z;
+
+  if (!isOnWaypoint) {
+    // Calculate if we're adjacent (Chebyshev distance <= 1)
+    const isAdjacent =
+      Math.max(
+        Math.abs(initialPos.x - targetCoords.x),
+        Math.abs(initialPos.y - targetCoords.y)
+      ) <= 1 && initialPos.z === targetCoords.z;
+
+    if (isAdjacent) {
+      // We're adjacent, perform a single hardcoded step to the waypoint
+      logger(
+        'debug',
+        '[handleShovelAction] Adjacent to waypoint. Performing single step to waypoint tile.',
+      );
+      const dirKey = getDirectionKey(initialPos, targetCoords);
+      if (!dirKey) {
+        logger(
+          'warn',
+          '[handleShovelAction] Could not determine direction key for adjacent step.',
+        );
+        return false;
+      }
+
+      const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
+      const timeout = isDiagonal
+        ? config.moveConfirmTimeoutDiagonalMs
+        : config.moveConfirmTimeoutMs;
+
+      try {
+        await performWalk(workerState, config, targetCoords, timeout, isDiagonal);
+        
+        // Check if we changed Z-level after walking
+        const currentZ = workerState.playerMinimapPosition.z;
+        if (currentZ !== initialZ) {
+          logger(
+            'debug',
+            '[handleShovelAction] Z-level changed after walking onto tile. Hole was already open.',
+          );
+          return true;
+        }
+        
+        logger(
+          'debug',
+          '[handleShovelAction] Standing on waypoint tile, same Z-level. Will use shovel.',
+        );
+      } catch (error) {
+        logger(
+          'warn',
+          `[handleShovelAction] Failed to walk onto waypoint tile: ${error.message}.`,
+        );
+        return false;
+      }
+    } else {
+      // Not adjacent and not on waypoint - this shouldn't happen in normal flow
+      logger(
+        'warn',
+        '[handleShovelAction] Not on waypoint and not adjacent. Skipping action.',
+      );
+      return false;
+    }
+  } else {
+    logger(
+      'debug',
+      '[handleShovelAction] Already on waypoint tile. Will use shovel.',
+    );
+  }
+
+  // Now we're standing on the waypoint, use the shovel
+  const currentPos = { ...workerState.playerMinimapPosition };
+  const clickCoords = getAbsoluteClickCoordinatesForAction(
+    globalState,
     targetCoords,
-    config.toolHotkeys.shovel,
-    'shovel',
+    currentPos,
     'center',
   );
+
+  if (!clickCoords) {
+    logger(
+      'error',
+      '[handleShovelAction] Could not calculate click coordinates.',
+    );
+    return false;
+  }
+
+  await delay(config.animationArrivalTimeoutMs);
+  
+  logger('debug', '[handleShovelAction] Using shovel on coordinates.');
+  useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
+    type: 'movement',
+  });
+
+  const zChanged = await awaitZLevelChange(
+    workerState,
+    config,
+    currentPos.z,
+    config.defaultAwaitStateChangeTimeoutMs,
+  );
+
+  if (zChanged) {
+    logger(
+      'debug',
+      '[handleShovelAction] Z-level change confirmed. Action successful.',
+    );
+    return true;
+  }
+  logger('warn', '[handleShovelAction] Failed to confirm Z-level change.');
+  return false;
+}
 
 export async function handleMacheteAction(workerState, config, targetWaypoint) {
   const { logger, globalState } = workerState;
@@ -491,7 +596,7 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
   const pathCounterBeforeMove = workerState.lastPathDataCounter;
 
   logger('debug', '[handleDoorAction] Clicking on door.');
-  leftClick(clickCoords.x, clickCoords.y);
+  leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
 
   try {
     await awaitWalkConfirmation(

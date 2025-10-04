@@ -33,6 +33,8 @@ const config = {
   acquireTimeoutMs: 400, // Time to wait for target verification after a click
   controlHysteresisMs: 150, // Require stability before request/release control
   dynamicGoalGraceMs: 300,  // Keep dynamic target briefly to avoid flicker
+  hpStagnationTimeoutMs: 4000, // HP must change within 4 seconds when adjacent
+  hpStagnationCheckIntervalMs: 500, // Check HP every 500ms
 };
 
 // --- Worker State (data from other sources) ---
@@ -62,11 +64,90 @@ const targetingState = {
   lastMovementTime: 0,
   dynamicTargetLastSetAt: 0,
   dynamicTargetClearRequestedAt: 0,
+  // HP Stagnation Detection (Bot Detection Bypass)
+  hpStagnationDetection: {
+    lastHpValue: null, // Last recorded HP value
+    lastHpChangeTime: 0, // When HP last changed
+    lastCheckTime: 0, // When we last checked HP
+    hasBeenAdjacent: false, // Whether we've been adjacent to track stagnation
+  },
 };
 
 const { creaturesSAB } = workerData;
 const sabStateManager = new SABStateManager(workerData);
 const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
+
+// --- HP Stagnation Detection ---
+function checkHpStagnation(target) {
+  const config = workerState.globalState?.targeting?.hpStagnationDetection;
+  if (!config?.enabled) return;
+  
+  // Only perform HP stagnation detection if we're supposed to be attacking
+  const targetingList = workerState.globalState?.targeting?.targetingList;
+  const rule = findRuleForCreatureName(target.name, targetingList);
+  if (!rule || rule.stance === 'Stand') {
+    return; // Not attacking this creature
+  }
+  
+  const now = Date.now();
+  const { hpStagnationDetection } = targetingState;
+  
+  // Only check when adjacent to the target
+  if (!target.isAdjacent) {
+    hpStagnationDetection.hasBeenAdjacent = false;
+    return;
+  }
+  
+  // Mark that we've been adjacent at least once
+  hpStagnationDetection.hasBeenAdjacent = true;
+  
+  // Check interval (default 500ms)
+  if (now - hpStagnationDetection.lastCheckTime < config.checkInterval) {
+    return;
+  }
+  
+  hpStagnationDetection.lastCheckTime = now;
+  
+  const currentHp = target.hp;
+  
+  // Initialize if first check
+  if (hpStagnationDetection.lastHpValue === null) {
+    hpStagnationDetection.lastHpValue = currentHp;
+    hpStagnationDetection.lastHpChangeTime = now;
+    return;
+  }
+  
+  // HP changed - reset timer
+  if (currentHp !== hpStagnationDetection.lastHpValue) {
+    hpStagnationDetection.lastHpValue = currentHp;
+    hpStagnationDetection.lastHpChangeTime = now;
+    return;
+  }
+  
+  // HP stagnant for too long - send escape key
+  const stagnantTime = now - hpStagnationDetection.lastHpChangeTime;
+  if (stagnantTime >= config.stagnantTimeoutMs) {
+    logger('warn', `[HP Stagnation] HP stagnant for ${stagnantTime}ms, sending escape key`);
+    
+    // Send escape key to untarget
+    parentPort.postMessage({
+      type: 'keypress',
+      payload: {
+        keyCode: 27, // Escape key
+        ctrl: false,
+        shift: false,
+        alt: false
+      }
+    });
+    
+    // Reset tracking and transition to selecting new target
+    hpStagnationDetection.lastHpValue = null;
+    hpStagnationDetection.lastHpChangeTime = now;
+    hpStagnationDetection.hasBeenAdjacent = false;
+    
+    transitionTo(FSM_STATE.SELECTING, 'HP stagnation detected - escaped');
+  }
+}
 
 // --- State Transition Helper ---
 function transitionTo(newState, reason = '') {
@@ -83,9 +164,26 @@ function transitionTo(newState, reason = '') {
     targetingState.currentTarget = null;
     // Do NOT clear dynamic target immediately; request a clear after grace
     targetingState.dynamicTargetClearRequestedAt = Date.now();
+    // Reset HP stagnation tracking
+    targetingState.hpStagnationDetection = {
+      lastHpValue: null,
+      lastHpChangeTime: 0,
+      lastCheckTime: 0,
+      hasBeenAdjacent: false,
+    };
   }
   if (newState === FSM_STATE.ACQUIRING) {
     targetingState.lastAcquireAttempt.timestamp = 0;
+  }
+  if (newState === FSM_STATE.ENGAGING) {
+    // Initialize HP tracking when we start engaging
+    const now = Date.now();
+    targetingState.hpStagnationDetection = {
+      lastHpValue: null,
+      lastHpChangeTime: now,
+      lastCheckTime: now,
+      hasBeenAdjacent: false,
+    };
   }
 }
 
@@ -141,6 +239,7 @@ function handleAcquiringState() {
     
     // Update dynamic target with the actual acquired target to sync instance IDs
     // (The pathfindingTarget might have a different instance ID)
+    const targetingList = workerState.globalState.targeting.targetingList;
     const rule = findRuleForCreatureName(currentInGameTarget.name, targetingList);
     if (rule && rule.stance !== 'Stand') {
       updateDynamicTarget(parentPort, currentInGameTarget, targetingList);
@@ -206,8 +305,6 @@ async function handleEngagingState() {
   const creatures = sabStateManager.getCreatures();
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;
-  
-  console.log(`[FSM-ENGAGING] State check - currentTarget=${targetingState.currentTarget?.name}, controlState=${globalState.cavebot.controlState}`);
 
   const actualInGameTarget = sabStateManager.getCurrentTarget();
   if (!targetingState.currentTarget || !actualInGameTarget || actualInGameTarget.instanceId !== targetingState.currentTarget.instanceId) {
@@ -299,6 +396,9 @@ async function handleEngagingState() {
   
   // Update lastMovementTime in targetingState if it was changed
   targetingState.lastMovementTime = movementContext.lastMovementTime;
+  
+  // HP stagnation detection
+  checkHpStagnation(updatedTarget);
 }
 
 // --- Main Loop ---
@@ -322,10 +422,6 @@ function updateSABData() {
     workerState.pathWptId = pathData.wptId;
     workerState.pathInstanceId = pathData.instanceId;
     workerState.lastWorldStateCounter = newWorldStateCounter;
-    
-    if (pathData.instanceId !== 0 && pathData.path.length > 0) {
-      console.log(`[UpdateSAB] Path updated: instanceId=${pathData.instanceId}, pathLen=${pathData.path.length}, status=${pathData.status}, playerPos=(${workerState.playerMinimapPosition?.x},${workerState.playerMinimapPosition?.y})`);
-    }
   }
 }
 
@@ -351,13 +447,23 @@ async function performTargeting() {
     return;
   }
 
-  // <<< ADDED: Report visited tiles whenever targeting has control.
+  // Report visited tiles only when position changes during targeting control
   if (controlState === 'TARGETING' && workerState.playerMinimapPosition) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/addVisitedTile',
-      payload: workerState.playerMinimapPosition,
-    });
+    const currentPos = workerState.playerMinimapPosition;
+    
+    if (
+      !targetingState.lastDispatchedVisitedTile ||
+      targetingState.lastDispatchedVisitedTile.x !== currentPos.x ||
+      targetingState.lastDispatchedVisitedTile.y !== currentPos.y ||
+      targetingState.lastDispatchedVisitedTile.z !== currentPos.z
+    ) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/addVisitedTile',
+        payload: currentPos,
+      });
+      targetingState.lastDispatchedVisitedTile = { ...currentPos };
+    }
   }
 
   switch (targetingState.state) {

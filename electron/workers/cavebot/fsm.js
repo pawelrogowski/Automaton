@@ -42,6 +42,11 @@ export function createFsm(workerState, config) {
       },
     },
     EVALUATING_WAYPOINT: {
+      enter: () => {
+        logger('debug', '[FSM] Entering EVALUATING_WAYPOINT state.');
+        // Track when we entered this state for timeout detection
+        workerState.evaluatingWaypointSince = Date.now();
+      },
       execute: async (context) => {
 
         const { playerPos, targetWaypoint } = context;
@@ -54,19 +59,18 @@ export function createFsm(workerState, config) {
           (wpt) => wpt.id === targetWaypoint.id,
         );
 
-        // console.log("entered eval: ")
-        // console.log("playerPosition:",playerPos,"targetWaypoint",targetWaypoint.id)
-      
-        if (Date.now() < workerState.floorChangeGraceUntil) {
+        // DEFENSIVE FIX: Timeout detection for infinite EVALUATING_WAYPOINT loops
+        const now = Date.now();
+        const timeInState = now - (workerState.evaluatingWaypointSince || now);
+        if (timeInState > 5000) { // 5 second timeout
           logger(
-            'debug',
-            `[FSM] In floor change grace period. Waiting for sync. Remaining: ${
-              workerState.floorChangeGraceUntil - Date.now()
-            }ms.`,
+            'warn',
+            `[FSM] EVALUATING_WAYPOINT timeout after ${timeInState}ms for waypoint ${waypointIndex + 1}. Forcing path reset.`,
           );
-          return 'EVALUATING_WAYPOINT'; 
+          workerState.shouldRequestNewPath = true;
+          workerState.evaluatingWaypointSince = now; // Reset timer
+          return 'EVALUATING_WAYPOINT';
         }
-        
 
         // 1. Determine the Desired State (Cavebot's Target)
         const desiredWptIdHash = targetWaypoint.id
@@ -129,7 +133,13 @@ export function createFsm(workerState, config) {
 
         // 3. Compare Desired State vs. Actual State
         if (desiredWptIdHash !== pathWptIdHash) {
-          // console.log("desiredWptIdHash is not equal to pathWptIdHash", desiredWptIdHash,pathWptIdHash)
+          // DIAGNOSTIC: Log hash mismatch for debugging
+          if (timeInState > 1000) { // Only log after 1 second to avoid spam
+            logger(
+              'debug',
+              `[FSM] Hash mismatch persisting for ${timeInState}ms: desired=${desiredWptIdHash}, actual=${pathWptIdHash}`,
+            );
+          }
           return 'EVALUATING_WAYPOINT'; // Stay in this state and wait.
         }
 
@@ -295,28 +305,10 @@ export function createFsm(workerState, config) {
         if (actionSucceeded) {
           logger(
             'debug',
-            `[FSM] Action '${targetWaypoint.type}' succeeded.`,
+            `[FSM] Action '${targetWaypoint.type}' succeeded. Advancing to next waypoint.`,
           );
-          if (
-            getDistance(workerState.playerMinimapPosition, targetWaypoint) >=
-              config.teleportDistanceThreshold ||
-            targetWaypoint.type === 'Ladder' ||
-            targetWaypoint.type === 'Rope' ||
-            targetWaypoint.type === 'Shovel'
-          ) {
-            logger(
-              'debug',
-              '[FSM] Teleport-like action detected, transitioning to WAITING_FOR_CREATURE_MONITOR_SYNC.',
-            );
-            return 'WAITING_FOR_CREATURE_MONITOR_SYNC';
-          } else {
-            logger(
-              'debug',
-              '[FSM] Actionless waypoint reached. Advancing to next.',
-            );
-            await advanceToNextWaypoint(workerState, config);
-            return 'IDLE';
-          }
+          await advanceToNextWaypoint(workerState, config);
+          return 'IDLE';
         } else {
           logger(
             'warn',
@@ -329,51 +321,6 @@ export function createFsm(workerState, config) {
           await delay(config.actionFailureRetryDelayMs);
           return 'EVALUATING_WAYPOINT';
         }
-      },
-    },
-    WAITING_FOR_CREATURE_MONITOR_SYNC: {
-      enter: () => {
-        logger(
-          'debug',
-          '[FSM] Entering WAITING_FOR_CREATURE_MONITOR_SYNC state.',
-        );
-        postStoreUpdate('cavebot/setActionPaused', true); // Keep cavebot actions paused
-        workerState.creatureMonitorSyncTimeout =
-          Date.now() + config.creatureMonitorSyncTimeoutMs; // Set timeout
-      },
-      execute: async (context) => {
-        const { playerPos } = context;
-        const now = Date.now();
-
-        // Check for timeout
-        if (now >= workerState.creatureMonitorSyncTimeout) {
-          logger(
-            'warn',
-            '[FSM] Timeout waiting for CreatureMonitor sync. Proceeding without explicit confirmation.',
-          );
-          await advanceToNextWaypoint(workerState, config); // Proceed anyway
-          return 'IDLE';
-        }
-
-        // Read the last processed Z-level from CreatureMonitor via SAB
-        const lastProcessedZ =
-          workerState.sabStateManager.readCreatureMonitorLastProcessedZ();
-
-        if (lastProcessedZ === playerPos.z) {
-          logger(
-            'info',
-            '[FSM] CreatureMonitor sync confirmed for current Z-level. Advancing waypoint.',
-          );
-          await advanceToNextWaypoint(workerState, config);
-          return 'IDLE';
-        }
-
-        logger(
-          'debug',
-          '[FSM] Waiting for CreatureMonitor to sync for current Z-level.',
-        );
-        await delay(config.stateChangePollIntervalMs); // Poll frequently
-        return 'WAITING_FOR_CREATURE_MONITOR_SYNC'; // Stay in this state
       },
     },
     EXECUTING_SCRIPT: {

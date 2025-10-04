@@ -307,6 +307,7 @@ export const createLuaApi = async (context) => {
     'keyPressMultiple',
     'typeText',
     'typeSequence',
+    'npcTalk',
     'rotate',
     'clickTile',
     'clickAbsolute',
@@ -792,6 +793,174 @@ export const createLuaApi = async (context) => {
         }
       }
     },
+    npcTalk: async (...args) => {
+      if (args.length === 0) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] 'npcTalk' called with no arguments.`,
+        );
+        return false;
+      }
+
+      // Parse inputs: optional trailing boolean, rest are strings
+      let texts = [];
+      let startAndEndWithEnter = true;
+      const lastArg = args[args.length - 1];
+      if (typeof lastArg === 'boolean') {
+        startAndEndWithEnter = lastArg;
+        texts = args.slice(0, -1);
+      } else {
+        texts = args;
+      }
+      const stringArgs = texts.map(String);
+      if (stringArgs.length === 0) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] 'npcTalk' called without any text to type.`,
+        );
+        return false;
+      }
+
+      const triggersSet = new Set(['hi', 'hello', 'hail king']);
+
+      // Special handling: randomize greeting between 'hi' and 'hello'
+      const isGreeting = (t) => {
+        const n = String(t).trim().toLowerCase();
+        return n === 'hi' || n === 'hello';
+      };
+      const resolveGreetingIfNeeded = (t) => (isGreeting(t) ? (Math.random() < 0.5 ? 'hi' : 'hello') : String(t));
+
+      // Partition inputs into trigger and other messages preserving original order
+      const triggerMessages = [];
+      const otherMessages = [];
+      for (const text of stringArgs) {
+        const norm = String(text).trim().toLowerCase();
+        if (triggersSet.has(norm)) triggerMessages.push(text);
+        else otherMessages.push(text);
+      }
+
+      const getTabsState = () => getState().uiValues?.chatboxTabs || { tabs: {}, activeTab: null };
+
+      const findTabByName = (tabsObj, target) => {
+        if (!tabsObj) return null;
+        const keys = Object.keys(tabsObj);
+        const exact = keys.find((k) => k.toLowerCase() === target.toLowerCase());
+        if (exact) return exact;
+        const contains = keys.find((k) => k.toLowerCase().includes(target.toLowerCase()));
+        return contains || null;
+      };
+
+      const clickTabIfAvailable = async (tabName) => {
+        const state = getState();
+        const tabs = state.uiValues?.chatboxTabs?.tabs;
+        const tab = tabs ? tabs[tabName] : null;
+        if (tab && tab.tabPosition && typeof tab.tabPosition.x === 'number' && typeof tab.tabPosition.y === 'number') {
+          const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+          const baseX = tab.tabPosition.x;
+          const baseY = tab.tabPosition.y;
+          const clickX = baseX + randInt(-70, 70);
+          const clickY = baseY + randInt(-7, 7);
+          await postInputAction({
+            type: 'luaScript',
+            action: {
+              module: 'mouseController',
+              method: 'leftClick',
+              args: [clickX, clickY],
+            },
+          });
+          return true;
+        }
+        logger('warn', `[Lua/${scriptName}] Cannot focus tab: '${tabName}' not found or missing position`);
+        return false;
+      };
+
+      const typeTextOnce = async (text) => {
+        await postInputAction({
+          type: 'luaScript',
+          action: {
+            module: 'keypress',
+            method: 'typeArray',
+            args: [[String(text)], startAndEndWithEnter],
+          },
+        });
+      };
+
+      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+      // Refresh state before we start
+      if (typeof context.refreshLuaGlobalState === 'function') {
+        await context.refreshLuaGlobalState(true);
+      }
+
+      // Determine current tab landscape
+      let { tabs: tabsMap, activeTab } = getTabsState();
+      let npcTabName = findTabByName(tabsMap, 'npc');
+
+      if (npcTabName) {
+        // NPC tab already exists: focus it and type all messages (including triggers) with normal short delays
+        if (activeTab !== npcTabName) {
+          await clickTabIfAvailable(npcTabName);
+          // slight settle
+          await wait(100);
+        }
+        for (let i = 0; i < stringArgs.length; i++) {
+          const msg = resolveGreetingIfNeeded(stringArgs[i]);
+          await typeTextOnce(msg);
+          if (i < stringArgs.length - 1) {
+            await wait(randInt(100, 500));
+          }
+        }
+        return true;
+      }
+
+      // NPC tab not present: focus Local Chat, send trigger messages there
+      const localChatTabName = findTabByName(tabsMap, 'local chat') || findTabByName(tabsMap, 'local');
+      if (localChatTabName && activeTab !== localChatTabName) {
+        await clickTabIfAvailable(localChatTabName);
+        await wait(100);
+      }
+
+      if (triggerMessages.length > 0) {
+        for (let i = 0; i < triggerMessages.length; i++) {
+          const msg = resolveGreetingIfNeeded(triggerMessages[i]);
+          await typeTextOnce(msg);
+          if (i < triggerMessages.length - 1) {
+            await wait(100); // small delay between trigger lines
+          }
+        }
+      } else {
+        logger('info', `[Lua/${scriptName}] npcTalk: No trigger messages provided (hi/hello/hail king).`);
+      }
+
+      // Wait 2000-3000ms for NPC tab to appear
+      await wait(randInt(2000, 3000));
+      if (typeof context.refreshLuaGlobalState === 'function') {
+        await context.refreshLuaGlobalState(true);
+      }
+
+      // Re-check for NPC tab
+      ({ tabs: tabsMap, activeTab } = getTabsState());
+      npcTabName = findTabByName(tabsMap, 'npc');
+      if (!npcTabName) {
+        logger('warn', `[Lua/${scriptName}] npcTalk: NPC tab did not appear after trigger messages.`);
+        return false;
+      }
+
+      if (activeTab !== npcTabName) {
+        await clickTabIfAvailable(npcTabName);
+        await wait(100);
+      }
+
+      // Type remaining messages (non-triggers) with 100-500ms delays between
+      for (let i = 0; i < otherMessages.length; i++) {
+        await typeTextOnce(otherMessages[i]);
+        if (i < otherMessages.length - 1) {
+          await wait(randInt(100, 500));
+        }
+      }
+
+      return true;
+    },
     rotate: async (direction) =>
       await postInputAction({
         type: 'luaScript',
@@ -1126,12 +1295,15 @@ export const createLuaApi = async (context) => {
         return false;
       }
       const { x, y } = tab.tabPosition;
+      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const clickX = x + randInt(-70, 70);
+      const clickY = y + randInt(-7, 7);
       await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
           method: 'leftClick',
-          args: [x, y],
+          args: [clickX, clickY],
         },
       });
       return true;
@@ -1407,6 +1579,66 @@ export const createLuaApi = async (context) => {
       // Check if the status exists and is true
       return characterStatus[normalizedStatus] === true;
     },
+    isInSpecialArea: (specialAreaName) => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const specialAreas = state.cavebot?.specialAreas || [];
+      
+      if (!playerPos) {
+        return false;
+      }
+      
+      // Find the special area by name
+      const area = specialAreas.find(area => 
+        area.enabled && area.name === specialAreaName
+      );
+      
+      if (!area) {
+        return false;
+      }
+      
+      // Check if player is on the same floor
+      if (playerPos.z !== area.z) {
+        return false;
+      }
+      
+      // Check if player is within the area bounds (rectangle)
+      const inBoundsX = playerPos.x >= area.x && playerPos.x < (area.x + area.sizeX);
+      const inBoundsY = playerPos.y >= area.y && playerPos.y < (area.y + area.sizeY);
+      
+      return inBoundsX && inBoundsY;
+    },
+    getCurrentSpecialArea: () => {
+      const state = getState();
+      const playerPos = state.gameState?.playerMinimapPosition;
+      const specialAreas = state.cavebot?.specialAreas || [];
+      
+      if (!playerPos) {
+        return "none";
+      }
+      
+      // Check all enabled special areas to find the first match
+      for (const area of specialAreas) {
+        if (!area.enabled) {
+          continue;
+        }
+        
+        // Check if player is on the same floor
+        if (playerPos.z !== area.z) {
+          continue;
+        }
+        
+        // Check if player is within the area bounds (rectangle)
+        const inBoundsX = playerPos.x >= area.x && playerPos.x < (area.x + area.sizeX);
+        const inBoundsY = playerPos.y >= area.y && playerPos.y < (area.y + area.sizeY);
+        
+        if (inBoundsX && inBoundsY) {
+          return area.name;
+        }
+      }
+      
+      return "none";
+    },
     isAtLocation: (x, y, z, range = 0) => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
@@ -1502,10 +1734,6 @@ export const createLuaApi = async (context) => {
           100,
         )
       ) {
-        logger(
-          'info',
-          `[Lua/${scriptName}] Player is already online, skipping login.`,
-        );
         return false;
       }
 
@@ -1543,7 +1771,7 @@ export const createLuaApi = async (context) => {
         const state = getState(); // We know it exists now.
         const loginModal = state.regionCoordinates.regions.loginModal;
 
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -1552,7 +1780,7 @@ export const createLuaApi = async (context) => {
           },
         });
         await wait(100);
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -1567,7 +1795,7 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] emailInput not found`);
           return false;
         }
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -1576,7 +1804,7 @@ export const createLuaApi = async (context) => {
           },
         });
         await wait(50);
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -1591,7 +1819,7 @@ export const createLuaApi = async (context) => {
           logger('warn', `[Lua/${scriptName}] passwordInput not found`);
           return false;
         }
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'mouseController',
@@ -1600,7 +1828,7 @@ export const createLuaApi = async (context) => {
           },
         });
         await wait(50);
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -1609,7 +1837,7 @@ export const createLuaApi = async (context) => {
           },
         });
         await wait(100);
-        postInputAction({
+        await postInputAction({
           type: 'luaScript',
           action: {
             module: 'keypress',
@@ -1677,7 +1905,7 @@ export const createLuaApi = async (context) => {
         return false;
       }
 
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'mouseController',
@@ -1686,7 +1914,7 @@ export const createLuaApi = async (context) => {
         },
       });
       await wait(100);
-      postInputAction({
+      await postInputAction({
         type: 'luaScript',
         action: {
           module: 'keypress',

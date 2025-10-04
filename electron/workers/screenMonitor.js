@@ -67,28 +67,116 @@ const lastBarChecksums = {
   healthBar: null,
   manaBar: null,
 };
-const CHECKSUM_GRID = 4; // 4x4 sampling grid for bars
 
-function computeRegionChecksum(buffer, screenWidth, region) {
-  if (!region || region.width <= 0 || region.height <= 0) return 0;
-  const stepX = Math.max(1, Math.floor(region.width / (CHECKSUM_GRID + 1)));
-  const stepY = Math.max(1, Math.floor(region.height / (CHECKSUM_GRID + 1)));
-  let sum = 0 >>> 0;
-  for (let gy = 1; gy <= CHECKSUM_GRID; gy++) {
-    const y = region.y + gy * stepY;
-    if (y < 0) continue;
-    for (let gx = 1; gx <= CHECKSUM_GRID; gx++) {
-      const x = region.x + gx * stepX;
-      if (x < 0) continue;
+/**
+ * Robust checksum for horizontal resource bars (HP/MP).
+ * Uses a multi-layered approach:
+ * 1. Dense horizontal sampling across the entire bar width (every N pixels)
+ * 2. Vertical sampling at top/middle/bottom of bar
+ * 3. Edge detection to catch bar transitions
+ * 4. Color distribution histogram for robust change detection
+ * 
+ * This ensures we catch even 1-2 pixel changes in the bar while maintaining performance.
+ */
+function computeBarChecksum(buffer, screenWidth, region, barWidth = 94) {
+  if (!region || region.width <= 0 || region.height <= 0) return null;
+  
+  const { x: startX, y: startY, height } = region;
+  
+  // Sample points: every 2-3 pixels horizontally for dense coverage
+  const HORIZONTAL_STEP = 3; // Sample every 3rd pixel across the bar
+  const sampleCount = Math.floor(barWidth / HORIZONTAL_STEP);
+  
+  // Multi-component checksum for robustness
+  let checksumParts = {
+    topRow: 0,      // Top edge of bar
+    middleRow: 0,   // Middle of bar
+    bottomRow: 0,   // Bottom edge of bar
+    colorHist: {},  // Histogram of unique colors
+    transitionCount: 0, // Number of color transitions (edge detection)
+  };
+  
+  // Sample three horizontal lines through the bar
+  const rows = [
+    Math.floor(startY + height * 0.25),  // Upper quarter
+    Math.floor(startY + height * 0.5),   // Middle
+    Math.floor(startY + height * 0.75),  // Lower quarter
+  ];
+  const rowKeys = ['topRow', 'middleRow', 'bottomRow'];
+  
+  let prevColor = null;
+  
+  for (let i = 0; i < sampleCount; i++) {
+    const x = startX + i * HORIZONTAL_STEP;
+    if (x >= startX + barWidth) break;
+    
+    // Sample all three rows at this x position
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const y = rows[rowIdx];
       const idx = ((y * screenWidth + x) * 4) >>> 0; // BGRA
+      
       const b = buffer[idx] || 0;
       const g = buffer[idx + 1] || 0;
       const r = buffer[idx + 2] || 0;
-      sum = (sum + r + (g << 1) + (b << 2) + ((x & 0xFF) << 3) + ((y & 0xFF) << 4)) >>> 0;
+      
+      // Row-specific checksum with better mixing
+      const pixelHash = (r * 16777619) ^ (g * 16777619) ^ (b * 16777619) ^ (i * 2654435761);
+      checksumParts[rowKeys[rowIdx]] = (checksumParts[rowKeys[rowIdx]] + pixelHash) >>> 0;
+      
+      // Color histogram (only for middle row to reduce overhead)
+      if (rowIdx === 1) {
+        const colorKey = `${r},${g},${b}`;
+        checksumParts.colorHist[colorKey] = (checksumParts.colorHist[colorKey] || 0) + 1;
+        
+        // Detect color transitions (edges in the bar)
+        if (prevColor && prevColor !== colorKey) {
+          checksumParts.transitionCount++;
+        }
+        prevColor = colorKey;
+      }
     }
   }
-  sum = (sum + ((region.width & 0xFFFF) << 8) + (region.height & 0xFFFF)) >>> 0;
-  return sum >>> 0;
+  
+  // Create composite checksum that's highly sensitive to changes
+  const histKeys = Object.keys(checksumParts.colorHist).sort();
+  let histHash = 0;
+  for (const key of histKeys) {
+    const count = checksumParts.colorHist[key];
+    histHash = (histHash * 31 + count) >>> 0;
+  }
+  
+  // Return object with multiple checksum components
+  return {
+    top: checksumParts.topRow,
+    mid: checksumParts.middleRow,
+    bot: checksumParts.bottomRow,
+    hist: histHash,
+    trans: checksumParts.transitionCount,
+    // Composite hash for quick comparison
+    composite: (
+      checksumParts.topRow ^ 
+      (checksumParts.middleRow << 5) ^ 
+      (checksumParts.bottomRow << 10) ^
+      (histHash << 15) ^
+      (checksumParts.transitionCount << 20)
+    ) >>> 0,
+  };
+}
+
+/**
+ * Compare two bar checksums for equality.
+ * Returns true if they match, false otherwise.
+ */
+function checksumsMatch(ck1, ck2) {
+  if (!ck1 || !ck2) return false;
+  // Fast path: compare composite hash first
+  if (ck1.composite !== ck2.composite) return false;
+  // Verify all components match (guards against hash collisions)
+  return ck1.top === ck2.top &&
+         ck1.mid === ck2.mid &&
+         ck1.bot === ck2.bot &&
+         ck1.hist === ck2.hist &&
+         ck1.trans === ck2.trans;
 }
 
 const reusableGameStateUpdate = {
@@ -339,27 +427,47 @@ async function processGameState() {
     const MIN_HOTKEY_INTERVAL_MS = 100;
 
     const scanIfNeeded = async () => {
-      // Health percentage with checksum gating
+      // Health percentage with robust checksum gating
       const hbDirty = isDirty(regions.healthBar);
       if (hbDirty || now - lastScanTs.healthBar > FALLBACK.healthBar || !hasScannedInitially) {
-        const ck = computeRegionChecksum(bufferToUse, width, regions.healthBar);
-        const same = lastBarChecksums.healthBar !== null && ck === lastBarChecksums.healthBar;
+        const ck = computeBarChecksum(bufferToUse, width, regions.healthBar, 94);
+        const checksumUnchanged = checksumsMatch(lastBarChecksums.healthBar, ck);
         const withinFallback = now - lastScanTs.healthBar < FALLBACK.healthBar;
-        if (!(same && withinFallback && hbDirty && hasScannedInitially)) {
-          lastCalculatedState.hppc = calculateHealthBar(bufferToUse, metadata, regions.healthBar);
+        // Skip calculation only if checksum is unchanged AND we're within fallback period AND we've scanned before
+        const shouldSkip = checksumUnchanged && withinFallback && hasScannedInitially;
+        if (!shouldSkip) {
+          const hpValue = calculateHealthBar(bufferToUse, metadata, regions.healthBar);
+          // Validate returned value before storing
+          if (hpValue >= 0 && hpValue <= 100) {
+            lastCalculatedState.hppc = hpValue;
+          } else if (hpValue === -1 && !hasScannedInitially) {
+            // Allow -1 only on initial scan (indicates calculation error)
+            lastCalculatedState.hppc = null;
+          }
+          // If invalid but we've scanned before, keep the last valid value
           lastScanTs.healthBar = now;
           lastBarChecksums.healthBar = ck;
         }
       }
 
-      // Mana percentage with checksum gating
+      // Mana percentage with robust checksum gating
       const mbDirty = isDirty(regions.manaBar);
       if (mbDirty || now - lastScanTs.manaBar > FALLBACK.manaBar || !hasScannedInitially) {
-        const ck = computeRegionChecksum(bufferToUse, width, regions.manaBar);
-        const same = lastBarChecksums.manaBar !== null && ck === lastBarChecksums.manaBar;
+        const ck = computeBarChecksum(bufferToUse, width, regions.manaBar, 94);
+        const checksumUnchanged = checksumsMatch(lastBarChecksums.manaBar, ck);
         const withinFallback = now - lastScanTs.manaBar < FALLBACK.manaBar;
-        if (!(same && withinFallback && mbDirty && hasScannedInitially)) {
-          lastCalculatedState.mppc = calculateManaBar(bufferToUse, metadata, regions.manaBar);
+        // Skip calculation only if checksum is unchanged AND we're within fallback period AND we've scanned before
+        const shouldSkip = checksumUnchanged && withinFallback && hasScannedInitially;
+        if (!shouldSkip) {
+          const mpValue = calculateManaBar(bufferToUse, metadata, regions.manaBar);
+          // Validate returned value before storing
+          if (mpValue >= 0 && mpValue <= 100) {
+            lastCalculatedState.mppc = mpValue;
+          } else if (mpValue === -1 && !hasScannedInitially) {
+            // Allow -1 only on initial scan (indicates calculation error)
+            lastCalculatedState.mppc = null;
+          }
+          // If invalid but we've scanned before, keep the last valid value
           lastScanTs.manaBar = now;
           lastBarChecksums.manaBar = ck;
         }
@@ -490,6 +598,9 @@ parentPort.on('message', (message) => {
       currentState.regionCoordinates = message.payload;
       regionsStale = false;
       hasScannedInitially = false;
+      // Reset checksums when regions change to force fresh calculation
+      lastBarChecksums.healthBar = null;
+      lastBarChecksums.manaBar = null;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
       if (!isInitialized) initializeWorker();

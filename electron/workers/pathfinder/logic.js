@@ -157,7 +157,12 @@ export function runPathfindingLogic(context) {
 
     if (!result) {
       if (isTargetingMode) {
-        const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
+        // Validate dynamicTarget exists before accessing properties
+        if (!cavebot.dynamicTarget || !cavebot.dynamicTarget.targetCreaturePos) {
+          logger('debug', '[Pathfinder] Invalid dynamicTarget, skipping pathfinding');
+          result = { path: [], reason: 'NO_VALID_END' };
+        } else {
+          const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
 
         if (!targetInstanceId) {
           const obstacles = creaturePositions.filter((pos) => {
@@ -177,7 +182,7 @@ export function runPathfindingLogic(context) {
             (c) => c.instanceId === targetInstanceId,
           );
 
-          if (targetCreature) {
+          if (targetCreature && targetCreature.gameCoords) {
             const correctedDynamicTarget = {
               ...cavebot.dynamicTarget,
               targetCreaturePos: targetCreature.gameCoords,
@@ -203,6 +208,7 @@ export function runPathfindingLogic(context) {
               creaturePositions,
             );
           }
+        }
         }
       } else if (targetIdentifier) {
         const { waypointSections, currentSection, wptId } = cavebot;
@@ -247,7 +253,7 @@ export function runPathfindingLogic(context) {
 
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
     const wptId = isTargetingMode ? 0 : (cavebot.wptId ? cavebot.wptId.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0) : 0);
-    const instanceId = isTargetingMode ? (cavebot.dynamicTarget.targetInstanceId || 0) : 0;
+    const instanceId = isTargetingMode ? (cavebot.dynamicTarget?.targetInstanceId || 0) : 0;
 
     if (pathDataArray) {
       Atomics.store(pathDataArray, PATH_WPT_ID_INDEX, wptId);
@@ -302,7 +308,7 @@ export function runPathfindingLogic(context) {
         );
 
         let pathTargetCoords = { x: 0, y: 0, z: 0 };
-        if (isTargetingMode) {
+        if (isTargetingMode && cavebot.dynamicTarget && cavebot.dynamicTarget.targetCreaturePos) {
           pathTargetCoords = cavebot.dynamicTarget.targetCreaturePos;
         } else {
           const { waypointSections, currentSection, wptId } = cavebot;

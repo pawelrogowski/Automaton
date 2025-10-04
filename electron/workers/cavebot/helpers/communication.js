@@ -78,7 +78,8 @@ export const updateSABData = (workerState, config) => {
       workerState.pathfindingStatus = PATH_STATUS_IDLE;
       workerState.lastPathDataCounter = -1;
       workerState.shouldRequestNewPath = false;
-      return;
+      // CRITICAL FIX: Don't return early, allow reading of new data
+      // return; // Removed this return to fix the sync deadlock
     }
 
     const counterBeforeRead = Atomics.load(
@@ -86,7 +87,9 @@ export const updateSABData = (workerState, config) => {
       PATH_UPDATE_COUNTER_INDEX,
     );
 
-    if (counterBeforeRead === workerState.lastPathDataCounter) {
+    // CRITICAL FIX: Only skip if we've already processed this exact counter
+    // AND we're not in a reset state (lastPathDataCounter !== -1)
+    if (counterBeforeRead === workerState.lastPathDataCounter && workerState.lastPathDataCounter !== -1) {
       return; // No new path data to process
     }
 

@@ -62,6 +62,29 @@ const postGlobalVarUpdate = (key, value) => {
   });
 };
 
+// Track pending input actions and their completion
+let nextActionId = 0;
+const pendingActions = new Map();
+
+const createPostInputAction = () => {
+  return (action) => {
+    return new Promise((resolve, reject) => {
+      const actionId = nextActionId++;
+      const timeoutId = setTimeout(() => {
+        pendingActions.delete(actionId);
+        reject(new Error(`Input action ${actionId} timed out after 30s`));
+      }, 30000); // 30 second timeout
+
+      pendingActions.set(actionId, { resolve, reject, timeoutId });
+
+      parentPort.postMessage({
+        type: 'inputAction',
+        payload: { ...action, actionId },
+      });
+    });
+  };
+};
+
 const keepAlive = () => {
   if (keepAliveInterval) return;
   keepAliveInterval = setInterval(() => {}, 60 * 60 * 1000);
@@ -202,8 +225,7 @@ const initializeLuaApi = async () => {
       onAsyncEnd,
       sharedLuaGlobals: workerData.sharedLuaGlobals,
       lua: lua,
-      postInputAction: (action) =>
-        parentPort.postMessage({ type: 'inputAction', payload: action }),
+      postInputAction: createPostInputAction(),
       pathfinderInstance: pathfinderInstance,
     });
 
@@ -469,6 +491,21 @@ parentPort.on('message', async (message) => {
   if (message.type === 'shutdown') {
     shutdownRequested = true;
     if (workerState === 'running') await cleanupAndExit();
+    return;
+  }
+
+  if (message.type === 'inputActionCompleted') {
+    const { actionId, success, error } = message.payload;
+    const pending = pendingActions.get(actionId);
+    if (pending) {
+      clearTimeout(pending.timeoutId);
+      pendingActions.delete(actionId);
+      if (success) {
+        pending.resolve();
+      } else {
+        pending.reject(new Error(error || 'Input action failed'));
+      }
+    }
     return;
   }
 

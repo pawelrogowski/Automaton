@@ -59,6 +59,7 @@ const sharedBufferView = Buffer.from(imageSAB);
 
 const sabStateManager = new SABStateManager({
   playerPosSAB,
+  pathDataSAB,
   battleListSAB,
   creaturesSAB,
   lootingSAB,
@@ -952,7 +953,11 @@ async function performOperation() {
 
     
     const cavebotTargetWpt = sabStateManager.getCavebotTargetWaypoint();
-    if (cavebotTargetWpt) {
+    
+    // Check if we have a valid waypoint (coordinates are not zero/null)
+    const hasValidWaypoint = cavebotTargetWpt && (cavebotTargetWpt.x !== 0 || cavebotTargetWpt.y !== 0);
+    
+    if (hasValidWaypoint) {
       const blockingCavebotCreature = pathfinderInstance.getBlockingCreature(
         currentPlayerMinimapPosition,
         cavebotTargetWpt,

@@ -85,14 +85,9 @@ export function selectBestTarget(sabStateManager, targetingList) {
   const othersRule = targetingList.find(
     (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
   );
-  
-  if (othersRule) {
-    console.log(`[SelectBestTarget] Others rule found with priority ${othersRule.priority}. Creatures: ${creatures.map(c => c.name).join(', ')}. Explicit names: ${[...explicitNames].join(', ')}`);
-  }
 
   const findRuleForCreature = (creature) => {
     if (!creature || !creature.name) {
-      console.log(`[findRuleForCreature] Invalid creature: ${JSON.stringify(creature)}`);
       return null;
     }
     
@@ -102,17 +97,14 @@ export function selectBestTarget(sabStateManager, targetingList) {
     );
     
     if (explicitRule) {
-      console.log(`[findRuleForCreature] Found explicit rule for ${creature.name}`);
       return explicitRule;
     }
     
     // If no explicit rule and "Others" exists, use it as fallback
     if (othersRule && !explicitNames.has(creature.name)) {
-      console.log(`[findRuleForCreature] Using Others rule for ${creature.name}`);
       return { ...othersRule, isWildcard: true, originalName: creature.name };
     }
     
-    console.log(`[findRuleForCreature] No rule found for ${creature.name}`);
     return null;
   };
 
@@ -252,14 +244,11 @@ export function acquireTarget(
   const creatures = sabStateManager.getCreatures();
   const targetCreature = creatures.find(c => c.name === targetName && c.isReachable);
   
-  console.log(`[GameWorld] Targeting: ${targetName}, Found: ${!!targetCreature}, Total creatures: ${creatures.length}`);
-  
   // Prefer game world click if creature is stationary or adjacent
   if (targetCreature && GAMEWORLD_CONFIG.ENABLED) {
     // CRITICAL: Never use game world clicks when HP is obstructed
     // Obstructed HP means the creature might not be properly clickable in the game world
     if (targetCreature.hp === 'Obstructed') {
-      console.log(`[GameWorld] ${targetName}: HP obstructed - forcing battle list/Tab`);
       // Fall through to battle list/keyboard targeting
     } else {
       const stationaryDur = targetCreature.stationaryDuration ?? 0;
@@ -275,21 +264,15 @@ export function acquireTarget(
         if (GAMEWORLD_CONFIG.ALLOW_ADJACENT && isAdjacent) {
           // Adjacent + stationary = very reliable, always click
           shouldUseGameWorldClick = true;
-          console.log(`[GameWorld] ${targetName}: Adjacent + stationary ${stationaryDur}ms - using game world click`);
         } else {
           // Non-adjacent but stationary = 85% chance
           shouldUseGameWorldClick = Math.random() < GAMEWORLD_CONFIG.PROBABILITY;
-          console.log(`[GameWorld] ${targetName}: Stationary ${stationaryDur}ms - gameworld=${shouldUseGameWorldClick}`);
         }
-      } else {
-        console.log(`[GameWorld] ${targetName}: Moving/new (${stationaryDur}ms) - using Tab/BL`);
       }
       
       if (shouldUseGameWorldClick && targetCreature.gameCoords) {
         const regions = globalState?.regionCoordinates?.regions;
         const playerPos = sabStateManager.getCurrentPlayerPosition();
-        
-        console.log(`[GameWorld] Has regions=${!!regions}, gameWorld=${!!regions?.gameWorld}, tileSize=${!!regions?.tileSize}, playerPos=${!!playerPos}`);
         
         if (regions?.gameWorld && regions?.tileSize && playerPos) {
           const clickCoords = getAbsoluteGameWorldClickCoordinates(
@@ -308,8 +291,6 @@ export function acquireTarget(
             
             clickCoords.x += offsetX;
             clickCoords.y += offsetY;
-            
-            console.log(`[GameWorld] ✓ Dispatching game world click at (${clickCoords.x}, ${clickCoords.y})`);
             
             // Get game-world-aware return position (1-3 tiles away, within game world)
             const returnPos = getReturnPositionGameWorld(globalState, clickCoords.x, clickCoords.y);
@@ -491,28 +472,23 @@ export async function manageMovement(
   const { targetingList } = targetingContext;
 
   if (!currentTarget || sabStateManager.isLootingRequired()) {
-    console.log(`[ManageMovement] Early exit: currentTarget=${!!currentTarget}, looting=${sabStateManager.isLootingRequired()}`);
     return;
   }
 
   // Use helper to find rule (supports "Others" wildcard)
   const rule = findRuleForCreatureName(currentTarget.name, targetingList);
-  console.log(`[ManageMovement] ${currentTarget.name}: Found rule=${!!rule}, stance=${rule?.stance}`);
   
   if (!rule || rule.stance === 'Stand') {
-    console.log(`[ManageMovement] ${currentTarget.name}: No rule or Stand stance, exiting`);
     return;
   }
 
   const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
-  console.log(`[ManageMovement] ${currentTarget.name}: stance=${rule.stance}, distance=${currentTarget.distance}, desired=${desiredDistance}, isAdjacent=${currentTarget.isAdjacent}`);
   
   // For "Reach" stance, we want to move until adjacent (can attack)
   // For "Follow" stance, we want to maintain the specified distance
   if (rule.stance === 'Reach') {
     // Reach stance: Stop only when adjacent (can attack)
     if (currentTarget.isAdjacent) {
-      console.log(`[ManageMovement] ${currentTarget.name}: Adjacent - can reach target`);
       return;
     }
   } else {
@@ -521,15 +497,11 @@ export async function manageMovement(
       (desiredDistance === 1 && currentTarget.isAdjacent) ||
       currentTarget.distance <= desiredDistance
     ) {
-      console.log(`[ManageMovement] ${currentTarget.name}: At desired Follow distance`);
       return;
     }
   }
 
   const now = Date.now();
-  const cooldownRemaining = MOVEMENT_COOLDOWN_MS - (now - targetingContext.lastMovementTime);
-  
-  console.log(`[ManageMovement] ${currentTarget.name}: Pre-checks - playerPos=${!!playerMinimapPosition}, pathLen=${path?.length}, cooldown=${cooldownRemaining > 0 ? cooldownRemaining + 'ms' : 'OK'}, pathInstanceId=${workerContext.pathInstanceId}, targetInstanceId=${currentTarget.instanceId}`);
   
   if (
     !playerMinimapPosition ||
@@ -537,9 +509,6 @@ export async function manageMovement(
     now - targetingContext.lastMovementTime < MOVEMENT_COOLDOWN_MS ||
     workerContext.pathInstanceId !== currentTarget.instanceId
   ) {
-    if (workerContext.pathInstanceId !== currentTarget.instanceId) {
-      console.log(`[ManageMovement] ${currentTarget.name}: ❌ Path instance ID mismatch!`);
-    }
     return;
   }
 
@@ -564,8 +533,6 @@ export async function manageMovement(
   const nextStep = path[1];
   const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
 
-  console.log(`[ManageMovement] ${currentTarget.name}: ✅ Sending movement key '${dirKey}' from (${playerMinimapPosition.x},${playerMinimapPosition.y}) to (${nextStep.x},${nextStep.y})`);
-
   if (dirKey) {
     parentPort.postMessage({
       type: 'inputAction',
@@ -575,7 +542,5 @@ export async function manageMovement(
       },
     });
     targetingContext.lastMovementTime = now;
-  } else {
-    console.log(`[ManageMovement] ${currentTarget.name}: ❌ No direction key calculated!`);
   }
 }

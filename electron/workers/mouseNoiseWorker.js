@@ -97,6 +97,16 @@ function getRandomPointInRegion(region) {
   return { x, y };
 }
 
+function isPointInRegion(point, region) {
+  if (!point || !region) return false;
+  return (
+    point.x >= region.x &&
+    point.x < region.x + region.width &&
+    point.y >= region.y &&
+    point.y < region.y + region.height
+  );
+}
+
 function selectTargetRegion() {
   const regions = globalState?.regionCoordinates?.regions;
   if (!regions) return null;
@@ -152,8 +162,12 @@ function shouldPause() {
 function startNewPattern() {
   const now = Date.now();
   
+  // Only allow pausing when cursor is over the gameWorld region
+  const gameWorld = globalState?.regionCoordinates?.regions?.gameWorld;
+  const canPauseHere = !!gameWorld && isPointInRegion(currentPosition, gameWorld);
+  
   // Decide: pause or move?
-  if (shouldPause()) {
+  if (canPauseHere && shouldPause()) {
     isPausing = true;
     pauseEndTime = now + getRandomInRange(MOUSE_NOISE_CONFIG.PAUSE_DURATION);
     log('debug', `[MouseNoise] Starting pause until ${pauseEndTime}`);
@@ -286,6 +300,15 @@ async function noiseLoop() {
       // Check if we need to change pattern
       if (now >= nextPatternChange && !isPausing) {
         startNewPattern();
+      }
+      
+      // If we're paused but not over gameWorld anymore, cancel the pause to avoid obstructing UI
+      if (isPausing) {
+        const gameWorld = globalState?.regionCoordinates?.regions?.gameWorld;
+        if (!isPointInRegion(currentPosition, gameWorld)) {
+          isPausing = false;
+          startNewPattern();
+        }
       }
       
       // Check if pause ended

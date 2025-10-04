@@ -8,7 +8,7 @@ const post = (payload) => {
   });
 };
 
-function useItemOnCoordinates(targetX, targetY, key, { type = 'default' } = {}) {
+function useItemOnCoordinates(targetX, targetY, key, { type = 'default', maxDuration = 150 } = {}) {
   keyPress(key, { type });
 
   post({
@@ -16,7 +16,7 @@ function useItemOnCoordinates(targetX, targetY, key, { type = 'default' } = {}) 
     action: {
       module: 'mouseController',
       method: 'leftClick',
-      args: [parseInt(targetX), parseInt(targetY)],
+      args: [parseInt(targetX), parseInt(targetY), maxDuration],
     },
   });
 }
