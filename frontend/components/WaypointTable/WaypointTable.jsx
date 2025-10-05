@@ -280,28 +280,41 @@ const EditableCoordinatesCell = React.memo(
 
 // --- MODIFICATION: Renamed for clarity ---
 const LuaScriptCell = React.memo(
-  ({ value, row: { original }, onEditAction }) => (
-    <div
-      onDoubleClick={() => onEditAction(original)}
-      style={{ width: '100%', height: '100%', cursor: 'pointer' }}
-    >
-      {value ? (
-        <pre
-          style={{
-            margin: 0,
-            padding: '2px',
-            whiteSpace: 'pre',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {value}
-        </pre>
-      ) : (
-        <span></span>
-      )}
-    </div>
-  ),
+  ({ value, row: { original }, onEditAction }) => {
+    const isScriptType = original.type === 'Script';
+    const isEditable = isScriptType;
+    
+    return (
+      <div
+        onDoubleClick={() => isEditable && onEditAction(original)}
+        style={{
+          width: '100%',
+          height: '100%',
+          cursor: isEditable ? 'pointer' : 'default',
+          opacity: isEditable ? 1 : 0.5,
+        }}
+        title={isEditable ? 'Double-click to edit script' : 'Only available for Script type waypoints'}
+      >
+        {value && isScriptType ? (
+          <pre
+            style={{
+              margin: 0,
+              padding: '2px',
+              whiteSpace: 'pre',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {value}
+          </pre>
+        ) : isScriptType ? (
+          <span style={{ color: '#888', fontStyle: 'italic' }}>Double-click to add script...</span>
+        ) : (
+          <span style={{ color: '#666', fontStyle: 'italic' }}>N/A</span>
+        )}
+      </div>
+    );
+  },
 );
 // --- END MODIFICATION ---
 
@@ -630,6 +643,18 @@ const WaypointTable = () => {
         Header: 'On',
         accessor: 'enabled',
         width: 40,
+        Cell: EditableCheckboxCell,
+      },
+      {
+        Header: 'Hollow',
+        accessor: 'hollow',
+        width: 60,
+        Cell: EditableCheckboxCell,
+      },
+      {
+        Header: 'Ignore Lure',
+        accessor: 'ignoreWhenLuring',
+        width: 90,
         Cell: EditableCheckboxCell,
       },
       {

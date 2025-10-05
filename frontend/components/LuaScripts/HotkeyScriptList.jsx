@@ -6,12 +6,13 @@ import { addScript, removeScript, clearScriptLog, updateScript } from '../../red
 import { v4 as uuidv4 } from 'uuid';
 import ScriptTable from './ScriptTable.jsx';
 
+const { ipcRenderer } = window.electron || {};
+
 const HotkeyScriptList = () => {
   const dispatch = useDispatch();
-  const { hotkey_scripts, persistent_scripts } = useSelector((state) => ({
-    hotkey_scripts: state.lua.hotkeyScripts,
-    persistent_scripts: state.lua.persistentScripts,
-  }));
+  // Use separate selectors to avoid creating new objects on every render
+  const hotkey_scripts = useSelector((state) => state.lua.hotkeyScripts);
+  const persistent_scripts = useSelector((state) => state.lua.persistentScripts);
   const [modalState, setModalState] = useState({ isOpen: false, script: null });
 
   const handleAddScript = useCallback(() => {
@@ -81,6 +82,52 @@ const HotkeyScriptList = () => {
     [dispatch],
   );
 
+  const handleExportScript = useCallback(
+    async (script) => {
+      if (ipcRenderer) {
+        await ipcRenderer.invoke('save-lua-script', script);
+      }
+    },
+    [],
+  );
+
+  const handleImportScript = useCallback(async () => {
+    if (ipcRenderer) {
+      const loadedScript = await ipcRenderer.invoke('load-lua-script');
+      if (loadedScript) {
+        // Generate new ID to avoid conflicts
+        const newScript = {
+          ...loadedScript,
+          id: uuidv4(),
+          log: [],
+        };
+        dispatch(addScript(newScript));
+      }
+    }
+  }, [dispatch]);
+
+  const handleExportPackage = useCallback(async (scripts) => {
+    if (ipcRenderer) {
+      await ipcRenderer.invoke('save-lua-script-package', scripts);
+    }
+  }, []);
+
+  const handleImportPackage = useCallback(async () => {
+    if (ipcRenderer) {
+      const loadedScripts = await ipcRenderer.invoke('load-lua-script-package');
+      if (loadedScripts && Array.isArray(loadedScripts)) {
+        loadedScripts.forEach(script => {
+          const newScript = {
+            ...script,
+            id: uuidv4(), // Generate new ID to avoid conflicts
+            log: [],
+          };
+          dispatch(addScript(newScript));
+        });
+      }
+    }
+  }, [dispatch]);
+
   return (
     <>
       <ScriptTable
@@ -90,6 +137,10 @@ const HotkeyScriptList = () => {
         onRemoveScript={handleRemoveScript}
         onClearScriptLog={handleClearLog}
         onAddScript={handleAddScript}
+        onExportScript={handleExportScript}
+        onImportScript={handleImportScript}
+        onExportPackage={handleExportPackage}
+        onImportPackage={handleImportPackage}
         type="hotkey"
       />
       <ScriptEditorModal

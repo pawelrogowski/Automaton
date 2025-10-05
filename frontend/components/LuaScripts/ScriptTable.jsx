@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Trash2, Plus, ChevronDown, ChevronRight } from 'react-feather';
-import { useTable, useBlockLayout, useResizeColumns, useExpanded } from 'react-table';
+import { Trash2, Plus, ChevronDown, ChevronRight, Download, Upload, Package } from 'react-feather';
+import { useTable, useFlexLayout, useResizeColumns, useExpanded } from 'react-table';
 import { StyledScriptTable, AddSectionButton } from './ScriptTable.styled.js';
 import CustomSwitch from '../CustomSwitch/CustomSwitch.js'; // Import CustomSwitch
 
@@ -79,16 +79,28 @@ const ScriptCodeCell = React.memo(({ value, row: { original }, onEditScript }) =
   </div>
 ));
 
-const ActionCell = React.memo(({ row: { original }, onRemove }) => (
+const ActionCell = React.memo(({ row: { original }, onRemove, onExport }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '5px' }}>
+    {onExport && (
+      <Download
+        size={14}
+        onClick={(e) => {
+          e.stopPropagation();
+          onExport(original);
+        }}
+        style={{ cursor: 'pointer', color: '#007bff' }}
+        title="Export script"
+      />
+    )}
     {onRemove && (
       <Trash2
-        size={16}
+        size={14}
         onClick={(e) => {
           e.stopPropagation();
           onRemove(original.id);
         }}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', color: '#cc3333' }}
+        title="Delete script"
       />
     )}
   </div>
@@ -123,7 +135,7 @@ const LogToggleCell = React.memo(({ row, onClearLog }) => {
   );
 });
 
-const ScriptTable = ({
+const ScriptTable = React.memo(({
   scripts,
   updateScriptData,
   onEditScript,
@@ -131,9 +143,14 @@ const ScriptTable = ({
   onToggleScriptEnabled,
   onClearScriptLog,
   onAddScript,
+  onExportScript,
+  onImportScript,
+  onExportPackage,
+  onImportPackage,
   type,
 }) => {
-  const data = useMemo(() => scripts, [scripts]);
+  // No need for useMemo here - scripts is already memoized from parent
+  const data = scripts;
   const [expanded, setExpanded] = useState({});
 
   const commonColumns = useMemo(
@@ -141,26 +158,26 @@ const ScriptTable = ({
       {
         Header: 'Name',
         accessor: 'name',
-        width: 150,
+        width: 20,
         Cell: EditableStringCell,
       },
       {
         Header: 'Code',
         accessor: 'code',
-        width: 250,
+        width: 40,
         Cell: (props) => <ScriptCodeCell {...props} onEditScript={onEditScript} />,
       },
       {
         Header: 'Log',
         id: 'logToggle',
-        width: 120,
+        width: 12,
         Cell: (props) => <LogToggleCell {...props} onClearLog={onClearScriptLog} />,
       },
       {
         Header: 'Actions',
         id: 'actions',
-        width: 70,
-        Cell: (props) => <ActionCell {...props} onRemove={onRemoveScript} />,
+        width: 8,
+        Cell: (props) => <ActionCell {...props} onRemove={onRemoveScript} onExport={onExportScript} />,
       },
     ],
     [onEditScript, onRemoveScript, onClearScriptLog],
@@ -171,7 +188,7 @@ const ScriptTable = ({
       {
         Header: 'Enabled',
         accessor: 'enabled',
-        width: 70,
+        width: 8,
         Cell: ({ value: initialValue, row: { original } }) => (
           <CustomSwitch
             checked={!!initialValue}
@@ -181,8 +198,8 @@ const ScriptTable = ({
           />
         ),
       },
-      { Header: 'Min Loop', accessor: 'loopMin', width: 80, Cell: EditableNumberCell },
-      { Header: 'Max Loop', accessor: 'loopMax', width: 80, Cell: EditableNumberCell },
+      { Header: 'Min Loop', accessor: 'loopMin', width: 6, Cell: EditableNumberCell },
+      { Header: 'Max Loop', accessor: 'loopMax', width: 6, Cell: EditableNumberCell },
       ...commonColumns,
     ],
     [onToggleScriptEnabled, commonColumns],
@@ -212,17 +229,48 @@ const ScriptTable = ({
       state: { expanded },
       onExpandedChange: setExpanded,
     },
-    useBlockLayout,
+    useFlexLayout,
     useResizeColumns,
     useExpanded,
   );
 
   return (
     <StyledScriptTable>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '5px', borderBottom: '1px solid #555' }}>
-        <AddSectionButton onClick={onAddScript}>
-          <Plus size={16} /> New Script
-        </AddSectionButton>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        padding: '16px 0', 
+        marginBottom: '16px',
+        gap: '12px',
+        alignItems: 'center'
+      }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {onImportScript && (
+            <AddSectionButton onClick={onImportScript} title="Import Script">
+              <Upload size={15} /> Import Script
+            </AddSectionButton>
+          )}
+          {onImportPackage && (
+            <AddSectionButton onClick={onImportPackage} title="Import Package">
+              <Package size={15} /> Import Package
+            </AddSectionButton>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {onExportPackage && scripts.length > 0 && (
+            <AddSectionButton onClick={() => onExportPackage(scripts)} title="Export All Scripts">
+              <Download size={15} /> Export All
+            </AddSectionButton>
+          )}
+          {onAddScript && (
+            <AddSectionButton onClick={onAddScript} style={{ 
+              backgroundColor: '#007bff',
+              borderColor: '#007bff'
+            }}>
+              <Plus size={16} /> New Script
+            </AddSectionButton>
+          )}
+        </div>
       </div>
       <div {...getTableProps()} className="table">
         <div className="thead">
@@ -254,7 +302,7 @@ const ScriptTable = ({
                     <div
                       className="td"
                       style={{
-                        width: `${visibleColumns.reduce((sum, col) => sum + col.width, 0)}px`,
+                        width: '100%',
                         gridColumn: `span ${visibleColumns.length}`,
                         padding: '0',
                       }}
@@ -270,6 +318,8 @@ const ScriptTable = ({
       </div>
     </StyledScriptTable>
   );
-};
+});
+
+ScriptTable.displayName = 'ScriptTable';
 
 export default ScriptTable;

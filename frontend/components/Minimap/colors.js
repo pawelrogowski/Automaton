@@ -28,9 +28,15 @@ export const MINIMAP_COLORS = {
   // Color for hostile creatures.
   ENTITY: '#FF0000', // Bright Red
 
-  // Fill and stroke colors for special areas.
+  // Fill and stroke colors for special areas by type.
   SPECIAL_AREA: {
-    fill: 'rgba(0, 100, 255, 0.4)',
-    stroke: 'rgba(100, 150, 255, 0.8)',
+    cavebot: {
+      fill: 'rgba(0, 100, 255, 0.4)', // Blue
+      stroke: 'rgba(100, 150, 255, 0.8)',
+    },
+    targeting: {
+      fill: 'rgba(150, 50, 255, 0.4)', // Purple
+      stroke: 'rgba(180, 100, 255, 0.8)',
+    },
   },
 };

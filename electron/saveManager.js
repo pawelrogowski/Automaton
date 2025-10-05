@@ -242,6 +242,167 @@ export const saveLua = createSliceSaver(
 );
 
 // ============================================================================
+// Individual Lua Script Save/Load Functions
+// ============================================================================
+
+/**
+ * Save a single Lua script to a file
+ * @param {object} script - The script object to save
+ * @param {function} callback - Optional callback
+ */
+export const saveLuaScript = async (script, callback) => {
+  if (!script) {
+    console.error('No script provided to save');
+    showNotification('❌ No script to save');
+    if (callback) callback();
+    return;
+  }
+
+  // Clean the script data for export
+  const scriptToSave = {
+    ...script,
+    enabled: false, // Disable by default
+    log: [], // Clear logs
+  };
+
+  const defaultName = script.name
+    ? `${script.name.replace(/[^a-z0-9_-]/gi, '_')}.lua.json`
+    : 'lua_script.json';
+
+  await genericSaveToFile(
+    scriptToSave,
+    'Save Lua Script',
+    defaultName,
+    callback,
+  );
+};
+
+/**
+ * Load a single Lua script from a file
+ * @param {function} callback - Optional callback
+ * @returns {Promise<object|null>} The loaded script or null
+ */
+export const loadLuaScript = async (callback) => {
+  try {
+    const dialog_result = await dialog.showOpenDialog({
+      title: 'Load Lua Script',
+      filters: [{ name: 'Lua Script Files', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+
+    if (!dialog_result.canceled && dialog_result.filePaths.length > 0) {
+      const file_path = dialog_result.filePaths[0];
+      const content = await fs.readFile(file_path, 'utf8');
+      const loaded_script = JSON.parse(content);
+
+      // Validate script structure
+      if (!loaded_script.id || !loaded_script.type || !loaded_script.code) {
+        showNotification('❌ Invalid script file format');
+        if (callback) callback();
+        return null;
+      }
+
+      // Ensure script is disabled and has fresh log
+      loaded_script.enabled = false;
+      loaded_script.log = [];
+
+      showNotification(`📤 Loaded script | ${loaded_script.name || 'Unnamed'}`);
+      if (callback) callback();
+      return loaded_script;
+    }
+  } catch (err) {
+    console.error('Failed to load Lua script:', err);
+    showNotification('❌ Failed to load script');
+  }
+  
+  if (callback) callback();
+  return null;
+};
+
+/**
+ * Save multiple Lua scripts as a package
+ * @param {Array} scripts - Array of script objects to save
+ * @param {function} callback - Optional callback
+ */
+export const saveLuaScriptPackage = async (scripts, callback) => {
+  if (!scripts || !Array.isArray(scripts) || scripts.length === 0) {
+    console.error('No scripts provided to save');
+    showNotification('❌ No scripts to save');
+    if (callback) callback();
+    return;
+  }
+
+  // Clean the scripts for export
+  const scriptsToSave = scripts.map(script => ({
+    ...script,
+    enabled: false, // Disable by default
+    log: [], // Clear logs
+  }));
+
+  const packageData = {
+    version: '1.0',
+    type: 'lua_script_package',
+    scriptCount: scriptsToSave.length,
+    exportedAt: new Date().toISOString(),
+    scripts: scriptsToSave,
+  };
+
+  await genericSaveToFile(
+    packageData,
+    'Save Lua Script Package',
+    'lua_scripts_package.json',
+    callback,
+  );
+};
+
+/**
+ * Load multiple Lua scripts from a package file
+ * @param {function} callback - Optional callback
+ * @returns {Promise<Array|null>} The loaded scripts or null
+ */
+export const loadLuaScriptPackage = async (callback) => {
+  try {
+    const dialog_result = await dialog.showOpenDialog({
+      title: 'Load Lua Script Package',
+      filters: [{ name: 'Script Package Files', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+
+    if (!dialog_result.canceled && dialog_result.filePaths.length > 0) {
+      const file_path = dialog_result.filePaths[0];
+      const content = await fs.readFile(file_path, 'utf8');
+      const packageData = JSON.parse(content);
+
+      // Validate package structure
+      if (!packageData.scripts || !Array.isArray(packageData.scripts)) {
+        showNotification('❌ Invalid package file format');
+        if (callback) callback();
+        return null;
+      }
+
+      // Ensure all scripts are disabled and have fresh logs
+      const loaded_scripts = packageData.scripts.map(script => ({
+        ...script,
+        enabled: false,
+        log: [],
+      }));
+
+      showNotification(
+        `📤 Loaded ${loaded_scripts.length} script${loaded_scripts.length !== 1 ? 's' : ''} from package`,
+      );
+      if (callback) callback();
+      return loaded_scripts;
+    }
+  } catch (err) {
+    console.error('Failed to load Lua script package:', err);
+    showNotification('❌ Failed to load script package');
+  }
+  
+  if (callback) callback();
+  return null;
+};
+
+// ============================================================================
 // Auto Save / Load & Store Subscription (Unchanged)
 // ============================================================================
 

@@ -146,6 +146,7 @@ export function runPathfindingLogic(context) {
                 avoidance: area.avoidance,
                 width: area.sizeX,
                 height: area.sizeY,
+                hollow: area.hollow || false,
             }));
             pathfinderInstance.updateSpecialAreas(areasForNative, z);
         }

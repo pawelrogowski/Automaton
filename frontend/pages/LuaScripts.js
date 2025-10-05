@@ -1,52 +1,51 @@
-// /home/orimorfus/Documents/Automaton/frontend/pages/LuaScripts.js
 import React, { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import StyledMain from './Healing.styled.js'; // Can reuse or create new styled component
-import HighWrapper from '../components/HighWrapper/HighWrapper.js';
+import styled from 'styled-components';
 import PersistentScriptList from '../components/LuaScripts/PersistentScriptList.jsx';
-import HotkeyScriptList from '../components/LuaScripts/HotkeyScriptList.jsx';
 import { clearError } from '../redux/slices/luaSlice.js';
 
+const PageContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+`;
+
+const ErrorBanner = styled.div`
+  padding: 12px 24px;
+  background-color: rgba(204, 51, 51, 0.15);
+  border-left: 4px solid #cc3333;
+  color: #ff6b6b;
+  font-size: 14px;
+  font-family: sans-serif;
+  margin: 16px 24px;
+  border-radius: 4px;
+`;
+
+const ContentArea = styled.div`
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+`;
+
 const LuaScripts = () => {
-  const location = useLocation();
   const dispatch = useDispatch();
-  const hash = location.hash;
   const error = useSelector((state) => state.lua.error);
 
   useEffect(() => {
-    // Clear error on component unmount or when view changes
+    // Clear error on component unmount
     return () => {
       dispatch(clearError());
     };
-  }, [dispatch, hash]);
-
-  let content = null;
-  let title = 'Lua Scripts';
-
-  if (hash === '#persistent') {
-    title = 'Persistent Scripts';
-    content = <PersistentScriptList />;
-  } else if (hash === '#hotkey') {
-    title = 'Hotkey Scripts';
-    content = <HotkeyScriptList />;
-  } else {
-    // Default view or redirect if no hash
-    title = 'Select Script Type';
-    content = (
-      <p style={{ color: '#fafafa', textAlign: 'center' }}>
-        Please select Persistent or Hotkey from the sidebar.
-      </p>
-    );
-  }
+  }, [dispatch]);
 
   return (
-    <StyledMain>
-      {error && (
-        <div style={{ color: 'red', textAlign: 'center' }}>{error}</div>
-      )}
-      {content}
-    </StyledMain>
+    <PageContainer>
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+      <ContentArea>
+        <PersistentScriptList />
+      </ContentArea>
+    </PageContainer>
   );
 };
 

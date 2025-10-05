@@ -17,8 +17,13 @@ import StyledMinimap, {
   ModalContent,
   ModalHeader,
   ControlsGrid,
+  SettingGroup,
+  GroupTitle,
+  SettingRow,
   ControlLabel,
   ColorInput,
+  ContextMenu,
+  ContextMenuItem,
 } from './Minimap.styled.js';
 import CustomSwitch from '../CustomSwitch/CustomSwitch.js';
 import {
@@ -40,25 +45,25 @@ const MAX_ZOOM = 50;
 const SPECIAL_AREA_TYPE_OPTIONS = [
   {
     value: 'cavebot_255',
-    label: 'Cavebot (Avoidance 255)',
+    label: 'CAV - 255',
     type: 'cavebot',
     avoidance: 255,
   },
   {
     value: 'cavebot_20',
-    label: 'Cavebot (Avoidance 20)',
+    label: 'CAV - 20',
     type: 'cavebot',
     avoidance: 20,
   },
   {
     value: 'targeting_255',
-    label: 'Targeting (Avoidance 255)',
+    label: 'TAR - 255',
     type: 'targeting',
     avoidance: 255,
   },
   {
     value: 'targeting_20',
-    label: 'Targeting (Avoidance 20)',
+    label: 'TAR - 20',
     type: 'targeting',
     avoidance: 20,
   },
@@ -107,6 +112,19 @@ const MinimapSettingsModal = React.memo(
       }));
     };
 
+    const handleSpecialAreaColorChange = (areaType, colorType, value) => {
+      onChange((prev) => ({
+        ...prev,
+        specialAreas: {
+          ...prev.specialAreas,
+          [areaType]: {
+            ...prev.specialAreas[areaType],
+            [colorType]: value,
+          },
+        },
+      }));
+    };
+
     const handleToggle = (category) => {
       onChange((prev) => ({
         ...prev,
@@ -119,84 +137,116 @@ const MinimapSettingsModal = React.memo(
         <ModalContent onClick={(e) => e.stopPropagation()}>
           <ModalHeader>Minimap Display Settings</ModalHeader>
           <ControlsGrid>
-            {/* Player */}
-            <ControlLabel>Player</ControlLabel>
-            <ColorInput
-              value={settings.player.color}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) =>
-                handleColorChange('player', 'color', e.target.value)
-              }
-            />
-            <CustomSwitch
-              checked={settings.player.draw}
-              onChange={() => handleToggle('player')}
-            />
-
-            {/* Path */}
-            <ControlLabel>Path</ControlLabel>
-            <ColorInput
-              value={settings.path.color}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) =>
-                handleColorChange('path', 'color', e.target.value)
-              }
-            />
-            <CustomSwitch
-              checked={settings.path.draw}
-              onChange={() => handleToggle('path')}
-            />
-
-            {/* Special Areas */}
-            <ControlLabel>Special Areas</ControlLabel>
-            <ColorInput
-              value={settings.specialAreas.fill}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) =>
-                handleColorChange('specialAreas', 'fill', e.target.value)
-              }
-            />
-            <CustomSwitch
-              checked={settings.specialAreas.draw}
-              onChange={() => handleToggle('specialAreas')}
-            />
-
-            {/* Entities */}
-            <ControlLabel>Entities</ControlLabel>
-            <ColorInput
-              value={settings.entity.color}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) =>
-                handleColorChange('entity', 'color', e.target.value)
-              }
-            />
-            <CustomSwitch
-              checked={settings.entity.draw}
-              onChange={() => handleToggle('entity')}
-            />
-
-            {/* Waypoints Header */}
-            <ControlLabel>Waypoints</ControlLabel>
-            <div />
-            <CustomSwitch
-              checked={settings.waypoints.draw}
-              onChange={() => handleToggle('waypoints')}
-            />
-
-            {/* Waypoint Types */}
-            {WAYPOINT_TYPE_OPTIONS.map((opt) => (
-              <React.Fragment key={opt.value}>
-                <ControlLabel isSub>{opt.label}</ControlLabel>
+            {/* Basic Elements Group */}
+            <SettingGroup>
+              <GroupTitle>
+                Basic Elements
+              </GroupTitle>
+              
+              <SettingRow>
+                <ControlLabel>Player</ControlLabel>
                 <ColorInput
-                  value={settings.waypoints.typeColors[opt.value]}
+                  value={settings.player.color}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) =>
-                    handleWaypointColorChange(opt.value, e.target.value)
+                    handleColorChange('player', 'color', e.target.value)
                   }
                 />
-                <div />
-              </React.Fragment>
-            ))}
+                <CustomSwitch
+                  checked={settings.player.draw}
+                  onChange={() => handleToggle('player')}
+                />
+              </SettingRow>
+
+              <SettingRow>
+                <ControlLabel>Path</ControlLabel>
+                <ColorInput
+                  value={settings.path.color}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    handleColorChange('path', 'color', e.target.value)
+                  }
+                />
+                <CustomSwitch
+                  checked={settings.path.draw}
+                  onChange={() => handleToggle('path')}
+                />
+              </SettingRow>
+
+              <SettingRow>
+                <ControlLabel>Entities</ControlLabel>
+                <ColorInput
+                  value={settings.entity.color}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    handleColorChange('entity', 'color', e.target.value)
+                  }
+                />
+                <CustomSwitch
+                  checked={settings.entity.draw}
+                  onChange={() => handleToggle('entity')}
+                />
+              </SettingRow>
+            </SettingGroup>
+
+            {/* Special Areas Group */}
+            <SettingGroup>
+              <GroupTitle>
+                Special Areas
+                <CustomSwitch
+                  checked={settings.specialAreas.draw}
+                  onChange={() => handleToggle('specialAreas')}
+                />
+              </GroupTitle>
+
+              <SettingRow>
+                <ControlLabel isSub>Cavebot (Blue)</ControlLabel>
+                <ColorInput
+                  value={settings.specialAreas.cavebot.fill}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    handleSpecialAreaColorChange('cavebot', 'fill', e.target.value)
+                  }
+                  title="Fill color"
+                />
+              </SettingRow>
+
+              <SettingRow>
+                <ControlLabel isSub>Targeting (Purple)</ControlLabel>
+                <ColorInput
+                  value={settings.specialAreas.targeting.fill}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    handleSpecialAreaColorChange('targeting', 'fill', e.target.value)
+                  }
+                  title="Fill color"
+                />
+              </SettingRow>
+            </SettingGroup>
+
+            {/* Waypoints Group */}
+            <SettingGroup>
+              <GroupTitle>
+                Waypoints
+                <CustomSwitch
+                  checked={settings.waypoints.draw}
+                  onChange={() => handleToggle('waypoints')}
+                />
+              </GroupTitle>
+
+              {WAYPOINT_TYPE_OPTIONS.map((opt) => (
+                <SettingRow key={opt.value}>
+                  <ControlLabel isSub>{opt.label}</ControlLabel>
+                  <ColorInput
+                    value={settings.waypoints.typeColors[opt.value]}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) =>
+                      handleWaypointColorChange(opt.value, e.target.value)
+                    }
+                  />
+                </SettingRow>
+              ))}
+            </SettingGroup>
           </ControlsGrid>
         </ModalContent>
       </ModalOverlay>
@@ -270,6 +320,8 @@ const Minimap = () => {
     height: CANVAS_SIZE,
   });
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [resizeMode, setResizeMode] = useState(false);
+  const [resizingArea, setResizingArea] = useState(null);
   const [lastVisibleTimestamp, setLastVisibleTimestamp] = useState(Date.now());
   const [drawSettings, setDrawSettings] = useState(() => {
     const defaultSettings = {
@@ -286,8 +338,8 @@ const Minimap = () => {
       },
       specialAreas: {
         draw: true,
-        fill: MINIMAP_COLORS.SPECIAL_AREA.fill,
-        stroke: MINIMAP_COLORS.SPECIAL_AREA.stroke,
+        cavebot: MINIMAP_COLORS.SPECIAL_AREA.cavebot,
+        targeting: MINIMAP_COLORS.SPECIAL_AREA.targeting,
       },
       entity: { draw: true, color: MINIMAP_COLORS.ENTITY },
     };
@@ -375,7 +427,7 @@ const Minimap = () => {
   );
   const visibleEntities = useMemo(
     () => creatures.filter((e) => e.gameCoords.z === zLevel),
-    [creatures, zLevel, lastVisibleTimestamp],
+    [creatures, zLevel],
   );
 
   // --- Centering & Resizing Logic ---
@@ -431,15 +483,15 @@ const Minimap = () => {
   }, []);
 
   // --- UI Event Handlers ---
-  const handleZChange = (delta) => {
+  const handleZChange = useCallback((delta) => {
     setIsLockedToPlayer(false);
     setZLevel((prevZ) => Math.max(0, Math.min(15, prevZ + delta)));
-  };
+  }, []);
   const handleLockToggle = useCallback(
     () => setIsLockedToPlayer((prev) => !prev),
     [],
   );
-  const handleFullscreenToggle = () => {
+  const handleFullscreenToggle = useCallback(() => {
     if (!minimapContainerRef.current) return;
     if (isFullscreen)
       document.exitFullscreen().catch((err) => console.error(err));
@@ -447,16 +499,16 @@ const Minimap = () => {
       minimapContainerRef.current
         .requestFullscreen()
         .catch((err) => console.error(err));
-  };
-  const handleMapModeToggle = () =>
-    setMapMode((prevMode) => (prevMode === 'map' ? 'waypoint' : 'map'));
+  }, [isFullscreen]);
+  const handleMapModeToggle = useCallback(() =>
+    setMapMode((prevMode) => (prevMode === 'map' ? 'waypoint' : 'map')), []);
 
   const handleCloseModal = useCallback(() => {
     setIsSettingsModalOpen(false);
   }, []);
 
   // --- Konva Event Handlers ---
-  const handleWheel = (e) => {
+  const handleWheel = useCallback((e) => {
     e.evt.preventDefault();
     const stage = e.target.getStage();
     const oldScale = stage.scaleX();
@@ -476,13 +528,13 @@ const Minimap = () => {
       y: pointer.y - mousePointTo.y * newScale,
     });
     setIsLockedToPlayer(false);
-  };
-  const handleDragEnd = (e) => {
+  }, []);
+  const handleDragEnd = useCallback((e) => {
     setIsLockedToPlayer(false);
     setStagePos(e.target.position());
-  };
+  }, []);
 
-  const handleContextMenu = (e) => {
+  const handleContextMenu = useCallback((e) => {
     e.evt.preventDefault();
     const stage = e.target.getStage();
     const pointerPos = stage.getPointerPosition();
@@ -504,24 +556,35 @@ const Minimap = () => {
         area.z === zLevel,
     );
 
-    const containerRect = minimapContainerRef.current.getBoundingClientRect();
-    let menuX = e.evt.clientX;
-    let menuY = e.evt.clientY;
+    // Use viewport dimensions for better positioning
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const clickX = e.evt.clientX;
+    const clickY = e.evt.clientY;
 
-    const menuWidth = 180;
-    const menuHeight = 2 * 25 + 10; // Height for the initial menu
-
-    if (menuX + menuWidth > containerRect.right) {
-      menuX = containerRect.right - menuWidth;
+    const menuWidth = 200;
+    const padding = 10;
+    
+    // Position menu intelligently
+    // Prefer right and down, but flip if not enough space
+    let menuX = clickX + padding;
+    let menuY = clickY + padding;
+    
+    // Check if menu would overflow right edge
+    if (menuX + menuWidth > viewportWidth - padding) {
+      // Flip to left of cursor
+      menuX = clickX - menuWidth - padding;
     }
-    if (menuX < containerRect.left) {
-      menuX = containerRect.left;
+    
+    // Ensure menu doesn't go off left edge
+    if (menuX < padding) {
+      menuX = padding;
     }
-    if (menuY + menuHeight > containerRect.bottom) {
-      menuY = containerRect.bottom - menuHeight;
-    }
-    if (menuY < containerRect.top) {
-      menuY = containerRect.top;
+    
+    // For Y position, we'll let the menu handle overflow with max-height and scroll
+    // But ensure it starts on screen
+    if (menuY < padding) {
+      menuY = padding;
     }
 
     setRightClickMenu({
@@ -535,21 +598,21 @@ const Minimap = () => {
       targetSpecialAreaId: existingSpecialArea ? existingSpecialArea.id : null,
       hoveredItem: null,
     });
-  };
+  }, [mapIndex, zLevel, visibleWaypoints, visibleSpecialAreas]);
 
-  const handleMenuItemHover = (item) =>
-    setRightClickMenu((prev) => ({ ...prev, hoveredItem: item }));
+  const handleMenuItemHover = useCallback((item) =>
+    setRightClickMenu((prev) => ({ ...prev, hoveredItem: item })), []);
 
-  const handleMenuCategorySelect = (category) => {
+  const handleMenuCategorySelect = useCallback((category) => {
     setRightClickMenu((prev) => ({
       ...prev,
       stage: category === 'waypoints' ? 1 : 2,
       selectedCategory: category,
       hoveredItem: null,
     }));
-  };
+  }, []);
 
-  const handleMenuItemClick = (item) => {
+  const handleMenuItemClick = useCallback((item) => {
     const {
       selectedCategory,
       targetPos,
@@ -603,7 +666,7 @@ const Minimap = () => {
     }
 
     setRightClickMenu({ visible: false, x: 0, y: 0, stage: 0 });
-  };
+  }, [dispatch, rightClickMenu]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -619,11 +682,85 @@ const Minimap = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [rightClickMenu.visible]);
 
-  const handleWaypointClick = (e, waypointId) => {
+  const handleWaypointClick = useCallback((e, waypointId) => {
     if (e.evt.button !== 2) dispatch(setwptSelection(waypointId));
-  };
-  const handleWaypointDoubleClick = (waypointId) =>
-    dispatch(setwptId(waypointId));
+  }, [dispatch]);
+  const handleWaypointDoubleClick = useCallback((waypointId) =>
+    dispatch(setwptId(waypointId)), [dispatch]);
+
+  const handleSpecialAreaClick = useCallback((e, areaId) => {
+    if (!resizeMode || e.evt.button === 2) return;
+    
+    // If we're already resizing, let the click propagate to handleStageClick to finish
+    if (resizingArea) {
+      return;
+    }
+    
+    // Starting a new resize
+    e.evt.preventDefault();
+    e.cancelBubble = true;
+    
+    const area = visibleSpecialAreas.find(a => a.id === areaId);
+    if (!area) return;
+    
+    setIsLockedToPlayer(false);
+    setResizingArea({
+      id: areaId,
+      startX: area.x,
+      startY: area.y,
+      originalSizeX: area.sizeX,
+      originalSizeY: area.sizeY,
+    });
+  }, [resizeMode, visibleSpecialAreas, resizingArea]);
+
+  const handleStageMouseMove = useCallback((e) => {
+    if (!resizingArea || !resizeMode) return;
+    
+    const stage = e.target.getStage();
+    const pointerPos = stage.getPointerPosition();
+    if (!pointerPos) return;
+    
+    const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
+    const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
+    
+    // Calculate new size based on cursor position
+    const newSizeX = Math.max(1, worldX - resizingArea.startX + 1);
+    const newSizeY = Math.max(1, worldY - resizingArea.startY + 1);
+    
+    // Store preview size without dispatching to Redux yet
+    setResizingArea(prev => ({
+      ...prev,
+      previewSizeX: newSizeX,
+      previewSizeY: newSizeY
+    }));
+  }, [resizingArea, resizeMode]);
+
+  const handleStageClick = useCallback((e) => {
+    if (!resizeMode) return;
+    
+    // If we're already resizing, finish the resize
+    if (resizingArea) {
+      const stage = e.target.getStage();
+      const pointerPos = stage.getPointerPosition();
+      if (!pointerPos) return;
+      
+      const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
+      const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
+      
+      // Calculate final size
+      const newSizeX = Math.max(1, worldX - resizingArea.startX + 1);
+      const newSizeY = Math.max(1, worldY - resizingArea.startY + 1);
+      
+      // Apply the resize
+      dispatch(updateSpecialArea({
+        id: resizingArea.id,
+        updates: { sizeX: newSizeX, sizeY: newSizeY }
+      }));
+      
+      // Clear resizing state
+      setResizingArea(null);
+    }
+  }, [resizeMode, resizingArea, dispatch]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -635,7 +772,7 @@ const Minimap = () => {
 
   return (
     <StyledMinimap ref={minimapContainerRef} tabIndex={0}>
-      <div style={{ position: 'relative', width: '100%', height: CANVAS_SIZE }}>
+      <div style={{ position: 'relative', width: '100%', height: isFullscreen ? '100vh' : CANVAS_SIZE }}>
         <StyledMapControls>
           <ControlGroup>
             <ControlButton
@@ -753,6 +890,27 @@ const Minimap = () => {
           <ControlGroup>
             <ControlButton
               position="single"
+              onClick={() => setResizeMode((prev) => !prev)}
+              active={resizeMode}
+              title="Resize Special Area Mode"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+              </svg>
+            </ControlButton>
+          </ControlGroup>
+          <ControlGroup>
+            <ControlButton
+              position="single"
               onClick={() => setIsSettingsModalOpen(true)}
               title="Display Settings"
             >
@@ -787,12 +945,14 @@ const Minimap = () => {
             height={canvasDimensions.height}
             onWheel={handleWheel}
             onContextMenu={handleContextMenu}
+            onMouseMove={handleStageMouseMove}
+            onClick={handleStageClick}
             ref={stageRef}
             x={stagePos.x}
             y={stagePos.y}
             scaleX={stageScale}
             scaleY={stageScale}
-            draggable
+            draggable={!resizingArea}
             onDragEnd={handleDragEnd}
           >
             <Layer imageSmoothingEnabled={false}>
@@ -801,19 +961,93 @@ const Minimap = () => {
               )}
 
               {drawSettings.specialAreas.draw &&
-                visibleSpecialAreas.map((area) => (
-                  <Rect
-                    key={area.id}
-                    x={area.x}
-                    y={area.y}
-                    width={area.sizeX}
-                    height={area.sizeY}
-                    fill={drawSettings.specialAreas.fill}
-                    stroke={drawSettings.specialAreas.stroke}
-                    strokeWidth={0.1}
-                    listening={false}
-                  />
-                ))}
+                visibleSpecialAreas.map((area) => {
+                  const isResizing = resizingArea?.id === area.id;
+                  const displaySizeX = isResizing && resizingArea.previewSizeX ? resizingArea.previewSizeX : area.sizeX;
+                  const displaySizeY = isResizing && resizingArea.previewSizeY ? resizingArea.previewSizeY : area.sizeY;
+                  
+                  // Get colors based on area type
+                  const areaType = area.type || 'cavebot';
+                  const typeColors = drawSettings.specialAreas[areaType] || drawSettings.specialAreas.cavebot;
+                  
+                  if (area.hollow) {
+                    // Render hollow area as individual border tiles
+                    const borderTiles = [];
+                    
+                    // Top and bottom rows
+                    for (let dx = 0; dx < displaySizeX; dx++) {
+                      borderTiles.push({ x: area.x + dx, y: area.y }); // top
+                      if (displaySizeY > 1) {
+                        borderTiles.push({ x: area.x + dx, y: area.y + displaySizeY - 1 }); // bottom
+                      }
+                    }
+                    
+                    // Left and right columns (excluding corners)
+                    for (let dy = 1; dy < displaySizeY - 1; dy++) {
+                      borderTiles.push({ x: area.x, y: area.y + dy }); // left
+                      if (displaySizeX > 1) {
+                        borderTiles.push({ x: area.x + displaySizeX - 1, y: area.y + dy }); // right
+                      }
+                    }
+                    
+                    return (
+                      <React.Fragment key={area.id}>
+                        {borderTiles.map((tile, idx) => (
+                          <Rect
+                            key={`${area.id}-tile-${idx}`}
+                            x={tile.x}
+                            y={tile.y}
+                            width={1}
+                            height={1}
+                            fill={typeColors.fill}
+                            stroke={isResizing ? '#00ff00' : typeColors.stroke}
+                            strokeWidth={isResizing ? 0.2 : 0.1}
+                            listening={resizeMode}
+                            onClick={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
+                            onTap={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
+                            onMouseEnter={(e) => {
+                              if (resizeMode) {
+                                e.target.getStage().container().style.cursor = 'nwse-resize';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (resizeMode && !resizingArea) {
+                                e.target.getStage().container().style.cursor = 'grab';
+                              }
+                            }}
+                          />
+                        ))}
+                      </React.Fragment>
+                    );
+                  } else {
+                    // Render filled area as a single rectangle
+                    return (
+                      <Rect
+                        key={area.id}
+                        x={area.x}
+                        y={area.y}
+                        width={displaySizeX}
+                        height={displaySizeY}
+                        fill={typeColors.fill}
+                        stroke={isResizing ? '#00ff00' : typeColors.stroke}
+                        strokeWidth={isResizing ? 0.2 : 0.1}
+                        listening={resizeMode}
+                        onClick={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
+                        onTap={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
+                        onMouseEnter={(e) => {
+                          if (resizeMode) {
+                            e.target.getStage().container().style.cursor = 'nwse-resize';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (resizeMode && !resizingArea) {
+                            e.target.getStage().container().style.cursor = 'grab';
+                          }
+                        }}
+                      />
+                    );
+                  }
+                })}
 
               {drawSettings.path.draw && (
                 <Line
@@ -941,6 +1175,27 @@ const Minimap = () => {
         >
           {playerTile.x},{playerTile.y},{zLevel}
         </span>
+        
+        {resizeMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 10,
+              background: 'rgba(0, 255, 0, 0.15)',
+              border: '2px solid #00ff00',
+              color: '#00ff00',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              pointerEvents: 'none',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            {resizingArea ? 'Move cursor and click to finish resize' : 'Resize Mode: Click area to start'}
+          </div>
+        )}
 
         {tooltip.visible && (
           <div
@@ -962,56 +1217,31 @@ const Minimap = () => {
         )}
 
         {rightClickMenu.visible && (
-          <div
+          <ContextMenu
             ref={contextMenuRef}
             style={{
-              position: 'fixed',
               top: rightClickMenu.y,
               left: rightClickMenu.x,
-              zIndex: 1000,
-              background: 'rgba(30, 30, 30, 0.9)',
-              border: '1px solid #555',
-              borderRadius: '4px',
-              padding: '4px 0',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
             }}
           >
             {rightClickMenu.stage === 0 && (
               <>
-                <div
+                <ContextMenuItem
                   onMouseEnter={() => handleMenuItemHover('waypoints')}
                   onMouseLeave={() => handleMenuItemHover(null)}
                   onClick={() => handleMenuCategorySelect('waypoints')}
-                  style={{
-                    padding: '6px 15px',
-                    color: 'white',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    backgroundColor:
-                      rightClickMenu.hoveredItem === 'waypoints'
-                        ? '#007ACC'
-                        : 'transparent',
-                  }}
+                  isHovered={rightClickMenu.hoveredItem === 'waypoints'}
                 >
                   Waypoints
-                </div>
-                <div
+                </ContextMenuItem>
+                <ContextMenuItem
                   onMouseEnter={() => handleMenuItemHover('specialAreas')}
                   onMouseLeave={() => handleMenuItemHover(null)}
                   onClick={() => handleMenuCategorySelect('specialAreas')}
-                  style={{
-                    padding: '6px 15px',
-                    color: 'white',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    backgroundColor:
-                      rightClickMenu.hoveredItem === 'specialAreas'
-                        ? '#007ACC'
-                        : 'transparent',
-                  }}
+                  isHovered={rightClickMenu.hoveredItem === 'specialAreas'}
                 >
                   Special Areas
-                </div>
+                </ContextMenuItem>
               </>
             )}
 
@@ -1019,59 +1249,38 @@ const Minimap = () => {
               <>
                 {waypointCount < MAX_WAYPOINTS_PER_SECTION ? (
                   WAYPOINT_TYPE_OPTIONS.map((option) => (
-                    <div
+                    <ContextMenuItem
                       key={option.value}
                       onClick={() => handleMenuItemClick(option.value)}
                       onMouseEnter={() => handleMenuItemHover(option.value)}
                       onMouseLeave={() => handleMenuItemHover(null)}
-                      style={{
-                        padding: '6px 15px',
-                        color: 'white',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        backgroundColor:
-                          rightClickMenu.hoveredItem === option.value
-                            ? '#007ACC'
-                            : 'transparent',
-                      }}
+                      isHovered={rightClickMenu.hoveredItem === option.value}
                     >
                       {`Add ${option.label}`}
-                    </div>
+                    </ContextMenuItem>
                   ))
                 ) : (
-                  <div
-                    style={{
-                      padding: '6px 15px',
-                      color: '#FF5555',
-                      fontSize: '13px',
-                      fontWeight: 'bold',
-                      cursor: 'not-allowed',
-                    }}
+                  <ContextMenuItem
+                    color="#FF5555"
+                    bold
+                    disabled
                   >
                     Limit Reached ({MAX_WAYPOINTS_PER_SECTION})
-                  </div>
+                  </ContextMenuItem>
                 )}
                 {rightClickMenu.targetWaypointId && (
-                  <div
+                  <ContextMenuItem
                     onClick={() => handleMenuItemClick('RemoveWaypoint')}
                     onMouseEnter={() => handleMenuItemHover('RemoveWaypoint')}
                     onMouseLeave={() => handleMenuItemHover(null)}
-                    style={{
-                      padding: '6px 15px',
-                      color: '#FF5555',
-                      fontWeight: 'bold',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      backgroundColor:
-                        rightClickMenu.hoveredItem === 'RemoveWaypoint'
-                          ? '#B22222'
-                          : 'transparent',
-                      marginTop: '4px',
-                      borderTop: '1px solid #555',
-                    }}
+                    color="#FF5555"
+                    bold
+                    separator
+                    dangerHover
+                    isHovered={rightClickMenu.hoveredItem === 'RemoveWaypoint'}
                   >
                     Remove Waypoint
-                  </div>
+                  </ContextMenuItem>
                 )}
               </>
             )}
@@ -1079,52 +1288,35 @@ const Minimap = () => {
             {rightClickMenu.stage === 2 && (
               <>
                 {SPECIAL_AREA_TYPE_OPTIONS.map((option) => (
-                  <div
+                  <ContextMenuItem
                     key={option.value}
                     onClick={() => handleMenuItemClick(option.value)}
                     onMouseEnter={() => handleMenuItemHover(option.value)}
                     onMouseLeave={() => handleMenuItemHover(null)}
-                    style={{
-                      padding: '6px 15px',
-                      color: 'white',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      backgroundColor:
-                        rightClickMenu.hoveredItem === option.value
-                          ? '#007ACC'
-                          : 'transparent',
-                    }}
+                    isHovered={rightClickMenu.hoveredItem === option.value}
                   >
                     {`Add ${option.label}`}
-                  </div>
+                  </ContextMenuItem>
                 ))}
                 {rightClickMenu.targetSpecialAreaId && (
-                  <div
+                  <ContextMenuItem
                     onClick={() => handleMenuItemClick('RemoveSpecialArea')}
                     onMouseEnter={() =>
                       handleMenuItemHover('RemoveSpecialArea')
                     }
                     onMouseLeave={() => handleMenuItemHover(null)}
-                    style={{
-                      padding: '6px 15px',
-                      color: '#FF5555',
-                      fontWeight: 'bold',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      backgroundColor:
-                        rightClickMenu.hoveredItem === 'RemoveSpecialArea'
-                          ? '#B22222'
-                          : 'transparent',
-                      marginTop: '4px',
-                      borderTop: '1px solid #555',
-                    }}
+                    color="#FF5555"
+                    bold
+                    separator
+                    dangerHover
+                    isHovered={rightClickMenu.hoveredItem === 'RemoveSpecialArea'}
                   >
                     Remove Special Area
-                  </div>
+                  </ContextMenuItem>
                 )}
               </>
             )}
-          </div>
+          </ContextMenu>
         )}
       </div>
       <MinimapSettingsModal

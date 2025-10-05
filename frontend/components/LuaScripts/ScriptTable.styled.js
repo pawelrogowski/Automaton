@@ -1,16 +1,17 @@
 import styled from 'styled-components';
 
 export const StyledScriptTable = styled.div`
-  font-family: monospace !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgb(53, 53, 53);
-  background-color: rgb(26, 26, 26);
+  border: none;
+  background-color: transparent;
   color: #fafafa;
-  font-size: 11px;
-  border-radius: 4px;
+  font-size: 13px;
+  border-radius: 0;
   overflow: hidden;
+  margin: 0 24px 24px 24px;
 
   .tbody .tr.selected {
     background-color: rgb(0, 52, 109);
@@ -24,28 +25,52 @@ export const StyledScriptTable = styled.div`
     display: flex;
     flex-direction: column;
     height: 100%;
-    max-height: 470px; /* This might need adjustment based on actual content */
+    background-color: rgb(30, 30, 30);
+    border: 1px solid rgb(60, 60, 60);
+    border-radius: 8px;
+    overflow: hidden;
   }
 
   .thead {
-    background-color: rgb(26, 26, 26);
-    border-bottom: 1px solid rgb(53, 53, 53);
+    background-color: rgb(40, 40, 40);
+    border-bottom: 1px solid rgb(60, 60, 60);
     flex-shrink: 0;
   }
 
   .tbody {
     flex-grow: 1;
     overflow-y: auto;
+    background-color: rgb(30, 30, 30);
+    
+    &::-webkit-scrollbar {
+      width: 10px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: rgb(30, 30, 30);
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: rgb(60, 60, 60);
+      border-radius: 4px;
+      
+      &:hover {
+        background: rgb(80, 80, 80);
+      }
+    }
   }
 
   .tr {
     display: flex;
     width: 100%;
-    border-bottom: 1px solid rgb(53, 53, 53);
-    max-height: 35.5px;
+    border-bottom: 1px solid rgba(60, 60, 60, 0.3);
+    min-height: 48px;
+    transition: background-color 0.15s ease;
+    
     &:hover {
-      background-color: rgb(53, 53, 53);
+      background-color: rgba(255, 255, 255, 0.03);
     }
+    
     &:last-child {
       border-bottom: none;
     }
@@ -53,20 +78,24 @@ export const StyledScriptTable = styled.div`
 
   .th,
   .td {
-    padding: 8px;
+    padding: 12px 16px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
     position: relative;
+    display: flex;
+    align-items: center;
   }
 
   .th {
-    font-weight: bold;
+    font-weight: 600;
     text-align: left;
-    display: flex;
-    align-items: center;
     justify-content: space-between;
+    color: #aaa;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
   .resizer {
@@ -145,24 +174,37 @@ export const StyledScriptTable = styled.div`
 export const SectionManagementRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px;
-  border-bottom: 1px solid rgb(53, 53, 53);
-  flex-shrink: 0; /* Prevent shrinking */
+  gap: 10px;
+  padding: 16px 24px;
+  background-color: rgb(30, 30, 30);
+  border-bottom: 1px solid rgb(60, 60, 60);
+  flex-shrink: 0;
 `;
 
 export const AddSectionButton = styled.button`
-  background-color: transparent; /* Green for add */
-  color: white;
-  border: none;
-  padding: 6px 10px;
-  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #fafafa;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 14px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: bold;
+  font-size: 13px;
+  font-weight: 500;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
 
   &:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;
 

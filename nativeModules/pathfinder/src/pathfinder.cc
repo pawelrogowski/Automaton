@@ -20,6 +20,7 @@ struct SpecialArea {
     int x, y, z;
     int width, height;
     int avoidance;
+    bool hollow;
 };
 
 namespace AStar {
@@ -581,16 +582,37 @@ Napi::Value Pathfinder::UpdateSpecialAreas(const Napi::CallbackInfo& info) {
         area.avoidance = area_obj.Get("avoidance").As<Napi::Number>().Int32Value();
         area.width = area_obj.Get("width").As<Napi::Number>().Int32Value();
         area.height = area_obj.Get("height").As<Napi::Number>().Int32Value();
+        area.hollow = area_obj.Has("hollow") ? area_obj.Get("hollow").As<Napi::Boolean>().Value() : false;
         
         int local_start_x = area.x - mapData.minX;
         int local_start_y = area.y - mapData.minY;
-        for (int dx = 0; dx < area.width; ++dx) {
-            for (int dy = 0; dy < area.height; ++dy) {
-                int current_x = local_start_x + dx;
-                int current_y = local_start_y + dy;
-                if (current_x >= 0 && current_x < mapData.width && current_y >= 0 && current_y < mapData.height) {
-                    int index = current_y * mapData.width + current_x;
-                    cost_grid[index] = std::max(cost_grid[index], area.avoidance);
+        
+        if (area.hollow && area.width > 2 && area.height > 2) {
+            // Only apply cost to border tiles (1-tile thick border)
+            for (int dx = 0; dx < area.width; ++dx) {
+                for (int dy = 0; dy < area.height; ++dy) {
+                    // Check if on border: first/last row or first/last column
+                    bool isBorder = (dx == 0 || dx == area.width - 1 || dy == 0 || dy == area.height - 1);
+                    if (!isBorder) continue;
+                    
+                    int current_x = local_start_x + dx;
+                    int current_y = local_start_y + dy;
+                    if (current_x >= 0 && current_x < mapData.width && current_y >= 0 && current_y < mapData.height) {
+                        int index = current_y * mapData.width + current_x;
+                        cost_grid[index] = std::max(cost_grid[index], area.avoidance);
+                    }
+                }
+            }
+        } else {
+            // Filled area: apply cost to all tiles
+            for (int dx = 0; dx < area.width; ++dx) {
+                for (int dy = 0; dy < area.height; ++dy) {
+                    int current_x = local_start_x + dx;
+                    int current_y = local_start_y + dy;
+                    if (current_x >= 0 && current_x < mapData.width && current_y >= 0 && current_y < mapData.height) {
+                        int index = current_y * mapData.width + current_x;
+                        cost_grid[index] = std::max(cost_grid[index], area.avoidance);
+                    }
                 }
             }
         }

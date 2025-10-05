@@ -287,6 +287,8 @@ const cavebotSlice = createSlice({
         avoidance: 100,
         type: 'cavebot',
         enabled: true,
+        hollow: false,
+        ignoreWhenLuring: false,
         ...action.payload,
       };
       if (!newArea.id) return;

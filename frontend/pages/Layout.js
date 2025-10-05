@@ -213,7 +213,7 @@ const Layout = () => {
         <NavButton to="/hotkeys" text="Settings"></NavButton>
       </Header>
       <div className="side-main">
-        {!isCavebotPage && !location.pathname.includes('/targeting') && (
+        {!isCavebotPage && !location.pathname.includes('/targeting') && !location.pathname.includes('/luascripts') && (
           <SidebarWrapper className="aside">
             {location.pathname.includes('/healing') && (
               <>
@@ -275,24 +275,6 @@ const Layout = () => {
               </>
             )}
 
-            {location.pathname.includes('/luascripts') && (
-              <>
-                <SideBarNavButton
-                  to="/luascripts#persistent"
-                  img={luaIcon}
-                  text={'Persistent'}
-                  imageWidth="32px"
-                  tooltip="Manage persistent Lua scripts"
-                ></SideBarNavButton>
-                <SideBarNavButton
-                  to="/luascripts#hotkey"
-                  img={hotkey}
-                  text={'Hotkey'}
-                  imageWidth="32px"
-                  tooltip="Manage hotkey Lua scripts"
-                ></SideBarNavButton>
-              </>
-            )}
 
             {location.pathname === '/gameState' && (
               <>

@@ -8,6 +8,10 @@ import {
   saveRulesToFile,
   loadRulesFromFile,
   autoLoadRules,
+  saveLuaScript,
+  loadLuaScript,
+  saveLuaScriptPackage,
+  loadLuaScriptPackage,
 } from './saveManager.js';
 import { playSound, registerGlobalShortcuts } from './globalShortcuts.js';
 import { getMainWindow } from './createMainWindow.js';
@@ -87,4 +91,52 @@ ipcMain.handle('toggle-main-window', () => {
 ipcMain.handle('is-main-window-visible', () => {
   const mainWindow = getMainWindow();
   return mainWindow ? mainWindow.isVisible() : false;
+});
+
+// ============================================================================
+// Lua Script Import/Export IPC Handlers
+// ============================================================================
+
+// Save a single Lua script
+ipcMain.handle('save-lua-script', async (event, script) => {
+  const mainWindow = getMainWindow();
+  if (mainWindow) mainWindow.minimize();
+  
+  await saveLuaScript(script, () => {
+    if (mainWindow) mainWindow.restore();
+  });
+});
+
+// Load a single Lua script
+ipcMain.handle('load-lua-script', async () => {
+  const mainWindow = getMainWindow();
+  if (mainWindow) mainWindow.minimize();
+  
+  const loadedScript = await loadLuaScript(() => {
+    if (mainWindow) mainWindow.restore();
+  });
+  
+  return loadedScript;
+});
+
+// Save Lua script package (all scripts or selected)
+ipcMain.handle('save-lua-script-package', async (event, scripts) => {
+  const mainWindow = getMainWindow();
+  if (mainWindow) mainWindow.minimize();
+  
+  await saveLuaScriptPackage(scripts, () => {
+    if (mainWindow) mainWindow.restore();
+  });
+});
+
+// Load Lua script package
+ipcMain.handle('load-lua-script-package', async () => {
+  const mainWindow = getMainWindow();
+  if (mainWindow) mainWindow.minimize();
+  
+  const loadedScripts = await loadLuaScriptPackage(() => {
+    if (mainWindow) mainWindow.restore();
+  });
+  
+  return loadedScripts;
 });

@@ -6,12 +6,14 @@ import { addScript, togglePersistentScript, removeScript, clearScriptLog, update
 import { v4 as uuidv4 } from 'uuid';
 import ScriptTable from './ScriptTable.jsx';
 
+const { ipcRenderer } = window.electron || {};
+
 const PersistentScriptList = () => {
   const dispatch = useDispatch();
-  const { persistent_scripts, hotkey_scripts } = useSelector((state) => ({
-    persistent_scripts: state.lua.persistentScripts,
-    hotkey_scripts: state.lua.hotkeyScripts,
-  }));
+  // Use separate selectors to avoid creating new objects on every render
+  const persistent_scripts = useSelector((state) => state.lua.persistentScripts);
+  const hotkey_scripts = useSelector((state) => state.lua.hotkeyScripts);
+  
   const [modalState, setModalState] = useState({ isOpen: false, script: null });
 
   const handleAddScript = useCallback(() => {
@@ -90,6 +92,54 @@ const PersistentScriptList = () => {
     [dispatch],
   );
 
+  const handleExportScript = useCallback(
+    async (script) => {
+      if (ipcRenderer) {
+        await ipcRenderer.invoke('save-lua-script', script);
+      }
+    },
+    [],
+  );
+
+  const handleImportScript = useCallback(async () => {
+    if (ipcRenderer) {
+      const loadedScript = await ipcRenderer.invoke('load-lua-script');
+      if (loadedScript) {
+        // Generate new ID to avoid conflicts
+        const newScript = {
+          ...loadedScript,
+          id: uuidv4(),
+          enabled: false,
+          log: [],
+        };
+        dispatch(addScript(newScript));
+      }
+    }
+  }, [dispatch]);
+
+  const handleExportPackage = useCallback(async (scripts) => {
+    if (ipcRenderer) {
+      await ipcRenderer.invoke('save-lua-script-package', scripts);
+    }
+  }, []);
+
+  const handleImportPackage = useCallback(async () => {
+    if (ipcRenderer) {
+      const loadedScripts = await ipcRenderer.invoke('load-lua-script-package');
+      if (loadedScripts && Array.isArray(loadedScripts)) {
+        loadedScripts.forEach(script => {
+          const newScript = {
+            ...script,
+            id: uuidv4(), // Generate new ID to avoid conflicts
+            enabled: false,
+            log: [],
+          };
+          dispatch(addScript(newScript));
+        });
+      }
+    }
+  }, [dispatch]);
+
   return (
     <>
       <ScriptTable
@@ -100,6 +150,10 @@ const PersistentScriptList = () => {
         onToggleScriptEnabled={handleToggleEnabled}
         onClearScriptLog={handleClearLog}
         onAddScript={handleAddScript}
+        onExportScript={handleExportScript}
+        onImportScript={handleImportScript}
+        onExportPackage={handleExportPackage}
+        onImportPackage={handleImportPackage}
         type="persistent"
       />
       <ScriptEditorModal

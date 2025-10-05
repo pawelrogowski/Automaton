@@ -140,72 +140,207 @@ export const ModalOverlay = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.75);
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1002;
+  padding: 5vh;
 `;
 
 export const ModalContent = styled.div`
-  background: #1c1c1e;
+  background: linear-gradient(135deg, #1a1a1c 0%, #252528 100%);
   border: 1px solid #b700ff;
-  border-radius: 12px;
-  padding: 25px;
-  width: 450px;
-  max-width: 95%;
-  box-shadow: 0 8px 32px rgba(183, 0, 255, 0.3);
+  border-radius: 16px;
+  padding: 0;
+  width: 90vw;
+  height: 90vh;
+  max-width: 1400px;
+  max-height: 900px;
+  box-shadow: 0 20px 60px rgba(183, 0, 255, 0.4), 0 0 100px rgba(183, 0, 255, 0.1);
   color: #fafafa;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  overflow: hidden;
 `;
 
 export const ModalHeader = styled.h2`
-  font-size: 22px;
-  font-weight: bold;
-  color: #d89fff;
+  font-size: 24px;
+  font-weight: 600;
+  color: #e0b3ff;
   margin: 0;
+  padding: 24px 32px;
   text-align: center;
-  text-shadow: 0 0 8px rgba(183, 0, 255, 0.5);
+  text-shadow: 0 0 20px rgba(183, 0, 255, 0.6);
+  background: rgba(183, 0, 255, 0.08);
+  border-bottom: 1px solid rgba(183, 0, 255, 0.3);
+  flex-shrink: 0;
 `;
 
 export const ControlsGrid = styled.div`
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px 32px;
+  align-items: center;
+  padding: 32px;
+  overflow-y: auto;
+  flex: 1;
+
+  /* Modern scrollbar */
+  &::-webkit-scrollbar {
+    width: 12px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    margin: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #b700ff 0%, #8800cc 100%);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+
+    &:hover {
+      background: linear-gradient(180deg, #d000ff 0%, #a000dd 100%);
+      background-clip: padding-box;
+    }
+  }
+`;
+
+export const SettingGroup = styled.div`
+  background: rgba(183, 0, 255, 0.05);
+  border: 1px solid rgba(183, 0, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
+`;
+
+export const GroupTitle = styled.h3`
+  font-size: 18px;
+  font-weight: 600;
+  color: #d89fff;
+  margin: 0 0 8px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(183, 0, 255, 0.3);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
 `;
 
+export const SettingRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background: rgba(183, 0, 255, 0.08);
+  }
+`;
+
 export const ControlLabel = styled.span`
-  font-size: 16px;
-  padding-left: ${({ isSub }) => (isSub ? '20px' : '0')};
+  font-size: 15px;
+  padding-left: ${({ isSub }) => (isSub ? '16px' : '0')};
   color: ${({ isSub }) => (isSub ? '#c7c7c7' : '#fafafa')};
+  flex: 1;
+  font-weight: ${({ isSub }) => (isSub ? '400' : '500')};
 `;
 
 export const ColorInput = styled.input.attrs({ type: 'color' })`
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  width: 50px;
-  height: 28px;
+  width: 60px;
+  height: 36px;
   background-color: transparent;
-  border: 1px solid #444;
-  border-radius: 6px;
+  border: 2px solid rgba(183, 0, 255, 0.3);
+  border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 
   &:hover {
     border-color: #b700ff;
+    box-shadow: 0 4px 12px rgba(183, 0, 255, 0.4);
+    transform: translateY(-1px);
+  }
+
+  &::-webkit-color-swatch-wrapper {
+    padding: 3px;
   }
 
   &::-webkit-color-swatch {
-    border-radius: 4px;
+    border-radius: 5px;
     border: none;
   }
+  
   &::-moz-color-swatch {
-    border-radius: 4px;
+    border-radius: 5px;
     border: none;
+  }
+`;
+
+export const ContextMenu = styled.div`
+  position: fixed;
+  z-index: 1000;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 4px 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  min-width: 180px;
+  max-width: 220px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  /* Custom scrollbar */
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0 6px 6px 0;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  }
+`;
+
+export const ContextMenuItem = styled.div`
+  padding: 8px 16px;
+  color: ${(props) => props.color || 'white'};
+  font-size: 13px;
+  cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+  background-color: ${(props) => (props.isHovered ? '#007ACC' : 'transparent')};
+  font-weight: ${(props) => (props.bold ? 'bold' : 'normal')};
+  margin-top: ${(props) => (props.separator ? '4px' : '0')};
+  border-top: ${(props) => (props.separator ? '1px solid #555' : 'none')};
+  transition: background-color 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &:hover {
+    background-color: ${(props) =>
+      props.disabled ? 'transparent' : props.dangerHover ? '#B22222' : '#007ACC'};
   }
 `;
 
