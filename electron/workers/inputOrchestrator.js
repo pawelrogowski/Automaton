@@ -48,12 +48,20 @@ const getRandomDelay = (type) => {
 
 const MAX_DEFERRALS = 4;
 
+// Directional keys that bypass the main keyboard queue
+const FAST_MOVEMENT_KEYS = new Set([
+  'q', 'w', 'e', 'a', 's', 'd', 'z', 'x', 'c',  // Diagonal + cardinal directions
+  'up', 'down', 'left', 'right',  // Arrow keys
+]);
+
 // Separate queues for keyboard and mouse to allow parallel execution
 let globalState = null;
 const keyboardQueue = [];
 const mouseQueue = [];
+const fastMovementQueue = [];  // NEW: Separate queue for directional keys
 let isProcessingKeyboard = false;
 let isProcessingMouse = false;
+let isProcessingFastMovement = false;  // NEW: Fast movement queue processor flag
 
 // Track previous action types for context switching
 let previousKeyboardActionType = null;
@@ -162,6 +170,59 @@ function applyStarvationPrevention(queue) {
   });
 }
 
+// NEW: Process fast movement queue (QWEASDZXC + arrow keys) - runs independently with minimal delay
+async function processFastMovementQueue() {
+  if (isProcessingFastMovement || fastMovementQueue.length === 0) {
+    isProcessingFastMovement = false;
+    return;
+  }
+
+  if (!globalState?.global?.windowId || !globalState?.global?.display) {
+    isProcessingFastMovement = false;
+    return;
+  }
+
+  isProcessingFastMovement = true;
+
+  // FIFO - no sorting needed, process in order received
+  const item = fastMovementQueue.shift();
+
+  try {
+    const display = globalState.global.display;
+    const { action, type, actionId } = item;
+
+    log('debug', `[FastMovement] Executing ${type}: ${action.args[0]}`);
+
+    // Execute immediately with minimal overhead
+    switch (action.method) {
+      case 'sendKey':
+      case 'keyDown':
+      case 'keyUp':
+        await keypress[action.method](action.args[0], display, action.args[1]);
+        break;
+      default:
+        await keypress[action.method](...action.args, display);
+        break;
+    }
+
+    if (actionId !== undefined) {
+      parentPort.postMessage({
+        type: 'inputActionCompleted',
+        payload: { actionId, success: true },
+      });
+    }
+  } catch (error) {
+    log('error', '[FastMovement] Error executing action:', error);
+  } finally {
+    // Minimal delay - just enough for the game to register the key
+    // No context-aware cooldown, no thinking pauses - pure speed!
+    await delay(10);  // 10ms minimum between movement keys
+    
+    isProcessingFastMovement = false;
+    processFastMovementQueue();
+  }
+}
+
 // Process keyboard queue (runs independently)
 async function processKeyboardQueue() {
   if (isProcessingKeyboard || keyboardQueue.length === 0) {
@@ -243,23 +304,29 @@ async function processMouseQueue() {
     return;
   }
 
-  isProcessingMouse = true;
-
   // Apply starvation prevention
   applyStarvationPrevention(mouseQueue);
 
   // Sort by priority and get highest priority item
   mouseQueue.sort((a, b) => a.priority - b.priority);
-  const item = mouseQueue.shift();
+  const item = mouseQueue[0]; // Peek at next item without removing it yet
   
-  // Pause mouse noise if we're processing a critical action
+  // CRITICAL FIX: Pause mouse noise BEFORE we start processing if it's a critical action
+  // This prevents noise moves from being queued while we're setting up
   if (PAUSE_MOUSE_NOISE_FOR.has(item.type) && !mouseNoisePaused) {
     mouseNoisePaused = true;
     parentPort.postMessage({
       type: 'pauseMouseNoise',
     });
     log('debug', '[InputOrchestrator] Paused mouse noise for critical action');
+    
+    // Wait a tick to ensure noise worker has processed the pause message
+    await delay(10);
   }
+  
+  // Now remove the item and set processing flag
+  mouseQueue.shift();
+  isProcessingMouse = true;
 
   try {
     const windowId = parseInt(globalState.global.windowId, 10);
@@ -314,13 +381,14 @@ async function processMouseQueue() {
       await delay(thinkingPause);
     }
     
-    // Resume mouse noise after a cooldown if it was paused for this action
+    // Resume mouse noise after ensuring no more critical actions are queued
     if (PAUSE_MOUSE_NOISE_FOR.has(item.type) && mouseNoisePaused) {
       // Clear any pending resume
       if (mouseNoiseResumeTimeout) {
         clearTimeout(mouseNoiseResumeTimeout);
       }
-      // Resume after 300ms to ensure the action has fully completed
+      // Resume after a delay, but ONLY if no high-priority actions remain
+      // Increased to 500ms to ensure mouse movement has fully completed
       mouseNoiseResumeTimeout = setTimeout(() => {
         // Only resume if queue is empty or only has mouseNoise actions
         const hasHighPriorityActions = mouseQueue.some(q => PAUSE_MOUSE_NOISE_FOR.has(q.type));
@@ -330,8 +398,10 @@ async function processMouseQueue() {
             type: 'resumeMouseNoise',
           });
           log('debug', '[InputOrchestrator] Resumed mouse noise');
+        } else {
+          log('debug', '[InputOrchestrator] High-priority actions still queued, keeping noise paused');
         }
-      }, 300);
+      }, 500);
     }
     
     isProcessingMouse = false;
@@ -343,12 +413,15 @@ parentPort.on('message', (message) => {
   if (message.type === 'state_full_sync' || message.type === 'state_diff') {
     globalState = message.payload;
     
-    // Try processing both queues if state is updated
+    // Try processing all three queues if state is updated
     if (!isProcessingKeyboard && keyboardQueue.length > 0) {
       processKeyboardQueue();
     }
     if (!isProcessingMouse && mouseQueue.length > 0) {
       processMouseQueue();
+    }
+    if (!isProcessingFastMovement && fastMovementQueue.length > 0) {
+      processFastMovementQueue();
     }
     return;
   }
@@ -367,11 +440,31 @@ parentPort.on('message', (message) => {
       actionId: payload.actionId,
     };
 
-    // Route to appropriate queue based on module
+    // Route to appropriate queue based on module and action type
     if (payload.action.module === 'keypress') {
-      keyboardQueue.push(item);
-      if (!isProcessingKeyboard) {
-        processKeyboardQueue();
+      // Check if this is a fast movement key AND it's a movement type action
+      const isFastMovementKey = 
+        (payload.action.method === 'sendKey' || 
+         payload.action.method === 'keyDown' || 
+         payload.action.method === 'keyUp') &&
+        payload.action.args[0] && 
+        FAST_MOVEMENT_KEYS.has(payload.action.args[0].toLowerCase());
+      
+      const isMovementType = payload.type === 'movement';
+      
+      // Route to fast queue if it's a movement directional key
+      if (isFastMovementKey && isMovementType) {
+        fastMovementQueue.push(item);
+        if (!isProcessingFastMovement) {
+          processFastMovementQueue();
+        }
+        log('debug', `[InputOrchestrator] Routed ${payload.action.args[0]} to fast movement queue`);
+      } else {
+        // Regular keyboard queue for non-movement keys
+        keyboardQueue.push(item);
+        if (!isProcessingKeyboard) {
+          processKeyboardQueue();
+        }
       }
     } else if (payload.action.module === 'mouseController') {
       mouseQueue.push(item);

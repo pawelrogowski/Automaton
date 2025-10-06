@@ -216,7 +216,8 @@ export function createFsm(workerState, config) {
       },
       execute: async () => {
         // Delegate to map-click controller per spec. It returns whether to suppress keyboard this tick.
-        const decision = mapClickTick(workerState, config);
+        // CRITICAL FIX: Now properly awaits the async mapClickTick to ensure mouse action completes
+        const decision = await mapClickTick(workerState, config);
         if (decision === 'handled') {
           return 'EVALUATING_WAYPOINT';
         }

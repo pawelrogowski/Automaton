@@ -11,7 +11,7 @@ function sameTile(a, b) {
   return a.x === b.x && a.y === b.y && a.z === b.z;
 }
 
-function postMouseLeftClick(workerState, x, y) {
+function postMouseLeftClick(workerState, x, y, actionId) {
   // Route through input orchestrator via workerManager
   workerState.parentPort.postMessage({
     type: 'inputAction',
@@ -22,13 +22,37 @@ function postMouseLeftClick(workerState, x, y) {
         method: 'leftClick',
         args: [x, y, 150], // Fast movement for cavebot
       },
+      actionId,
     },
+  });
+}
+
+function createActionCompletionPromise(workerState, actionId) {
+  return new Promise((resolve) => {
+    const messageHandler = (message) => {
+      if (
+        message.type === 'inputActionCompleted' &&
+        message.payload?.actionId === actionId
+      ) {
+        workerState.parentPort.off('message', messageHandler);
+        resolve(message.payload.success);
+      }
+    };
+    workerState.parentPort.on('message', messageHandler);
+    
+    // Timeout after 2 seconds
+    setTimeout(() => {
+      workerState.parentPort.off('message', messageHandler);
+      workerState.logger('warn', '[MapClick] Action timeout, proceeding anyway');
+      resolve(false);
+    }, 2000);
   });
 }
 
 // Returns 'handled' when map-click flow should suppress keyboard for this tick.
 // Returns 'keyboard' when caller should proceed with keyboard walking this tick.
-export function mapClickTick(workerState, config) {
+// Now async to properly await mouse action completion
+export async function mapClickTick(workerState, config) {
   const now = Date.now();
   const path = workerState.path || [];
   const playerPos = workerState.playerMinimapPosition;
@@ -146,11 +170,27 @@ export function mapClickTick(workerState, config) {
     }
 
     if (chosen) {
-      postMouseLeftClick(workerState, chosen.coords.x, chosen.coords.y);
+      // Generate unique action ID for this click
+      const actionId = `mapClick_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
       workerState.logger(
         'debug',
-        `[MapClick] Clicked minimap at screen=(${chosen.coords.x},${chosen.coords.y}) -> targetTile=(${chosen.node.x},${chosen.node.y},${chosen.node.z}).`,
+        `[MapClick] Clicking minimap at screen=(${chosen.coords.x},${chosen.coords.y}) -> targetTile=(${chosen.node.x},${chosen.node.y},${chosen.node.z}).`,
       );
+      
+      // Send the click and await its completion
+      postMouseLeftClick(workerState, chosen.coords.x, chosen.coords.y, actionId);
+      const completionPromise = createActionCompletionPromise(workerState, actionId);
+      
+      // Wait for the mouse action to complete before returning
+      const success = await completionPromise;
+      
+      if (success) {
+        workerState.logger('debug', '[MapClick] Click completed successfully');
+      } else {
+        workerState.logger('warn', '[MapClick] Click may have failed or timed out');
+      }
+      
       mc.mode = 'pending';
       mc.attemptAt = now;
       mc.startPos = playerPos ? { ...playerPos } : null;

@@ -411,7 +411,7 @@ export const createLuaApi = async (context) => {
             modalInfo.name === 'notLoggedInAnymoreModal'
           ) {
             postInputAction({
-              type: 'luaScript',
+              type: 'script',
               action: {
                 module: 'keypress',
                 method: 'sendKey',
@@ -420,7 +420,7 @@ export const createLuaApi = async (context) => {
             });
             await wait(500);
             postInputAction({
-              type: 'luaScript',
+              type: 'script',
               action: {
                 module: 'keypress',
                 method: 'sendKey',
@@ -430,7 +430,7 @@ export const createLuaApi = async (context) => {
             await wait(500);
           } else {
             postInputAction({
-              type: 'luaScript',
+              type: 'script',
               action: {
                 module: 'mouseController',
                 method: 'leftClick',
@@ -707,7 +707,7 @@ export const createLuaApi = async (context) => {
       wait(min_ms, max_ms, context.refreshLuaGlobalState),
     keyPress: async (key, modifier = null) =>
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'keypress',
           method: 'sendKey',
@@ -717,7 +717,7 @@ export const createLuaApi = async (context) => {
     keyPressMultiple: async (key, count = 1, modifier = null, delayMs = 50) => {
       for (let i = 0; i < count; i++) {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'sendKey',
@@ -762,7 +762,7 @@ export const createLuaApi = async (context) => {
       try {
         // typeArray is a native function, so we need to send it as a single action
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'typeArray',
@@ -781,7 +781,7 @@ export const createLuaApi = async (context) => {
     typeSequence: async (texts, delayBetween = 100) => {
       for (const text of texts) {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'typeArray',
@@ -861,7 +861,7 @@ export const createLuaApi = async (context) => {
           const clickX = baseX + randInt(-70, 70);
           const clickY = baseY + randInt(-7, 7);
           await postInputAction({
-            type: 'luaScript',
+            type: 'script',
             action: {
               module: 'mouseController',
               method: 'leftClick',
@@ -876,7 +876,7 @@ export const createLuaApi = async (context) => {
 
       const typeTextOnce = async (text) => {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'typeArray',
@@ -963,7 +963,7 @@ export const createLuaApi = async (context) => {
     },
     rotate: async (direction) =>
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'keypress',
           method: 'rotate',
@@ -1001,7 +1001,7 @@ export const createLuaApi = async (context) => {
 
       if (button === 'right') {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightClick',
@@ -1010,7 +1010,7 @@ export const createLuaApi = async (context) => {
         });
       } else {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'leftClick',
@@ -1023,7 +1023,7 @@ export const createLuaApi = async (context) => {
     clickAbsolute: async (button, x, y) => {
       if (button === 'right') {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightClick',
@@ -1032,7 +1032,7 @@ export const createLuaApi = async (context) => {
         });
       } else {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'leftClick',
@@ -1067,7 +1067,7 @@ export const createLuaApi = async (context) => {
         return false;
       }
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1112,7 +1112,7 @@ export const createLuaApi = async (context) => {
         return false;
       }
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'mouseMove',
@@ -1122,7 +1122,7 @@ export const createLuaApi = async (context) => {
       await wait(50);
       if (button === 'right') {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightMouseDown',
@@ -1131,7 +1131,7 @@ export const createLuaApi = async (context) => {
         });
       } else {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'mouseDown',
@@ -1141,7 +1141,7 @@ export const createLuaApi = async (context) => {
       }
       await wait(100);
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'mouseMove',
@@ -1151,7 +1151,7 @@ export const createLuaApi = async (context) => {
       await wait(100);
       if (button === 'right') {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightMouseUp',
@@ -1160,7 +1160,7 @@ export const createLuaApi = async (context) => {
         });
       } else {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'mouseUp',
@@ -1172,7 +1172,7 @@ export const createLuaApi = async (context) => {
     },
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'mouseMove',
@@ -1182,7 +1182,7 @@ export const createLuaApi = async (context) => {
       await wait(50);
       if (button === 'right') {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightMouseDown',
@@ -1191,7 +1191,7 @@ export const createLuaApi = async (context) => {
         });
       } else {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'mouseDown',
@@ -1201,7 +1201,7 @@ export const createLuaApi = async (context) => {
       }
       await wait(100);
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'mouseMove',
@@ -1211,7 +1211,7 @@ export const createLuaApi = async (context) => {
       await wait(100);
       if (button === 'right') {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightMouseUp',
@@ -1220,7 +1220,7 @@ export const createLuaApi = async (context) => {
         });
       } else {
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'mouseUp',
@@ -1299,7 +1299,7 @@ export const createLuaApi = async (context) => {
       const clickX = x + randInt(-70, 70);
       const clickY = y + randInt(-7, 7);
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1430,7 +1430,7 @@ export const createLuaApi = async (context) => {
       
       // Click on the item
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1455,7 +1455,7 @@ export const createLuaApi = async (context) => {
       }
       
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1493,7 +1493,7 @@ export const createLuaApi = async (context) => {
       
       // Click on the item
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1518,7 +1518,7 @@ export const createLuaApi = async (context) => {
       }
       
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1772,7 +1772,7 @@ export const createLuaApi = async (context) => {
         const loginModal = state.regionCoordinates.regions.loginModal;
 
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'sendKey',
@@ -1781,7 +1781,7 @@ export const createLuaApi = async (context) => {
         });
         await wait(100);
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'sendKey',
@@ -1796,7 +1796,7 @@ export const createLuaApi = async (context) => {
           return false;
         }
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'leftClick',
@@ -1805,7 +1805,7 @@ export const createLuaApi = async (context) => {
         });
         await wait(50);
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'typeArray',
@@ -1820,7 +1820,7 @@ export const createLuaApi = async (context) => {
           return false;
         }
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'mouseController',
             method: 'leftClick',
@@ -1829,7 +1829,7 @@ export const createLuaApi = async (context) => {
         });
         await wait(50);
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'typeArray',
@@ -1838,7 +1838,7 @@ export const createLuaApi = async (context) => {
         });
         await wait(100);
         await postInputAction({
-          type: 'luaScript',
+          type: 'script',
           action: {
             module: 'keypress',
             method: 'sendKey',
@@ -1906,7 +1906,7 @@ export const createLuaApi = async (context) => {
       }
 
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'mouseController',
           method: 'leftClick',
@@ -1915,7 +1915,7 @@ export const createLuaApi = async (context) => {
       });
       await wait(100);
       await postInputAction({
-        type: 'luaScript',
+        type: 'script',
         action: {
           module: 'keypress',
           method: 'sendKey',

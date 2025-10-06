@@ -70,6 +70,7 @@ const targetingState = {
     lastHpChangeTime: 0, // When HP last changed
     lastCheckTime: 0, // When we last checked HP
     hasBeenAdjacent: false, // Whether we've been adjacent to track stagnation
+    notAdjacentSince: 0, // Timestamp when we stopped being adjacent
   },
 };
 
@@ -79,8 +80,15 @@ const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
 
 // --- HP Stagnation Detection ---
 function checkHpStagnation(target) {
-  const config = workerState.globalState?.targeting?.hpStagnationDetection;
-  if (!config?.enabled) return;
+  // Use config from globalState if available, otherwise use fallback defaults
+  const configFromState = workerState.globalState?.targeting?.hpStagnationDetection;
+  const config = {
+    enabled: configFromState?.enabled ?? true, // Default enabled
+    checkInterval: configFromState?.checkInterval ?? 500, // Default 500ms
+    stagnantTimeoutMs: configFromState?.stagnantTimeoutMs ?? 4000, // Default 4s
+  };
+  
+  if (!config.enabled) return;
   
   // Only perform HP stagnation detection if we're supposed to be attacking
   const targetingList = workerState.globalState?.targeting?.targetingList;
@@ -94,14 +102,33 @@ function checkHpStagnation(target) {
   
   // Only check when adjacent to the target
   if (!target.isAdjacent) {
-    hpStagnationDetection.hasBeenAdjacent = false;
+    // Don't reset hasBeenAdjacent immediately - keep tracking
+    // Only reset if we've been not adjacent for a while
+    if (hpStagnationDetection.hasBeenAdjacent) {
+      if (!hpStagnationDetection.notAdjacentSince) {
+        hpStagnationDetection.notAdjacentSince = now;
+      } else if (now - hpStagnationDetection.notAdjacentSince > 2000) {
+        // Reset after 2 seconds of not being adjacent
+        hpStagnationDetection.hasBeenAdjacent = false;
+        hpStagnationDetection.notAdjacentSince = 0;
+      }
+    }
     return;
   }
   
-  // Mark that we've been adjacent at least once
-  hpStagnationDetection.hasBeenAdjacent = true;
+  // We're adjacent now, clear the notAdjacentSince timer
+  hpStagnationDetection.notAdjacentSince = 0;
   
-  // Check interval (default 500ms)
+  // Mark that we've been adjacent at least once
+  if (!hpStagnationDetection.hasBeenAdjacent) {
+    hpStagnationDetection.hasBeenAdjacent = true;
+    hpStagnationDetection.lastHpValue = target.hp;
+    hpStagnationDetection.lastHpChangeTime = now;
+    hpStagnationDetection.lastCheckTime = now;
+    return;
+  }
+  
+  // Check interval
   if (now - hpStagnationDetection.lastCheckTime < config.checkInterval) {
     return;
   }
@@ -124,12 +151,12 @@ function checkHpStagnation(target) {
     return;
   }
   
-  // HP stagnant for too long - send escape key
+  // HP stagnant for too long - send escape key to unstuck
   const stagnantTime = now - hpStagnationDetection.lastHpChangeTime;
   if (stagnantTime >= config.stagnantTimeoutMs) {
-    logger('warn', `[HP Stagnation] HP stagnant for ${stagnantTime}ms, sending escape key`);
+    logger('warn', `[HP Stagnation] Target ${target.name} HP stagnant at ${currentHp} for ${stagnantTime}ms, sending escape to untarget and retarget`);
     
-    // Send escape key to untarget
+    // Send escape key to untarget - this fixes the visual bug
     parentPort.postMessage({
       type: 'keypress',
       payload: {
@@ -140,12 +167,27 @@ function checkHpStagnation(target) {
       }
     });
     
-    // Reset tracking and transition to selecting new target
-    hpStagnationDetection.lastHpValue = null;
-    hpStagnationDetection.lastHpChangeTime = now;
-    hpStagnationDetection.hasBeenAdjacent = false;
+    // Wait a brief moment for the escape to take effect
+    // Then transition to SELECTING to retarget
+    setTimeout(() => {
+      logger('info', `[HP Stagnation] Retargeting after escape from stuck target ${target.name}`);
+    }, 100);
     
-    transitionTo(FSM_STATE.SELECTING, 'HP stagnation detected - escaped');
+    // Clear current target explicitly
+    targetingState.currentTarget = null;
+    targetingState.pathfindingTarget = null;
+    
+    // Reset tracking completely
+    targetingState.hpStagnationDetection = {
+      lastHpValue: null,
+      lastHpChangeTime: 0,
+      lastCheckTime: 0,
+      hasBeenAdjacent: false,
+      notAdjacentSince: 0,
+    };
+    
+    // Transition to selecting to find a new target (or reacquire the same one properly)
+    transitionTo(FSM_STATE.SELECTING, `HP stagnation detected - escaped and retargeting (stuck at HP ${currentHp})`);
   }
 }
 
@@ -170,6 +212,7 @@ function transitionTo(newState, reason = '') {
       lastHpChangeTime: 0,
       lastCheckTime: 0,
       hasBeenAdjacent: false,
+      notAdjacentSince: 0,
     };
   }
   if (newState === FSM_STATE.ACQUIRING) {
@@ -183,6 +226,7 @@ function transitionTo(newState, reason = '') {
       lastHpChangeTime: now,
       lastCheckTime: now,
       hasBeenAdjacent: false,
+      notAdjacentSince: 0,
     };
   }
 }

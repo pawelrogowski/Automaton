@@ -12,6 +12,12 @@ const initialState = {
   isPausedByScript: false,
   pauseTimerId: null,
   version: 0,
+  // HP Stagnation Detection to fix visual bug where target doesn't lose HP
+  hpStagnationDetection: {
+    enabled: true, // Enable by default
+    checkInterval: 500, // Check HP every 500ms
+    stagnantTimeoutMs: 4000, // Send escape if HP doesn't change for 4 seconds
+  },
 };
 
 const targetingSlice = createSlice({
@@ -128,6 +134,13 @@ const targetingSlice = createSlice({
       state.useBattleList = action.payload;
       state.version = (state.version || 0) + 1;
     },
+    updateHpStagnationConfig: (state, action) => {
+      state.hpStagnationDetection = {
+        ...state.hpStagnationDetection,
+        ...action.payload,
+      };
+      state.version = (state.version || 0) + 1;
+    },
   },
 });
 
@@ -141,6 +154,7 @@ export const {
   updateCreatureInTargetingList,
   setScriptPause,
   setUseBattleList,
+  updateHpStagnationConfig,
 } = targetingSlice.actions;
 
 export const setTargetingPause = (ms) => (dispatch, getState) => {

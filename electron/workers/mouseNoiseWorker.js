@@ -37,12 +37,9 @@ const MOUSE_NOISE_CONFIG = {
   PAUSE_PROBABILITY: 0.15,
   PAUSE_DURATION: { min: 500, max: 5000 },
   
-  // Region preferences (where to move) - must sum to 1.0
+  // Region preferences (where to move) - constrained to gameWorld only
   REGION_WEIGHTS: {
-    gameWorld: 0.70,        // Stay in game world most of time
-    battleList: 0.10,       // Occasionally check battle list
-    minimap: 0.10,          // Sometimes look at minimap
-    other: 0.10,            // Very rarely other UI
+    gameWorld: 1.0,         // Always stay in game world (100%)
   },
 };
 
@@ -111,25 +108,8 @@ function selectTargetRegion() {
   const regions = globalState?.regionCoordinates?.regions;
   if (!regions) return null;
   
-  const regionChoice = weightedChoice(MOUSE_NOISE_CONFIG.REGION_WEIGHTS);
-  
-  switch (regionChoice) {
-    case 'gameWorld':
-      return regions.gameWorld;
-    case 'battleList':
-      return regions.battleList;
-    case 'minimap':
-      return regions.minimapFull || regions.minimap;
-    case 'statusBar':
-      return regions.statusBar;
-    case 'other':
-      // Random other UI element
-      const uiRegions = ['healthBar', 'manaBar', 'cooldownBar', 'hotkeyBar'];
-      const randomUI = uiRegions[Math.floor(Math.random() * uiRegions.length)];
-      return regions[randomUI];
-    default:
-      return regions.gameWorld;
-  }
+  // Always return gameWorld - movements are constrained to game area only
+  return regions.gameWorld;
 }
 
 function selectNewTarget() {
@@ -216,13 +196,29 @@ function calculateNextPosition(deltaMs) {
   const moveDistance = Math.min(maxDistance, distanceToTarget);
   const ratio = moveDistance / distanceToTarget;
   
-  return {
+  const nextPos = {
     x: Math.round(currentPosition.x + dx * ratio),
     y: Math.round(currentPosition.y + dy * ratio)
   };
+  
+  // CRITICAL: Ensure next position stays within gameWorld boundaries
+  const gameWorld = globalState?.regionCoordinates?.regions?.gameWorld;
+  if (gameWorld) {
+    nextPos.x = Math.max(gameWorld.x, Math.min(nextPos.x, gameWorld.x + gameWorld.width - 1));
+    nextPos.y = Math.max(gameWorld.y, Math.min(nextPos.y, gameWorld.y + gameWorld.height - 1));
+  }
+  
+  return nextPos;
 }
 
 async function sendMouseMove(x, y) {
+  // CRITICAL FIX: Check if paused BEFORE sending to queue
+  // This prevents noise moves from being sent when critical actions are executing
+  if (isPaused) {
+    log('debug', '[MouseNoise] Skipping move - paused by orchestrator');
+    return;
+  }
+  
   const display = globalState?.global?.display;
   
   if (!display) {
@@ -285,7 +281,7 @@ async function noiseLoop() {
     }
     
     try {
-      // Initialize current position if needed
+      // Initialize current position if needed (center of gameWorld)
       if (currentPosition.x === 0 && currentPosition.y === 0) {
         const gameWorld = globalState.regionCoordinates.regions.gameWorld;
         if (gameWorld) {
@@ -293,8 +289,18 @@ async function noiseLoop() {
             x: gameWorld.x + Math.floor(gameWorld.width / 2),
             y: gameWorld.y + Math.floor(gameWorld.height / 2)
           };
-          log('info', `[MouseNoise] Initialized position to (${currentPosition.x}, ${currentPosition.y}) - gameWorld region: ${gameWorld.x},${gameWorld.y} ${gameWorld.width}x${gameWorld.height}`);
+          log('info', `[MouseNoise] Initialized position to center of gameWorld: (${currentPosition.x}, ${currentPosition.y}) - gameWorld bounds: ${gameWorld.x},${gameWorld.y} ${gameWorld.width}x${gameWorld.height}`);
         }
+      }
+      
+      // SAFETY CHECK: Ensure current position is within gameWorld bounds
+      const gameWorld = globalState.regionCoordinates.regions.gameWorld;
+      if (gameWorld && !isPointInRegion(currentPosition, gameWorld)) {
+        log('warn', `[MouseNoise] Current position (${currentPosition.x}, ${currentPosition.y}) is outside gameWorld! Resetting to center.`);
+        currentPosition = {
+          x: gameWorld.x + Math.floor(gameWorld.width / 2),
+          y: gameWorld.y + Math.floor(gameWorld.height / 2)
+        };
       }
       
       // Check if we need to change pattern
@@ -302,11 +308,16 @@ async function noiseLoop() {
         startNewPattern();
       }
       
-      // If we're paused but not over gameWorld anymore, cancel the pause to avoid obstructing UI
+      // If we're paused but somehow not over gameWorld (should never happen now), cancel the pause
       if (isPausing) {
         const gameWorld = globalState?.regionCoordinates?.regions?.gameWorld;
         if (!isPointInRegion(currentPosition, gameWorld)) {
+          log('warn', `[MouseNoise] Paused but not in gameWorld - this should not happen! Resetting.`);
           isPausing = false;
+          currentPosition = {
+            x: gameWorld.x + Math.floor(gameWorld.width / 2),
+            y: gameWorld.y + Math.floor(gameWorld.height / 2)
+          };
           startNewPattern();
         }
       }
@@ -358,15 +369,15 @@ parentPort.on('message', (message) => {
     return;
   }
   
-  if (message.type === 'mouseNoisePause') {
+  if (message.type === 'pauseMouseNoise') {
     isPaused = true;
-    log('debug', '[MouseNoise] Paused');
+    log('info', '[MouseNoise] Paused - critical mouse action in progress');
     return;
   }
   
-  if (message.type === 'mouseNoiseResume') {
+  if (message.type === 'resumeMouseNoise') {
     isPaused = false;
-    log('debug', '[MouseNoise] Resumed');
+    log('info', '[MouseNoise] Resumed - critical actions completed');
     return;
   }
   

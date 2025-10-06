@@ -523,7 +523,7 @@ export function createAmbiguousAcquirer({ sabStateManager, parentPort, targeting
       parentPort.postMessage({
         type: 'inputAction',
         payload: {
-          type: 'hotkey',
+          type: 'targeting',  // FIXED: Use targeting priority, not hotkey
           action: { module: 'mouseController', method: 'leftClick', args: [x, y, 200, returnPos] }, // Return to random game world position
         },
       });
