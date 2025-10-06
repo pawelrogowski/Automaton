@@ -195,11 +195,11 @@ function initializeWorker() {
 function runRules(ruleInput) {
   const { rules, global, regionCoordinates } = currentState;
   if (!rules?.enabled) return;
-  const currentPreset = rules.presets?.[rules.activePresetIndex];
-  if (!currentPreset) return;
+  const currentRules = rules.rules;
+  if (!currentRules || !Array.isArray(currentRules)) return;
   if (!regionCoordinates?.regions || Object.keys(regionCoordinates.regions).length === 0) return;
   try {
-    ruleProcessorInstance.processRules(currentPreset, ruleInput, {
+    ruleProcessorInstance.processRules(currentRules, ruleInput, {
       ...global,
       isOnline: regionCoordinates?.regions?.onlineMarker ?? false,
     });

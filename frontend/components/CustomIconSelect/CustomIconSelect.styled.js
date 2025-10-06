@@ -61,7 +61,7 @@ export const OptionsList = styled.ul`
   top: 100%;
   left: 0;
   right: 0;
-  max-height: 200px;
+  max-height: 300px;
   overflow-y: auto;
   overflow-x: hidden;
 
@@ -74,7 +74,7 @@ export const OptionsList = styled.ul`
   list-style: none;
   padding: 0;
   margin: 0;
-  z-index: 1000;
+  z-index: 9999;
 
 
   /* Scrollbar styles */

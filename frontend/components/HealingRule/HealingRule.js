@@ -15,10 +15,8 @@ const HealingRule = ({ rule, className }) => {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
-  const currentRule = useSelector((state) =>
-    state.rules.presets[activePresetIndex].find((r) => r.id === rule.id),
-  );
+  // Use the rule prop directly instead of re-selecting from Redux (optimization)
+  const current_rule = rule;
 
   const handleStatusConditionChange = (status, value) => {
     dispatch(updateCondition({ id: currentRule.id, condition: status, value }));

@@ -3,156 +3,98 @@ import styled from 'styled-components';
 const StyledMain = styled.main`
   display: flex;
   flex-direction: column;
-/* 
-  .healing-enable-checkbox {
+  height: 100%;
+  overflow: hidden;
+  min-height: 0; /* Important for flex children */
+
+  .filter-bar {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    top: -1px;
-    left: 1px;
-    position: absolute;
-  }
-  .mana-sync-column {
-    display: flex;
-    flex-direction: row;
-    gap: 4px;
-    width: 100%;
-  }
-  .enable-wrapper {
-    font-size: 8px;
-    color: rgb(175, 175, 175);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .enable-text {
-    font-size: 11px;
-    color: rgb(175, 175, 175);
+    padding: 16px 24px;
+    background-color: rgba(25, 25, 25, 0.5);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 16px;
+    flex-shrink: 0; /* Prevent filter bar from shrinking */
   }
 
-  .heading-wrapper {
+  .filter-buttons {
     display: flex;
-    gap: 20px;
-    align-items: center;
-    font-size: 24px;
-    margin-bottom: 30px;
-  }
-  .heading {
-    color: rgb(175, 175, 175);
-  }
-  .main-switch {
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
-  .mana-sync-row {
+  .filter-button {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 8px;
+    padding: 8px 16px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: #b0b0b0;
+    font-size: 13px;
+    font-family: sans-serif;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    img {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+    }
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.25);
+      color: #e0e0e0;
+    }
+
+    &.active {
+      background-color: rgba(80, 120, 200, 0.2);
+      border-color: rgba(100, 150, 255, 0.4);
+      color: #ffffff;
+    }
   }
-  .mana-sync-hotkey {
-    margin-left: auto;
+
+  .add-rule-button {
+    padding: 8px 20px;
+    background-color: rgba(80, 180, 80, 0.15);
+    border: 1px solid rgba(100, 220, 100, 0.3);
+    border-radius: 6px;
+    color: #90e090;
+    font-size: 13px;
+    font-family: sans-serif;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+
+    &:hover {
+      background-color: rgba(80, 180, 80, 0.25);
+      border-color: rgba(100, 220, 100, 0.5);
+      color: #b0ffb0;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
   }
-  .mana-sync-row-text {
-    font-size: 11px;
-    color: rgb(175, 175, 175);
-  }
-  .refresh-rate-row {
-    font-size: 8px;
-    color: rgb(175, 175, 175);
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-  .mana-sync-checkbox-text {
-    font-size: 12px;
-    color: rgb(175, 175, 175);
-  }
-  h5 {
-    margin: 0;
-    color: rgb(175, 175, 175);
-    font-size: 11px;
-  }
-  .list-wrapper {
+
+  .content-area {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    overflow: hidden;
+    padding: 0;
+    min-height: 0; /* Important for flex children */
   }
-  .settings-wrapper {
-    display: flex;
-    flex-direction: row;
-    gap: 2px;
-    padding: 4px;
+
+  /* StatBars should not scroll */
+  .content-area > div:first-child {
+    flex-shrink: 0;
   }
-  .input-field {
-    width: 56px;
-    height: 24px;
-    background-color: #363636;
-    border-top: 1px solid #2c2c2c;
-    border-left: 1px solid #2c2c2c;
-    border-bottom: 1px solid #79797930;
-    border-right: 1px solid #16181d;
-    * {
-      font-size: 12px;
-      color: rgb(175, 175, 175);
-    }
-  }
-  .input-long {
-    width: 64px;
-    font-size: 11px;
-    height: 16px;
-    color: #909090;
-  }
-  .settings-row {
-    display: flex;
-    flex-direction: row;
-    > div:not(:first-child) {
-      padding-left: 5px;
-      border-left: 1px solid rgba(175, 175, 175, 0.9);
-    }
-    > div:not(:last-child) {
-      padding-right: 5px;
-      border-right: 1px, rgba(0, 0, 0, 0.7);
-    }
-  }
-  .margin-left {
-    margin-left: auto;
-  }
-  .setting-section {
-    min-height: 72px;
-    max-height: 72px;
-    
-    gap: 0px;
-    * {
-      font-size: 11px !important;
-      white-space: nowrap;
-      line-height: 0.9;
-      input,
-      select {
-        max-height: 18px;
-        width: 48px;
-      }
-    }
-  }
-  .top-bar {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    padding: 0 4px;
-    gap: 4px;
-  }
-  .square {
-    aspect-ratio: 1;
-    width: 40px;
-    background: black;
-  }
-  .input-percent,
-  #manaSyncPercentage {
-    width: 48px;
-  }
-  .settings-wrapper {
-    padding: 0 4px 6px 4px;
-    margin: 6px 0;
-  }
+
   .list-bg {
     details,
     select,
@@ -168,17 +110,5 @@ const StyledMain = styled.main`
       }
     }
   }
-
-  .healing-rules-box {
-    height: 445px;
-    min-height: 445px;
-    max-height: 445px;
-    > div {
-      height: 100%;
-      > div {
-        height: 100%;
-      }
-    }
-  } */
 `;
 export default StyledMain;

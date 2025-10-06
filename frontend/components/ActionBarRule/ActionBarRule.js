@@ -19,10 +19,8 @@ const ActionBarRule = ({ rule, className }) => {
 
 
   const dispatch = useDispatch();
-  const active_preset_index = useSelector((state) => state.rules.activePresetIndex);
-  const current_rule = useSelector((state) =>
-    state.rules.presets[active_preset_index]?.find((r) => r.id === rule.id),
-  );
+  // Use the rule prop directly instead of re-selecting from Redux (optimization)
+  const current_rule = rule;
 
   const condition_options = [
     { value: '<=', label: '≤' },

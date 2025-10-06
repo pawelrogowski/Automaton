@@ -18,14 +18,14 @@ const PartyHealingRule = ({ rule, className }) => {
   const [is_expanded, set_is_expanded] = useState(false);
 
   const dispatch = useDispatch();
-  const active_preset_index = useSelector((state) => state.rules.activePresetIndex);
-  const current_rule = useSelector((state) => state.rules.presets[active_preset_index]?.find((r) => r.id === rule.id));
+  // Use the rule prop directly instead of re-selecting from Redux (optimization)
+  const current_rule = rule;
 
-  const handle_status_condition_change = (status, value) => {
+  const handle_status_condition_change = useCallback((status, value) => {
     if (current_rule) {
       dispatch(updateCondition({ id: current_rule.id, condition: status, value }));
     }
-  };
+  }, [dispatch, current_rule]);
 
   const handle_remove_rule = () => {
     set_show_confirm(true);

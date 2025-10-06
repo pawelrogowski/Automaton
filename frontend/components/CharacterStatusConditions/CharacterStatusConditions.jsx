@@ -48,10 +48,9 @@ const characterStatusImages = {
 
 const CharacterStatusConditions = ({ ruleId, onStatusConditionChange, className }) => {
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
   const statusConditions = useSelector(
     (state) =>
-      state.rules.presets[activePresetIndex].find((r) => r.id === ruleId)?.conditions || [],
+      state.rules.rules.find((r) => r.id === ruleId)?.conditions || [],
   );
 
   const handleClick = (status) => {

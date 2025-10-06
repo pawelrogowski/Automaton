@@ -61,13 +61,10 @@ const validateDelay = (value) => {
   return isNaN(num) || num < 0 ? 0 : num;
 };
 
-const initialPreset = [];
-
 const initialState = {
   version: 0,
   enabled: false, // State for global rule processing enable/disable
-  activePresetIndex: 0,
-  presets: [initialPreset, initialPreset, initialPreset, initialPreset, initialPreset],
+  rules: [], // Single array of rules (no more presets!)
   sortBy: ['priority'],
   sortOrder: { priority: 'desc' },
 };
@@ -89,7 +86,7 @@ const sortingCriteriaMap = {
   equipOnlyIfSlotIsEmpty: { key: 'equipOnlyIfSlotIsEmpty', type: 'boolean' },
 };
 
-const sortPresetRules = (state) => {
+const sortRules = (state) => {
   const { sortBy, sortOrder } = state;
   if (!sortBy || sortBy.length === 0) return;
 
@@ -107,7 +104,7 @@ const sortPresetRules = (state) => {
     return isAscending ? comparison : -comparison;
   };
 
-  state.presets[state.activePresetIndex].sort((a, b) => {
+  state.rules.sort((a, b) => {
     for (const criterion of sortBy) {
       const criteriaDefinition = sortingCriteriaMap[criterion];
       if (!criteriaDefinition) {
@@ -342,8 +339,8 @@ const ruleSlice = createSlice({
       }
 
       if (newRule) {
-        state.presets[state.activePresetIndex].push(validateRule(newRule));
-        sortPresetRules(state);
+        state.rules.push(validateRule(newRule));
+        sortRules(state);
       } else {
         console.warn('No rule type matched for ID:', ruleId);
       }
@@ -351,26 +348,59 @@ const ruleSlice = createSlice({
     },
 
     removeRule: (state, action) => {
-      state.presets[state.activePresetIndex] = state.presets[state.activePresetIndex].filter((rule) => rule.id !== action.payload);
+      state.rules = state.rules.filter((rule) => rule.id !== action.payload);
       state.version = (state.version || 0) + 1;
     },
     updateRule: (state, action) => {
       const { id, field, value } = action.payload;
+      console.log('[Redux updateRule] id:', id, 'field:', field, 'value:', value);
 
-      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      const ruleIndex = state.rules.findIndex((rule) => rule.id === id);
+      console.log('[Redux updateRule] ruleIndex:', ruleIndex);
 
       if (ruleIndex !== -1) {
+        console.log('[Redux updateRule] BEFORE update, rule[field]:', state.rules[ruleIndex][field]);
         let actualValue = value;
         const booleanFields = ['enabled', 'equipOnlyIfSlotIsEmpty', 'isWalking', 'requireAttackCooldown', 'repeat'];
         if (booleanFields.includes(field)) {
           actualValue = value === 'true' || value === true;
         }
 
-        state.presets[state.activePresetIndex][ruleIndex][field] = validateField(field, actualValue);
+        state.rules[ruleIndex][field] = validateField(field, actualValue);
+        console.log('[Redux updateRule] AFTER validateField, rule[field]:', state.rules[ruleIndex][field]);
 
-        state.presets[state.activePresetIndex][ruleIndex] = validateRule(state.presets[state.activePresetIndex][ruleIndex]);
+        state.rules[ruleIndex] = validateRule(state.rules[ruleIndex]);
+        console.log('[Redux updateRule] AFTER validateRule, rule[field]:', state.rules[ruleIndex][field]);
 
-        sortPresetRules(state);
+        sortRules(state);
+      }
+      state.version = (state.version || 0) + 1;
+    },
+
+    // Update multiple fields atomically to avoid validation conflicts
+    updateRuleFields: (state, action) => {
+      const { id, fields } = action.payload;
+      console.log('[Redux updateRuleFields] id:', id, 'fields:', fields);
+
+      const ruleIndex = state.rules.findIndex((rule) => rule.id === id);
+
+      if (ruleIndex !== -1) {
+        const booleanFields = ['enabled', 'equipOnlyIfSlotIsEmpty', 'isWalking', 'requireAttackCooldown', 'repeat'];
+        
+        // Update all fields first
+        Object.entries(fields).forEach(([field, value]) => {
+          let actualValue = value;
+          if (booleanFields.includes(field)) {
+            actualValue = value === 'true' || value === true;
+          }
+          state.rules[ruleIndex][field] = validateField(field, actualValue);
+        });
+
+        // Then validate once at the end
+        state.rules[ruleIndex] = validateRule(state.rules[ruleIndex]);
+        console.log('[Redux updateRuleFields] AFTER validateRule:', state.rules[ruleIndex]);
+
+        sortRules(state);
       }
       state.version = (state.version || 0) + 1;
     },
@@ -382,10 +412,10 @@ const ruleSlice = createSlice({
 
     updateCondition: (state, action) => {
       const { id, condition, value } = action.payload;
-      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      const ruleIndex = state.rules.findIndex((rule) => rule.id === id);
 
       if (ruleIndex !== -1) {
-        const rule = state.presets[state.activePresetIndex][ruleIndex];
+        const rule = state.rules[ruleIndex];
         if (!rule.conditions) {
           rule.conditions = [];
         }
@@ -406,10 +436,10 @@ const ruleSlice = createSlice({
 
     removeCondition: (state, action) => {
       const { id, condition } = action.payload;
-      const ruleIndex = state.presets[state.activePresetIndex].findIndex((rule) => rule.id === id);
+      const ruleIndex = state.rules.findIndex((rule) => rule.id === id);
 
-      if (ruleIndex !== -1 && state.presets[state.activePresetIndex][ruleIndex].conditions) {
-        state.presets[state.activePresetIndex][ruleIndex].conditions = state.presets[state.activePresetIndex][ruleIndex].conditions.filter(
+      if (ruleIndex !== -1 && state.rules[ruleIndex].conditions) {
+        state.rules[ruleIndex].conditions = state.rules[ruleIndex].conditions.filter(
           (c) => c.name !== condition,
         );
       }
@@ -417,39 +447,37 @@ const ruleSlice = createSlice({
     },
 
     loadRules: (state, action) => {
-      state.presets[state.activePresetIndex] = action.payload.map((rule) => validateRule(rule));
-      sortPresetRules(state);
+      state.rules = action.payload.map((rule) => validateRule(rule));
+      sortRules(state);
     },
 
-    setActivePresetIndex: (state, action) => {
-      const newIndex = parseInt(action.payload, 10);
-      if (!isNaN(newIndex) && newIndex >= 0 && newIndex < state.presets.length) {
-        state.activePresetIndex = newIndex;
-        sortPresetRules(state);
-      }
-    },
     setState: (state, action) => {
       const loadedState = action.payload;
       // Apply validateRule during load/set state to clean up/migrate old states
-      const cleanPreset = (preset) => (preset && Array.isArray(preset) ? preset.map((rule) => validateRule(rule)) : []);
+      const cleanRules = (rules) => (rules && Array.isArray(rules) ? rules.map((rule) => validateRule(rule)) : []);
 
       if (loadedState && typeof loadedState === 'object') {
-        if (!Array.isArray(loadedState.presets)) {
-          state.presets = [cleanPreset(loadedState.presets || initialPreset)];
-          state.activePresetIndex = 0;
+        // MIGRATION: Handle old preset-based format
+        if (loadedState.presets && Array.isArray(loadedState.presets)) {
+          // Take first preset (or active preset) as the single rules array
+          const activeIndex = parseInt(loadedState.activePresetIndex, 10) || 0;
+          const selectedPreset = loadedState.presets[activeIndex] || loadedState.presets[0] || [];
+          state.rules = cleanRules(selectedPreset);
+          console.log(`[Migration] Converted preset ${activeIndex} to single rules array (${state.rules.length} rules)`);
+        } else if (loadedState.rules && Array.isArray(loadedState.rules)) {
+          // New format: direct rules array
+          state.rules = cleanRules(loadedState.rules);
         } else {
-          state.presets = loadedState.presets.map((preset) => cleanPreset(preset));
-          state.activePresetIndex = Math.max(
-            0,
-            Math.min((state.presets?.length || 1) - 1, parseInt(loadedState.activePresetIndex, 10) || 0),
-          );
+          // Fallback: empty rules
+          state.rules = [];
         }
+        
         state.sortBy = loadedState.sortBy || initialState.sortBy;
         state.sortOrder = loadedState.sortOrder || initialState.sortOrder;
-        sortPresetRules(state);
+        sortRules(state);
       } else {
         Object.assign(state, initialState);
-        sortPresetRules(state);
+        sortRules(state);
       }
     },
     sortRulesBy: (state, action) => {
@@ -478,23 +506,7 @@ const ruleSlice = createSlice({
           state.sortOrder[criterion] = sortingCriteriaMap[criterion].type === 'number' ? 'desc' : 'asc';
         }
       });
-      sortPresetRules(state);
-    },
-    copyPreset: (state, action) => {
-      const { sourceIndex, targetIndex } = action.payload;
-      if (
-        sourceIndex !== targetIndex &&
-        sourceIndex >= 0 &&
-        sourceIndex < state.presets.length &&
-        targetIndex >= 0 &&
-        targetIndex < state.presets.length
-      ) {
-        state.presets[targetIndex] = JSON.parse(JSON.stringify(state.presets[sourceIndex]));
-        if (targetIndex === state.activePresetIndex) {
-          sortPresetRules(state);
-        }
-      }
-      state.version = (state.version || 0) + 1;
+      sortRules(state);
     },
   },
 });
@@ -503,13 +515,12 @@ export const {
   addRule,
   removeRule,
   updateRule,
+  updateRuleFields,
   updateCondition,
   removeCondition,
   loadRules,
-  setActivePresetIndex,
   setState,
   sortRulesBy,
-  copyPreset,
   setenabled,
 } = ruleSlice.actions;
 

@@ -735,6 +735,7 @@ const CustomIconSelect = ({
   // --- End Filtering ---
 
   const handleOptionClick = (optionValue) => {
+    console.log('[CustomIconSelect] handleOptionClick called with:', optionValue);
     onChange(optionValue);
     setIsOpen(false);
     setSearchTerm('');

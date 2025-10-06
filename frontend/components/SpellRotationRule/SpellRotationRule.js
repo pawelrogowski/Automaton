@@ -25,10 +25,8 @@ const validateDelay = (value) => {
 const SpellRotationRule = ({ rule, className }) => {
   const dispatch = useDispatch();
   const [showConfirm, setShowConfirm] = useState(false);
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
-  const currentRule = useSelector((state) =>
-    state.rules.presets[activePresetIndex].find((r) => r.id === rule.id)
-  ) || rule;
+  // Use the rule prop directly instead of re-selecting from Redux (optimization)
+  const currentRule = rule;
 
   // Make handlers no-op or conditionally disabled if needed, but overlay blocks interaction anyway
   const handleFieldChange = useCallback((field, value) => {

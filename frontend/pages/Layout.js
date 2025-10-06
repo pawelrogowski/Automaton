@@ -10,7 +10,6 @@ import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
 import SSA from '../assets/Stone_Skin_Amulet.gif';
 import ActionBarIcon from '../assets/action_bar.png';
 import mageHat from '../assets/The_Epic_Wisdom.gif';
-import CustomRules from '../assets/cutomRules.png';
 import {
   setenabled as setRulesEnabled,
   addRule,
@@ -24,7 +23,6 @@ import { setenabled as setLuaEnabled } from '../redux/slices/luaSlice.js';
 import { setenabled as setTargetingEnabled } from '../redux/slices/targetingSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import Header from '../components/Header/Header.jsx';
-import PresetSelector from '../components/PresetSelector/PresetSelector.jsx';
 import SideBarNavButton from '../components/SideBarNavButton/SidebarNavButton.js';
 import SidebarButton from '../components/SidebarButton.js/SidebarButton.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -72,9 +70,6 @@ const Layout = () => {
   const handleAddRule = () => {
     let ruleIdPrefix;
     switch (hash) {
-      case '#userrules':
-        ruleIdPrefix = 'userRule';
-        break;
       case '#party':
         ruleIdPrefix = 'healFriend';
         break;
@@ -94,10 +89,8 @@ const Layout = () => {
         console.warn(
           'Cannot add rule on current page/hash:',
           hash,
-          'Falling back to userRule.',
         );
-        ruleIdPrefix = 'userRule';
-        break;
+        return; // Don't add anything for unknown hash
     }
     if (ruleIdPrefix) {
       const newRuleId = `${ruleIdPrefix}${uuidv4()}`;
@@ -213,69 +206,8 @@ const Layout = () => {
         <NavButton to="/hotkeys" text="Settings"></NavButton>
       </Header>
       <div className="side-main">
-        {!isCavebotPage && !location.pathname.includes('/targeting') && !location.pathname.includes('/luascripts') && (
+        {location.pathname === '/gameState' && (
           <SidebarWrapper className="aside">
-            {location.pathname.includes('/healing') && (
-              <>
-                <div className="button-container">
-                  <button
-                    className="add-button"
-                    type="button"
-                    onMouseDown={handleAddRule}
-                    tooltip="Add a new rule to selected section"
-                  >
-                    Add New Rule
-                  </button>
-                </div>
-                <PresetSelector />
-                <SideBarNavButton
-                  to="/healing#actionbar"
-                  img={ActionBarIcon}
-                  text={'Action Bar'}
-                  imageWidth="32px"
-                  tooltip="Show action bar rules"
-                ></SideBarNavButton>
-                <SideBarNavButton
-                  to="/healing#party"
-                  img={healParty}
-                  imageWidth="32px"
-                  text={'Party Heal'}
-                  tooltip="Show party heal rules"
-                ></SideBarNavButton>
-                <SideBarNavButton
-                  to="/healing#manasync"
-                  img={UMP}
-                  imageWidth="32px"
-                  text={'Potion-Sync'}
-                  tooltip="Show potion-sync rules - triggers only after detecting attack cooldown"
-                  className="UMP-image"
-                ></SideBarNavButton>
-                <SideBarNavButton
-                  to="/healing#equip"
-                  img={SSA}
-                  imageWidth="32px"
-                  text={'Auto Equip'}
-                  tooltip="Show auto equip rules"
-                  className="SSA-image"
-                ></SideBarNavButton>
-                <SideBarNavButton
-                  to="/healing#userrules"
-                  img={CustomRules}
-                  text={'Custom Rules'}
-                  imageWidth="32px"
-                  tooltip="Show custom rules"
-                ></SideBarNavButton>
-                <SideBarNavButton
-                  to="/healing#rotations"
-                  img={mageHat}
-                  text={'Spell Rotations'}
-                  imageWidth="32px"
-                  tooltip="Show spell rotation rules"
-                ></SideBarNavButton>
-              </>
-            )}
-
-
             {location.pathname === '/gameState' && (
               <>
                 <SideBarNavButton
@@ -362,128 +294,6 @@ const Layout = () => {
                   imageWidth="32px"
                   tooltip="View the current pathfinder state slice"
                 ></SideBarNavButton>
-              </>
-            )}
-
-            {location.pathname === '/cavebot' && (
-              <>
-                <div className="add-new-waypoint-section">
-                  <SidebarButton
-                    text={'Node'}
-                    onClick={() => handleAddWaypoint('Node')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Stand'}
-                    onClick={() => handleAddWaypoint('Stand')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Shovel'}
-                    onClick={() => handleAddWaypoint('Shovel')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Rope'}
-                    onClick={() => handleAddWaypoint('Rope')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Machete'}
-                    onClick={() => handleAddWaypoint('Machete')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Ladder'}
-                    onClick={() => handleAddWaypoint('Ladder')}
-                  ></SidebarButton>
-                  <SidebarButton
-                    text={'Script'}
-                    onClick={() => handleAddWaypoint('Script')}
-                  ></SidebarButton>
-                </div>
-
-                <div className="direction-radios">
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="NW"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="N"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="NE"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="W"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="C"
-                      defaultChecked
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="E"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="SW"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="S"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    <input
-                      type="radio"
-                      name="direction"
-                      value="SE"
-                      onChange={(e) => setDirection(e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <SidebarButton
-                  text={'Delete Waypoint'}
-                  onClick={() => {
-                    if (wptSelection) {
-                      dispatch(removeWaypoint(wptSelection));
-                    } else {
-                      console.log('No waypoint selected to delete.');
-                    }
-                  }}
-                ></SidebarButton>
               </>
             )}
           </SidebarWrapper>

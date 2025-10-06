@@ -67,14 +67,18 @@ html:focus-within {
   display: none;
 }
 
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   text-rendering: optimizeSpeed;
   line-height: 1.5;
-  overflow-x: hidden;
   background: rgb(15, 16, 17);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  height: 100vh;
-  overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
 ul[class],

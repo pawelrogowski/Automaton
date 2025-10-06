@@ -1,8 +1,8 @@
-import React, { useCallback, useState, useMemo, useEffect } from 'react';
+import React, { useCallback, useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
-import { removeRule, updateRule, updateCondition } from '../../redux/slices/ruleSlice.js';
+import { removeRule, updateRule, updateRuleFields, updateCondition } from '../../redux/slices/ruleSlice.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
 import CustomIconSelect from '../CustomIconSelect/CustomIconSelect.js';
@@ -16,10 +16,6 @@ const EquipRule = ({ rule, className }) => {
   const [is_expanded, set_is_expanded] = useState(false);
 
   const dispatch = useDispatch();
-  const active_preset_index = useSelector((state) => state.rules.activePresetIndex);
-  const current_rule = useSelector((state) =>
-    state.rules.presets[active_preset_index]?.find((r) => r.id === rule.id),
-  );
 
   const condition_options = useMemo(() => [
     { value: '<=', label: '≤' }, { value: '<', label: '<' },
@@ -29,14 +25,14 @@ const EquipRule = ({ rule, className }) => {
 
 
   const handle_status_condition_change = useCallback((status, value) => {
-    if (current_rule) dispatch(updateCondition({ id: current_rule.id, condition: status, value }));
-  }, [dispatch, current_rule]);
+    if (rule.id) dispatch(updateCondition({ id: rule.id, condition: status, value }));
+  }, [dispatch, rule.id]);
 
   const handle_remove_rule = useCallback(() => set_show_confirm(true), []);
   const handle_confirm_remove = useCallback(() => {
-    if (current_rule?.id) dispatch(removeRule(current_rule.id));
+    if (rule.id) dispatch(removeRule(rule.id));
     set_show_confirm(false);
-  }, [dispatch, current_rule]);
+  }, [dispatch, rule.id]);
   const handle_cancel_remove = useCallback(() => set_show_confirm(false), []);
 
   const handle_field_change = useCallback((field) => (event) => {
@@ -56,36 +52,41 @@ const EquipRule = ({ rule, className }) => {
     }
 
 
-    if (current_rule?.id) {
-      dispatch(updateRule({ id: current_rule.id, field, value }));
+    if (rule.id) {
+      dispatch(updateRule({ id: rule.id, field, value }));
     }
-  }, [dispatch, current_rule?.id]);
+  }, [dispatch, rule.id]);
 
 
   const handle_action_item_change = useCallback((selected_action_item_key) => {
-    if (current_rule?.id && selected_action_item_key !== null) {
-      dispatch(updateRule({ id: current_rule.id, field: 'actionItem', value: selected_action_item_key }));
+    console.log('[EquipRule] handle_action_item_change called with:', selected_action_item_key);
+    console.log('[EquipRule] rule.id:', rule.id);
+    if (rule.id && selected_action_item_key !== null) {
       const item_data = actionBarItemsData[selected_action_item_key];
       const inferred_slot = item_data?.slot;
-      dispatch(updateRule({ id: current_rule.id, field: 'targetSlot', value: inferred_slot || '' }));
-    } else if (current_rule?.id && selected_action_item_key === null) {
-      dispatch(updateRule({ id: current_rule.id, field: 'actionItem', value: '' }));
-      dispatch(updateRule({ id: current_rule.id, field: 'targetSlot', value: '' }));
+      console.log('[EquipRule] Dispatching updateRuleFields for actionItem and targetSlot:', inferred_slot);
+      // Update both fields atomically to avoid validateRule overwriting targetSlot
+      dispatch(updateRuleFields({
+        id: rule.id,
+        fields: {
+          actionItem: selected_action_item_key,
+          targetSlot: inferred_slot || ''
+        }
+      }));
+    } else if (rule.id && selected_action_item_key === null) {
+      dispatch(updateRuleFields({
+        id: rule.id,
+        fields: {
+          actionItem: '',
+          targetSlot: ''
+        }
+      }));
     }
-  }, [dispatch, current_rule?.id]);
+  }, [dispatch, rule.id]);
 
-  useEffect(() => {
-    if (current_rule?.actionItem &&
-      (!current_rule.targetSlot || actionBarItemsData[current_rule.actionItem]?.slot !== current_rule.targetSlot)) {
-      const item_data = actionBarItemsData[current_rule.actionItem];
-      const inferred_slot = item_data?.slot;
-      if (inferred_slot) dispatch(updateRule({ id: current_rule.id, field: 'targetSlot', value: inferred_slot }));
-      else dispatch(updateRule({ id: current_rule.id, field: 'targetSlot', value: '' }));
-    } else if (current_rule && !current_rule.actionItem && current_rule.targetSlot) {
-      dispatch(updateRule({ id: current_rule.id, field: 'targetSlot', value: '' }));
-    }
-  }, [current_rule?.actionItem, current_rule?.targetSlot, current_rule?.id, dispatch]);
-
+  // NOTE: Removed useEffect that watched actionItem/targetSlot - it caused an infinite loop
+  // because it dispatched updates that changed targetSlot, which triggered the effect again.
+  // The handle_action_item_change callback already sets both actionItem and targetSlot correctly.
 
   const handle_toggle_expand = useCallback(() => {
     set_is_expanded(prev => !prev);
@@ -104,21 +105,21 @@ const EquipRule = ({ rule, className }) => {
     return items_group[equipment_category_key].length > 0 ? items_group : {};
   }, []);
 
-  if (!current_rule) return null;
+  if (!rule) return null;
 
-  const rule_enabled = current_rule.enabled ?? false;
-  const rule_action_item = current_rule.actionItem || '';
-  const rule_key = current_rule.key || 'F1';
-  const rule_target_slot = current_rule.targetSlot || actionBarItemsData[rule_action_item]?.slot || '';
-  const rule_equip_only_if_slot_is_empty = current_rule.equipOnlyIfSlotIsEmpty ?? true;
-  const rule_hp_trigger_condition = current_rule.hpTriggerCondition || '<=';
-  const rule_hp_trigger_percentage = current_rule.hpTriggerPercentage ?? 0;
-  const rule_mana_trigger_condition = current_rule.manaTriggerCondition || '>=';
-  const rule_mana_trigger_percentage = current_rule.manaTriggerPercentage ?? 0;
-  const rule_monster_num_condition = current_rule.monsterNumCondition || '>=';
-  const rule_monster_num = current_rule.monsterNum ?? 0;
-  const rule_priority = current_rule.priority ?? 0;
-  const rule_delay = current_rule.delay ?? 250;
+  const rule_enabled = rule.enabled ?? false;
+  const rule_action_item = rule.actionItem || '';
+  const rule_key = rule.key || 'F1';
+  const rule_target_slot = rule.targetSlot || actionBarItemsData[rule_action_item]?.slot || '';
+  const rule_equip_only_if_slot_is_empty = rule.equipOnlyIfSlotIsEmpty ?? true;
+  const rule_hp_trigger_condition = rule.hpTriggerCondition || '<=';
+  const rule_hp_trigger_percentage = rule.hpTriggerPercentage ?? 0;
+  const rule_mana_trigger_condition = rule.manaTriggerCondition || '>=';
+  const rule_mana_trigger_percentage = rule.manaTriggerPercentage ?? 0;
+  const rule_monster_num_condition = rule.monsterNumCondition || '>=';
+  const rule_monster_num = rule.monsterNum ?? 0;
+  const rule_priority = rule.priority ?? 0;
+  const rule_delay = rule.delay ?? 250;
 
   const is_disabled_equip_checkbox = (!rule_action_item || !rule_target_slot);
 

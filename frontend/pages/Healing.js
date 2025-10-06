@@ -1,41 +1,43 @@
-import React from 'react';
-import { useSelector } from 'react-redux';
+import React, { useMemo, useCallback } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { v4 as uuidv4 } from 'uuid';
 import HealingRule from '../components/HealingRule/HealingRule.js';
 import StyledMain from './Healing.styled.js';
 import { StyledSection } from '../components/SectionBlock/SectionBlock.styled.js';
 import RuleListWrapper from '../components/RuleListWrapper/RuleListWrapper.js';
 import { StatBars } from '../components/StatBars.js/StatBars.js';
 import HighWrapper from '../components/HighWrapper/HighWrapper.js';
-import { useLocation } from 'react-router-dom';
 import PartyHealingRule from '../components/PartyHealingRule/PartyHealingRule.js';
 import ActionBarRule from '../components/ActionBarRule/ActionBarRule.js';
 import ManaSyncRule from '../components/ManaSyncRule/ManaSyncRule.js';
 import SpellRotationRule from '../components/SpellRotationRule/SpellRotationRule.js';
 import EquipRule from '../components/EquipRule/EquipRule.js';
+import { addRule } from '../redux/slices/ruleSlice.js';
+import ActionBarIcon from '../assets/action_bar.png';
+import healParty from '../assets/actionBarItems/Ultimate_Healing_Rune.gif';
+import UMP from '../assets/actionBarItems/Ultimate_Mana_Potion.gif';
+import SSA from '../assets/Stone_Skin_Amulet.gif';
+import mageHat from '../assets/The_Epic_Wisdom.gif';
 
 export const Healing = () => {
-  const active_preset_index = useSelector((state) => state.rules.activePresetIndex);
-  const rules = useSelector((state) => state.rules.presets[active_preset_index]);
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const rules = useSelector((state) => state.rules.rules);
   const { hppc, mppc } = useSelector((state) => state.gameState);
   const location = useLocation();
   const hash = location.hash;
 
-  const mana_sync_rules = rules.filter((rule) => rule.id.includes('manaSync'));
-  const action_bar_rules = rules.filter((rule) => rule.id.includes('actionBarItem'));
-  const heal_friend_rules = rules.filter((rule) => rule.id.includes('healFriend'));
-  const rotation_rules = rules.filter((rule) => rule.id.includes('rotationRule'));
-  const equip_rules = rules.filter((rule) => rule.id.includes('equipRule'));
-  const user_rules = rules.filter(
-    (rule) =>
-      !rule.id.includes('manaSync') &&
-      !rule.id.includes('actionBarItem') &&
-      !rule.id.includes('healFriend') &&
-      !rule.id.includes('rotationRule') &&
-      !rule.id.includes('equipRule'),
-  );
+  // Memoize filtered rule lists to prevent unnecessary recalculation
+  const mana_sync_rules = useMemo(() => rules.filter((rule) => rule.id.includes('manaSync')), [rules]);
+  const action_bar_rules = useMemo(() => rules.filter((rule) => rule.id.includes('actionBarItem')), [rules]);
+  const heal_friend_rules = useMemo(() => rules.filter((rule) => rule.id.includes('healFriend')), [rules]);
+  const rotation_rules = useMemo(() => rules.filter((rule) => rule.id.includes('rotationRule')), [rules]);
+  const equip_rules = useMemo(() => rules.filter((rule) => rule.id.includes('equipRule')), [rules]);
 
 
-  const render_rules = (rules_to_render) => {
+  // Memoize render_rules to prevent recreation on every render
+  const render_rules = useCallback((rules_to_render) => {
     return rules_to_render.map((rule, index) => {
       const class_name = index % 2 === 0 ? 'list-bg' : '';
 
@@ -68,7 +70,43 @@ export const Healing = () => {
         </RuleComponent>
       );
     });
-  };
+  }, []);
+
+  const handleAddRule = useCallback(() => {
+    let ruleIdPrefix;
+    switch (hash) {
+      case '#party':
+        ruleIdPrefix = 'healFriend';
+        break;
+      case '#manasync':
+        ruleIdPrefix = 'manaSync';
+        break;
+      case '#actionbar':
+        ruleIdPrefix = 'actionBarItem';
+        break;
+      case '#rotations':
+        ruleIdPrefix = 'rotationRule';
+        break;
+      case '#equip':
+        ruleIdPrefix = 'equipRule';
+        break;
+      default:
+        console.warn('Cannot add rule on current page/hash:', hash);
+        return;
+    }
+    if (ruleIdPrefix) {
+      const newRuleId = `${ruleIdPrefix}${uuidv4()}`;
+      dispatch(addRule(newRuleId));
+    }
+  }, [dispatch, hash]);
+
+  const filterButtons = [
+    { hash: '#actionbar', label: 'Action Bar', icon: ActionBarIcon, tooltip: 'Show action bar rules' },
+    { hash: '#party', label: 'Party Heal', icon: healParty, tooltip: 'Show party heal rules' },
+    { hash: '#manasync', label: 'Potion-Sync', icon: UMP, tooltip: 'Show potion-sync rules' },
+    { hash: '#equip', label: 'Auto Equip', icon: SSA, tooltip: 'Show auto equip rules' },
+    { hash: '#rotations', label: 'Rotations', icon: mageHat, tooltip: 'Show spell rotation rules' },
+  ];
 
   const render_section = (hash_key, title, rules_to_render) => {
     return (
@@ -82,46 +120,61 @@ export const Healing = () => {
 
   return (
     <StyledMain>
-      <StyledSection>
+      <div className="filter-bar">
+        <div className="filter-buttons">
+          {filterButtons.map(({ hash: filterHash, label, icon, tooltip }) => (
+            <button
+              key={filterHash}
+              className={`filter-button ${hash === filterHash ? 'active' : ''}`}
+              onClick={() => navigate(`/healing${filterHash}`)}
+              title={tooltip}
+            >
+              <img src={icon} alt={label} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+        <button className="add-rule-button" onClick={handleAddRule} title="Add a new rule to selected section">
+          + Add Rule
+        </button>
+      </div>
+
+      <div className="content-area">
         <StatBars hppc={hppc} mppc={mppc} />
 
-        {/* Sections now pass the filtered rules directly */}
-        {render_section(
-          '#userrules',
-          'Rules',
-          user_rules
-        )}
+        <StyledSection>
+          {/* Sections now pass the filtered rules directly */}
+          {render_section(
+            '#actionbar',
+            'Action Bar Rules',
+            action_bar_rules
+          )}
 
-        {render_section(
-          '#actionbar',
-          'Action Bar Rules',
-          action_bar_rules
-        )}
+          {render_section(
+            '#manasync',
+            'Attack-Sync Rules',
+            mana_sync_rules
+          )}
 
-        {render_section(
-          '#manasync',
-          'Attack-Sync Rules',
-          mana_sync_rules
-        )}
+          {render_section(
+            '#party',
+            'Party Heal Rules',
+            heal_friend_rules
+          )}
 
-        {render_section(
-          '#party',
-          'Party Heal Rules',
-          heal_friend_rules
-        )}
+          {render_section(
+            '#equip',
+            'Auto Equip Rules',
+            equip_rules
+          )}
 
-        {render_section(
-          '#equip',
-          'Auto Equip Rules',
-          equip_rules
-        )}
-
-        {render_section(
-          '#rotations',
-          'Spell Rotation Rules',
-          rotation_rules
-        )}
-      </StyledSection>
+          {render_section(
+            '#rotations',
+            'Spell Rotation Rules',
+            rotation_rules
+          )}
+        </StyledSection>
+      </div>
     </StyledMain>
   );
 };

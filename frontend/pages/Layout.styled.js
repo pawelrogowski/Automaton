@@ -5,26 +5,41 @@ const StyledDiv = styled.div`
   flex-direction: column;
   padding: 12px 12px;
   height: 100vh;
-  overflow-x: hidden;
+  overflow: hidden; /* Prevent page scrolling */
 
   .side-main {
     display: flex;
     flex-direction: row;
     gap: 12px;
-    height: 100%;
+    flex: 1;
+    overflow: hidden; /* Prevent container scrolling */
+    min-height: 0; /* Important for flex children to shrink */
   }
   .aside {
-    height: 517px;
+    height: 100%;
     width: 195px;
+    overflow-y: auto;
+    flex-shrink: 0;
   }
   .main-content {
     padding: 5px 0px 5px 0px;
     padding-bottom: 0px;
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent content scrolling */
+    min-height: 0; /* Important for flex children */
+    
+    .routes-wrapper {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    
     ol {
-      font-size: {
-        font-size: 13px;
-      }
+      font-size: 13px;
     }
   }
   .checkbox-wrapper {
