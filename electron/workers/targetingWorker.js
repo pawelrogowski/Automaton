@@ -28,13 +28,9 @@ const FSM_STATE = {
 
 // --- Configuration ---
 const config = {
-  mainLoopIntervalMs: 100,
+  mainLoopIntervalMs: 50,
   unreachableTimeoutMs: 400,
-  acquireTimeoutMs: 400, // Time to wait for target verification after a click
-  controlHysteresisMs: 150, // Require stability before request/release control
-  dynamicGoalGraceMs: 300,  // Keep dynamic target briefly to avoid flicker
-  hpStagnationTimeoutMs: 4000, // HP must change within 4 seconds when adjacent
-  hpStagnationCheckIntervalMs: 500, // Check HP every 500ms
+  acquireTimeoutMs: 400,
 };
 
 // --- Worker State (data from other sources) ---
@@ -61,135 +57,14 @@ const targetingState = {
     battleListIndex: -1,
     targetName: '',
   },
-  lastMovementTime: 0,
-  dynamicTargetLastSetAt: 0,
-  dynamicTargetClearRequestedAt: 0,
-  // HP Stagnation Detection (Bot Detection Bypass)
-  hpStagnationDetection: {
-    lastHpValue: null, // Last recorded HP value
-    lastHpChangeTime: 0, // When HP last changed
-    lastCheckTime: 0, // When we last checked HP
-    hasBeenAdjacent: false, // Whether we've been adjacent to track stagnation
-    notAdjacentSince: 0, // Timestamp when we stopped being adjacent
-  },
 };
 
-const { creaturesSAB } = workerData;
+const { creaturesSAB, playerPosSAB, pathDataSAB } = workerData;
 const sabStateManager = new SABStateManager(workerData);
 const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
+const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
+const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
-// --- HP Stagnation Detection ---
-function checkHpStagnation(target) {
-  // Use config from globalState if available, otherwise use fallback defaults
-  const configFromState = workerState.globalState?.targeting?.hpStagnationDetection;
-  const config = {
-    enabled: configFromState?.enabled ?? true, // Default enabled
-    checkInterval: configFromState?.checkInterval ?? 500, // Default 500ms
-    stagnantTimeoutMs: configFromState?.stagnantTimeoutMs ?? 4000, // Default 4s
-  };
-  
-  if (!config.enabled) return;
-  
-  // Only perform HP stagnation detection if we're supposed to be attacking
-  const targetingList = workerState.globalState?.targeting?.targetingList;
-  const rule = findRuleForCreatureName(target.name, targetingList);
-  if (!rule || rule.stance === 'Stand') {
-    return; // Not attacking this creature
-  }
-  
-  const now = Date.now();
-  const { hpStagnationDetection } = targetingState;
-  
-  // Only check when adjacent to the target
-  if (!target.isAdjacent) {
-    // Don't reset hasBeenAdjacent immediately - keep tracking
-    // Only reset if we've been not adjacent for a while
-    if (hpStagnationDetection.hasBeenAdjacent) {
-      if (!hpStagnationDetection.notAdjacentSince) {
-        hpStagnationDetection.notAdjacentSince = now;
-      } else if (now - hpStagnationDetection.notAdjacentSince > 2000) {
-        // Reset after 2 seconds of not being adjacent
-        hpStagnationDetection.hasBeenAdjacent = false;
-        hpStagnationDetection.notAdjacentSince = 0;
-      }
-    }
-    return;
-  }
-  
-  // We're adjacent now, clear the notAdjacentSince timer
-  hpStagnationDetection.notAdjacentSince = 0;
-  
-  // Mark that we've been adjacent at least once
-  if (!hpStagnationDetection.hasBeenAdjacent) {
-    hpStagnationDetection.hasBeenAdjacent = true;
-    hpStagnationDetection.lastHpValue = target.hp;
-    hpStagnationDetection.lastHpChangeTime = now;
-    hpStagnationDetection.lastCheckTime = now;
-    return;
-  }
-  
-  // Check interval
-  if (now - hpStagnationDetection.lastCheckTime < config.checkInterval) {
-    return;
-  }
-  
-  hpStagnationDetection.lastCheckTime = now;
-  
-  const currentHp = target.hp;
-  
-  // Initialize if first check
-  if (hpStagnationDetection.lastHpValue === null) {
-    hpStagnationDetection.lastHpValue = currentHp;
-    hpStagnationDetection.lastHpChangeTime = now;
-    return;
-  }
-  
-  // HP changed - reset timer
-  if (currentHp !== hpStagnationDetection.lastHpValue) {
-    hpStagnationDetection.lastHpValue = currentHp;
-    hpStagnationDetection.lastHpChangeTime = now;
-    return;
-  }
-  
-  // HP stagnant for too long - send escape key to unstuck
-  const stagnantTime = now - hpStagnationDetection.lastHpChangeTime;
-  if (stagnantTime >= config.stagnantTimeoutMs) {
-    logger('warn', `[HP Stagnation] Target ${target.name} HP stagnant at ${currentHp} for ${stagnantTime}ms, sending escape to untarget and retarget`);
-    
-    // Send escape key to untarget - this fixes the visual bug
-    parentPort.postMessage({
-      type: 'keypress',
-      payload: {
-        keyCode: 27, // Escape key
-        ctrl: false,
-        shift: false,
-        alt: false
-      }
-    });
-    
-    // Wait a brief moment for the escape to take effect
-    // Then transition to SELECTING to retarget
-    setTimeout(() => {
-      logger('info', `[HP Stagnation] Retargeting after escape from stuck target ${target.name}`);
-    }, 100);
-    
-    // Clear current target explicitly
-    targetingState.currentTarget = null;
-    targetingState.pathfindingTarget = null;
-    
-    // Reset tracking completely
-    targetingState.hpStagnationDetection = {
-      lastHpValue: null,
-      lastHpChangeTime: 0,
-      lastCheckTime: 0,
-      hasBeenAdjacent: false,
-      notAdjacentSince: 0,
-    };
-    
-    // Transition to selecting to find a new target (or reacquire the same one properly)
-    transitionTo(FSM_STATE.SELECTING, `HP stagnation detected - escaped and retargeting (stuck at HP ${currentHp})`);
-  }
-}
 
 // --- State Transition Helper ---
 function transitionTo(newState, reason = '') {
@@ -204,30 +79,14 @@ function transitionTo(newState, reason = '') {
   if (newState === FSM_STATE.SELECTING) {
     targetingState.pathfindingTarget = null;
     targetingState.currentTarget = null;
-    // Do NOT clear dynamic target immediately; request a clear after grace
-    targetingState.dynamicTargetClearRequestedAt = Date.now();
-    // Reset HP stagnation tracking
-    targetingState.hpStagnationDetection = {
-      lastHpValue: null,
-      lastHpChangeTime: 0,
-      lastCheckTime: 0,
-      hasBeenAdjacent: false,
-      notAdjacentSince: 0,
-    };
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setDynamicTarget',
+      payload: null,
+    });
   }
   if (newState === FSM_STATE.ACQUIRING) {
     targetingState.lastAcquireAttempt.timestamp = 0;
-  }
-  if (newState === FSM_STATE.ENGAGING) {
-    // Initialize HP tracking when we start engaging
-    const now = Date.now();
-    targetingState.hpStagnationDetection = {
-      lastHpValue: null,
-      lastHpChangeTime: now,
-      lastCheckTime: now,
-      hasBeenAdjacent: false,
-      notAdjacentSince: 0,
-    };
   }
 }
 
@@ -255,7 +114,6 @@ function handleSelectingState() {
       bestTarget,
       workerState.globalState.targeting.targetingList
     );
-    targetingState.dynamicTargetLastSetAt = Date.now();
     transitionTo(FSM_STATE.ACQUIRING, `Found target: ${bestTarget.name}`);
   } else {
     transitionTo(FSM_STATE.IDLE, 'No valid targets');
@@ -287,7 +145,6 @@ function handleAcquiringState() {
     const rule = findRuleForCreatureName(currentInGameTarget.name, targetingList);
     if (rule && rule.stance !== 'Stand') {
       updateDynamicTarget(parentPort, currentInGameTarget, targetingList);
-      targetingState.dynamicTargetLastSetAt = Date.now();
     }
     
     transitionTo(
@@ -407,7 +264,6 @@ async function handleEngagingState() {
     const rule = findRuleForCreatureName(updatedTarget.name, targetingList);
     if (rule && rule.stance !== 'Stand') {
       updateDynamicTarget(parentPort, updatedTarget, targetingList);
-      targetingState.dynamicTargetLastSetAt = Date.now();
     }
   }
 
@@ -426,23 +282,23 @@ async function handleEngagingState() {
     targetingState.unreachableSince = 0;
   }
 
-  // Pass lastMovementTime by reference through targetingState
   const movementContext = {
     targetingList: globalState.targeting.targetingList,
-    lastMovementTime: targetingState.lastMovementTime,
   };
   
   await manageMovement(
-    { ...workerState, parentPort, sabStateManager },
+    { 
+      ...workerState, 
+      parentPort, 
+      sabStateManager,
+      playerPosArray,
+      pathDataArray,
+      lastPlayerPosCounter: workerState.lastWorldStateCounter,
+      lastPathDataCounter: workerState.lastWorldStateCounter,
+    },
     movementContext,
     targetingState.currentTarget
   );
-  
-  // Update lastMovementTime in targetingState if it was changed
-  targetingState.lastMovementTime = movementContext.lastMovementTime;
-  
-  // HP stagnation detection
-  checkHpStagnation(updatedTarget);
 }
 
 // --- Main Loop ---
@@ -534,41 +390,12 @@ async function performTargeting() {
     globalState.targeting.targetingList
   );
 
-  // Hysteresis: request/release control only after stability window
-  const nowTs = Date.now();
   if (hasValidTarget && controlState === 'CAVEBOT') {
-    if (!performTargeting._requestSince) performTargeting._requestSince = nowTs;
-    if (nowTs - performTargeting._requestSince >= config.controlHysteresisMs) {
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
-      performTargeting._requestSince = 0;
-    }
-  } else {
-    performTargeting._requestSince = 0;
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
   }
 
   if (!hasValidTarget && !anyValidTargetExists && controlState === 'TARGETING') {
-    if (!performTargeting._releaseSince) performTargeting._releaseSince = nowTs;
-    if (nowTs - performTargeting._releaseSince >= config.controlHysteresisMs) {
-      parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
-      performTargeting._releaseSince = 0;
-    }
-  } else {
-    performTargeting._releaseSince = 0;
-  }
-
-  // Gracefully clear dynamic target if we've been SELECTING for longer than grace
-  if (
-    targetingState.state === FSM_STATE.SELECTING &&
-    targetingState.dynamicTargetClearRequestedAt &&
-    nowTs - targetingState.dynamicTargetClearRequestedAt >= config.dynamicGoalGraceMs &&
-    nowTs - targetingState.dynamicTargetLastSetAt >= config.dynamicGoalGraceMs
-  ) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/setDynamicTarget',
-      payload: null,
-    });
-    targetingState.dynamicTargetClearRequestedAt = 0;
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
   }
 }
 

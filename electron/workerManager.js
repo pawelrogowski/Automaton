@@ -35,7 +35,6 @@ const DEFAULT_WORKER_CONFIG = {
   pathfinderWorker: true,
   windowTitleMonitor: true,
   inputOrchestrator: true,
-  mouseNoiseWorker: true,
   enableLuaScriptWorkers: true,
 };
 
@@ -83,7 +82,6 @@ const WORKER_STATE_DEPENDENCIES = {
   pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
   windowTitleMonitor: ['global', 'gameState'],
   inputOrchestrator: ['global'],
-  mouseNoiseWorker: ['global', 'regionCoordinates', 'cavebot', 'targeting'],
 };
 
 const GRACEFUL_SHUTDOWN_WORKERS = new Set([
@@ -95,7 +93,6 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'cavebotWorker',
   'targetingWorker',
   'pathfinderWorker',
-  'mouseNoiseWorker',
 ]);
 
 
@@ -353,22 +350,22 @@ class WorkerManager {
       return;
     }
 
-    // Forward pause/resume messages to mouseNoiseWorker
-    if (message.type === 'pauseMouseNoise') {
-      const mouseNoiseWorker = this.workers.get('mouseNoiseWorker');
-      if (mouseNoiseWorker && mouseNoiseWorker.worker) {
-        mouseNoiseWorker.worker.postMessage({ type: 'mouseNoisePause' });
-      }
-      return;
-    }
+    // // Forward pause/resume messages to mouseNoiseWorker
+    // if (message.type === 'pauseMouseNoise') {
+    //   const mouseNoiseWorker = this.workers.get('mouseNoiseWorker');
+    //   if (mouseNoiseWorker && mouseNoiseWorker.worker) {
+    //     mouseNoiseWorker.worker.postMessage({ type: 'mouseNoisePause' });
+    //   }
+    //   return;
+    // }
 
-    if (message.type === 'resumeMouseNoise') {
-      const mouseNoiseWorker = this.workers.get('mouseNoiseWorker');
-      if (mouseNoiseWorker && mouseNoiseWorker.worker) {
-        mouseNoiseWorker.worker.postMessage({ type: 'mouseNoiseResume' });
-      }
-      return;
-    }
+    // if (message.type === 'resumeMouseNoise') {
+    //   const mouseNoiseWorker = this.workers.get('mouseNoiseWorker');
+    //   if (mouseNoiseWorker && mouseNoiseWorker.worker) {
+    //     mouseNoiseWorker.worker.postMessage({ type: 'mouseNoiseResume' });
+    //   }
+    //   return;
+    // }
 
     // --- MODIFIED: Centralized Frame Update Distribution ---
     if (message.type === 'frame-update') {
@@ -897,11 +894,11 @@ if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'scree
         )
           this.startWorker('inputOrchestrator');
         
-        if (
-          this.workerConfig.mouseNoiseWorker &&
-          !this.workers.has('mouseNoiseWorker')
-        )
-          this.startWorker('mouseNoiseWorker');
+        // if (
+        //   this.workerConfig.mouseNoiseWorker &&
+        //   !this.workers.has('mouseNoiseWorker')
+        // )
+        //   this.startWorker('mouseNoiseWorker');
       } else {
         if (this.workers.size > 0) {
           log(

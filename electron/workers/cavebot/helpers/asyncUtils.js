@@ -4,15 +4,15 @@ import {
   PLAYER_X_INDEX,
   PLAYER_Y_INDEX,
   PLAYER_Z_INDEX,
-  PLAYER_POS_UPDATE_COUNTER_INDEX,
-  PATH_UPDATE_COUNTER_INDEX,
 } from '../../sharedConstants.js';
-// ====================== MODIFICATION START ======================
-// Corrected path to go up three directories to the electron root
 import { getDistance } from '../../../utils/distance.js';
-// ======================= MODIFICATION END =======================
+import { 
+  delay as movementDelay, 
+  awaitWalkConfirmation as movementAwaitWalkConfirmation 
+} from '../../movementUtils/confirmationHelpers.js';
 
-export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const delay = movementDelay;
+export const awaitWalkConfirmation = movementAwaitWalkConfirmation;
 
 export const awaitStateChange = (
   getState,
@@ -35,41 +35,6 @@ export const awaitStateChange = (
         resolve(true);
       }
     }, pollIntervalMs);
-  });
-};
-
-export const awaitWalkConfirmation = (
-  workerState,
-  config,
-  posCounterBeforeMove,
-  pathCounterBeforeMove,
-  timeoutMs,
-) => {
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      clearInterval(intervalId);
-      reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    const intervalId = setInterval(() => {
-      const posChanged =
-        workerState.playerPosArray &&
-        Atomics.load(
-          workerState.playerPosArray,
-          PLAYER_POS_UPDATE_COUNTER_INDEX,
-        ) > posCounterBeforeMove;
-
-      const pathChanged =
-        workerState.pathDataArray &&
-        Atomics.load(workerState.pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
-          pathCounterBeforeMove;
-
-      if (posChanged || pathChanged) {
-        clearTimeout(timeoutId);
-        clearInterval(intervalId);
-        resolve(true);
-      }
-    }, config.stateChangePollIntervalMs);
   });
 };
 

@@ -1,6 +1,6 @@
 {
-  "name": "miro",
-  "version": "1.4.7",
+  "name": "mailspring",
+  "version": "1.4.10",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -22,8 +22,8 @@
     "combine-scripts": "node scripts/combineScripts.js"
   },
   "build": {
-    "appId": "com.electron.miro",
-    "productName": "Miro",
+    "appId": "com.electron.mailspring",
+    "productName": "Mailspring",
     "directories": {
       "output": "dist",
       "buildResources": "build"

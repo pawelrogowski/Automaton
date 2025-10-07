@@ -27,13 +27,13 @@ const post = (payload) => {
   });
 };
 
-const leftClick = (x, y, { type = 'default', maxDuration = 150 } = {}) => {
+const leftClick = (x, y, { type = 'default' } = {}) => {
   post({
     type,
     action: {
       module: 'mouseController',
       method: 'leftClick',
-      args: [x, y, maxDuration],
+      args: [x, y],
     },
   });
 };

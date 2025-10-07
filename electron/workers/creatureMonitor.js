@@ -382,37 +382,36 @@ function updateCreatureState(
   if (detection.name) creature.name = detection.name;
   if (detection.hp) creature.hp = detection.hp;
 
-  // Calculate velocity in pixels/ms and track stationary time
+  // Check if creature is adjacent (within 1 tile)
+  const deltaX = Math.abs(currentPlayerMinimapPosition.x - finalGameCoords.x);
+  const deltaY = Math.abs(currentPlayerMinimapPosition.y - finalGameCoords.y);
+  const isCurrentlyAdjacent = (deltaX === 1 && deltaY <= 1) || (deltaY === 1 && deltaX <= 1);
+
+  // Track stationary duration only for adjacent creatures
   if (previousAbsoluteCoords && timeSinceLastUpdate > 0 && !isPlayerInAnimationFreeze) {
-    const deltaX = newAbsoluteCoords.x - previousAbsoluteCoords.x;
-    const deltaY = newAbsoluteCoords.y - previousAbsoluteCoords.y;
-    const pixelDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    creature.velocity = pixelDistance / timeSinceLastUpdate; // pixels per ms
+    const screenPosUnchanged = 
+      newAbsoluteCoords.x === previousAbsoluteCoords.x && 
+      newAbsoluteCoords.y === previousAbsoluteCoords.y;
     
-    // Check if creature is stationary (velocity < 0.1 pixels/ms and game coords unchanged)
     const gameCoordsUnchanged = previousGameCoords && 
       previousGameCoords.x === finalGameCoords.x && 
       previousGameCoords.y === finalGameCoords.y &&
       previousGameCoords.z === finalGameCoords.z;
     
-    const isCurrentlyStationary = creature.velocity < 0.1 && gameCoordsUnchanged;
-    
-    if (isCurrentlyStationary) {
-      // Initialize or increment stationary time
-      if (!creature.stationaryStartTime) {
-        creature.stationaryStartTime = now;
+    if (isCurrentlyAdjacent && screenPosUnchanged && gameCoordsUnchanged) {
+      if (!creature.adjacentStationaryStartTime) {
+        creature.adjacentStationaryStartTime = now;
       }
-      creature.stationaryDuration = now - creature.stationaryStartTime;
+      creature.adjacentStationaryDuration = now - creature.adjacentStationaryStartTime;
     } else {
-      // Reset stationary tracking
-      creature.stationaryStartTime = null;
-      creature.stationaryDuration = 0;
+      creature.adjacentStationaryStartTime = null;
+      creature.adjacentStationaryDuration = 0;
     }
   } else {
-    // First detection or during animation freeze - assume stationary
-    if (!creature.velocity) creature.velocity = 0;
-    if (!creature.stationaryStartTime) creature.stationaryStartTime = now;
-    if (!creature.stationaryDuration) creature.stationaryDuration = 0;
+    if (!creature.adjacentStationaryStartTime && isCurrentlyAdjacent) {
+      creature.adjacentStationaryStartTime = now;
+    }
+    if (!creature.adjacentStationaryDuration) creature.adjacentStationaryDuration = 0;
   }
 
   return creature;
@@ -835,9 +834,8 @@ async function performOperation() {
         matchedHealthBars.add(bestMatch);
       } else {
         if (!oldCreature.flickerGracePeriodEndTime) {
-          // Use extended grace period for stationary creatures
-          const isStationary = oldCreature.stationaryDuration > 100;
-          const gracePeriod = isStationary 
+          const isAdjacentStationary = (oldCreature.adjacentStationaryDuration || 0) > 100;
+          const gracePeriod = isAdjacentStationary 
             ? STATIONARY_CREATURE_GRACE_PERIOD_MS 
             : CREATURE_FLICKER_GRACE_PERIOD_MS;
           oldCreature.flickerGracePeriodEndTime = now + gracePeriod;

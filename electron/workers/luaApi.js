@@ -1111,15 +1111,6 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      await postInputAction({
-        type: 'script',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [startCoords.x, startCoords.y],
-        },
-      });
-      await wait(50);
       if (button === 'right') {
         await postInputAction({
           type: 'script',
@@ -1139,15 +1130,6 @@ export const createLuaApi = async (context) => {
           },
         });
       }
-      await wait(100);
-      await postInputAction({
-        type: 'script',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [endCoords.x, endCoords.y],
-        },
-      });
       await wait(100);
       if (button === 'right') {
         await postInputAction({
@@ -1171,15 +1153,6 @@ export const createLuaApi = async (context) => {
       return true;
     },
     dragAbsolute: async (startX, startY, endX, endY, button = 'left') => {
-      await postInputAction({
-        type: 'script',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [startX, startY],
-        },
-      });
-      await wait(50);
       if (button === 'right') {
         await postInputAction({
           type: 'script',
@@ -1199,15 +1172,6 @@ export const createLuaApi = async (context) => {
           },
         });
       }
-      await wait(100);
-      await postInputAction({
-        type: 'script',
-        action: {
-          module: 'mouseController',
-          method: 'mouseMove',
-          args: [endX, endY],
-        },
-      });
       await wait(100);
       if (button === 'right') {
         await postInputAction({
