@@ -33,6 +33,25 @@ const pathfinderSlice = createSlice({
       state.version = (state.version || 0) + 1;
     },
     /**
+     * Individual property setters for efficient updates from SAB
+     */
+    pathWaypoints: (state, action) => {
+      state.pathWaypoints = action.payload;
+      state.version = (state.version || 0) + 1;
+    },
+    wptDistance: (state, action) => {
+      state.wptDistance = action.payload;
+      state.version = (state.version || 0) + 1;
+    },
+    pathfindingStatus: (state, action) => {
+      state.pathfindingStatus = action.payload;
+      state.version = (state.version || 0) + 1;
+    },
+    routeSearchMs: (state, action) => {
+      state.routeSearchMs = action.payload;
+      state.version = (state.version || 0) + 1;
+    },
+    /**
      * Resets the pathfinder state to its initial values.
      */
     resetPathfinder: (state) => {
@@ -48,7 +67,14 @@ const pathfinderSlice = createSlice({
   },
 });
 
-export const { setPathfindingFeedback, resetPathfinder, setState } =
-  pathfinderSlice.actions;
+export const { 
+  setPathfindingFeedback, 
+  pathWaypoints,
+  wptDistance,
+  pathfindingStatus,
+  routeSearchMs,
+  resetPathfinder, 
+  setState 
+} = pathfinderSlice.actions;
 
 export default pathfinderSlice;

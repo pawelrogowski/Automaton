@@ -70,33 +70,50 @@ export async function mapClickTick(workerState, config) {
 
   const mc = workerState.mapClick;
 
-  // If very short path, always keyboard
-  if (path.length <= (config.mapClickKeyboardOnlyThreshold ?? 4)) {
-    mc.mode = 'idle';
-    mc.fallbackUntil = 0;
+  // If very short path AND not currently moving, use keyboard
+  // Once we're in 'moving' or 'pending' mode, we commit to the map click regardless of path length
+  if (mc.mode === 'idle' && path.length <= (config.mapClickKeyboardOnlyThreshold ?? 4)) {
     return 'keyboard';
   }
 
   // Honor fallback window
   if (mc.fallbackUntil && now < mc.fallbackUntil) {
+    const remainingMs = mc.fallbackUntil - now;
+    if (now % 5000 < 100) { // Log every ~5 seconds during fallback
+      workerState.logger(
+        'debug',
+        `[MapClick] In keyboard fallback mode, ${Math.floor(remainingMs / 1000)}s remaining`,
+      );
+    }
     return 'keyboard';
   }
 
   // State: moving — keep hands off as long as we move
   if (mc.mode === 'moving') {
     if (!sameTile(playerPos, mc.lastObservedPos)) {
+      const timeSinceLastMove = now - mc.lastObservedAt;
+      workerState.logger(
+        'debug',
+        `[MapClick] Moved to {x:${playerPos.x}, y:${playerPos.y}, z:${playerPos.z}} (${timeSinceLastMove}ms since last tile, ${path.length} tiles remaining)`,
+      );
       mc.lastObservedPos = playerPos ? { ...playerPos } : null;
       mc.lastObservedAt = now;
     }
 
-    if (now - mc.lastObservedAt >= (config.mapClickStallIntervalMs ?? 500)) {
+    const stallDuration = now - mc.lastObservedAt;
+    const stallThreshold = config.mapClickStallIntervalMs ?? 1000;
+    if (stallDuration >= stallThreshold) {
       // Stalled: stop map-click mode and fall back to keyboard for 10–15s
-      workerState.logger('debug', '[MapClick] Movement stalled; falling back to keyboard.');
-      mc.mode = 'idle';
-      mc.fallbackUntil = now + randomInt(
+      const fallbackDuration = randomInt(
         config.mapClickFallbackMinMs ?? 10000,
         config.mapClickFallbackMaxMs ?? 15000,
       );
+      workerState.logger(
+        'info',
+        `[MapClick] Movement STALLED (no tile change for ${stallDuration}ms) - falling back to keyboard for ${Math.floor(fallbackDuration / 1000)}s`,
+      );
+      mc.mode = 'idle';
+      mc.fallbackUntil = now + fallbackDuration;
       return 'keyboard';
     }
 
@@ -109,19 +126,26 @@ export async function mapClickTick(workerState, config) {
     if (now - mc.attemptAt >= (config.mapClickStartMoveTimeoutMs ?? 500)) {
       if (!sameTile(playerPos, mc.startPos)) {
         // Movement started
-        workerState.logger('debug', '[MapClick] Movement started after click.');
+        workerState.logger(
+          'info',
+          `[MapClick] Movement STARTED - player moved from {x:${mc.startPos.x}, y:${mc.startPos.y}, z:${mc.startPos.z}} to {x:${playerPos.x}, y:${playerPos.y}, z:${playerPos.z}}`,
+        );
         mc.mode = 'moving';
         mc.lastObservedPos = playerPos ? { ...playerPos } : null;
         mc.lastObservedAt = now;
         return 'handled';
       } else {
         // Did not start — fall back to keyboard for 10–15s
-        workerState.logger('debug', '[MapClick] No movement after click; falling back to keyboard.');
-        mc.mode = 'idle';
-        mc.fallbackUntil = now + randomInt(
+        const fallbackDuration = randomInt(
           config.mapClickFallbackMinMs ?? 10000,
           config.mapClickFallbackMaxMs ?? 15000,
         );
+        workerState.logger(
+          'warn',
+          `[MapClick] NO MOVEMENT after click - falling back to keyboard for ${Math.floor(fallbackDuration / 1000)}s`,
+        );
+        mc.mode = 'idle';
+        mc.fallbackUntil = now + fallbackDuration;
         return 'keyboard';
       }
     }
@@ -129,8 +153,13 @@ export async function mapClickTick(workerState, config) {
     return 'handled';
   }
 
-  // State: idle — consider attempting a minimap click
-  if (path.length >= (config.mapClickMinPathLength ?? 15)) {
+  // State: idle — consider attempting a minimap click (only initiate if path is long enough)
+  const minPathLength = config.mapClickMinPathLength ?? 15;
+  if (path.length >= minPathLength) {
+    workerState.logger(
+      'info',
+      `[MapClick] Long path detected (${path.length} tiles >= ${minPathLength}), initiating minimap click`,
+    );
     // Prefer one of the last 10 nodes excluding the final target
     const endExclusive = path.length - 1; // exclude final tile
     const startInclusive = Math.max(1, path.length - 11); // avoid index 0 (current pos)
@@ -172,9 +201,15 @@ export async function mapClickTick(workerState, config) {
       // Generate unique action ID for this click
       const actionId = `mapClick_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
+      const pathRemaining = path.length;
+      const distanceToTarget = Math.sqrt(
+        Math.pow(chosen.node.x - playerPos.x, 2) + 
+        Math.pow(chosen.node.y - playerPos.y, 2)
+      );
+      
       workerState.logger(
-        'debug',
-        `[MapClick] Clicking minimap at screen=(${chosen.coords.x},${chosen.coords.y}) -> targetTile=(${chosen.node.x},${chosen.node.y},${chosen.node.z}).`,
+        'info',
+        `[MapClick] CLICKING minimap at screen (${chosen.coords.x}, ${chosen.coords.y}) -> tile {x:${chosen.node.x}, y:${chosen.node.y}, z:${chosen.node.z}} | Path: ${pathRemaining} tiles | Distance: ${distanceToTarget.toFixed(1)} tiles`,
       );
       
       // Send the click and await its completion
@@ -185,9 +220,9 @@ export async function mapClickTick(workerState, config) {
       const success = await completionPromise;
       
       if (success) {
-        workerState.logger('debug', '[MapClick] Click completed successfully');
+        workerState.logger('debug', '[MapClick] Click action completed');
       } else {
-        workerState.logger('warn', '[MapClick] Click may have failed or timed out');
+        workerState.logger('warn', '[MapClick] Click action failed or timed out');
       }
       
       mc.mode = 'pending';
@@ -199,6 +234,10 @@ export async function mapClickTick(workerState, config) {
     }
 
     // No clickable candidate — use keyboard
+    workerState.logger(
+      'debug',
+      `[MapClick] No clickable tiles found on minimap (path length: ${path.length}), using keyboard`,
+    );
     return 'keyboard';
   }
 

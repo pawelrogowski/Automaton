@@ -3,16 +3,6 @@
 // /electron/workers/pathfinder/logic.js
 
 import {
-  PATH_LENGTH_INDEX,
-  PATH_UPDATE_COUNTER_INDEX,
-  PATH_WAYPOINTS_START_INDEX,
-  PATH_WAYPOINT_SIZE,
-  MAX_PATH_WAYPOINTS,
-  PATH_CHEBYSHEV_DISTANCE_INDEX,
-  PATH_START_X_INDEX,
-  PATH_START_Y_INDEX,
-  PATH_START_Z_INDEX,
-  PATHFINDING_STATUS_INDEX,
   PATH_STATUS_IDLE,
   PATH_STATUS_PATH_FOUND,
   PATH_STATUS_WAYPOINT_REACHED,
@@ -21,18 +11,16 @@ import {
   PATH_STATUS_ERROR,
   PATH_STATUS_NO_VALID_START_OR_END,
   PATH_STATUS_BLOCKED_BY_CREATURE,
-  PATH_BLOCKING_CREATURE_X_INDEX,
-  PATH_BLOCKING_CREATURE_Y_INDEX,
-  PATH_BLOCKING_CREATURE_Z_INDEX,
-  PATH_TARGET_X_INDEX,
-  PATH_TARGET_Y_INDEX,
-  PATH_TARGET_Z_INDEX,
-  PATH_WPT_ID_INDEX,
-  PATH_INSTANCE_ID_INDEX,
 } from '../sharedConstants.js';
 import { deepHash } from '../../utils/deepHash.js';
+import { CONTROL_COMMANDS } from '../sabState/schema.js';
 
 let lastWrittenPathSignature = '';
+let sabInterface = null;
+
+export const setSABInterface = (sab) => {
+  sabInterface = sab;
+};
 
 export function runPathfindingLogic(context) {
   
@@ -41,20 +29,67 @@ export function runPathfindingLogic(context) {
     state,
     pathfinderInstance,
     logger,
-    pathDataArray,
     throttleReduxUpdate,
   } = context;
 
   logicContext.lastProcessedWptId = logicContext.lastProcessedWptId ?? 0;
   try {
     const { cavebot, gameState, targeting } = state;
+    
+    if (!gameState) {
+      logger('debug', `[Pathfinder] Missing gameState`);
+      return;
+    }
+    
     const { playerMinimapPosition } = gameState;
-
-    if (!playerMinimapPosition) {
+    
+    // Read cavebot config from unified SAB (primary source)
+    let cavebotConfig = null;
+    if (sabInterface) {
+      try {
+        const result = sabInterface.get('cavebotConfig');
+        if (result && result.data) {
+          cavebotConfig = result.data;
+          logger('debug', `[Pathfinder] Read from SAB: wptId=${cavebotConfig.wptId}, enabled=${cavebotConfig.enabled}`);
+        }
+      } catch (err) {
+        logger('debug', `[Pathfinder] SAB config read failed: ${err.message}`);
+      }
+    }
+    
+    // Fallback to Redux cavebot state if SAB read failed
+    if (!cavebotConfig && cavebot) {
+      cavebotConfig = {
+        enabled: cavebot.enabled ? 1 : 0,
+        wptId: cavebot.wptId || '',
+        currentSection: cavebot.currentSection || '',
+      };
+      logger('debug', `[Pathfinder] Using Redux fallback: wptId=${cavebotConfig.wptId}`);
+    }
+    
+    if (!cavebotConfig) {
+      logger('debug', `[Pathfinder] No cavebot config available`);
       return;
     }
 
-    const { x, y, z } = playerMinimapPosition;
+    // Try reading from unified SAB first (consistent snapshot)
+    let playerPos = playerMinimapPosition;
+    if (sabInterface) {
+      try {
+        const snapshot = sabInterface.snapshot(['playerPos']);
+        if (snapshot.playerPos && typeof snapshot.playerPos.x === 'number') {
+          playerPos = snapshot.playerPos;
+        }
+      } catch (err) {
+        logger('debug', `SAB snapshot read failed, falling back to Redux: ${err.message}`);
+      }
+    }
+
+    if (!playerPos) {
+      return;
+    }
+
+    const { x, y, z } = playerPos;
     if (
       typeof x !== 'number' ||
       typeof y !== 'number' ||
@@ -68,12 +103,19 @@ export function runPathfindingLogic(context) {
       (c) => c.gameCoords,
     );
 
-    const isTargetingMode = !!cavebot.dynamicTarget;
-    const currentWptId = cavebot.wptId;
+    // Use wptId from SAB config (primary), fallback to Redux for complex data
+    const currentWptId = cavebotConfig.wptId || cavebot?.wptId || '';
+    const isTargetingMode = !!(cavebot?.dynamicTarget);
     const currentDynamicTargetJson = isTargetingMode ? JSON.stringify(cavebot.dynamicTarget) : null;
 
     let result = null;
     let targetIdentifier = isTargetingMode ? currentDynamicTargetJson : currentWptId;
+    
+    // Early exit if no target
+    if (!targetIdentifier) {
+      logger('debug', `[Pathfinder] No target identifier (wptId or dynamicTarget)`);
+      return;
+    }
 
     // --- NEW LOGIC START ---
     // Get both permanent and temporary special areas
@@ -97,7 +139,7 @@ export function runPathfindingLogic(context) {
     // --- NEW LOGIC END ---
 
     const pathfindingInput = {
-      start: playerMinimapPosition,
+      start: playerPos,
       target: isTargetingMode ? cavebot.dynamicTarget : currentWptId,
       obstacles: creaturePositions,
       specialAreas: activeSpecialAreas, // Use the combined list
@@ -160,7 +202,7 @@ export function runPathfindingLogic(context) {
       if (isTargetingMode) {
         // Validate dynamicTarget exists before accessing properties
         if (!cavebot.dynamicTarget || !cavebot.dynamicTarget.targetCreaturePos) {
-          logger('debug', '[Pathfinder] Invalid dynamicTarget, skipping pathfinding');
+          logger('warn', `[Pathfinder] Invalid dynamicTarget (flickering?): ${JSON.stringify(cavebot.dynamicTarget)}`);
           result = { path: [], reason: 'NO_VALID_END' };
         } else {
           const targetInstanceId = cavebot.dynamicTarget.targetInstanceId;
@@ -174,7 +216,7 @@ export function runPathfindingLogic(context) {
             );
           });
           result = pathfinderInstance.findPathToGoal(
-            playerMinimapPosition,
+            playerPos,
             cavebot.dynamicTarget,
             obstacles,
           );
@@ -198,13 +240,13 @@ export function runPathfindingLogic(context) {
             });
 
             result = pathfinderInstance.findPathToGoal(
-              playerMinimapPosition,
+              playerPos,
               correctedDynamicTarget,
               obstacles,
             );
           } else {
             result = pathfinderInstance.findPathToGoal(
-              playerMinimapPosition,
+              playerPos,
               cavebot.dynamicTarget,
               creaturePositions,
             );
@@ -218,7 +260,7 @@ export function runPathfindingLogic(context) {
         );
         if (targetWaypoint) {
           result = pathfinderInstance.findPathSync(
-            playerMinimapPosition,
+            playerPos,
             { x: targetWaypoint.x, y: targetWaypoint.y, z: targetWaypoint.z },
             creaturePositions
           );
@@ -235,15 +277,6 @@ export function runPathfindingLogic(context) {
     }
 
     if (!result) {
-      if (pathDataArray) {
-        Atomics.store(
-          pathDataArray,
-          PATHFINDING_STATUS_INDEX,
-          PATH_STATUS_IDLE,
-        );
-        Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
-        Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
-      }
       return;
     }
 
@@ -255,11 +288,6 @@ export function runPathfindingLogic(context) {
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
     const wptId = isTargetingMode ? 0 : (cavebot.wptId ? cavebot.wptId.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0) : 0);
     const instanceId = isTargetingMode ? (cavebot.dynamicTarget?.targetInstanceId || 0) : 0;
-
-    if (pathDataArray) {
-      Atomics.store(pathDataArray, PATH_WPT_ID_INDEX, wptId);
-      Atomics.store(pathDataArray, PATH_INSTANCE_ID_INDEX, instanceId);
-    }
 
     let statusCode = PATH_STATUS_IDLE;
     switch (statusString) {
@@ -292,112 +320,72 @@ export function runPathfindingLogic(context) {
     const currentTargetWptIdHash = isTargetingMode ? instanceId : wptId;
     const targetWptIdChanged = currentTargetWptIdHash !== logicContext.lastProcessedWptId;
 
-    if (pathSignature !== lastWrittenPathSignature || targetWptIdChanged) {
-      if (pathDataArray) {
-        const pathLength = Math.min(normalizedPath.length, MAX_PATH_WAYPOINTS);
-        const targetX =
-          normalizedPath.length > 0
-            ? normalizedPath[normalizedPath.length - 1].x
-            : x;
-        const targetY =
-          normalizedPath.length > 0
-            ? normalizedPath[normalizedPath.length - 1].y
-            : y;
-        const chebyshevDistance = Math.max(
-          Math.abs(x - targetX),
-          Math.abs(y - targetY),
-        );
-
-        let pathTargetCoords = { x: 0, y: 0, z: 0 };
-        if (isTargetingMode && cavebot.dynamicTarget && cavebot.dynamicTarget.targetCreaturePos) {
-          pathTargetCoords = cavebot.dynamicTarget.targetCreaturePos;
-        } else {
-          const { waypointSections, currentSection, wptId } = cavebot;
-          const targetWaypoint =
-            waypointSections[currentSection]?.waypoints.find(
-              (wp) => wp.id === wptId,
-            );
-          if (targetWaypoint) {
-            pathTargetCoords = {
-              x: targetWaypoint.x,
-              y: targetWaypoint.y,
-              z: targetWaypoint.z,
-            };
-          }
-        }
-
-        Atomics.store(pathDataArray, PATH_LENGTH_INDEX, pathLength);
-        Atomics.store(
-          pathDataArray,
-          PATH_CHEBYSHEV_DISTANCE_INDEX,
-          chebyshevDistance,
-        );
-        Atomics.store(pathDataArray, PATH_START_X_INDEX, x);
-        Atomics.store(pathDataArray, PATH_START_Y_INDEX, y);
-        Atomics.store(pathDataArray, PATH_START_Z_INDEX, z);
-        Atomics.store(
-          pathDataArray,
-          PATH_TARGET_X_INDEX,
-          pathTargetCoords.x,
-        );
-        Atomics.store(
-          pathDataArray,
-          PATH_TARGET_Y_INDEX,
-          pathTargetCoords.y,
-        );
-        Atomics.store(
-          pathDataArray,
-          PATH_TARGET_Z_INDEX,
-          pathTargetCoords.z,
-        );
-        Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, statusCode);
-
-        if (isBlocked && blockingCreatureCoords) {
-          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, blockingCreatureCoords.x);
-          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX, blockingCreatureCoords.y);
-          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX, blockingCreatureCoords.z);
-        } else {
-          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_X_INDEX, 0);
-          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Y_INDEX, 0);
-          Atomics.store(pathDataArray, PATH_BLOCKING_CREATURE_Z_INDEX, 0);
-        }
-
-        for (let i = 0; i < pathLength; i++) {
-          const waypoint = normalizedPath[i];
-          const offset = PATH_WAYPOINTS_START_INDEX + i * PATH_WAYPOINT_SIZE;
-          Atomics.store(pathDataArray, offset + 0, waypoint.x);
-          Atomics.store(pathDataArray, offset + 1, waypoint.y);
-          Atomics.store(pathDataArray, offset + 2, waypoint.z);
-        }
-
-        Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
+    // Calculate pathTargetCoords outside pathDataArray block (needed by SAB write)
+    let pathTargetCoords = { x: 0, y: 0, z: 0 };
+    if (isTargetingMode && cavebot.dynamicTarget && cavebot.dynamicTarget.targetCreaturePos) {
+      pathTargetCoords = cavebot.dynamicTarget.targetCreaturePos;
+    } else {
+      const { waypointSections, currentSection, wptId } = cavebot;
+      const targetWaypoint = waypointSections[currentSection]?.waypoints.find(
+        (wp) => wp.id === wptId,
+      );
+      if (targetWaypoint) {
+        pathTargetCoords = {
+          x: targetWaypoint.x,
+          y: targetWaypoint.y,
+          z: targetWaypoint.z,
+        };
       }
+    }
+
+    if (pathSignature !== lastWrittenPathSignature || targetWptIdChanged) {
+      // Write to unified SAB with complete header fields
+      if (sabInterface) {
+        try {
+          const targetX = normalizedPath.length > 0 ? normalizedPath[normalizedPath.length - 1].x : x;
+          const targetY = normalizedPath.length > 0 ? normalizedPath[normalizedPath.length - 1].y : y;
+          const chebyshevDistance = Math.max(Math.abs(x - targetX), Math.abs(y - targetY));
+          
+          const pathPayload = {
+            waypoints: normalizedPath,
+            length: normalizedPath.length,
+            status: statusCode,
+            chebyshevDistance,
+            startX: x,
+            startY: y,
+            startZ: z,
+            targetX: pathTargetCoords.x,
+            targetY: pathTargetCoords.y,
+            targetZ: pathTargetCoords.z,
+            blockingCreatureX: blockingCreatureCoords?.x || 0,
+            blockingCreatureY: blockingCreatureCoords?.y || 0,
+            blockingCreatureZ: blockingCreatureCoords?.z || 0,
+            wptId,
+            instanceId,
+          };
+          
+          // Write to legacy pathData (will be removed in future)
+          sabInterface.set('pathData', pathPayload);
+          
+          // Write to appropriate separate path array
+          if (isTargetingMode) {
+            sabInterface.set('targetingPathData', pathPayload);
+          } else {
+            sabInterface.set('cavebotPathData', pathPayload);
+          }
+        } catch (err) {
+          logger('error', `Failed to write path to SAB: ${err.message}`);
+        }
+      }
+
       lastWrittenPathSignature = pathSignature;
       logicContext.lastProcessedWptId = currentTargetWptIdHash; // Update the last processed target ID
     }
 
-    const distance =
-      statusString === 'NO_PATH_FOUND' ? null : normalizedPath.length;
-
-    throttleReduxUpdate({
-      pathWaypoints: normalizedPath,
-      wptDistance: distance,
-      routeSearchMs: result.performance?.totalTimeMs || 0,
-      pathfindingStatus: statusString,
-    });
-
+    // NOTE: We no longer call throttleReduxUpdate here because workerManager
+    // now handles SAB→Redux sync. Pathfinder only writes to SAB above.
   } catch (error) {
     logger('error', `Pathfinding error: ${error.message}`);
-    throttleReduxUpdate({
-      pathWaypoints: [],
-      wptDistance: null,
-      pathfindingStatus: 'ERROR',
-    });
-    if (pathDataArray) {
-      Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, PATH_STATUS_ERROR);
-      Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
-      Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
-    }
   }
 }
 //endFile

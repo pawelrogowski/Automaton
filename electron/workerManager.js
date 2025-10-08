@@ -21,6 +21,9 @@ import {
   TARGET_SAB_SIZE,
 } from './workers/sharedConstants.js';
 
+// NEW: Unified SAB State Management
+import { SABState, CONTROL_STATES } from './workers/sabState/index.js';
+
 const log = createLogger();
 
 const DEFAULT_WORKER_CONFIG = {
@@ -155,6 +158,12 @@ class WorkerManager {
     this.precalculatedWorkerPayloads = new Map(); // New map for pre-calculated payloads
     this.debounceMs = 16; // adaptive debounce interval for store updates
     this.updateTimeEma = 8; // ms, exponential moving average of update time
+    
+    // NEW: Unified SAB State Management
+    this.sabState = null; // Will be initialized with SABState instance
+    this.reduxSyncInterval = null; // Interval for SAB → Redux sync
+    this.lastReduxSyncTime = 0;
+    this.previousConfigState = {}; // Track config changes
   }
 
   setupPaths(app, cwd) {
@@ -248,6 +257,253 @@ class WorkerManager {
       targetSAB,
     };
     log('info', '[Worker Manager] Created SharedArrayBuffers.');
+    
+    // NEW: Create unified SAB state manager
+    try {
+      this.sabState = new SABState();
+      log('info', '[Worker Manager] Created unified SABState manager.');
+      
+      // Start Redux → SAB sync (immediate on store changes)
+      this.setupReduxToSABSync();
+      
+      // Start SAB → Redux sync (throttled 100ms)
+      this.startSABToReduxSync();
+    } catch (error) {
+      log('error', '[Worker Manager] Failed to create SABState:', error);
+    }
+  }
+
+  /**
+   * Setup Redux → SAB sync (immediate on config changes)
+   * Writes UI config to SAB whenever Redux state changes
+   */
+  setupReduxToSABSync() {
+    if (!this.sabState) return;
+    
+    // Subscribe to Redux store changes
+    const unsubscribe = store.subscribe(() => {
+      if (!this.sabState) return;
+      
+      try {
+        const state = store.getState();
+        
+        // Sync cavebot config
+        if (this.configChanged('cavebot', state.cavebot)) {
+          const controlStateMap = {
+            'CAVEBOT': CONTROL_STATES.CAVEBOT,
+            'HANDOVER_TO_TARGETING': CONTROL_STATES.HANDOVER_TO_TARGETING,
+            'TARGETING': CONTROL_STATES.TARGETING,
+            'HANDOVER_TO_CAVEBOT': CONTROL_STATES.HANDOVER_TO_CAVEBOT,
+          };
+          
+          this.sabState.set('cavebotConfig', {
+            enabled: state.cavebot?.enabled ? 1 : 0,
+            controlState: controlStateMap[state.cavebot?.controlState] ?? CONTROL_STATES.CAVEBOT,
+            nodeRange: state.cavebot?.nodeRange ?? 1,
+            isPausedByScript: state.cavebot?.isPausedByScript ? 1 : 0,
+            currentSection: state.cavebot?.currentSection ?? '',
+            wptId: state.cavebot?.wptId ?? '',
+          });
+          
+          this.previousConfigState.cavebot = {
+            version: state.cavebot?.version,
+            enabled: state.cavebot?.enabled,
+            controlState: state.cavebot?.controlState,
+          };
+        }
+        
+        // Sync targeting config
+        if (this.configChanged('targeting', state.targeting)) {
+          this.sabState.set('targetingConfig', {
+            enabled: state.targeting?.enabled ? 1 : 0,
+          });
+          
+          this.previousConfigState.targeting = {
+            version: state.targeting?.version,
+            enabled: state.targeting?.enabled,
+          };
+        }
+        
+        // Sync global config
+        if (this.configChanged('global', state.global)) {
+          this.sabState.set('globalConfig', {
+            windowId: parseInt(state.global?.windowId ?? 0, 10),
+            display: state.global?.display ? 1 : 0,
+          });
+          
+          this.previousConfigState.global = {
+            version: state.global?.version,
+            windowId: state.global?.windowId,
+            display: state.global?.display,
+          };
+        }
+      } catch (error) {
+        log('error', '[Worker Manager] Error in Redux → SAB sync:', error);
+      }
+    });
+    
+    // Store unsubscribe function for cleanup
+    this.reduxSyncUnsubscribe = unsubscribe;
+    log('info', '[Worker Manager] Redux → SAB sync enabled');
+  }
+
+  /**
+   * Check if config has changed
+   */
+  configChanged(sliceName, currentSlice) {
+    const prev = this.previousConfigState[sliceName];
+    if (!prev) return true; // First time
+    
+    // Check version if available
+    if (typeof currentSlice?.version === 'number' && typeof prev.version === 'number') {
+      return currentSlice.version !== prev.version;
+    }
+    
+    // Fallback: deep check key properties
+    if (sliceName === 'cavebot') {
+      return currentSlice?.enabled !== prev.enabled ||
+             currentSlice?.controlState !== prev.controlState;
+    } else if (sliceName === 'targeting') {
+      return currentSlice?.enabled !== prev.enabled;
+    } else if (sliceName === 'global') {
+      return currentSlice?.windowId !== prev.windowId ||
+             currentSlice?.display !== prev.display;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Start SAB → Redux sync (throttled 100ms)
+   * Reads real-time data from SAB and dispatches to Redux for UI
+   */
+  startSABToReduxSync() {
+    if (!this.sabState) return;
+    if (this.reduxSyncInterval) return; // Already started
+    
+    // Track last synced versions to avoid redundant Redux updates
+    this.lastSyncedVersions = {
+      playerPos: -1,
+      creatures: -1,
+      battleList: -1,
+      target: -1,
+      pathData: -1,
+    };
+    
+    this.reduxSyncInterval = setInterval(() => {
+      if (!this.sabState) return;
+      
+      try {
+        const now = Date.now();
+        
+        // Throttle to once per 100ms
+        if (now - this.lastReduxSyncTime < 100) return;
+        this.lastReduxSyncTime = now;
+        
+        // Read real-time data from SAB
+        const playerPosResult = this.sabState.get('playerPos');
+        const creaturesResult = this.sabState.get('creatures');
+        const battleListResult = this.sabState.get('battleList');
+        const targetResult = this.sabState.get('target');
+        const pathDataResult = this.sabState.get('pathData');
+        
+        // Build batch update payload
+        const updates = {};
+        let hasUpdates = false;
+        
+        if (playerPosResult?.data && playerPosResult.version !== this.lastSyncedVersions.playerPos) {
+          this.lastSyncedVersions.playerPos = playerPosResult.version;
+          updates.gameState = updates.gameState || {};
+          updates.gameState.playerMinimapPosition = {
+            x: playerPosResult.data.x,
+            y: playerPosResult.data.y,
+            z: playerPosResult.data.z,
+          };
+          hasUpdates = true;
+        }
+        
+        if (creaturesResult?.data && creaturesResult.version !== this.lastSyncedVersions.creatures) {
+          this.lastSyncedVersions.creatures = creaturesResult.version;
+          updates.targeting = updates.targeting || {};
+          updates.targeting.creatures = creaturesResult.data;
+          hasUpdates = true;
+        }
+        
+        if (battleListResult?.data && battleListResult.version !== this.lastSyncedVersions.battleList) {
+          this.lastSyncedVersions.battleList = battleListResult.version;
+          updates.battleList = { entries: battleListResult.data };
+          hasUpdates = true;
+        }
+        
+        if (
+          targetResult?.data && 
+          targetResult.data.instanceId !== 0 && 
+          targetResult.version !== this.lastSyncedVersions.target
+        ) {
+          this.lastSyncedVersions.target = targetResult.version;
+          updates.targeting = updates.targeting || {};
+          updates.targeting.target = {
+            instanceId: targetResult.data.instanceId,
+            name: targetResult.data.name,
+            distance: targetResult.data.distance / 100,
+            isReachable: targetResult.data.isReachable === 1,
+            gameCoordinates: {
+              x: targetResult.data.x,
+              y: targetResult.data.y,
+              z: targetResult.data.z,
+            },
+          };
+          hasUpdates = true;
+        }
+        
+        if (pathDataResult?.data && pathDataResult.version !== this.lastSyncedVersions.pathData) {
+          this.lastSyncedVersions.pathData = pathDataResult.version;
+          updates.pathfinder = {
+            pathWaypoints: pathDataResult.data.waypoints || [],
+            wptDistance: pathDataResult.data.waypoints?.length || null,
+            pathfindingStatus: this.getPathStatusString(pathDataResult.data.status),
+            routeSearchMs: 0, // SAB doesn't store this, so default to 0
+          };
+          hasUpdates = true;
+        }
+        
+        // Dispatch batch update to Redux using setGlobalState
+        if (hasUpdates) {
+          for (const [sliceName, sliceUpdates] of Object.entries(updates)) {
+            // Special handling for pathfinder slice - use setPathfindingFeedback action
+            if (sliceName === 'pathfinder') {
+              setGlobalState('pathfinder/setPathfindingFeedback', sliceUpdates);
+            } else {
+              // For other slices, set individual keys
+              for (const [key, value] of Object.entries(sliceUpdates)) {
+                setGlobalState(`${sliceName}/${key}`, value);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        log('error', '[Worker Manager] Error in SAB → Redux sync:', error);
+      }
+    }, 100);
+    
+    log('info', '[Worker Manager] SAB → Redux sync started (100ms interval)');
+  }
+
+  /**
+   * Convert path status enum to string
+   */
+  getPathStatusString(status) {
+    const statusMap = {
+      0: 'IDLE',
+      1: 'PATH_FOUND',
+      2: 'WAYPOINT_REACHED',
+      3: 'NO_PATH_FOUND',
+      4: 'DIFFERENT_FLOOR',
+      5: 'ERROR',
+      6: 'NO_VALID_START_OR_END',
+      7: 'BLOCKED_BY_CREATURE',
+    };
+    return statusMap[status] || 'IDLE';
   }
 
   handleWorkerError(name, error) {
@@ -573,6 +829,8 @@ class WorkerManager {
         targetSAB: needsTargetSAB ? this.sharedData.targetSAB : null,
         sharedLuaGlobals: this.sharedLuaGlobals, // NEW: Pass the shared Lua globals object
         enableMemoryLogging: true,
+        // NEW: Pass unified SAB state
+        unifiedSAB: this.sabState ? this.sabState.getSharedArrayBuffer() : null,
       };
       if (needsSharedScreen) {
         workerData.display = store.getState().global.display;

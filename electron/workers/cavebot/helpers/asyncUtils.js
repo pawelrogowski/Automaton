@@ -1,10 +1,5 @@
 // /workers/cavebot/helpers/asyncUtils.js
 
-import {
-  PLAYER_X_INDEX,
-  PLAYER_Y_INDEX,
-  PLAYER_Z_INDEX,
-} from '../../sharedConstants.js';
 import { getDistance } from '../../../utils/distance.js';
 import { 
   delay as movementDelay, 
@@ -42,8 +37,21 @@ export const awaitZLevelChange = (workerState, config, initialZ, timeoutMs) => {
   return new Promise((resolve) => {
     const startTime = Date.now();
     const intervalId = setInterval(() => {
-      const currentZ = Atomics.load(workerState.playerPosArray, PLAYER_Z_INDEX);
-      if (currentZ !== initialZ) {
+      let currentZ = null;
+      if (workerState.sabInterface) {
+        try {
+          const posResult = workerState.sabInterface.get('playerPos');
+          if (posResult && posResult.data) {
+            currentZ = posResult.data.z;
+          }
+        } catch (err) {
+          currentZ = workerState.playerMinimapPosition?.z;
+        }
+      } else {
+        currentZ = workerState.playerMinimapPosition?.z;
+      }
+      
+      if (currentZ !== null && currentZ !== initialZ) {
         clearInterval(intervalId);
         resolve(true);
       }
@@ -64,20 +72,29 @@ export const awaitStandConfirmation = (
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
     const intervalId = setInterval(() => {
-      const finalPos = {
-        x: Atomics.load(workerState.playerPosArray, PLAYER_X_INDEX),
-        y: Atomics.load(workerState.playerPosArray, PLAYER_Y_INDEX),
-        z: Atomics.load(workerState.playerPosArray, PLAYER_Z_INDEX),
-      };
+      let finalPos = null;
+      if (workerState.sabInterface) {
+        try {
+          const posResult = workerState.sabInterface.get('playerPos');
+          if (posResult && posResult.data) {
+            finalPos = posResult.data;
+          }
+        } catch (err) {
+          finalPos = workerState.playerMinimapPosition;
+        }
+      } else {
+        finalPos = workerState.playerMinimapPosition;
+      }
 
-      const zChanged = finalPos.z !== initialPos.z;
-      const teleported =
-        getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold;
+      if (finalPos) {
+        const zChanged = finalPos.z !== initialPos.z;
+        const teleported =
+          getDistance(initialPos, finalPos) >= config.teleportDistanceThreshold;
 
-      if (zChanged || teleported) {
-        clearInterval(intervalId);
-        // A small delay to ensure state propagates
-        setTimeout(() => resolve({ success: true, finalPos }), 10);
+        if (zChanged || teleported) {
+          clearInterval(intervalId);
+          resolve({ success: true, finalPos });
+        }
       }
 
       if (Date.now() - startTime > timeoutMs) {

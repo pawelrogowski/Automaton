@@ -2,6 +2,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { SABStateManager } from './sabStateManager.js';
+import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 import { performance } from 'perf_hooks';
 import {
   selectBestTarget,
@@ -12,10 +13,12 @@ import {
 } from './targeting/targetingLogic.js';
 import {
   PATH_STATUS_IDLE,
-  WORLD_STATE_UPDATE_COUNTER_INDEX,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: true });
+
+// Track last target for change detection
+let lastLoggedTarget = null;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --- FSM States ---
@@ -41,7 +44,6 @@ const workerState = {
   playerMinimapPosition: null,
   path: [],
   pathfindingStatus: PATH_STATUS_IDLE,
-  lastWorldStateCounter: -1,
   pathWptId: 0,
   pathInstanceId: 0,
 };
@@ -52,6 +54,7 @@ const targetingState = {
   pathfindingTarget: null, // The creature object we WANT to target
   currentTarget: null, // The creature object we ARE currently targeting
   unreachableSince: 0, // Timestamp for when currentTarget became unreachable
+  lastDispatchedDynamicTargetId: null, // Track last dispatched target to prevent redundant updates
   lastAcquireAttempt: {
     timestamp: 0,
     battleListIndex: -1,
@@ -59,12 +62,53 @@ const targetingState = {
   },
 };
 
-const { creaturesSAB, playerPosSAB, pathDataSAB } = workerData;
 const sabStateManager = new SABStateManager(workerData);
-const creaturesArray = creaturesSAB ? new Int32Array(creaturesSAB) : null;
-const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
-const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
+// Initialize unified SAB interface
+let sabInterface = null;
+if (workerData.unifiedSAB) {
+  sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.TARGETING);
+  logger('info', '[TargetingWorker] Unified SAB interface initialized');
+}
+
+// --- Unified SAB Wrappers ---
+// These wrap sabStateManager to use unified SAB when available
+const getCreaturesFromSAB = () => {
+  if (sabInterface) {
+    try {
+      const result = sabInterface.get('creatures');
+      if (result && result.data && Array.isArray(result.data)) {
+        // Add gameCoords property from x,y,z fields for compatibility
+        return result.data.map(creature => ({
+          ...creature,
+          gameCoords: { x: creature.x, y: creature.y, z: creature.z }
+        }));
+      }
+    } catch (err) {
+      logger('debug', `[TargetingWorker] Failed to read creatures from unified SAB: ${err.message}`);
+    }
+  }
+  return sabStateManager.getCreatures() || [];
+};
+
+const getCurrentTargetFromSAB = () => {
+  if (sabInterface) {
+    try {
+      const result = sabInterface.get('target');
+      if (result && result.data) {
+        const target = result.data;
+        // instanceId: 0 means no target
+        if (target.instanceId !== 0) {
+          return target;
+        }
+      }
+      return null;
+    } catch (err) {
+      logger('debug', `[TargetingWorker] Failed to read target from unified SAB: ${err.message}`);
+    }
+  }
+  return sabStateManager.getCurrentTarget();
+};
 
 // --- State Transition Helper ---
 function transitionTo(newState, reason = '') {
@@ -79,11 +123,8 @@ function transitionTo(newState, reason = '') {
   if (newState === FSM_STATE.SELECTING) {
     targetingState.pathfindingTarget = null;
     targetingState.currentTarget = null;
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/setDynamicTarget',
-      payload: null,
-    });
+    // DON'T clear dynamicTarget here to prevent flickering
+    // It will be cleared in handleSelectingState if no targets found
   }
   if (newState === FSM_STATE.ACQUIRING) {
     targetingState.lastAcquireAttempt.timestamp = 0;
@@ -98,24 +139,52 @@ function handleIdleState() {
     !sabStateManager.isLootingRequired()
   ) {
     transitionTo(FSM_STATE.SELECTING, 'Targeting enabled');
+  } else {
+    // Clear dynamicTarget only when targeting is disabled and we're truly idle
+    if (targetingState.lastDispatchedDynamicTargetId !== null) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
+      targetingState.lastDispatchedDynamicTargetId = null;
+    }
+    targetingState.pathfindingTarget = null;
   }
 }
 
 function handleSelectingState() {
+  // Don't pass current target in SELECTING state - we want fresh evaluation
   const bestTarget = selectBestTarget(
     sabStateManager,
-    workerState.globalState.targeting.targetingList
+    workerState.globalState.targeting.targetingList,
+    null
   );
 
   if (bestTarget) {
     targetingState.pathfindingTarget = bestTarget;
-    updateDynamicTarget(
-      parentPort,
-      bestTarget,
-      workerState.globalState.targeting.targetingList
-    );
+    // Only update if target actually changed to prevent redundant updates
+    if (targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId) {
+      logger('info', `[TARGET CHANGE] SELECTING → ${bestTarget.name} (ID: ${bestTarget.instanceId}, distance: ${bestTarget.distance?.toFixed(1)}, adjacent: ${bestTarget.isAdjacent})`);
+      updateDynamicTarget(
+        parentPort,
+        bestTarget,
+        workerState.globalState.targeting.targetingList
+      );
+      targetingState.lastDispatchedDynamicTargetId = bestTarget.instanceId;
+    }
     transitionTo(FSM_STATE.ACQUIRING, `Found target: ${bestTarget.name}`);
   } else {
+    // No valid targets found - NOW clear dynamicTarget
+    if (targetingState.lastDispatchedDynamicTargetId !== null) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
+      targetingState.lastDispatchedDynamicTargetId = null;
+    }
+    targetingState.pathfindingTarget = null;
     transitionTo(FSM_STATE.IDLE, 'No valid targets');
   }
 }
@@ -123,10 +192,10 @@ function handleSelectingState() {
 function handleAcquiringState() {
   const now = performance.now();
   const { pathfindingTarget } = targetingState;
-  const creatures = sabStateManager.getCreatures();
+  const creatures = getCreaturesFromSAB();
 
   // 1. Always check for success first.
-  const currentInGameTarget = sabStateManager.getCurrentTarget();
+  const currentInGameTarget = getCurrentTargetFromSAB();
   const isTargetLive = currentInGameTarget
     ? creatures.some((c) => c.instanceId === currentInGameTarget.instanceId)
     : false;
@@ -144,7 +213,10 @@ function handleAcquiringState() {
     const targetingList = workerState.globalState.targeting.targetingList;
     const rule = findRuleForCreatureName(currentInGameTarget.name, targetingList);
     if (rule && rule.stance !== 'Stand') {
-      updateDynamicTarget(parentPort, currentInGameTarget, targetingList);
+      if (targetingState.lastDispatchedDynamicTargetId !== currentInGameTarget.instanceId) {
+        updateDynamicTarget(parentPort, currentInGameTarget, targetingList);
+        targetingState.lastDispatchedDynamicTargetId = currentInGameTarget.instanceId;
+      }
     }
     
     transitionTo(
@@ -203,17 +275,22 @@ function handleAcquiringState() {
 
 async function handleEngagingState() {
   const now = performance.now();
-  const creatures = sabStateManager.getCreatures();
+  const creatures = getCreaturesFromSAB();
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;
 
-  const actualInGameTarget = sabStateManager.getCurrentTarget();
+  const actualInGameTarget = getCurrentTargetFromSAB();
   if (!targetingState.currentTarget || !actualInGameTarget || actualInGameTarget.instanceId !== targetingState.currentTarget.instanceId) {
+    const reason = !targetingState.currentTarget ? 'no currentTarget' : 
+                   !actualInGameTarget ? 'no in-game target' :
+                   'instance ID mismatch';
+    logger('info', `[TARGET LOST] ${targetingState.currentTarget?.name || 'unknown'} (ID: ${targetingState.currentTarget?.instanceId || 'N/A'}) - Reason: ${reason} (game ID: ${actualInGameTarget?.instanceId || 'N/A'})`);
     transitionTo(FSM_STATE.SELECTING, 'Target lost or changed');
     return;
   }
 
-  const bestOverallTarget = selectBestTarget(sabStateManager, targetingList);
+  // Pass current target for hysteresis - prevents switching for minor score differences
+  const bestOverallTarget = selectBestTarget(sabStateManager, targetingList, targetingState.currentTarget);
   if (
     bestOverallTarget &&
     bestOverallTarget.instanceId !== targetingState.currentTarget.instanceId
@@ -228,10 +305,12 @@ async function handleEngagingState() {
       targetingList
     );
 
-    if (bestRule && currentRule && bestRule.priority > currentRule.priority) {
+    // Require at least 2 priority levels higher to preempt current target
+    const PRIORITY_THRESHOLD = 2;
+    if (bestRule && currentRule && bestRule.priority >= currentRule.priority + PRIORITY_THRESHOLD) {
       logger(
         'info',
-        `[FSM] Preempting ${targetingState.currentTarget.name} (Prio: ${currentRule.priority}) for ${bestOverallTarget.name} (Prio: ${bestRule.priority})`
+        `[TARGET CHANGE] PREEMPT → ${bestOverallTarget.name} (ID: ${bestOverallTarget.instanceId}, Prio: ${bestRule.priority}) replaces ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}, Prio: ${currentRule.priority})`
       );
       targetingState.pathfindingTarget = bestOverallTarget;
       updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
@@ -245,6 +324,7 @@ async function handleEngagingState() {
   );
 
   if (!updatedTarget) {
+    logger('info', `[TARGET LOST] ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}) - Reason: not found in creatures list`);
     transitionTo(FSM_STATE.SELECTING, 'Target died or disappeared');
     return;
   }
@@ -263,6 +343,7 @@ async function handleEngagingState() {
   if (positionChanged) {
     const rule = findRuleForCreatureName(updatedTarget.name, targetingList);
     if (rule && rule.stance !== 'Stand') {
+      // Always update on position change to trigger pathfinder recalculation
       updateDynamicTarget(parentPort, updatedTarget, targetingList);
     }
   }
@@ -291,10 +372,7 @@ async function handleEngagingState() {
       ...workerState, 
       parentPort, 
       sabStateManager,
-      playerPosArray,
-      pathDataArray,
-      lastPlayerPosCounter: workerState.lastWorldStateCounter,
-      lastPathDataCounter: workerState.lastWorldStateCounter,
+      sabInterface,
     },
     movementContext,
     targetingState.currentTarget
@@ -304,24 +382,52 @@ async function handleEngagingState() {
 // --- Main Loop ---
 
 function updateSABData() {
-  if (!creaturesArray) return;
-  const newWorldStateCounter = Atomics.load(
-    creaturesArray,
-    WORLD_STATE_UPDATE_COUNTER_INDEX
-  );
-  if (newWorldStateCounter > workerState.lastWorldStateCounter) {
-    // Use getCurrentPlayerPosition() to always get the current position
-    const playerPos = sabStateManager.getCurrentPlayerPosition();
-    if (playerPos) {
-      workerState.playerMinimapPosition = playerPos;
+  if (!sabInterface) {
+    logger('error', '[TargetingWorker] Unified SAB interface not available!');
+    return;
+  }
+  
+  try {
+    // Read player position from unified SAB
+    const posResult = sabInterface.get('playerPos');
+    if (posResult && posResult.data) {
+      const pos = posResult.data;
+      if (pos.x !== 0 || pos.y !== 0 || pos.z !== 0) {
+        workerState.playerMinimapPosition = pos;
+      }
     }
     
-    const pathData = sabStateManager.getPath();
-    workerState.path = pathData.path;
-    workerState.pathfindingStatus = pathData.status;
-    workerState.pathWptId = pathData.wptId;
-    workerState.pathInstanceId = pathData.instanceId;
-    workerState.lastWorldStateCounter = newWorldStateCounter;
+    // Read path data from targeting-specific SAB array
+    const pathResult = sabInterface.get('targetingPathData');
+    if (pathResult && pathResult.data) {
+      const pathData = pathResult.data;
+      
+      // Accept valid targeting paths: instanceId > 0 means targeting mode
+      const PATH_STATUS_PATH_FOUND = 1;
+      const isTargetingPath = (pathData.instanceId || 0) > 0;
+      const newInstanceId = pathData.instanceId || 0;
+      const isNewTarget = newInstanceId !== workerState.pathInstanceId && newInstanceId > 0;
+      const isValidPath = 
+        pathData.status === PATH_STATUS_PATH_FOUND && 
+        pathData.waypoints && 
+        pathData.waypoints.length >= 2;
+      
+      // Clear path when switching to a new target (even if new path is invalid yet)
+      if (isNewTarget) {
+        workerState.path = [];
+        workerState.pathInstanceId = newInstanceId;
+      }
+      
+      // Only accept valid paths
+      if (isTargetingPath && isValidPath) {
+        workerState.path = pathData.waypoints;
+        workerState.pathfindingStatus = pathData.status;
+        workerState.pathWptId = pathData.wptId || 0;
+        workerState.pathInstanceId = newInstanceId;
+      }
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] SAB read failed: ${err.message}`);
   }
 }
 
@@ -340,6 +446,32 @@ async function performTargeting() {
   const { controlState } = globalState.cavebot;
 
   if (controlState === 'HANDOVER_TO_TARGETING') {
+    // Clear cavebot path in SAB to prevent stale path usage
+    if (sabInterface) {
+      try {
+        sabInterface.set('cavebotPathData', {
+          waypoints: [],
+          length: 0,
+          status: 0,
+          chebyshevDistance: 0,
+          startX: 0,
+          startY: 0,
+          startZ: 0,
+          targetX: 0,
+          targetY: 0,
+          targetZ: 0,
+          blockingCreatureX: 0,
+          blockingCreatureY: 0,
+          blockingCreatureZ: 0,
+          wptId: 0,
+          instanceId: 0,
+        });
+        logger('debug', '[TargetingWorker] Cleared cavebot path on control handover');
+      } catch (err) {
+        logger('error', `[TargetingWorker] Failed to clear cavebot path: ${err.message}`);
+      }
+    }
+    
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/confirmTargetingControl',

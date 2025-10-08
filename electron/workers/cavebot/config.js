@@ -14,15 +14,15 @@ export const config = {
   animationArrivalTimeoutMs: 500, // Used for shovel/rope to let animation settle
   actionStateChangeTimeoutMs: 250,
   moveConfirmTimeoutMs: 400,
-  moveConfirmTimeoutDiagonalMs: 550,
+  moveConfirmTimeoutDiagonalMs: 900, // Diagonal moves can take up to 800ms, use 900ms for safety
   defaultAwaitStateChangeTimeoutMs: 250,
   controlHandoverGraceMs: 5,
 
   // --- Map Click Controls ---
   mapClickStartMoveTimeoutMs: 500, // Wait up to 500ms to confirm movement after a minimap click
-  mapClickStallIntervalMs: 400, // Consider auto-walk stalled if no tile change for 400ms
-  mapClickMinPathLength: 15, // Only use minimap click when path length is at least 15
-  mapClickKeyboardOnlyThreshold: 4, // Always use keyboard when remaining path length <= 4
+  mapClickStallIntervalMs: 1000, // Consider auto-walk stalled if no tile change for 1s (once moving, stay committed)
+  mapClickMinPathLength: 15, // Only INITIATE minimap click when initial path length is at least 15
+  mapClickKeyboardOnlyThreshold: 4, // Always use keyboard when remaining path length <= 4 (only applies to idle state)
   mapClickFallbackMinMs: 10000, // Keyboard fallback window min
   mapClickFallbackMaxMs: 15000, // Keyboard fallback window max
 

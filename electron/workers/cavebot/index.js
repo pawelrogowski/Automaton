@@ -4,6 +4,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { CavebotLuaExecutor } from '../cavebotLuaExecutor.js';
 import { createLogger } from '../../utils/logger.js';
+import { createWorkerInterface, WORKER_IDS } from '../sabState/index.js';
 import { config } from './config.js';
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
@@ -34,15 +35,11 @@ const workerState = {
   fsmState: 'IDLE',
   lastFsmState: null,
   lastControlState: 'CAVEBOT',
-  lastPlayerPosCounter: -1,
-  lastPathDataCounter: -1,
   playerMinimapPosition: null,
   path: [],
   pathChebyshevDistance: null,
   pathfindingStatus: 0,
 
-  playerPosArray: null,
-  pathDataArray: null,
   luaExecutor: null,
   lastProcessedWptId: null,
   shouldRequestNewPath: false,
@@ -62,19 +59,16 @@ const workerState = {
     lastObservedPos: null,
     fallbackUntil: 0,
   },
+  // Movement lock to prevent double-stepping
+  isWaitingForMovement: false,
+  movementWaitUntil: 0,
   // --- NEW LOGIC END ---
-  logger: createLogger({ info: false, error: true, debug: false }),
+  logger: createLogger({ info: true, error: true, debug: false }),
   parentPort: parentPort,
 };
 
 // --- Initialization ---
 const fsm = createFsm(workerState, config);
-if (workerData.playerPosSAB) {
-  workerState.playerPosArray = new Int32Array(workerData.playerPosSAB);
-}
-if (workerData.pathDataSAB) {
-  workerState.pathDataArray = new Int32Array(workerData.pathDataSAB);
-}
 
 // Initialize SAB state manager
 workerState.sabStateManager = new SABStateManager({
@@ -87,6 +81,12 @@ workerState.sabStateManager = new SABStateManager({
   pathDataSAB: workerData.pathDataSAB,
 });
 
+// Initialize unified SAB interface
+if (workerData.unifiedSAB) {
+  workerState.sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.CAVEBOT);
+  workerState.logger('info', '[Cavebot] Unified SAB interface initialized');
+}
+
 // --- Main Loop & Orchestration ---
 
 function handleControlHandover() {
@@ -97,8 +97,33 @@ function handleControlHandover() {
   // Always clear path when gaining control
   workerState.path = [];
   workerState.pathfindingStatus = 0;
-  workerState.lastPathDataCounter = -1;
   workerState.shouldRequestNewPath = true;
+  
+  // Clear targeting path in SAB to prevent stale path usage
+  if (workerState.sabInterface) {
+    try {
+      workerState.sabInterface.set('targetingPathData', {
+        waypoints: [],
+        length: 0,
+        status: 0,
+        chebyshevDistance: 0,
+        startX: 0,
+        startY: 0,
+        startZ: 0,
+        targetX: 0,
+        targetY: 0,
+        targetZ: 0,
+        blockingCreatureX: 0,
+        blockingCreatureY: 0,
+        blockingCreatureZ: 0,
+        wptId: 0,
+        instanceId: 0,
+      });
+      workerState.logger('debug', '[Cavebot] Cleared targeting path on control handover');
+    } catch (err) {
+      workerState.logger('error', `[Cavebot] Failed to clear targeting path: ${err.message}`);
+    }
+  }
 
 
   const currentWaypoint = findCurrentWaypoint(workerState.globalState);
@@ -300,6 +325,24 @@ async function performOperation() {
   }
   workerState.lastProcessedWptId = targetWaypoint.id;
 
+  // Don't execute FSM if we don't have valid player position yet
+  if (!workerState.playerMinimapPosition) {
+    if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
+    return;
+  }
+
+  // Don't execute FSM if we're waiting for movement confirmation
+  if (workerState.isWaitingForMovement) {
+    const remainingWait = workerState.movementWaitUntil - now;
+    if (now < workerState.movementWaitUntil) {
+      // Still waiting - skip FSM execution
+      return;
+    } else {
+      // Timeout expired
+      workerState.logger('warn', `[Cavebot] Movement timeout expired after ${-remainingWait}ms`);
+      workerState.isWaitingForMovement = false;
+    }
+  }
 
   const context = {
     playerPos: workerState.playerMinimapPosition,

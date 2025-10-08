@@ -53,8 +53,6 @@ async function performWalk(
   timeout,
   isDiagonal,
 ) {
-  const posCounterBeforeMove = workerState.lastPlayerPosCounter;
-  const pathCounterBeforeMove = workerState.lastPathDataCounter;
   const dirKey = getDirectionKey(workerState.playerMinimapPosition, targetPos);
   if (!dirKey) {
     workerState.logger(
@@ -64,18 +62,23 @@ async function performWalk(
     return;
   }
 
-  workerState.logger(
-    'debug',
-    `[performWalk] Attempting to walk. Direction: ${dirKey}, Diagonal: ${isDiagonal}.`,
-  );
+  // Set movement lock BEFORE sending keypress
+  workerState.isWaitingForMovement = true;
+  workerState.movementWaitUntil = Date.now() + timeout;
+  
   keyPress(dirKey, { type: 'movement' });
-  await awaitWalkConfirmation(
-    workerState,
-    config,
-    posCounterBeforeMove,
-    pathCounterBeforeMove,
-    timeout,
-  );
+  
+  try {
+    await awaitWalkConfirmation(
+      workerState,
+      config,
+      timeout,
+    );
+    workerState.isWaitingForMovement = false;
+  } catch (error) {
+    workerState.isWaitingForMovement = false;
+    throw error;
+  }
 }
 
 export async function handleWalkAction(workerState, config) {
@@ -128,23 +131,37 @@ export async function handleWalkAction(workerState, config) {
       workerState.lastFailedStep = { tile: failedTile, count: 1 };
     } else {
       // This is the second consecutive failure for the same tile.
-      workerState.logger(
-        'error',
-        `[FSM] Walk action failed twice for tile {x: ${failedTile.x}, y: ${failedTile.y}, z: ${failedTile.z}}. Temporarily blocking.`,
-      );
+      // BUT: Check if we actually succeeded in moving there (late movement confirmation)
+      const currentPos = workerState.playerMinimapPosition;
+      const playerIsOnFailedTile = areTilesEqual(currentPos, failedTile);
+      
+      if (playerIsOnFailedTile) {
+        // Success! The movement actually worked, just took longer than timeout
+        workerState.logger(
+          'info',
+          `[FSM] Walk to {x: ${failedTile.x}, y: ${failedTile.y}, z: ${failedTile.z}} succeeded despite timeout. Clearing failure.`,
+        );
+        workerState.lastFailedStep = null;
+      } else {
+        // Genuine failure - block the tile
+        workerState.logger(
+          'error',
+          `[FSM] Walk action failed twice for tile {x: ${failedTile.x}, y: ${failedTile.y}, z: ${failedTile.z}}. Temporarily blocking.`,
+        );
 
-      // Dispatch the action to add the temporary block.
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'cavebot/addTemporaryBlockedTile',
-        payload: {
-          tile: { x: failedTile.x, y: failedTile.y, z: failedTile.z },
-          duration: 3000, // The 3000ms you suggested
-        },
-      });
+        // Dispatch the action to add the temporary block.
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'cavebot/addTemporaryBlockedTile',
+          payload: {
+            tile: { x: failedTile.x, y: failedTile.y, z: failedTile.z },
+            duration: 3000,
+          },
+        });
 
-      // Reset the failure counter since we've taken corrective action.
-      workerState.lastFailedStep = null;
+        // Reset the failure counter since we've taken corrective action.
+        workerState.lastFailedStep = null;
+      }
     }
     // --- MODIFIED LOGIC END ---
   }
@@ -253,8 +270,16 @@ async function handleToolAction(
   const display = globalState.global.display || ':0';
 
   if (useType === 'ladder') {
+    logger(
+      'debug',
+      `[handleToolAction:ladder] Map click at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetCoords.x}, y:${targetCoords.y}, z:${targetCoords.z}}`,
+    );
     leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
   } else if (useType === 'rope') {
+    logger(
+      'debug',
+      `[handleToolAction:rope] Hotkey '${hotkey}' + map click at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetCoords.x}, y:${targetCoords.y}, z:${targetCoords.z}}`,
+    );
     keyPress(hotkey, { type: 'movement' });
     await delay(50); // Small delay between hotkey and click
     leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
@@ -406,7 +431,10 @@ export async function handleShovelAction(workerState, config, targetCoords) {
 
   await delay(config.animationArrivalTimeoutMs);
   
-  logger('debug', '[handleShovelAction] Using shovel on coordinates.');
+  logger(
+    'debug',
+    `[handleShovelAction] Using shovel hotkey '${hotkey}' at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetCoords.x}, y:${targetCoords.y}, z:${targetCoords.z}}`,
+  );
   useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
     type: 'movement',
   });
@@ -497,13 +525,13 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
     }
 
     // Walk failed, use tool
-    logger(
-      'debug',
-      `[handleMacheteAction] Attempt ${i + 1}: Using machete.`,
-    );
-    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
-      type: 'movement',
-    });
+  logger(
+    'debug',
+    `[handleMacheteAction] Attempt ${i + 1}: Using machete hotkey '${hotkey}' at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetWaypoint.x}, y:${targetWaypoint.y}, z:${targetWaypoint.z}}`,
+  );
+  useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
+    type: 'movement',
+  });
     await delay(config.actionFailureRetryDelayMs);
 
     try {
@@ -592,18 +620,16 @@ export async function handleDoorAction(workerState, config, targetWaypoint) {
     return false;
   }
 
-  const posCounterBeforeMove = workerState.lastPlayerPosCounter;
-  const pathCounterBeforeMove = workerState.lastPathDataCounter;
-
-  logger('debug', '[handleDoorAction] Clicking on door.');
+  logger(
+    'debug',
+    `[handleDoorAction] Map click at (${clickCoords.x}, ${clickCoords.y}) targeting door at {x:${targetWaypoint.x}, y:${targetWaypoint.y}, z:${targetWaypoint.z}}`,
+  );
   leftClick(clickCoords.x, clickCoords.y, { type: 'movement' });
 
   try {
     await awaitWalkConfirmation(
       workerState,
       config,
-      posCounterBeforeMove,
-      pathCounterBeforeMove,
       config.actionStateChangeTimeoutMs,
     );
     logger('debug', '[handleDoorAction] Move confirmed after clicking door.');

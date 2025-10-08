@@ -8,43 +8,54 @@ import {
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Waits for movement confirmation by polling SharedArrayBuffer counters.
+ * Waits for movement confirmation by detecting actual position changes in unified SAB.
  * Used by both cavebot and targeting workers to ensure reliable movement.
  * 
- * @param {Object} workerState - Worker state containing playerPosArray and pathDataArray
+ * @param {Object} workerState - Worker state with sabInterface or playerMinimapPosition
  * @param {Object} config - Configuration object with stateChangePollIntervalMs
- * @param {number} posCounterBeforeMove - Player position counter before movement
- * @param {number} pathCounterBeforeMove - Path data counter before movement
  * @param {number} timeoutMs - Maximum time to wait for confirmation
  * @returns {Promise<boolean>} Resolves true if movement confirmed, rejects on timeout
  */
 export const awaitWalkConfirmation = (
   workerState,
   config,
-  posCounterBeforeMove,
-  pathCounterBeforeMove,
   timeoutMs,
 ) => {
   return new Promise((resolve, reject) => {
+    // Store initial position to detect changes
+    const initialPos = { ...workerState.playerMinimapPosition };
+    
     const timeoutId = setTimeout(() => {
       clearInterval(intervalId);
       reject(new Error(`awaitWalkConfirmation timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     const intervalId = setInterval(() => {
-      const posChanged =
-        workerState.playerPosArray &&
-        Atomics.load(
-          workerState.playerPosArray,
-          PLAYER_POS_UPDATE_COUNTER_INDEX,
-        ) > posCounterBeforeMove;
+      // Read position directly from SAB on each poll
+      let currentPos = null;
+      if (workerState.sabInterface) {
+        try {
+          const posResult = workerState.sabInterface.get('playerPos');
+          if (posResult && posResult.data) {
+            currentPos = posResult.data;
+          }
+        } catch (err) {
+          // Fallback to workerState cached value
+          currentPos = workerState.playerMinimapPosition;
+        }
+      } else {
+        currentPos = workerState.playerMinimapPosition;
+      }
+      
+      // ONLY check if position actually changed!
+      const posChanged = currentPos && initialPos && (
+        currentPos.x !== initialPos.x ||
+        currentPos.y !== initialPos.y ||
+        currentPos.z !== initialPos.z
+      );
 
-      const pathChanged =
-        workerState.pathDataArray &&
-        Atomics.load(workerState.pathDataArray, PATH_UPDATE_COUNTER_INDEX) >
-          pathCounterBeforeMove;
-
-      if (posChanged || pathChanged) {
+      // ONLY resolve when position actually changes - no legacy counter checks!
+      if (posChanged) {
         clearTimeout(timeoutId);
         clearInterval(intervalId);
         resolve(true);

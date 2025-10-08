@@ -19,6 +19,13 @@ const GAMEWORLD_CONFIG = {
 
 // ====================================================================
 
+// Movement tracking for logging
+const movementTracking = {
+  lastMoveTimestamp: 0,
+  moveCount: 0,
+  lastLogTime: 0,
+};
+
 /**
  * Helper function to find the appropriate targeting rule for a creature.
  * Supports "Others" wildcard matching for creatures without explicit rules.
@@ -67,9 +74,12 @@ export function findRuleForCreatureName(creatureName, targetingList) {
  * Special case: If a rule with name "Others" or "others" exists, it will match any creature
  * that doesn't have an explicit rule defined. This acts as a catch-all fallback.
  * 
+ * @param {object} sabStateManager - The SAB state manager for reading creature data
+ * @param {Array} targetingList - List of targeting rules
+ * @param {object|null} currentTarget - Currently targeted creature (for hysteresis)
  * @returns {object|null} The best creature object or null if no valid target is found.
  */
-export function selectBestTarget(sabStateManager, targetingList) {
+export function selectBestTarget(sabStateManager, targetingList, currentTarget = null) {
   const creatures = sabStateManager.getCreatures();
   if (!targetingList?.length || !creatures?.length) {
     return null;
@@ -135,7 +145,27 @@ export function selectBestTarget(sabStateManager, targetingList) {
   }
 
   validCandidates.sort((a, b) => a.score - b.score);
-  return validCandidates[0].creature;
+  const bestCandidate = validCandidates[0];
+  
+  // Hysteresis: If we have a current target, only switch if the new target is significantly better
+  if (currentTarget && currentTarget.instanceId) {
+    const currentCandidate = validCandidates.find(
+      (c) => c.creature.instanceId === currentTarget.instanceId
+    );
+    
+    if (currentCandidate) {
+      const SCORE_THRESHOLD = 10; // Must be at least 10 points better to switch
+      const scoreDifference = currentCandidate.score - bestCandidate.score;
+      
+      // Only switch if the best candidate is significantly better (lower score)
+      if (scoreDifference < SCORE_THRESHOLD) {
+        // Current target is still good enough, keep it
+        return currentTarget;
+      }
+    }
+  }
+  
+  return bestCandidate.creature;
 }
 
 /**
@@ -361,10 +391,7 @@ export async function manageMovement(
     playerMinimapPosition,
     parentPort,
     sabStateManager,
-    playerPosArray,
-    pathDataArray,
-    lastPlayerPosCounter,
-    lastPathDataCounter,
+    sabInterface,
   } = workerContext;
   const { targetingList } = targetingContext;
 
@@ -395,11 +422,26 @@ export async function manageMovement(
   
   if (
     !playerMinimapPosition ||
-    !playerPosArray ||
-    !pathDataArray ||
-    path.length < 2 ||
-    workerContext.pathInstanceId !== currentTarget.instanceId
+    !sabInterface ||
+    !path ||
+    path.length < 2
   ) {
+    return;
+  }
+
+  // CRITICAL: Validate that path is for current position (prevent stale path usage)
+  const pathStart = path[0];
+  const isPathStale = 
+    pathStart.x !== playerMinimapPosition.x ||
+    pathStart.y !== playerMinimapPosition.y ||
+    pathStart.z !== playerMinimapPosition.z;
+  
+  if (isPathStale) {
+    console.log(
+      `[Targeting] Skipping movement - path is stale ` +
+      `(path starts at {x:${pathStart.x}, y:${pathStart.y}, z:${pathStart.z}}, ` +
+      `player at {x:${playerMinimapPosition.x}, y:${playerMinimapPosition.y}, z:${playerMinimapPosition.z}})`
+    );
     return;
   }
 
@@ -410,7 +452,28 @@ export async function manageMovement(
     return;
   }
 
-  const timeout = isDiagonalMovement(dirKey) ? 750 : 400;
+  const timeout = isDiagonalMovement(dirKey) ? 900 : 400;
+  const now = Date.now();
+  const timeSinceLastMove = movementTracking.lastMoveTimestamp > 0 
+    ? now - movementTracking.lastMoveTimestamp 
+    : 0;
+  
+  movementTracking.lastMoveTimestamp = now;
+  movementTracking.moveCount++;
+  
+  // Log movement stats every 5 seconds
+  if (now - movementTracking.lastLogTime >= 5000) {
+    console.log(
+      `[Targeting] Move stats: ${movementTracking.moveCount} moves in last 5s`,
+    );
+    movementTracking.moveCount = 0;
+    movementTracking.lastLogTime = now;
+  }
+  
+  console.log(
+    `[Targeting] Walking ${dirKey} to {x:${nextStep.x}, y:${nextStep.y}, z:${nextStep.z}} ` +
+    `(diagonal: ${isDiagonalMovement(dirKey)}, timeout: ${timeout}ms, last move: ${timeSinceLastMove}ms ago)`,
+  );
 
   parentPort.postMessage({
     type: 'inputAction',
@@ -424,11 +487,10 @@ export async function manageMovement(
     await awaitWalkConfirmation(
       workerContext,
       { stateChangePollIntervalMs: 5 },
-      lastPlayerPosCounter,
-      lastPathDataCounter,
       timeout
     );
+    console.log('[Targeting] Movement confirmed successfully');
   } catch (error) {
-    // Movement timed out - acceptable, just continue
+    console.log(`[Targeting] Movement confirmation failed: ${error.message}`);
   }
 }

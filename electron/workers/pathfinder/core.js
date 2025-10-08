@@ -5,27 +5,15 @@ import Pathfinder from 'pathfinder-native';
 import { createLogger } from '../../utils/logger.js';
 import * as config from './config.js';
 import { loadAllMapData } from './dataLoader.js';
-import { runPathfindingLogic } from './logic.js';
-import {
-  PLAYER_X_INDEX,
-  PLAYER_Y_INDEX,
-  PLAYER_Z_INDEX,
-  PATHFINDING_STATUS_INDEX,
-  PATH_STATUS_IDLE,
-  PATH_LENGTH_INDEX,
-  PATH_UPDATE_COUNTER_INDEX,
-} from '../sharedConstants.js';
+import { runPathfindingLogic, setSABInterface } from './logic.js';
+import { createWorkerInterface, WORKER_IDS } from '../sabState/index.js';
 
-const logger = createLogger({ info: true, error: true, debug: false }); // Enable debug logs for this worker
+const logger = createLogger({ info: true, error: true, debug: false });
 
 let state = null;
 let pathfinderInstance = null;
 
 const logicContext = {};
-
-const { playerPosSAB, pathDataSAB } = workerData;
-const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
-const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 
 const REDUX_UPDATE_INTERVAL_MS = 25;
 let lastReduxUpdateTime = 0;
@@ -93,45 +81,22 @@ function handleMessage(message) {
       return;
     }
 
-    if (pathDataArray && !state.cavebot.enabled && !state.targeting.enabled) {
-      if (
-        Atomics.load(pathDataArray, PATHFINDING_STATUS_INDEX) ===
-        PATH_STATUS_IDLE
-      ) {
-        return;
-      }
-      Atomics.store(pathDataArray, PATHFINDING_STATUS_INDEX, PATH_STATUS_IDLE);
-      Atomics.store(pathDataArray, PATH_LENGTH_INDEX, 0);
-      Atomics.add(pathDataArray, PATH_UPDATE_COUNTER_INDEX, 1);
+    // Early exit if both cavebot and targeting are disabled
+    if (!state.cavebot.enabled && !state.targeting.enabled) {
       return;
     }
 
-    let playerMinimapPosition = null;
-    if (playerPosArray) {
-      playerMinimapPosition = {
-        x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-        y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-        z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-      };
-    } else {
-      playerMinimapPosition = state.gameState.playerMinimapPosition;
-    }
+    const playerMinimapPosition = state.gameState.playerMinimapPosition;
 
     if (!playerMinimapPosition || typeof playerMinimapPosition.x !== 'number') {
       return;
     }
 
-    const synchronizedState = {
-      ...state,
-      gameState: { ...state.gameState, playerMinimapPosition },
-    };
-
     runPathfindingLogic({
       logicContext: logicContext,
-      state: synchronizedState,
+      state: state,
       pathfinderInstance,
       logger,
-      pathDataArray,
       throttleReduxUpdate,
     });
   } catch (error) {
@@ -145,6 +110,14 @@ function handleMessage(message) {
 
 export async function start() {
   logger('info', 'Pathfinder worker starting up...');
+  
+  // Initialize unified SAB interface
+  if (workerData.unifiedSAB) {
+    const sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.PATHFINDER);
+    setSABInterface(sabInterface);
+    logger('info', 'Unified SAB interface initialized');
+  }
+  
   try {
     pathfinderInstance = new Pathfinder.Pathfinder();
     logger('info', 'Native Pathfinder addon loaded successfully.');

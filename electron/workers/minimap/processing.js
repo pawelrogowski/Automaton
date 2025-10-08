@@ -10,14 +10,14 @@ import {
   HEADER_SIZE,
   colorToIndexMap,
 } from './config.js';
-import {
-  PLAYER_X_INDEX,
-  PLAYER_Y_INDEX,
-  PLAYER_Z_INDEX,
-  PLAYER_POS_UPDATE_COUNTER_INDEX,
-} from '../sharedConstants.js';
+import { CONTROL_COMMANDS } from '../sabState/schema.js';
 
 let lastWrittenPosition = null;
+let sabInterface = null;
+
+export const setSABInterface = (sab) => {
+  sabInterface = sab;
+};
 
 // Pre-allocate the buffer for minimap processing to avoid re-allocation on every frame.
 const minimapIndexData = new Uint8Array(MINIMAP_WIDTH * MINIMAP_HEIGHT);
@@ -33,8 +33,6 @@ export async function processMinimapData(
   workerData,
 ) {
   const startTime = performance.now();
-  const { playerPosSAB } = workerData;
-  const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
 
   try {
     const floorIndicatorSearchBuffer = Buffer.alloc(
@@ -96,8 +94,17 @@ export async function processMinimapData(
         newPos.y !== lastWrittenPosition.y ||
         newPos.z !== lastWrittenPosition.z
       ) {
-        // --- FIX START: Directly update Redux from minimapMonitor ---
-        // Post a message to the main thread to update the global Redux store.
+        // Write position to unified SAB (primary source of truth)
+        // Workers read position directly from SAB when needed - no broadcast required
+        if (sabInterface) {
+          sabInterface.set('playerPos', {
+            x: newPos.x,
+            y: newPos.y,
+            z: newPos.z,
+          });
+        }
+
+        // Redux update for UI (workerManager handles SAB→Redux sync, but this provides immediate feedback)
         parentPort.postMessage({
           type: 'batch-update',
           payload: [
@@ -111,16 +118,6 @@ export async function processMinimapData(
             },
           ],
         });
-        // --- FIX END ---
-
-        // Update SharedArrayBuffer for other workers (like targetMonitor) to consume.
-        if (playerPosArray) {
-          Atomics.store(playerPosArray, PLAYER_X_INDEX, newPos.x);
-          Atomics.store(playerPosArray, PLAYER_Y_INDEX, newPos.y);
-          Atomics.store(playerPosArray, PLAYER_Z_INDEX, newPos.z);
-          Atomics.add(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX, 1);
-          Atomics.notify(playerPosArray, PLAYER_POS_UPDATE_COUNTER_INDEX);
-        }
 
         lastWrittenPosition = newPos;
       }

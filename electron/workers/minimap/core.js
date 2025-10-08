@@ -6,8 +6,9 @@ import {
 } from '../../utils/minimapMatcher.js';
 import * as config from './config.js';
 import { extractBGRA } from './helpers.js';
-import { processMinimapData } from './processing.js';
+import { processMinimapData, setSABInterface } from './processing.js';
 import { LANDMARK_SIZE, MINIMAP_FALLBACK_INTERVAL_MS } from './config.js';
+import { createWorkerInterface, WORKER_IDS } from '../sabState/index.js';
 
 let currentState = null;
 let isShuttingDown = false;
@@ -169,6 +170,14 @@ function handleMessage(message) {
 
 export function start() {
   console.log('[MinimapCore] Worker starting up.');
+  
+  // Initialize unified SAB interface
+  if (workerData.unifiedSAB) {
+    const sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.MINIMAP_MONITOR);
+    setSABInterface(sabInterface);
+    console.log('[MinimapCore] Unified SAB interface initialized');
+  }
+  
   parentPort.on('message', handleMessage);
 
   setInterval(() => {

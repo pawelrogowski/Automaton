@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { createLogger } from '../utils/logger.js';
+import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 import findTarget from 'find-target-native';
 import findHealthBars from 'find-healthbars-native';
 import findSequences from 'find-sequences-native';
@@ -17,17 +18,10 @@ import { SABStateManager } from './sabStateManager.js';
 import { findBestNameMatch } from '../utils/nameMatcher.js';
 import { processPlayerList, processNpcList } from './creatureMonitor/ocr.js';
 import {
-  PLAYER_X_INDEX,
-  PLAYER_Y_INDEX,
-  PLAYER_Z_INDEX,
-  PATHFINDING_STATUS_INDEX,
   PATH_STATUS_BLOCKED_BY_CREATURE,
-  PATH_BLOCKING_CREATURE_X_INDEX,
-  PATH_BLOCKING_CREATURE_Y_INDEX,
-  PATH_BLOCKING_CREATURE_Z_INDEX,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
 // Battle list can have truncation markers (...)
@@ -53,8 +47,6 @@ const {
   targetSAB,
 } = sharedData;
 
-const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
-const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
 const sharedBufferView = Buffer.from(imageSAB);
 
 const sabStateManager = new SABStateManager({
@@ -67,13 +59,20 @@ const sabStateManager = new SABStateManager({
   targetSAB,
 });
 
+// Initialize unified SAB interface
+let sabInterface = null;
+if (workerData.unifiedSAB) {
+  sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.CREATURE_MONITOR);
+  logger('info', '[CreatureMonitor] Unified SAB interface initialized');
+}
+
 const PLAYER_ANIMATION_FREEZE_MS = 25;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
 const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
 const TARGET_LOSS_GRACE_PERIOD_MS = 125;
-const CREATURE_FLICKER_GRACE_PERIOD_MS = 125;
-const STATIONARY_CREATURE_GRACE_PERIOD_MS = 300;
+const CREATURE_FLICKER_GRACE_PERIOD_MS = 250; // Increased from 125ms to prevent false ID changes
+const STATIONARY_CREATURE_GRACE_PERIOD_MS = 500; // Increased from 300ms for more stability
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
 const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
 const ADJACENT_TIME_THRESHOLD_MS = 0;
@@ -114,6 +113,30 @@ let battleListCreatureNames = new Map(); // name -> count
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
   return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
+}
+
+// Helper function to check if two names are similar (handles OCR errors)
+function isSimilarName(name1, name2) {
+  if (!name1 || !name2) return false;
+  if (name1 === name2) return true;
+  
+  // Normalize: trim and lowercase
+  const n1 = name1.trim().toLowerCase();
+  const n2 = name2.trim().toLowerCase();
+  if (n1 === n2) return true;
+  
+  // Check if one is substring of other (handles truncation)
+  if (n1.includes(n2) || n2.includes(n1)) return true;
+  
+  // Check if names start the same way (OCR might miss last chars)
+  const minLen = Math.min(n1.length, n2.length);
+  if (minLen >= 4) { // At least 4 characters
+    const prefix1 = n1.substring(0, minLen - 1);
+    const prefix2 = n2.substring(0, minLen - 1);
+    if (prefix1 === prefix2) return true;
+  }
+  
+  return false;
 }
 
 function rectsIntersect(rectA, rectB) {
@@ -446,7 +469,22 @@ async function performOperation() {
     if (!gameWorld || !tileSize) return;
 
     const now = Date.now();
-    const zLevelAtScanStart = Atomics.load(playerPosArray, PLAYER_Z_INDEX);
+    // Get player z-level from unified SAB
+    let zLevelAtScanStart = 0;
+    if (sabInterface) {
+      try {
+        const posResult = sabInterface.get('playerPos');
+        if (posResult && posResult.data) {
+          zLevelAtScanStart = posResult.data.z;
+        }
+      } catch (err) {
+        // Fall back to reading from legacy SAB if needed
+        if (workerData.sharedData?.playerPosSAB) {
+          const playerPosArray = new Int32Array(workerData.sharedData.playerPosSAB);
+          zLevelAtScanStart = playerPosArray[2]; // PLAYER_Z_INDEX = 2
+        }
+      }
+    }
 
     let battleListEntries = lastBattleListEntries;
     let playerNames = lastPlayerNames;
@@ -546,6 +584,21 @@ async function performOperation() {
         activeCreatures.clear();
         lastSentCreatures = [];
         lastSentTarget = null;
+        
+        // Write to unified SAB (null target becomes empty object with instanceId: 0)
+        if (sabInterface) {
+          try {
+            sabInterface.batch({
+              creatures: [],
+              target: { instanceId: 0, x: 0, y: 0, z: 0, distance: 0, isReachable: 0, name: '' },
+              battleList: [],
+            });
+          } catch (err) {
+            logger('error', `[CreatureMonitor] Failed to write empty state to unified SAB: ${err.message}`);
+          }
+        }
+        
+        // Legacy SAB support (keep for targeting worker compatibility)
         sabStateManager.writeWorldState({
           creatures: [],
           target: null,
@@ -562,11 +615,18 @@ async function performOperation() {
       return;
     }
 
-    const currentPlayerMinimapPosition = {
-      x: Atomics.load(playerPosArray, PLAYER_X_INDEX),
-      y: Atomics.load(playerPosArray, PLAYER_Y_INDEX),
-      z: Atomics.load(playerPosArray, PLAYER_Z_INDEX),
-    };
+    // Get current player position from unified SAB
+    let currentPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
+    if (sabInterface) {
+      try {
+        const posResult = sabInterface.get('playerPos');
+        if (posResult && posResult.data) {
+          currentPlayerMinimapPosition = posResult.data;
+        }
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to read player pos from SAB: ${err.message}`);
+      }
+    }
 
     const playerDelta = {
       x: currentPlayerMinimapPosition.x - previousPlayerMinimapPosition.x,
@@ -756,10 +816,11 @@ async function performOperation() {
         // Do OCR once for validation (will be reused below if match succeeds)
         preOcrName = await performOcrForHealthBar(bestMatch);
         
-        // If OCR succeeds and names DON'T match, this is probably a different creature
-        // Don't match them - let this health bar be treated as a new creature
-        if (preOcrName && preOcrName !== oldCreature.name) {
-          // Names mismatch! Skip this match - this health bar is a different creature
+        // If OCR succeeds and names DON'T match, check if they're similar
+        // Use fuzzy matching to handle OCR errors (missing chars, typos)
+        if (preOcrName && !isSimilarName(preOcrName, oldCreature.name)) {
+          // Names are completely different - this is probably a different creature
+          logger('info', `[CREATURE REJECT] ID ${id} "${oldCreature.name}" rejected match - OCR read "${preOcrName}" (not similar)`);
           bestMatch = null;
         }
       }
@@ -873,6 +934,7 @@ async function performOperation() {
             hp: hb.healthTag,
           };
           const newId = nextInstanceId++;
+          logger('info', `[CREATURE NEW] ${creatureName || 'unknown'} created with ID ${newId} at screen pos (${hb.x}, ${hb.y})`);
           let newCreature = { instanceId: newId };
           newCreature = updateCreatureState(
             newCreature,
@@ -906,6 +968,7 @@ async function performOperation() {
         const stillInBattleList = currentBattleListNames.get(creature.name) > 0;
         if (!stillInBattleList) {
           // This creature is NOT in battle list anymore - it's dead!
+          logger('info', `[CREATURE REMOVED] ID ${id} "${creature.name}" - not in battle list (died/despawned)`);
           newActiveCreatures.delete(id);
         }
       }
@@ -1244,6 +1307,63 @@ async function performOperation() {
         logger('debug', `[CreatureMonitor] Sanitized battle list. Removed ${battleListEntries.length - sanitizedBattleList.length} ghost entries.`);
     }
 
+    // Write to unified SAB (batch write for atomicity)
+    // Convert null target to empty object (instanceId: 0 means no target)
+    if (sabInterface) {
+      try {
+        const sabTarget = unifiedTarget ? {
+          instanceId: unifiedTarget.instanceId || 0,
+          x: unifiedTarget.gameCoordinates?.x || 0,
+          y: unifiedTarget.gameCoordinates?.y || 0,
+          z: unifiedTarget.gameCoordinates?.z || 0,
+          distance: Math.round((unifiedTarget.distance || 0) * 100),
+          isReachable: unifiedTarget.isReachable ? 1 : 0,
+          name: unifiedTarget.name || '',
+        } : { 
+          instanceId: 0, 
+          x: 0, 
+          y: 0, 
+          z: 0, 
+          distance: 0, 
+          isReachable: 0, 
+          name: '' 
+        };
+        
+        // Map creatures to SAB format
+        const sabCreatures = detectedEntities.slice(0, 50).map(c => ({
+          instanceId: c.instanceId || 0,
+          x: c.gameCoords?.x || 0,
+          y: c.gameCoords?.y || 0,
+          z: c.gameCoords?.z || 0,
+          absoluteX: Math.round(c.absoluteCoords?.x || 0),
+          absoluteY: Math.round(c.absoluteCoords?.y || 0),
+          isReachable: c.isReachable ? 1 : 0,
+          isAdjacent: c.isAdjacent ? 1 : 0,
+          isBlockingPath: c.isBlockingPath ? 1 : 0,
+          distance: Math.round((c.distance || 0) * 100),
+          hp: typeof c.hp === 'string' ? 0 : (c.hp || 0), // TODO: proper hp encoding
+          name: c.name || '',
+        }));
+        
+        // Map battle list to SAB format
+        const sabBattleList = sanitizedBattleList.slice(0, 50).map(b => ({
+          name: b.name || '',
+          x: b.x || 0,
+          y: b.y || 0,
+          isTarget: b.isTarget ? 1 : 0,
+        }));
+        
+        sabInterface.batch({
+          creatures: sabCreatures,
+          battleList: sabBattleList,
+          target: sabTarget,
+        });
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to write to unified SAB: ${err.message}`);
+      }
+    }
+
+    // Legacy SAB support (keep for targeting worker compatibility)
     sabStateManager.writeWorldState({
       creatures: detectedEntities,
       target: unifiedTarget,
