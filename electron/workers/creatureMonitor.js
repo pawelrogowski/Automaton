@@ -37,8 +37,7 @@ const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
 
 const {
-  imageSAB_A,
-  imageSAB_B,
+  imageSAB,
   syncSAB,
   playerPosSAB,
   pathDataSAB,
@@ -49,21 +48,8 @@ const {
   targetSAB,
 } = sharedData;
 
-// Double buffering: maintain views of both buffers
-const imageBuffers = [
-  Buffer.from(imageSAB_A),
-  Buffer.from(imageSAB_B)
-];
 const syncArray = new Int32Array(syncSAB);
-const READABLE_BUFFER_INDEX = 5; // From capture/config.js
-
-// Helper to get current readable buffer
-function getReadableBuffer() {
-  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
-  return imageBuffers[index];
-}
-
-let sharedBufferView = getReadableBuffer(); // Initialize
+const sharedBufferView = Buffer.from(imageSAB);
 
 const sabStateManager = new SABStateManager({
   playerPosSAB,
@@ -632,8 +618,6 @@ async function performOperation() {
         (dirtyRects.some((r) => rectsIntersect(r, regions.battleList)) ||
           forceBattleListOcr)
       ) {
-        // Get fresh buffer for OCR (may have swapped during previous async work)
-        sharedBufferView = getReadableBuffer();
         battleListEntries = await processBattleListOcr(
           sharedBufferView,
           regions,
@@ -644,16 +628,12 @@ async function performOperation() {
         regions.playerList &&
         dirtyRects.some((r) => rectsIntersect(r, regions.playerList))
       ) {
-        // Get fresh buffer for OCR
-        sharedBufferView = getReadableBuffer();
         playerNames = await processPlayerList(sharedBufferView, regions);
       }
       if (
         regions.npcList &&
         dirtyRects.some((r) => rectsIntersect(r, regions.npcList))
       ) {
-        // Get fresh buffer for OCR
-        sharedBufferView = getReadableBuffer();
         npcNames = await processNpcList(sharedBufferView, regions);
       }
     }
@@ -814,9 +794,6 @@ async function performOperation() {
     // ALWAYS scan full game world - no optimizations (for debugging native module)
     let healthBars = [];
     let didScanHealthBars = false;
-    // CRITICAL: Get fresh buffer immediately before health bar scan
-    // Previous async operations may have allowed buffer swap
-    sharedBufferView = getReadableBuffer();
     healthBars = await findHealthBars.findHealthBars(
       sharedBufferView,
       constrainedGameWorld,
@@ -1210,8 +1187,6 @@ async function performOperation() {
           const dirtyUnion = unionRect(dirtyRects, margin);
           if (dirtyUnion) targetScanArea = intersectRects(dirtyUnion, gameWorld);
         }
-        // Get fresh buffer for target scan
-        sharedBufferView = getReadableBuffer();
         targetRect = await findTarget.findTarget(
           sharedBufferView,
           targetScanArea || gameWorld,
@@ -1286,8 +1261,6 @@ async function performOperation() {
         };
       }
       
-      // Get fresh buffer for battle list target marker scan
-      sharedBufferView = getReadableBuffer();
       const result = await findSequences.findSequencesNative(
         sharedBufferView,
         sequences,

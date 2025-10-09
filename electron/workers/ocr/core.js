@@ -8,15 +8,9 @@ import { rectsIntersect, processOcrRegions } from './processing.js';
 
 // --- Worker Configuration & Setup ---
 const { sharedData } = workerData;
-const { imageSAB_A, imageSAB_B, syncSAB } = sharedData;
+const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-const imageBuffers = [Buffer.from(imageSAB_A), Buffer.from(imageSAB_B)];
-const READABLE_BUFFER_INDEX = 5;
-function getReadableBuffer() {
-  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
-  return imageBuffers[index];
-}
-let sharedBufferView = getReadableBuffer();
+const sharedBufferView = Buffer.from(imageSAB);
 
 // --- State ---
 let currentState = null;
@@ -112,7 +106,6 @@ async function processPendingRegions() {
 
 async function performOperation() {
   try {
-    sharedBufferView = getReadableBuffer(); // Refresh buffer
     if (!isInitialized || !currentState || !currentState.regionCoordinates)
       return;
 

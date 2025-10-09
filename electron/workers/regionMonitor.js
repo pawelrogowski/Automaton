@@ -12,15 +12,9 @@ const MIN_LOOP_DELAY_MS = 250;
 const PARTIAL_SCAN_MARGIN_PX = 24; // expand union of dirty rects to better capture anchors
 
 if (!sharedData) throw new Error('[RegionMonitor] Shared data not provided.');
-const { imageSAB_A, imageSAB_B, syncSAB } = sharedData;
+const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-const imageBuffers = [Buffer.from(imageSAB_A), Buffer.from(imageSAB_B)];
-const READABLE_BUFFER_INDEX = 5;
-function getReadableBuffer() {
-  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
-  return imageBuffers[index];
-}
-let sharedBufferView = getReadableBuffer();
+const sharedBufferView = Buffer.from(imageSAB);
 
 // --- SharedArrayBuffer Indices ---
 const WIDTH_INDEX = 1;
@@ -485,7 +479,6 @@ async function mainLoop() {
       }
 
       isScanning = true;
-      sharedBufferView = getReadableBuffer(); // Refresh buffer
       try {
         const metadata = { width, height};
 

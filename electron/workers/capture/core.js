@@ -10,14 +10,9 @@ import { PerformanceTracker } from './performanceTracker.js';
 const { sharedData, display } = workerData;
 if (!sharedData) throw new Error('[CaptureCore] Shared data not provided.');
 
-const { imageSAB_A, imageSAB_B, syncSAB } = sharedData;
+const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-// Double buffering: maintain 2 buffers, write to inactive one
-const imageBuffers = [
-  Buffer.from(imageSAB_A),
-  Buffer.from(imageSAB_B)
-];
-let writeBufferIndex = 0; // Toggle between 0 and 1
+const imageBuffer = Buffer.from(imageSAB);
 
 const captureInstance = X11RegionCapture
   ? new X11RegionCapture.X11RegionCapture(display)
@@ -80,9 +75,7 @@ async function captureLoop() {
     const loopStartTime = performance.now();
 
     try {
-      // Double buffering: write to the INACTIVE buffer (readers use the other one)
-      const writeBuffer = imageBuffers[writeBufferIndex];
-      const frameResult = captureInstance.getLatestFrame(writeBuffer);
+      const frameResult = captureInstance.getLatestFrame(imageBuffer);
 
       if (frameResult) {
         // --- START OF SYNCHRONIZED UPDATE ---
@@ -117,15 +110,7 @@ async function captureLoop() {
         Atomics.store(syncArray, config.WIDTH_INDEX, frameResult.width);
         Atomics.store(syncArray, config.HEIGHT_INDEX, frameResult.height);
 
-        // 2. *** THE "COMMIT" STEP ***
-        // Atomically swap the readable buffer index to point to the freshly written buffer
-        // This ensures readers always see a complete, non-torn frame
-        Atomics.store(syncArray, config.READABLE_BUFFER_INDEX, writeBufferIndex);
-        
-        // Toggle write buffer for next frame
-        writeBufferIndex = 1 - writeBufferIndex;
-        
-        // Finally, increment frame counter and notify readers
+        // Increment frame counter and notify readers
         const newFrameCounter = Atomics.add(
           syncArray,
           config.FRAME_COUNTER_INDEX,

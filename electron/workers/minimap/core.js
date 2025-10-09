@@ -1,5 +1,6 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/minimap/core.js
 import { parentPort, workerData } from 'worker_threads';
+import { performance } from 'perf_hooks';
 import {
   MinimapMatcher,
   setMinimapResourcesPath,
@@ -23,15 +24,9 @@ let lastProcessedTime = Date.now();
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
 
-const { imageSAB_A, imageSAB_B, syncSAB } = workerData.sharedData;
+const { imageSAB, syncSAB } = workerData.sharedData;
 const syncArray = new Int32Array(syncSAB);
-const imageBuffers = [Buffer.from(imageSAB_A), Buffer.from(imageSAB_B)];
-const READABLE_BUFFER_INDEX = 5;
-function getReadableBuffer() {
-  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
-  return imageBuffers[index];
-}
-let sharedBufferView = getReadableBuffer();
+const sharedBufferView = Buffer.from(imageSAB);
 
 async function initialize() {
   console.log('[MinimapCore] Initializing...');
@@ -49,7 +44,6 @@ async function initialize() {
 }
 
 async function performOperation(dirtyRects) {
-  sharedBufferView = getReadableBuffer(); // Refresh buffer
   if (!isInitialized || !currentState?.regionCoordinates?.regions) {
     return;
   }
@@ -110,10 +104,11 @@ async function processFrames(force = false) {
 
   try {
     if (dirtyRectsQueue.length > 0) {
-      while (dirtyRectsQueue.length > 0) {
-        const currentDirtyRects = dirtyRectsQueue.shift();
-        await performOperation(currentDirtyRects);
-      }
+      // Only process the LATEST frame to avoid lag
+      const queueItem = dirtyRectsQueue[dirtyRectsQueue.length - 1];
+      dirtyRectsQueue = []; // Clear entire queue
+      
+      await performOperation(queueItem.rects || queueItem);
     } else if (force) {
       await performOperation(null);
     }

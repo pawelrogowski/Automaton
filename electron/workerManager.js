@@ -217,11 +217,10 @@ class WorkerManager {
 
   createSharedBuffers() {
     const maxImageSize = 3840 * 2160 * 4;
-    // Double buffering: create 2 image buffers to prevent tearing
-    const imageSAB_A = new SharedArrayBuffer(maxImageSize + 8); // +8 for width/height header
-    const imageSAB_B = new SharedArrayBuffer(maxImageSize + 8);
+    // Single image buffer for screen capture
+    const imageSAB = new SharedArrayBuffer(maxImageSize + 8); // +8 for width/height header
     const MAX_DIRTY_REGIONS = 100;
-    const SYNC_BUFFER_SIZE = 6 + 1 + MAX_DIRTY_REGIONS * 4; // +1 for READABLE_BUFFER_INDEX
+    const SYNC_BUFFER_SIZE = 6 + MAX_DIRTY_REGIONS * 4;
     const syncSAB = new SharedArrayBuffer(
       SYNC_BUFFER_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
@@ -248,8 +247,7 @@ class WorkerManager {
     );
 
     this.sharedData = {
-      imageSAB_A,
-      imageSAB_B,
+      imageSAB,
       syncSAB,
       playerPosSAB,
       pathDataSAB,
