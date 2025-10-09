@@ -22,17 +22,29 @@ const MODULES = {
     path: './nativeModules/findSequences/build/Release/findSequences.node',
     testFunction: 'findSequencesNative',
     getTestParams: (frame, regions) => {
-      // Test case from regionMonitor.js
-      const sequences = {
-        'health_bar_marker': {
-          sequence: [[237, 62, 10]],
-          direction: 'vertical'
-        },
-        'mana_bar_marker': {
-          sequence: [[69, 92, 207]],
-          direction: 'vertical'
-        }
-      };
+      // Realistic test case - load actual production sequences (160 total)
+      // This simulates the real workload from regionDefinitions + actionBarItems
+      let sequences = {};
+      
+      try {
+        // Load pre-extracted sequences from production code
+        sequences = require('./benchmark_sequences.json');
+        console.log(`  Loaded ${Object.keys(sequences).length} production sequences`);
+      } catch (err) {
+        // Fallback to minimal test if production file not available
+        console.warn('  Warning: Could not load production sequences, using minimal test set');
+        sequences = {
+          'health_bar_marker': {
+            sequence: [[237, 62, 10]],
+            direction: 'vertical'
+          },
+          'mana_bar_marker': {
+            sequence: [[69, 92, 207]],
+            direction: 'vertical'
+          }
+        };
+      }
+      
       return [frame, sequences, regions.healthBar || { x: 100, y: 100, width: 100, height: 100 }];
     }
   },
@@ -193,14 +205,23 @@ function benchmarkModule(name, config) {
     max: timings[timings.length - 1],
     mean: timings.reduce((a, b) => a + b, 0) / timings.length,
     median: timings[Math.floor(timings.length / 2)],
+    p75: timings[Math.floor(timings.length * 0.75)],
+    p90: timings[Math.floor(timings.length * 0.90)],
     p95: timings[Math.floor(timings.length * 0.95)],
     p99: timings[Math.floor(timings.length * 0.99)],
-    stddev: 0
+    p999: timings[Math.floor(timings.length * 0.999)],
+    stddev: 0,
+    // Count outliers (>3 standard deviations from mean)
+    outliers: 0
   };
   
   // Calculate standard deviation
   const variance = timings.reduce((sum, t) => sum + Math.pow(t - stats.mean, 2), 0) / timings.length;
   stats.stddev = Math.sqrt(variance);
+  
+  // Count outliers (more than 3 std deviations from mean)
+  const outlierThreshold = stats.mean + (3 * stats.stddev);
+  stats.outliers = timings.filter(t => t > outlierThreshold).length;
   
   // Print results
   console.log('Results:');
@@ -212,8 +233,26 @@ function benchmarkModule(name, config) {
   console.log(`  Max:     ${stats.max.toFixed(3)} ms`);
   console.log(`  Mean:    ${stats.mean.toFixed(3)} ms ± ${stats.stddev.toFixed(3)} ms`);
   console.log(`  Median:  ${stats.median.toFixed(3)} ms`);
+  console.log(`  75th %:  ${stats.p75.toFixed(3)} ms`);
+  console.log(`  90th %:  ${stats.p90.toFixed(3)} ms`);
   console.log(`  95th %:  ${stats.p95.toFixed(3)} ms`);
   console.log(`  99th %:  ${stats.p99.toFixed(3)} ms`);
+  console.log(`  99.9th %: ${stats.p999.toFixed(3)} ms`);
+  console.log('');
+  
+  // Outlier analysis
+  if (stats.outliers > 0) {
+    console.log('Outlier Analysis:');
+    console.log(`  Outliers (>3σ): ${stats.outliers} (${(stats.outliers / iterations * 100).toFixed(2)}%)`);
+    console.log(`  Threshold: ${outlierThreshold.toFixed(3)} ms`);
+    
+    // Max outlier analysis
+    const maxOutlierRatio = stats.max / stats.median;
+    if (maxOutlierRatio > 10) {
+      console.log(`  ⚠️  Max outlier is ${maxOutlierRatio.toFixed(1)}x median (likely GC/OS scheduler)`);
+    }
+    console.log('');
+  }
   console.log('');
   
   // Throughput

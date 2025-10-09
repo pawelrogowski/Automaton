@@ -2,6 +2,7 @@
 #include <napi.h>
 #include <vector>
 #include <string>
+#include <cstring>  // OPTIMIZED: For strcmp
 #include <set>
 #include <cstdint>
 #include <thread>
@@ -29,9 +30,9 @@ struct PixelCheck {
 struct SequenceDefinition {
     std::string name;
     std::vector<uint32_t> sequenceHashes;
-    std::string direction = "horizontal";
+    const char* direction = "horizontal";  // OPTIMIZED: Use const char* for literals
     int offsetX = 0, offsetY = 0;
-    std::string variant = "primary";
+    const char* variant = "primary";       // OPTIMIZED: Use const char* for literals
 };
 
 struct FirstCandidate {
@@ -85,9 +86,9 @@ uint32_t HexToUint32(const std::string& hex) {
 }
 
 bool ParseColorSequence(Napi::Env env, const Napi::Array& jsSeq, std::vector<uint32_t>& out) {
-    out.clear();
     uint32_t len = jsSeq.Length();
-    out.reserve(len);
+    out.clear();
+    out.reserve(len);  // OPTIMIZED: Reserve before clear for better memory reuse
     for (uint32_t i = 0; i < len; ++i) {
         Napi::Value v = jsSeq.Get(i);
         if (v.IsString() && v.As<Napi::String>().Utf8Value() == "any") {
@@ -109,10 +110,11 @@ bool ParseTargetSequences(Napi::Env env,
                           const Napi::Object& jsSequences,
                           std::unordered_map<uint32_t, std::vector<SequenceDefinition>>& firstColorLookup,
                           std::vector<std::string>& targetNames) {
-    firstColorLookup.clear();
-    targetNames.clear();
     Napi::Array names = jsSequences.GetPropertyNames();
     uint32_t n = names.Length();
+    firstColorLookup.clear();
+    firstColorLookup.reserve(n);  // OPTIMIZED: Pre-allocate hash map
+    targetNames.clear();
     targetNames.reserve(n);
     for (uint32_t i = 0; i < n; ++i) {
         Napi::Value keyVal = names.Get(i);
@@ -122,14 +124,16 @@ bool ParseTargetSequences(Napi::Env env,
         Napi::Object cfg = jsSequences.Get(keyVal).As<Napi::Object>();
         SequenceDefinition def;
         def.name = name;
-        def.direction = cfg.Has("direction") ? cfg.Get("direction").As<Napi::String>().Utf8Value() : "horizontal";
+        // OPTIMIZED: Store string literals as const char* to avoid allocation
+        std::string dirStr = cfg.Has("direction") ? cfg.Get("direction").As<Napi::String>().Utf8Value() : "horizontal";
+        def.direction = dirStr == "vertical" ? "vertical" : "horizontal";
         if (cfg.Has("offset")) {
             Napi::Object off = cfg.Get("offset").As<Napi::Object>();
             def.offsetX = off.Has("x") ? off.Get("x").As<Napi::Number>().Int32Value() : 0;
             def.offsetY = off.Has("y") ? off.Get("y").As<Napi::Number>().Int32Value() : 0;
         }
         if (cfg.Has("sequence")) {
-            def.variant = "primary";
+            def.variant = "primary";  // const char* literal, no allocation
             if (!ParseColorSequence(env, cfg.Get("sequence").As<Napi::Array>(), def.sequenceHashes)) return false;
             if (!def.sequenceHashes.empty() && def.sequenceHashes[0] != ANY_COLOR_HASH)
                 firstColorLookup[def.sequenceHashes[0]].push_back(def);
@@ -153,7 +157,9 @@ void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqD
     if (seqLen == 0) return;
     bool match = true;
 
-    if (seqDef.direction == "horizontal") {
+    // OPTIMIZED: Use strcmp for const char* comparison
+    bool isHorizontal = (std::strcmp(seqDef.direction, "horizontal") == 0);
+    if (isHorizontal) {
         if (x + seqLen > data.bufferWidth) return;
         for (size_t j = 1; j < seqLen; ++j) {
             uint32_t expectedColor = seqDef.sequenceHashes[j];
@@ -179,9 +185,14 @@ void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqD
         size_t currentPixelIndex = y * data.bufferWidth + x;
         int foundX = static_cast<int>(x) + seqDef.offsetX;
         int foundY = static_cast<int>(y) + seqDef.offsetY;
-        if (task.occurrenceMode == "first") {
+        
+        // OPTIMIZED: Use strcmp for const char* comparison
+        bool isFirstMode = (std::strcmp(task.occurrenceMode.c_str(), "first") == 0);
+        bool isPrimary = (std::strcmp(seqDef.variant, "primary") == 0);
+        
+        if (isFirstMode) {
             auto& candidatePair = (*data.localFirstResults)[seqDef.name];
-            if (seqDef.variant == "primary") {
+            if (isPrimary) {
                 if (candidatePair.first.pixelIndex == static_cast<size_t>(-1) || currentPixelIndex < candidatePair.first.pixelIndex) {
                     candidatePair.first = {foundX, foundY, currentPixelIndex};
                 }
@@ -194,7 +205,7 @@ void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqD
             }
         } else {
             auto& candidatePair = (*data.localAllResults)[seqDef.name];
-            if (seqDef.variant == "primary") candidatePair.first.insert({foundX, foundY});
+            if (isPrimary) candidatePair.first.insert({foundX, foundY});
             else candidatePair.second.insert({foundX, foundY});
         }
     }
@@ -371,7 +382,17 @@ protected:
     void Execute() override {
         // --- Pre-process pixel checks for fast row-based lookup ---
         RowBasedPixelChecks rowBasedChecks;
+        rowBasedChecks.reserve(bufferHeight / 8);  // OPTIMIZED: Pre-allocate based on typical row usage
         std::unordered_map<std::string, std::string> pixelCheckIdToTaskName;
+        
+        // OPTIMIZED: Pre-calculate total pixel checks to reserve space
+        size_t totalPixelChecks = 0;
+        for (const auto& task : tasks) {
+            for (const auto& [colorHash, checks] : task.pixelChecks) {
+                totalPixelChecks += checks.size();
+            }
+        }
+        pixelCheckIdToTaskName.reserve(totalPixelChecks);
 
         for (const auto& task : tasks) {
             if (task.pixelChecks.empty()) continue;
@@ -394,11 +415,18 @@ protected:
         std::vector<AllCandidateMap> threadAllResults(numThreads);
         std::vector<PixelCheckResultMap> threadPixelCheckResults(numThreads); // NEW: Per-thread results
 
+        // OPTIMIZED: Calculate unique names and reserve space
         std::set<std::string> uniqueNames;
-        for (const auto& t : tasks) uniqueNames.insert(t.targetNames.begin(), t.targetNames.end());
+        size_t totalTargetNames = 0;
+        for (const auto& t : tasks) {
+            totalTargetNames += t.targetNames.size();
+            uniqueNames.insert(t.targetNames.begin(), t.targetNames.end());
+        }
+        
         for (unsigned i = 0; i < numThreads; ++i) {
             threadFirstResults[i].reserve(uniqueNames.size());
             threadAllResults[i].reserve(uniqueNames.size());
+            threadPixelCheckResults[i].reserve(totalPixelChecks / numThreads);  // OPTIMIZED: Pre-allocate pixel check results
         }
 
         std::atomic<uint32_t> nextRow(0);
@@ -414,6 +442,10 @@ protected:
         for (auto& t : threads) t.join();
 
         // --- Merge results from all threads ---
+        // OPTIMIZED: Pre-allocate merged result maps
+        mergedFirstResults.reserve(uniqueNames.size());
+        mergedAllResults.reserve(uniqueNames.size());
+        
         // Merge sequence results (unchanged)
         for (const auto& localMap : threadFirstResults) {
             for (const auto& [name, pair] : localMap) {

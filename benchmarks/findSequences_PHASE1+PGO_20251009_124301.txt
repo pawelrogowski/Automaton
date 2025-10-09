@@ -1,0 +1,72 @@
+================================================================================
+NATIVE MODULE PERFORMANCE BENCHMARK
+================================================================================
+Iterations: 100000
+Warmup: 10
+Frame: /tmp/hb_mismatch_1760002760077.raw
+
+Frame loaded: 1920x1044 (31.64 MB)
+
+--------------------------------------------------------------------------------
+Module: findSequences
+--------------------------------------------------------------------------------
+  Loaded 160 production sequences
+Function: findSequencesNative
+Parameters: 3 arguments
+
+Results:
+  Iterations: 100000
+  Total time: 87.66s
+
+Performance Statistics:
+  Min:     0.505 ms
+  Max:     14.283 ms
+  Mean:    0.877 ms ± 0.291 ms
+  Median:  0.844 ms
+  75th %:  1.026 ms
+  90th %:  1.334 ms
+  95th %:  1.453 ms
+  99th %:  1.595 ms
+  99.9th %: 1.735 ms
+
+Outlier Analysis:
+  Outliers (>3σ): 83 (0.08%)
+  Threshold: 1.750 ms
+  ⚠️  Max outlier is 16.9x median (likely GC/OS scheduler)
+
+
+Throughput: 1140.7 operations/sec
+
+Result: Object with keys: 
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+
+Module Performance Ranking (fastest to slowest):
+
+ 1. findSequences            0.88 ms █
+
+Performance Targets:
+  🟢 Excellent: < 2ms   (60+ FPS capable)
+  🟡 Good:      < 5ms   (good for real-time)
+  🟠 Acceptable: < 10ms (acceptable)
+  🔴 Slow:      > 10ms  (needs optimization)
+
+🟢 findSequences: 0.88 ms
+
+Frame Budget Analysis (60 FPS = 16.67 ms/frame):
+
+  findSequences:
+    Mean: 0.88 ms (5.3% of frame budget) ✓
+    95th: 1.45 ms (8.7% of frame budget) ✓
+
+================================================================================
+Benchmark complete!
+
+Next steps:
+  1. Identify bottlenecks using --verbose flag
+  2. Profile with perf: perf record -g node tools/benchmark_native_modules.js <module>
+  3. Optimize hot paths in C++ code
+  4. Re-run benchmark to verify improvements
+================================================================================
