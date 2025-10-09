@@ -1,0 +1,71 @@
+================================================================================
+NATIVE MODULE PERFORMANCE BENCHMARK
+================================================================================
+Iterations: 100000
+Warmup: 10
+Frame: /tmp/hb_mismatch_1760002760077.raw
+
+Frame loaded: 1920x1044 (31.64 MB)
+
+--------------------------------------------------------------------------------
+Module: fontOcr
+--------------------------------------------------------------------------------
+Function: recognizeText
+Parameters: 4 arguments
+
+Results:
+  Iterations: 100000
+  Total time: 10.90s
+
+Performance Statistics:
+  Min:     0.077 ms
+  Max:     2.642 ms
+  Mean:    0.109 ms ± 0.050 ms
+  Median:  0.088 ms
+  75th %:  0.123 ms
+  90th %:  0.157 ms
+  95th %:  0.187 ms
+  99th %:  0.300 ms
+  99.9th %: 0.594 ms
+
+Outlier Analysis:
+  Outliers (>3σ): 1480 (1.48%)
+  Threshold: 0.260 ms
+  ⚠️  Max outlier is 30.2x median (likely GC/OS scheduler)
+
+
+Throughput: 9174.9 operations/sec
+
+Result: Array with 0 items
+
+================================================================================
+PERFORMANCE SUMMARY
+================================================================================
+
+Module Performance Ranking (fastest to slowest):
+
+ 1. fontOcr                  0.11 ms █
+
+Performance Targets:
+  🟢 Excellent: < 2ms   (60+ FPS capable)
+  🟡 Good:      < 5ms   (good for real-time)
+  🟠 Acceptable: < 10ms (acceptable)
+  🔴 Slow:      > 10ms  (needs optimization)
+
+🟢 fontOcr: 0.11 ms
+
+Frame Budget Analysis (60 FPS = 16.67 ms/frame):
+
+  fontOcr:
+    Mean: 0.11 ms (0.7% of frame budget) ✓
+    95th: 0.19 ms (1.1% of frame budget) ✓
+
+================================================================================
+Benchmark complete!
+
+Next steps:
+  1. Identify bottlenecks using --verbose flag
+  2. Profile with perf: perf record -g node tools/benchmark_native_modules.js <module>
+  3. Optimize hot paths in C++ code
+  4. Re-run benchmark to verify improvements
+================================================================================

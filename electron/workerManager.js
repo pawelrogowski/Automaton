@@ -669,6 +669,11 @@ class WorkerManager {
     if (message.notification) {
       showNotification(message.notification.title, message.notification.body);
     } else if (message.storeUpdate) {
+      // Track duplicate actions being queued
+      const existingIndex = this.incomingActionQueue.findIndex(a => a.type === message.type);
+      if (existingIndex !== -1) {
+        log('warn', `[Worker Manager] Duplicate action queued from ${workerName}: ${message.type} (${this.incomingActionQueue.length} items in queue)`);
+      }
       this.incomingActionQueue.push({
         type: message.type,
         payload: message.payload,

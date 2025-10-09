@@ -457,7 +457,9 @@ export async function manageMovement(
   movementTracking.lastMoveTimestamp = now;
   movementTracking.moveCount++;
   
-  // Silently track movement stats (no logging)
+  // Set movement lock BEFORE sending keypress (prevent double-stepping)
+  workerContext.isWaitingForMovement = true;
+  workerContext.movementWaitUntil = now + timeout;
 
   parentPort.postMessage({
     type: 'inputAction',
@@ -473,8 +475,10 @@ export async function manageMovement(
       { stateChangePollIntervalMs: 5 },
       timeout
     );
-    // Movement confirmed - no logging needed
+    // Movement confirmed - clear lock
+    workerContext.isWaitingForMovement = false;
   } catch (error) {
-    // Movement failed - silently retry on next iteration
+    // Movement failed - clear lock and silently retry on next iteration
+    workerContext.isWaitingForMovement = false;
   }
 }

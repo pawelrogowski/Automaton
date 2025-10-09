@@ -11,6 +11,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Targeting Worker Logs
 
 #### **1. [TARGET CHANGE] SELECTING**
+
 ```
 [TARGET CHANGE] SELECTING → Dragon (ID: 123, distance: 5.2, adjacent: false)
 ```
@@ -22,6 +23,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ---
 
 #### **2. [TARGET CHANGE] PREEMPT**
+
 ```
 [TARGET CHANGE] PREEMPT → Dragon (ID: 456, Prio: 15) replaces Rat (ID: 123, Prio: 5)
 ```
@@ -33,13 +35,15 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ---
 
 #### **3. [TARGET LOST] - Instance ID Mismatch**
+
 ```
 [TARGET LOST] Troll (ID: 123) - Reason: instance ID mismatch (game ID: 456)
 ```
 
 **When:** Creature monitor changed the instance ID of the same creature
 **Indicates:** **THIS IS THE PROBLEM** - Same creature got new ID
-**Look for:** 
+**Look for:**
+
 - Old ID vs new ID
 - Check if creature name is the same (should be)
 - This means creature tracking in creatureMonitor failed
@@ -47,6 +51,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ---
 
 #### **4. [TARGET LOST] - No In-Game Target**
+
 ```
 [TARGET LOST] Troll (ID: 123) - Reason: no in-game target (game ID: N/A)
 ```
@@ -58,6 +63,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ---
 
 #### **5. [TARGET LOST] - Not Found in Creatures List**
+
 ```
 [TARGET LOST] Troll (ID: 123) - Reason: not found in creatures list
 ```
@@ -71,34 +77,39 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Creature Monitor Logs
 
 #### **6. [CREATURE NEW]**
+
 ```
 [CREATURE NEW] Troll created with ID 456
 ```
 
 **When:** New health bar detected that doesn't match any existing creature
 **Indicates:** Either truly new creature OR failed to match existing one
-**Look for:** 
+**Look for:**
+
 - Does this happen immediately after a [CREATURE REMOVED]?
 - Same creature name? → Instance ID recycling problem
 
 ---
 
 #### **7. [CREATURE REJECT]**
+
 ```
 [CREATURE REJECT] ID 123 "Troll" rejected match - OCR read "Trol" (not similar)
 ```
 
 **When:** OCR read a name that's not similar enough to existing creature
-**Indicates:** 
+**Indicates:**
+
 - Fuzzy matching failed (names too different)
 - OR OCR read wrong creature's name
-**Look for:** 
+  **Look for:**
 - Is the OCR name actually similar? Maybe threshold too strict
 - Different creature in same spot?
 
 ---
 
 #### **8. [CREATURE REMOVED]**
+
 ```
 [CREATURE REMOVED] ID 123 "Troll" - not in battle list (died/despawned)
 ```
@@ -114,6 +125,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Pattern 1: Instance ID Recycling (Most Common Issue)
 
 **Log sequence:**
+
 ```
 [CREATURE REMOVED] ID 123 "Troll" - not in battle list
 [CREATURE NEW] Troll created with ID 456
@@ -122,7 +134,8 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ```
 
 **Problem:** Same creature, new ID
-**Root cause:** 
+**Root cause:**
+
 - Creature temporarily disappeared from battle list (OCR error)
 - Got removed and recreated
 - Grace period too short
@@ -134,6 +147,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Pattern 2: OCR Name Mismatch
 
 **Log sequence:**
+
 ```
 [CREATURE REJECT] ID 123 "Troll" rejected match - OCR read "Dwarf" (not similar)
 [CREATURE REMOVED] ID 123 "Troll" - not in battle list
@@ -151,6 +165,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Pattern 3: Flicker Grace Period Expiry
 
 **Log sequence:**
+
 ```
 [Time: 0ms] Troll has health bar, ID 123
 [Time: 50ms] Health bar lost, grace period starts
@@ -170,6 +185,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Pattern 4: Legitimate Target Switch
 
 **Log sequence:**
+
 ```
 [TARGET CHANGE] PREEMPT → Dragon (ID: 789, Prio: 15) replaces Rat (ID: 456, Prio: 5)
 ```
@@ -190,6 +206,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 [CREATURE REMOVED] ID 100 "Troll" - not in battle list (died)
 [TARGET CHANGE] SELECTING → Rat (ID: 101, ...)
 ```
+
 **Target changed because Troll died. Correct!**
 
 ---
@@ -201,6 +218,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 [TARGET LOST] Troll (ID: 100) - Reason: instance ID mismatch (game ID: 101)
 [TARGET CHANGE] SELECTING → Troll (ID: 101, ...)
 ```
+
 **Same creature name, different ID within 1 second. PROBLEM!**
 
 ---
@@ -212,6 +230,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 [CREATURE REMOVED] ID 101 "Troll" - not in battle list
 [CREATURE NEW] Troll created with ID 102
 ```
+
 **Rapid creation/deletion cycles. Grace period too short or battle list flickering!**
 
 ---
@@ -221,10 +240,12 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Step 1: Check for Instance ID Churn
 
 **Look for:**
+
 - Same creature name getting different IDs rapidly
 - Pattern: REMOVED → NEW → REMOVED → NEW
 
 **If found:**
+
 - Increase `CREATURE_FLICKER_GRACE_PERIOD_MS` (currently 250ms)
 - Increase `STATIONARY_CREATURE_GRACE_PERIOD_MS` (currently 500ms)
 
@@ -233,10 +254,12 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Step 2: Check OCR Rejections
 
 **Look for:**
+
 - `[CREATURE REJECT]` messages
 - Are rejected names similar to original? (e.g., "Trol" vs "Troll")
 
 **If found:**
+
 - OCR fuzzy matching might be too strict
 - Check `isSimilarName()` function logic
 
@@ -245,10 +268,12 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Step 3: Check Preemption Logic
 
 **Look for:**
+
 - `[TARGET CHANGE] PREEMPT` messages
 - Are priority differences expected?
 
 **If too many preemptions:**
+
 - Increase `PRIORITY_THRESHOLD` (currently 2)
 - Adjust creature priorities in targeting list
 
@@ -257,10 +282,12 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ### Step 4: Check Hysteresis
 
 **Look for:**
+
 - Frequent `[TARGET CHANGE]` between similar creatures
 - Same priority creatures swapping
 
 **If found:**
+
 - Increase `SCORE_THRESHOLD` in targetingLogic.js (currently 10)
 
 ---
@@ -268,6 +295,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ## Example Analysis Session
 
 ### Console Output:
+
 ```
 [14:23:10.123] [TARGET CHANGE] SELECTING → Cave Rat (ID: 234, distance: 1.2, adjacent: true)
 [14:23:10.500] [CREATURE REJECT] ID 234 "Cave Rat" rejected match - OCR read "Cave" (not similar)
@@ -278,6 +306,7 @@ Added comprehensive logging to track target changes and creature instance ID sta
 ```
 
 ### Analysis:
+
 1. **0ms:** Target selected (Cave Rat ID 234)
 2. **377ms:** OCR read "Cave" instead of "Cave Rat" - fuzzy match failed
 3. **527ms:** Creature removed (not in battle list - probably OCR error)
@@ -286,9 +315,11 @@ Added comprehensive logging to track target changes and creature instance ID sta
 6. **727ms:** Re-selects "new" creature (actually same one)
 
 ### Diagnosis:
+
 **OCR truncation issue** - "Cave Rat" being read as "Cave"
 
 ### Solutions:
+
 1. Improve fuzzy matching to accept "Cave" as similar to "Cave Rat"
 2. Increase grace period so OCR has more time to recover
 3. Add whitelist for known truncations
@@ -300,13 +331,15 @@ Added comprehensive logging to track target changes and creature instance ID sta
 If logs are too verbose, edit these lines:
 
 **Targeting Worker:**
+
 ```javascript
 // Line 18
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 //                                                            ^^^^^ change to false
 ```
 
 **Creature Monitor:**
+
 ```javascript
 // Line 31
 const logger = createLogger({ info: false, error: true, debug: false });
@@ -318,6 +351,7 @@ const logger = createLogger({ info: false, error: true, debug: false });
 ## Summary
 
 With these logs, you can now:
+
 - ✅ Track every target change with reason
 - ✅ See creature instance ID lifecycle
 - ✅ Identify OCR issues causing rejections

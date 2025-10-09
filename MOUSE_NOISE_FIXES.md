@@ -3,33 +3,39 @@
 ## Issues Identified
 
 ### 1. Incorrect Argument Format
+
 **Problem**: The mouseNoiseWorker was sending arguments in the wrong format to inputOrchestrator.
 
 **Original**:
+
 ```javascript
-args: [windowId, x, y, display, duration]
+args: [windowId, x, y, display, duration];
 ```
 
 **Fixed**:
+
 ```javascript
-args: [x, y, duration]
+args: [x, y, duration];
 ```
 
 **Reason**: The inputOrchestrator automatically prepends `windowId` and `display` when processing mouse actions. It expects:
+
 - `args[0]` = x coordinate
-- `args[1]` = y coordinate  
+- `args[1]` = y coordinate
 - `args[2]` = maxDuration (optional)
 - `args[3]` = returnPosition (optional)
 
 ### 2. Missing Debug Logging
+
 **Problem**: No visibility into whether the worker was running or generating movements.
 
 **Fixed**: Enabled all logging levels:
+
 ```javascript
 const log = createLogger({
-  info: true,   // Was: false
+  info: false, // Was: false
   error: true,
-  debug: true,  // Was: false
+  debug: false, // Was: false
 });
 ```
 
@@ -38,8 +44,8 @@ const log = createLogger({
 ```javascript
 // inputOrchestrator.js line ~248-264
 const mouseArgs = action.args || [];
-const maxDuration = mouseArgs[2];        // Third arg
-const returnPosition = mouseArgs[3];     // Fourth arg
+const maxDuration = mouseArgs[2]; // Third arg
+const returnPosition = mouseArgs[3]; // Fourth arg
 
 const params = [windowId, mouseArgs[0], mouseArgs[1], display];
 if (maxDuration !== undefined) {
@@ -47,7 +53,7 @@ if (maxDuration !== undefined) {
 }
 if (returnPosition !== undefined) {
   if (maxDuration === undefined) {
-    params.push(300);  // Default duration
+    params.push(300); // Default duration
   }
   params.push(returnPosition);
 }
@@ -60,12 +66,14 @@ await mouseController[action.method](...params);
 With debug logging enabled, you should see:
 
 1. **Startup**:
+
    ```
    [MouseNoise] Worker started
    [MouseNoise] Initialized and listening for messages
    ```
 
 2. **During Operation** (when bot is enabled):
+
    ```
    [MouseNoise] Starting <pattern> movement
    [MouseNoise] Moving to (x, y) over Nms
@@ -90,6 +98,7 @@ With debug logging enabled, you should see:
 If mouse noise still doesn't work:
 
 ### Check Worker Started
+
 ```bash
 # In terminal output, look for:
 [MouseNoise] Worker started
@@ -97,19 +106,23 @@ If mouse noise still doesn't work:
 ```
 
 ### Check Bot Enabled
+
 The noise worker only generates movements when:
+
 - `globalState.global.enabled === true`
 - `globalState.global.windowId` is set
 - `globalState.global.display` is set
 - `globalState.regionCoordinates.regions` exists
 
 ### Check InputOrchestrator
+
 ```bash
 # Should see in logs:
 [Mouse] Executing mouseNoise: mouseMove
 ```
 
 ### Check Priority System
+
 - mouseNoise has priority 100 (lowest)
 - Any other action will interrupt it
 - This is **expected behavior**
@@ -137,7 +150,9 @@ The noise worker only generates movements when:
 ## Verification Commands
 
 ### Enable Just Mouse Noise
+
 Temporarily disable other workers to verify noise works:
+
 ```javascript
 // In workerManager.js DEFAULT_WORKER_CONFIG
 {
@@ -158,7 +173,9 @@ Temporarily disable other workers to verify noise works:
 ```
 
 ### Test Pattern Generation
+
 Add temporary logging to see pattern selection:
+
 ```javascript
 // In mouseNoiseWorker.js generateMovement()
 const pattern = weightedChoice(patterns);
@@ -183,6 +200,7 @@ console.log('[MouseNoise] Selected pattern:', pattern);
 ## Disabling Debug Logs
 
 Once verified working, disable debug logs:
+
 ```javascript
 const log = createLogger({
   info: false,

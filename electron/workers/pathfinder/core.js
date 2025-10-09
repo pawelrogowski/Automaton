@@ -8,7 +8,7 @@ import { loadAllMapData } from './dataLoader.js';
 import { runPathfindingLogic, setSABInterface } from './logic.js';
 import { createWorkerInterface, WORKER_IDS } from '../sabState/index.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 let state = null;
 let pathfinderInstance = null;

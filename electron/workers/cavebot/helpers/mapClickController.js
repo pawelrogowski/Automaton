@@ -198,6 +198,11 @@ export async function mapClickTick(workerState, config) {
     }
 
     if (chosen) {
+      // CRITICAL: Capture startPos BEFORE sending the click!
+      // If we capture it after, the player might have already moved during the await,
+      // causing false "NO MOVEMENT" detection at 500ms timeout
+      const capturedStartPos = playerPos ? { ...playerPos } : null;
+      
       // Generate unique action ID for this click
       const actionId = `mapClick_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
@@ -227,8 +232,8 @@ export async function mapClickTick(workerState, config) {
       
       mc.mode = 'pending';
       mc.attemptAt = now;
-      mc.startPos = playerPos ? { ...playerPos } : null;
-      mc.lastObservedPos = playerPos ? { ...playerPos } : null;
+      mc.startPos = capturedStartPos;
+      mc.lastObservedPos = capturedStartPos;
       mc.lastObservedAt = now;
       return 'handled';
     }

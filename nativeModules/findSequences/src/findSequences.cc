@@ -45,10 +45,15 @@ struct FoundCoords {
     bool operator<(const FoundCoords& o) const {
         return y != o.y ? y < o.y : x < o.x;
     }
+    // PHASE 2 OPTIMIZED: Add equality for std::unique
+    bool operator==(const FoundCoords& o) const {
+        return x == o.x && y == o.y;
+    }
 };
 
 using FirstCandidateMap = std::unordered_map<std::string, std::pair<FirstCandidate, FirstCandidate>>;
-using AllCandidateMap   = std::unordered_map<std::string, std::pair<std::set<FoundCoords>, std::set<FoundCoords>>>;
+// PHASE 2 OPTIMIZED: Use vector instead of set to avoid tree rebalancing allocations
+using AllCandidateMap   = std::unordered_map<std::string, std::pair<std::vector<FoundCoords>, std::vector<FoundCoords>>>;
 using PixelCheckResultMap = std::unordered_map<std::string, bool>;
 
 // NEW: A map of a row (y-coordinate) to the checks on that row.
@@ -204,9 +209,10 @@ void VerifyAndRecordMatch(const WorkerData& data, const SequenceDefinition& seqD
                 }
             }
         } else {
+            // PHASE 2 OPTIMIZED: push_back instead of insert for vector
             auto& candidatePair = (*data.localAllResults)[seqDef.name];
-            if (isPrimary) candidatePair.first.insert({foundX, foundY});
-            else candidatePair.second.insert({foundX, foundY});
+            if (isPrimary) candidatePair.first.push_back({foundX, foundY});
+            else candidatePair.second.push_back({foundX, foundY});
         }
     }
 }
@@ -458,10 +464,25 @@ protected:
                 if (best.first.pixelIndex == static_cast<size_t>(-1) && pair.second.pixelIndex != static_cast<size_t>(-1) && (best.second.pixelIndex == static_cast<size_t>(-1) || pair.second.pixelIndex < best.second.pixelIndex)) best.second = pair.second;
             }
         }
+        // PHASE 2 OPTIMIZED: Merge vectors and sort/unique at end instead of set insert
         for (const auto& localMap : threadAllResults) {
             for (const auto& [name, pair] : localMap) {
-                mergedAllResults[name].first.insert(pair.first.begin(), pair.first.end());
-                mergedAllResults[name].second.insert(pair.second.begin(), pair.second.end());
+                auto& merged = mergedAllResults[name];
+                merged.first.insert(merged.first.end(), pair.first.begin(), pair.first.end());
+                merged.second.insert(merged.second.end(), pair.second.begin(), pair.second.end());
+            }
+        }
+        
+        // PHASE 2 OPTIMIZED: Sort and remove duplicates once at end
+        for (auto& [name, pair] : mergedAllResults) {
+            auto& [pri, bak] = pair;
+            if (!pri.empty()) {
+                std::sort(pri.begin(), pri.end());
+                pri.erase(std::unique(pri.begin(), pri.end()), pri.end());
+            }
+            if (!bak.empty()) {
+                std::sort(bak.begin(), bak.end());
+                bak.erase(std::unique(bak.begin(), bak.end()), bak.end());
             }
         }
 

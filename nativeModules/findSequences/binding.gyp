@@ -53,16 +53,15 @@
             "-fprefetch-loop-arrays",
 
 
-            ### PGO Phase 1: Instrumentation (uncomment to gather data)
-            ## PGO Phase 1: Instrumentation (gathering data)
-            ##"-fprofile-generate",
-            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findSequences/pgo-data",
+            # PGO Phase 1: Instrumentation (commented after gathering)
+            # "-fprofile-generate",
+            # "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findSequences/pgo-data",
             
-            # PGO Phase 2: Use profile data (comment out during data gathering)
-            # "-fprofile-use",
-            # "-fprofile-correction",
-            # "-Wno-error=coverage-mismatch",
-            # "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findSequences/pgo-data"
+            # PGO Phase 2: Use profile data (ACTIVE)
+            "-fprofile-use",
+            "-fprofile-correction",
+            "-Wno-error=coverage-mismatch",
+            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findSequences/pgo-data"
           ],
           "ldflags": [
             "-flto=auto",
@@ -71,9 +70,8 @@
             "-Wl,--gc-sections",
             "-Wl,--as-needed",
             "-pthread",
-            "-s",
-            ##"-fprofile-generate",
-            "-fprofile-dir=/home/feiron/Dokumenty/Automaton/nativeModules/findSequences/pgo-data"
+            "-s"
+            # Removed -fprofile-generate from ldflags for phase 2
           ],
           "defines": [
             "NAPI_DISABLE_CPP_EXCEPTIONS"

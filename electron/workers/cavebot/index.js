@@ -63,7 +63,7 @@ const workerState = {
   isWaitingForMovement: false,
   movementWaitUntil: 0,
   // --- NEW LOGIC END ---
-  logger: createLogger({ info: true, error: true, debug: false }),
+  logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,
 };
 
@@ -281,7 +281,41 @@ async function performOperation() {
       '[Cavebot] Control gained. Handling handover.',
     );
     handleControlHandover();
-    await delay(config.controlHandoverGraceMs);
+    
+    // Force fresh player position read after control handover
+    // The position might be stale from targeting movement
+    const positionBeforeHandover = workerState.playerMinimapPosition 
+      ? { ...workerState.playerMinimapPosition } 
+      : null;
+    
+    // Wait for position to update (or timeout after 100ms)
+    const maxWait = 100;
+    const startWait = Date.now();
+    let positionUpdated = false;
+    
+    while (Date.now() - startWait < maxWait && !positionUpdated) {
+      await delay(10); // Check every 10ms
+      updateSABData(workerState, config);
+      
+      const currentPos = workerState.playerMinimapPosition;
+      if (currentPos && positionBeforeHandover) {
+        // Check if position changed (indicating fresh data)
+        const moved = currentPos.x !== positionBeforeHandover.x ||
+                      currentPos.y !== positionBeforeHandover.y ||
+                      currentPos.z !== positionBeforeHandover.z;
+        if (moved) {
+          workerState.logger('debug', `[Cavebot] Fresh position detected after ${Date.now() - startWait}ms`);
+          positionUpdated = true;
+        }
+      } else if (currentPos && !positionBeforeHandover) {
+        // We had no position before but now we do - accept it
+        positionUpdated = true;
+      }
+    }
+    
+    if (!positionUpdated && positionBeforeHandover) {
+      workerState.logger('debug', '[Cavebot] Position unchanged after handover, using existing position');
+    }
   }
 
   updateSABData(workerState, config);

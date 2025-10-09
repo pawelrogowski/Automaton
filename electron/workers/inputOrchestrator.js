@@ -3,18 +3,14 @@ import keypress from 'keypress-native';
 import mouseController from 'mouse-controller';
 import { createLogger } from '../utils/logger.js';
 
-const log = createLogger({ info: false, error: true, debug: false });
-const PRIORITY_MAP = { userRule: 0, looting: 1, script: 2, targeting: 3, movement: 4, hotkey: 5, default: 10 };
-const THROTTLE_MS = 50;
+const log = createLogger({ info: true, error: true, debug: false });
+const PRIORITY_MAP = { userRule: 0, movement: 1, looting: 2, script: 3, targeting: 4, hotkey: 5, default: 10 };
+const THROTTLE_MS = 75;
 const MAX_DEFERRALS = 4;
-const FAST_MOVEMENT_KEYS = new Set(['q', 'w', 'e', 'a', 's', 'd', 'z', 'x', 'c', 'up', 'down', 'left', 'right']);
 
 let globalState = null;
-const queues = {
-  keyboard: { items: [], processing: false, lastTime: 0 },
-  mouse: { items: [], processing: false, lastTime: 0 },
-  movement: { items: [], processing: false, lastTime: 0 },
-};
+// Unified queue for all input types to prevent cross-queue collisions
+const queue = { items: [], processing: false, lastTime: 0 };
 
 function applyStarvationPrevention(items) {
   const highestPriority = Math.min(...items.map(i => i.priority));
@@ -25,82 +21,81 @@ function applyStarvationPrevention(items) {
   });
 }
 
-async function processQueue(queueType) {
-  const q = queues[queueType];
-  if (q.processing || !q.items.length || !globalState?.global?.display) return;
+async function processQueue() {
+  if (queue.processing || !queue.items.length || !globalState?.global?.display) return;
 
   const now = Date.now();
-  if (now - q.lastTime < THROTTLE_MS) {
-    setTimeout(() => processQueue(queueType), THROTTLE_MS - (now - q.lastTime));
+  if (now - queue.lastTime < THROTTLE_MS) {
+    setTimeout(() => processQueue(), THROTTLE_MS - (now - queue.lastTime));
     return;
   }
 
-  q.processing = true;
-  if (queueType !== 'movement') {
-    applyStarvationPrevention(q.items);
-    q.items.sort((a, b) => a.priority - b.priority);
-  }
-  const item = q.items.shift();
+  queue.processing = true;
+  applyStarvationPrevention(queue.items);
+  queue.items.sort((a, b) => a.priority - b.priority);
+  const item = queue.items.shift();
 
   try {
-    const { action, actionId } = item;
+    const { action, actionId, inputType, type: inputSource } = item;
     const display = globalState.global.display;
 
-    if (queueType === 'mouse') {
+    if (inputType === 'mouse') {
       const windowId = parseInt(globalState.global.windowId, 10);
+      log('info', `[INPUT] Mouse ${action.method} at (${action.args[0]}, ${action.args[1]}) | Source: ${inputSource} | Priority: ${item.priority}`);
       await mouseController[action.method](windowId, action.args[0], action.args[1], display);
     } else {
       const method = action.method;
       if (['sendKey', 'keyDown', 'keyUp'].includes(method)) {
+        log('info', `[INPUT] Keyboard ${method}(${action.args[0]}) | Source: ${inputSource} | Priority: ${item.priority}`);
         await keypress[method](action.args[0], display, action.args[1]);
       } else if (method === 'typeArray') {
+        log('info', `[INPUT] Keyboard typeArray([${action.args[0].length} chars]) | Source: ${inputSource} | Priority: ${item.priority}`);
         await keypress.typeArray(action.args[0], display, action.args[1]);
       } else if (method === 'rotate') {
+        log('info', `[INPUT] Keyboard rotate(${action.args[0]}) | Source: ${inputSource} | Priority: ${item.priority}`);
         await keypress.rotate(display, action.args[0]);
       } else {
+        log('info', `[INPUT] Keyboard ${method}(...) | Source: ${inputSource} | Priority: ${item.priority}`);
         await keypress[method](...action.args, display);
       }
     }
 
-    q.lastTime = Date.now();
+    queue.lastTime = Date.now();
     if (actionId) parentPort.postMessage({ type: 'inputActionCompleted', payload: { actionId, success: true } });
   } catch (error) {
-    log('error', `[${queueType}] Error:`, error);
+    log('error', `[${inputType || 'input'}] Error:`, error);
   } finally {
-    q.processing = false;
-    if (q.items.length) processQueue(queueType);
+    queue.processing = false;
+    if (queue.items.length) processQueue();
   }
 }
 
 parentPort.on('message', (msg) => {
   if (msg.type === 'state_full_sync' || msg.type === 'state_diff') {
     globalState = msg.payload;
-    Object.keys(queues).forEach(type => !queues[type].processing && processQueue(type));
+    if (!queue.processing) processQueue();
     return;
   }
 
   if (msg.type === 'inputAction') {
     const { payload } = msg;
+    
+    // Determine input type for error logging
+    let inputType = 'keyboard';
+    if (payload.action.module === 'mouseController') {
+      inputType = 'mouse';
+    }
+    
     const item = {
       action: payload.action,
       priority: PRIORITY_MAP[payload.type] || PRIORITY_MAP.default,
       type: payload.type,
       deferralCount: 0,
       actionId: payload.actionId,
+      inputType,
     };
 
-    let queueType;
-    if (payload.action.module === 'mouseController') {
-      queueType = 'mouse';
-    } else if (payload.action.module === 'keypress') {
-      const isFastKey = ['sendKey', 'keyDown', 'keyUp'].includes(payload.action.method) &&
-                        FAST_MOVEMENT_KEYS.has(payload.action.args[0]?.toLowerCase());
-      queueType = (isFastKey && payload.type === 'movement') ? 'movement' : 'keyboard';
-    }
-
-    if (queueType) {
-      queues[queueType].items.push(item);
-      processQueue(queueType);
-    }
+    queue.items.push(item);
+    processQueue();
   }
 });

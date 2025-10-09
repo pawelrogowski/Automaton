@@ -15,7 +15,7 @@ import {
   PATH_STATUS_IDLE,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: true });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // Track last target for change detection
 let lastLoggedTarget = null;
@@ -46,6 +46,9 @@ const workerState = {
   pathfindingStatus: PATH_STATUS_IDLE,
   pathWptId: 0,
   pathInstanceId: 0,
+  // Movement lock to prevent double-stepping
+  isWaitingForMovement: false,
+  movementWaitUntil: 0,
 };
 
 // --- Targeting FSM State ---
@@ -270,7 +273,19 @@ function handleAcquiringState() {
 }
 
 async function handleEngagingState() {
-  const now = performance.now();
+  const now = Date.now();
+  
+  // Don't engage if we're waiting for movement confirmation
+  if (workerState.isWaitingForMovement) {
+    if (now < workerState.movementWaitUntil) {
+      // Still waiting - skip engagement
+      return;
+    } else {
+      // Timeout expired, clear the lock
+      workerState.isWaitingForMovement = false;
+    }
+  }
+  
   const creatures = getCreaturesFromSAB();
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;

@@ -21,7 +21,7 @@ import {
   PATH_STATUS_BLOCKED_BY_CREATURE,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
 // Battle list can have truncation markers (...)
@@ -86,9 +86,6 @@ const PLAYER_ANIMATION_FREEZE_MS = 25;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
 const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
-const TARGET_LOSS_GRACE_PERIOD_MS = 125;
-const CREATURE_FLICKER_GRACE_PERIOD_MS = 250; // Increased from 125ms to prevent false ID changes
-const STATIONARY_CREATURE_GRACE_PERIOD_MS = 500; // Increased from 300ms for more stability
 const ADJACENT_DISTANCE_THRESHOLD_DIAGONAL = 1.45;
 const ADJACENT_DISTANCE_THRESHOLD_STRAIGHT = 1.0;
 const ADJACENT_TIME_THRESHOLD_MS = 0;
@@ -112,7 +109,6 @@ let isLootingInProgress = false;
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
-let targetLossGracePeriodEndTime = 0;
 let lastBattleListOcrTime = 0;
 // Performance caches for detection
 let lastBarAreas = [];
@@ -690,10 +686,10 @@ async function performOperation() {
       const currentCount = currentTargetedCreatureCounts.get(creatureName) || 0;
       if (currentCount < previousCount) disappearedCreatures.add(creatureName);
     }
-    if (disappearedCreatures.size > 0)
+    if (disappearedCreatures.size > 0) {
       lootReason = `Count decreased for: ${[...disappearedCreatures].join(', ')}`;
-
-    if (previousTargetName) {
+    } else if (previousTargetName) {
+      // Only check target disappearance if no count-based trigger already fired
       const targetStillPresent = battleListEntries.some((entry) => {
         if (previousTargetName === entry.name) return true;
         if (entry.name.endsWith('...')) {
@@ -702,7 +698,7 @@ async function performOperation() {
         }
         return false;
       });
-      if (!targetStillPresent && !lootReason)
+      if (!targetStillPresent)
         lootReason = `Target '${previousTargetName}' disappeared from battle list`;
     }
 
@@ -984,41 +980,12 @@ async function performOperation() {
           isPlayerInAnimationFreeze,
         );
         if (updated) {
-          if (updated.flickerGracePeriodEndTime)
-            delete updated.flickerGracePeriodEndTime;
           // Clear positionUncertain flag since we have a valid health bar detection
           if (updated.positionUncertain)
             delete updated.positionUncertain;
           newActiveCreatures.set(id, updated);
         }
         matchedHealthBars.add(bestMatch);
-      } else {
-        if (!oldCreature.flickerGracePeriodEndTime) {
-          const isAdjacentStationary = (oldCreature.adjacentStationaryDuration || 0) > 100;
-          const gracePeriod = isAdjacentStationary 
-            ? STATIONARY_CREATURE_GRACE_PERIOD_MS 
-            : CREATURE_FLICKER_GRACE_PERIOD_MS;
-          oldCreature.flickerGracePeriodEndTime = now + gracePeriod;
-        }
-        if (now < oldCreature.flickerGracePeriodEndTime) {
-          if (playerPositionChanged && oldCreature.gameCoords) {
-            const expectedScreenPos = getAbsoluteGameWorldClickCoordinates(
-              oldCreature.gameCoords.x,
-              oldCreature.gameCoords.y,
-              currentPlayerMinimapPosition,
-              regions.gameWorld,
-              regions.tileSize
-            );
-            if (expectedScreenPos) {
-              oldCreature.absoluteCoords = {
-                x: expectedScreenPos.x,
-                y: expectedScreenPos.y,
-                lastUpdate: now,
-              };
-            }
-          }
-          newActiveCreatures.set(id, oldCreature);
-        }
       }
     }
 
@@ -1253,7 +1220,6 @@ async function performOperation() {
         lastTargetScanTime = now;
       }
       if (targetRect) {
-        targetLossGracePeriodEndTime = 0;
         const playerPosForTargetCalc = isPlayerInAnimationFreeze
           ? lastStablePlayerMinimapPosition
           : currentPlayerMinimapPosition;
@@ -1292,11 +1258,6 @@ async function performOperation() {
             };
           }
         }
-      } else if (lastSentTarget) {
-        if (targetLossGracePeriodEndTime === 0)
-          targetLossGracePeriodEndTime = now + TARGET_LOSS_GRACE_PERIOD_MS;
-        if (now < targetLossGracePeriodEndTime)
-          gameWorldTarget = lastSentTarget;
       }
     }
     
@@ -1483,27 +1444,51 @@ async function performOperation() {
 
     sabStateManager.writeCreatureMonitorLastProcessedZ(zLevelAtScanStart);
 
-    postUpdateOnce('targeting/setTarget', unifiedTarget);
-    postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
-    if (battleListEntries.length > 0)
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'battleList/updateLastSeenMs',
-      });
-
-    postUpdateOnce('uiValues/setPlayers', playerNames);
-    if (playerNames.length > 0)
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/updateLastSeenPlayerMs',
-      });
-
-    postUpdateOnce('uiValues/setNpcs', npcNames);
-    if (npcNames.length > 0)
-      parentPort.postMessage({
-        storeUpdate: true,
-        type: 'uiValues/updateLastSeenNpcMs',
-      });
+    // Send all updates as a single batch to maintain consistency
+    // This prevents Redux version from bumping by 7 per iteration
+    const batchUpdates = [];
+    
+    if (targetChanged) {
+      batchUpdates.push({ type: 'targeting/setTarget', payload: unifiedTarget });
+    }
+    
+    // Always update battle list entries
+    const blString = JSON.stringify(battleListEntries);
+    const prevBlString = lastPostedResults.get('battleList/setBattleListEntries');
+    if (blString !== prevBlString) {
+      lastPostedResults.set('battleList/setBattleListEntries', blString);
+      batchUpdates.push({ type: 'battleList/setBattleListEntries', payload: battleListEntries });
+      if (battleListEntries.length > 0) {
+        batchUpdates.push({ type: 'battleList/updateLastSeenMs', payload: undefined });
+      }
+    }
+    
+    // Players
+    const playersString = JSON.stringify(playerNames);
+    const prevPlayersString = lastPostedResults.get('uiValues/setPlayers');
+    if (playersString !== prevPlayersString) {
+      lastPostedResults.set('uiValues/setPlayers', playersString);
+      batchUpdates.push({ type: 'uiValues/setPlayers', payload: playerNames });
+      if (playerNames.length > 0) {
+        batchUpdates.push({ type: 'uiValues/updateLastSeenPlayerMs', payload: undefined });
+      }
+    }
+    
+    // NPCs
+    const npcsString = JSON.stringify(npcNames);
+    const prevNpcsString = lastPostedResults.get('uiValues/setNpcs');
+    if (npcsString !== prevNpcsString) {
+      lastPostedResults.set('uiValues/setNpcs', npcsString);
+      batchUpdates.push({ type: 'uiValues/setNpcs', payload: npcNames });
+      if (npcNames.length > 0) {
+        batchUpdates.push({ type: 'uiValues/updateLastSeenNpcMs', payload: undefined });
+      }
+    }
+    
+    // Send as batch if there are any updates
+    if (batchUpdates.length > 0) {
+      parentPort.postMessage({ type: 'batch-update', payload: batchUpdates });
+    }
 
     const currentTarget = sabStateManager.getCurrentTarget();
     previousTargetName = currentTarget?.name || null;

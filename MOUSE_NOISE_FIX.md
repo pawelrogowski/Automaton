@@ -14,7 +14,7 @@ Even though the priority system was working correctly (movement priority = 4, mo
 The mouse noise worker runs continuously and generates new cursor positions every 200ms, sending them as `inputAction` messages to the input orchestrator. When cavebot tried to send a map click at nearly the same time:
 
 1. Mouse noise generates a new position and queues it
-2. Cavebot sends a map click command  
+2. Cavebot sends a map click command
 3. Even with higher priority, the timing could cause the noise movement to execute first or interfere
 4. The map click gets delayed or missed entirely
 
@@ -29,7 +29,7 @@ Implemented the pause/resume mechanism that was mentioned in `MOUSE_NOISE_SYSTEM
 **File:** `electron/workers/inputOrchestrator.js`
 
 - Created `PAUSE_MOUSE_NOISE_FOR` set containing action types that should pause noise:
-  - `userRule` 
+  - `userRule`
   - `looting`
   - `script`
   - `targeting`
@@ -37,6 +37,7 @@ Implemented the pause/resume mechanism that was mentioned in `MOUSE_NOISE_SYSTEM
   - `hotkey`
 
 - Added pause state tracking:
+
   ```javascript
   let mouseNoisePaused = false;
   let mouseNoiseResumeTimeout = null;
@@ -73,6 +74,7 @@ Implemented the pause/resume mechanism that was mentioned in `MOUSE_NOISE_SYSTEM
 **File:** `electron/workers/mouseNoiseWorker.js`
 
 The worker already had pause handling implemented (lines 338-347):
+
 ```javascript
 if (message.type === 'mouseNoisePause') {
   isPaused = true;
@@ -109,8 +111,8 @@ When paused, the noise loop continues running but skips movement generation (lin
 
 To verify the fix is working:
 
-1. Enable debug logging in `inputOrchestrator.js` (line 7: `debug: true`)
-2. Enable debug logging in `mouseNoiseWorker.js` (line 7: `debug: true`)
+1. Enable debug logging in `inputOrchestrator.js` (line 7: `debug: false`)
+2. Enable debug logging in `mouseNoiseWorker.js` (line 7: `debug: false`)
 3. Start cavebot with map clicking enabled
 4. Watch for log messages:
    - `[InputOrchestrator] Paused mouse noise for critical action`

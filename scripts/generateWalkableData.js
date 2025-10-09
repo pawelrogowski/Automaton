@@ -5,7 +5,7 @@ import os from 'os';
 import sharp from 'sharp';
 import { createLogger } from '../electron/utils/logger.js';
 
-const logger = createLogger({ info: true, error: true, debug: false });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // --- PATH CONFIGURATION ---
 const PROJECT_ROOT = process.cwd();

@@ -11,6 +11,7 @@ But workers were accessing properties directly on the result, expecting: `actual
 ## Fixes Applied
 
 ### 1. Pathfinder - Complete Header Fields (pathfinder/logic.js:395-424)
+
 - Added ALL required header fields when writing to unified SAB:
   - `chebyshevDistance` (calculated from path endpoints)
   - `startX, startY, startZ` (player position)
@@ -20,17 +21,20 @@ But workers were accessing properties directly on the result, expecting: `actual
 - Now writes to SAB even for empty paths (status updates)
 
 ### 2. Cavebot - Data Unwrapping (cavebot/helpers/communication.js)
+
 - **Player Position** (lines 46-75): Changed from `sabInterface.get('playerPos')` → `sabInterface.get('playerPos').data`
 - **Path Data** (lines 107-129): Changed from checking `pathData.waypoints` → `pathDataResult.data.waypoints`
 - **Legacy Fallback Fix** (line 75): Added missing `else if` to prevent legacy SAB from running when unified SAB is active
 
 ### 3. Targeting Worker - Data Unwrapping (targetingWorker.js)
+
 - **getCreaturesFromSAB()** (lines 78-90): Extract `result.data` before using creature array
 - **getCurrentTargetFromSAB()** (lines 90-106): Extract `result.data` before accessing target properties
 
 ### 4. Debug Logging Enabled
-- Pathfinder: `debug: true` (pathfinder/core.js:20)
-- Cavebot: `debug: true` (cavebot/index.js:67)
+
+- Pathfinder: `debug: false` (pathfinder/core.js:20)
+- Cavebot: `debug: false` (cavebot/index.js:67)
 
 ## Expected Behavior After Fix
 
@@ -51,6 +55,7 @@ But workers were accessing properties directly on the result, expecting: `actual
 ## Architecture Pattern Confirmed
 
 **SAB Interface Usage Pattern:**
+
 ```javascript
 // CORRECT - Unwrap .data property
 const result = sabInterface.get('propertyName');
@@ -61,12 +66,14 @@ if (result && result.data) {
 
 // INCORRECT - Missing .data unwrapping
 const data = sabInterface.get('propertyName');
-if (data && data.someField) {  // ❌ Won't work!
+if (data && data.someField) {
+  // ❌ Won't work!
   // ...
 }
 ```
 
 This pattern must be followed for ALL properties read from unified SAB:
+
 - `playerPos`
 - `pathData`
 - `creatures`
