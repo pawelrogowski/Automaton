@@ -113,11 +113,7 @@ const getCurrentTargetFromSAB = () => {
 // --- State Transition Helper ---
 function transitionTo(newState, reason = '') {
   if (targetingState.state === newState) return;
-  logger(
-    'debug',
-    `[FSM] Transition: ${targetingState.state} -> ${newState}` +
-      (reason ? ` (${reason})` : '')
-  );
+  // Silently transition states (no logging)
   targetingState.state = newState;
 
   if (newState === FSM_STATE.SELECTING) {
@@ -165,7 +161,7 @@ function handleSelectingState() {
     targetingState.pathfindingTarget = bestTarget;
     // Only update if target actually changed to prevent redundant updates
     if (targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId) {
-      logger('info', `[TARGET CHANGE] SELECTING → ${bestTarget.name} (ID: ${bestTarget.instanceId}, distance: ${bestTarget.distance?.toFixed(1)}, adjacent: ${bestTarget.isAdjacent})`);
+      logger('debug', `[TARGET CHANGE] SELECTING → ${bestTarget.name} (ID: ${bestTarget.instanceId}, distance: ${bestTarget.distance?.toFixed(1)}, adjacent: ${bestTarget.isAdjacent})`);
       updateDynamicTarget(
         parentPort,
         bestTarget,
@@ -284,7 +280,7 @@ async function handleEngagingState() {
     const reason = !targetingState.currentTarget ? 'no currentTarget' : 
                    !actualInGameTarget ? 'no in-game target' :
                    'instance ID mismatch';
-    logger('info', `[TARGET LOST] ${targetingState.currentTarget?.name || 'unknown'} (ID: ${targetingState.currentTarget?.instanceId || 'N/A'}) - Reason: ${reason} (game ID: ${actualInGameTarget?.instanceId || 'N/A'})`);
+    logger('debug', `[TARGET LOST] ${targetingState.currentTarget?.name || 'unknown'} (ID: ${targetingState.currentTarget?.instanceId || 'N/A'}) - Reason: ${reason} (game ID: ${actualInGameTarget?.instanceId || 'N/A'})`);
     transitionTo(FSM_STATE.SELECTING, 'Target lost or changed');
     return;
   }
@@ -309,7 +305,7 @@ async function handleEngagingState() {
     const PRIORITY_THRESHOLD = 2;
     if (bestRule && currentRule && bestRule.priority >= currentRule.priority + PRIORITY_THRESHOLD) {
       logger(
-        'info',
+        'debug',
         `[TARGET CHANGE] PREEMPT → ${bestOverallTarget.name} (ID: ${bestOverallTarget.instanceId}, Prio: ${bestRule.priority}) replaces ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}, Prio: ${currentRule.priority})`
       );
       targetingState.pathfindingTarget = bestOverallTarget;
@@ -324,7 +320,7 @@ async function handleEngagingState() {
   );
 
   if (!updatedTarget) {
-    logger('info', `[TARGET LOST] ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}) - Reason: not found in creatures list`);
+    logger('debug', `[TARGET LOST] ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}) - Reason: not found in creatures list`);
     transitionTo(FSM_STATE.SELECTING, 'Target died or disappeared');
     return;
   }

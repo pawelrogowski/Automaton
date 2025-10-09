@@ -10,9 +10,14 @@ import { PerformanceTracker } from './performanceTracker.js';
 const { sharedData, display } = workerData;
 if (!sharedData) throw new Error('[CaptureCore] Shared data not provided.');
 
-const { imageSAB, syncSAB } = sharedData;
+const { imageSAB_A, imageSAB_B, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-const imageBuffer = Buffer.from(imageSAB);
+// Double buffering: maintain 2 buffers, write to inactive one
+const imageBuffers = [
+  Buffer.from(imageSAB_A),
+  Buffer.from(imageSAB_B)
+];
+let writeBufferIndex = 0; // Toggle between 0 and 1
 
 const captureInstance = X11RegionCapture
   ? new X11RegionCapture.X11RegionCapture(display)
@@ -75,9 +80,9 @@ async function captureLoop() {
     const loopStartTime = performance.now();
 
     try {
-      // This call writes the new frame's pixel data directly into imageBuffer (our view over imageSAB).
-      // This is the critical non-atomic operation that takes time.
-      const frameResult = captureInstance.getLatestFrame(imageBuffer);
+      // Double buffering: write to the INACTIVE buffer (readers use the other one)
+      const writeBuffer = imageBuffers[writeBufferIndex];
+      const frameResult = captureInstance.getLatestFrame(writeBuffer);
 
       if (frameResult) {
         // --- START OF SYNCHRONIZED UPDATE ---
@@ -113,9 +118,14 @@ async function captureLoop() {
         Atomics.store(syncArray, config.HEIGHT_INDEX, frameResult.height);
 
         // 2. *** THE "COMMIT" STEP ***
-        // Only after the image data AND all metadata are fully written,
-        // we increment and notify the frame counter. This signals to all
-        // other workers that a new, complete frame is ready for reading.
+        // Atomically swap the readable buffer index to point to the freshly written buffer
+        // This ensures readers always see a complete, non-torn frame
+        Atomics.store(syncArray, config.READABLE_BUFFER_INDEX, writeBufferIndex);
+        
+        // Toggle write buffer for next frame
+        writeBufferIndex = 1 - writeBufferIndex;
+        
+        // Finally, increment frame counter and notify readers
         const newFrameCounter = Atomics.add(
           syncArray,
           config.FRAME_COUNTER_INDEX,

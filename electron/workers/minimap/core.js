@@ -23,9 +23,15 @@ let lastProcessedTime = Date.now();
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
 
-const { imageSAB, syncSAB } = workerData.sharedData;
+const { imageSAB_A, imageSAB_B, syncSAB } = workerData.sharedData;
 const syncArray = new Int32Array(syncSAB);
-const sharedBufferView = Buffer.from(imageSAB);
+const imageBuffers = [Buffer.from(imageSAB_A), Buffer.from(imageSAB_B)];
+const READABLE_BUFFER_INDEX = 5;
+function getReadableBuffer() {
+  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
+  return imageBuffers[index];
+}
+let sharedBufferView = getReadableBuffer();
 
 async function initialize() {
   console.log('[MinimapCore] Initializing...');
@@ -43,6 +49,7 @@ async function initialize() {
 }
 
 async function performOperation(dirtyRects) {
+  sharedBufferView = getReadableBuffer(); // Refresh buffer
   if (!isInitialized || !currentState?.regionCoordinates?.regions) {
     return;
   }

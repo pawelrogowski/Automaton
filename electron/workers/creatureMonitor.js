@@ -37,7 +37,9 @@ const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
 
 const {
-  imageSAB,
+  imageSAB_A,
+  imageSAB_B,
+  syncSAB,
   playerPosSAB,
   pathDataSAB,
   battleListSAB,
@@ -47,7 +49,21 @@ const {
   targetSAB,
 } = sharedData;
 
-const sharedBufferView = Buffer.from(imageSAB);
+// Double buffering: maintain views of both buffers
+const imageBuffers = [
+  Buffer.from(imageSAB_A),
+  Buffer.from(imageSAB_B)
+];
+const syncArray = new Int32Array(syncSAB);
+const READABLE_BUFFER_INDEX = 5; // From capture/config.js
+
+// Helper to get current readable buffer
+function getReadableBuffer() {
+  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
+  return imageBuffers[index];
+}
+
+let sharedBufferView = getReadableBuffer(); // Initialize
 
 const sabStateManager = new SABStateManager({
   playerPosSAB,
@@ -109,31 +125,149 @@ let lastHealthScanTime = 0;
 let lastTargetScanTime = 0;
 let lastBattleListCount = 0;
 let battleListCreatureNames = new Map(); // name -> count
+// Tracking for change-based logging
+let lastLoggedHealthBarCount = -1;
+let lastLoggedBattleListCount = -1;
+let lastActualHealthBarCount = 0; // Track actual scan results (not when skipped)
+let mismatchCount = 0; // Track number of mismatches for frame dump
+let lastHealthBarPositions = []; // Track positions from last successful scan
+
+// Performance tracking
+const performanceStats = {
+  iterations: [],
+  lastReportTime: 0,
+  REPORT_INTERVAL_MS: 10000, // Report every 10 seconds
+  MAX_SAMPLES: 1000, // Keep last 1000 samples
+  OUTLIER_THRESHOLD_MULTIPLIER: 3, // Log if iteration > 3x median
+};
+
+// Performance checkpoint tracking for detailed breakdowns
+let perfCheckpoints = null;
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
   return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
 }
 
+// Helper function to calculate Levenshtein (edit) distance
+function levenshteinDistance(str1, str2) {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const matrix = Array(len1 + 1)
+    .fill(0)
+    .map(() => Array(len2 + 1).fill(0));
+
+  for (let i = 0; i <= len1; i++) matrix[i][0] = i;
+  for (let j = 0; j <= len2; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,     // deletion
+        matrix[i][j - 1] + 1,     // insertion
+        matrix[i - 1][j - 1] + cost  // substitution
+      );
+    }
+  }
+  return matrix[len1][len2];
+}
+
 // Helper function to check if two names are similar (handles OCR errors)
+// Uses longest common substring like the nameMatcher utility, with Levenshtein fallback
 function isSimilarName(name1, name2) {
   if (!name1 || !name2) return false;
   if (name1 === name2) return true;
   
-  // Normalize: trim and lowercase
+  // Normalize: trim and lowercase, remove spaces for comparison
   const n1 = name1.trim().toLowerCase();
   const n2 = name2.trim().toLowerCase();
   if (n1 === n2) return true;
   
+  // Remove spaces for better OCR error tolerance
+  const n1NoSpaces = n1.replace(/\s/g, '');
+  const n2NoSpaces = n2.replace(/\s/g, '');
+  
   // Check if one is substring of other (handles truncation)
   if (n1.includes(n2) || n2.includes(n1)) return true;
+  if (n1NoSpaces.includes(n2NoSpaces) || n2NoSpaces.includes(n1NoSpaces)) return true;
   
-  // Check if names start the same way (OCR might miss last chars)
-  const minLen = Math.min(n1.length, n2.length);
-  if (minLen >= 4) { // At least 4 characters
-    const prefix1 = n1.substring(0, minLen - 1);
-    const prefix2 = n2.substring(0, minLen - 1);
-    if (prefix1 === prefix2) return true;
+  // PRIMARY: Use longest common substring algorithm (same as nameMatcher)
+  // This handles missing characters well
+  let maxLength = 0;
+  const matrix = Array(n1NoSpaces.length + 1)
+    .fill(0)
+    .map(() => Array(n2NoSpaces.length + 1).fill(0));
+
+  for (let i = 1; i <= n1NoSpaces.length; i++) {
+    for (let j = 1; j <= n2NoSpaces.length; j++) {
+      if (n1NoSpaces[i - 1] === n2NoSpaces[j - 1]) {
+        matrix[i][j] = matrix[i - 1][j - 1] + 1;
+        if (matrix[i][j] > maxLength) {
+          maxLength = matrix[i][j];
+        }
+      }
+    }
+  }
+  
+  // Similar threshold as nameMatcher: at least 4 chars and 60% of the shorter name
+  const minLen = Math.min(n1NoSpaces.length, n2NoSpaces.length);
+  if (maxLength >= 4 && maxLength >= minLen * 0.6) {
+    return true;
+  }
+  
+  // FALLBACK 1: Use Levenshtein distance for character substitutions/insertions/deletions
+  // This catches cases with multiple misread/missing chars that common substring misses
+  const maxLen = Math.max(n1NoSpaces.length, n2NoSpaces.length);
+  if (minLen >= 6) {
+    const editDistance = levenshteinDistance(n1NoSpaces, n2NoSpaces);
+    // Allow edit distance proportional to name length
+    // For 6-10 char names: allow 3 edits (30-50%)
+    // For 11-15 char names: allow 4 edits (27-36%)
+    // For 16+ char names: allow 5 edits (31%)
+    const maxEdits = maxLen >= 16 ? 5 : (maxLen >= 11 ? 4 : 3);
+    
+    // Also require that at least 60% of characters are correct
+    const similarity = 1 - (editDistance / maxLen);
+    if (editDistance <= maxEdits && similarity >= 0.6) {
+      return true;
+    }
+  }
+  
+  // FALLBACK 2: AGGRESSIVE character set matching (last resort)
+  // Only for reasonably long names, checks if they share enough of the same letters
+  // This handles extreme OCR corruption, multiple spaces, numbers for letters, etc.
+  if (minLen >= 6) {
+    // Get character frequency for both names (ignoring order)
+    const getCharCounts = (str) => {
+      const counts = {};
+      for (const char of str) {
+        counts[char] = (counts[char] || 0) + 1;
+      }
+      return counts;
+    };
+    
+    const counts1 = getCharCounts(n1NoSpaces);
+    const counts2 = getCharCounts(n2NoSpaces);
+    
+    // Count how many characters match (taking minimum count for each char)
+    let matchingChars = 0;
+    const allChars = new Set([...Object.keys(counts1), ...Object.keys(counts2)]);
+    
+    for (const char of allChars) {
+      const count1 = counts1[char] || 0;
+      const count2 = counts2[char] || 0;
+      matchingChars += Math.min(count1, count2);
+    }
+    
+    // Require that at least 70% of the shorter name's characters are present
+    // and at least 60% of the longer name's characters are present
+    const matchRatioShort = matchingChars / minLen;
+    const matchRatioLong = matchingChars / maxLen;
+    
+    if (matchRatioShort >= 0.7 && matchRatioLong >= 0.6) {
+      return true;
+    }
   }
   
   return false;
@@ -442,7 +576,7 @@ function updateCreatureState(
 
 async function performOperation() {
   try {
-    const startTime = performance.now();
+    const now = Date.now();
 
     if (
       !isInitialized ||
@@ -467,8 +601,6 @@ async function performOperation() {
 
     const { gameWorld, tileSize } = regions;
     if (!gameWorld || !tileSize) return;
-
-    const now = Date.now();
     // Get player z-level from unified SAB
     let zLevelAtScanStart = 0;
     if (sabInterface) {
@@ -504,6 +636,8 @@ async function performOperation() {
         (dirtyRects.some((r) => rectsIntersect(r, regions.battleList)) ||
           forceBattleListOcr)
       ) {
+        // Get fresh buffer for OCR (may have swapped during previous async work)
+        sharedBufferView = getReadableBuffer();
         battleListEntries = await processBattleListOcr(
           sharedBufferView,
           regions,
@@ -514,12 +648,16 @@ async function performOperation() {
         regions.playerList &&
         dirtyRects.some((r) => rectsIntersect(r, regions.playerList))
       ) {
+        // Get fresh buffer for OCR
+        sharedBufferView = getReadableBuffer();
         playerNames = await processPlayerList(sharedBufferView, regions);
       }
       if (
         regions.npcList &&
         dirtyRects.some((r) => rectsIntersect(r, regions.npcList))
       ) {
+        // Get fresh buffer for OCR
+        sharedBufferView = getReadableBuffer();
         npcNames = await processNpcList(sharedBufferView, regions);
       }
     }
@@ -569,11 +707,29 @@ async function performOperation() {
     }
 
     if (lootReason && !isLootingInProgress) {
-      logger('info', `[CreatureMonitor] ${lootReason} - triggering looting.`);
+      logger('debug', `[Looting] ${lootReason}`);
       await performImmediateLooting();
     }
 
     if (sabStateManager.isLootingRequired()) return;
+
+    // START performance tracking only when we have actual work to do
+    // (creatures detected or need to clear previous state)
+    const hasWork = battleListEntries.length > 0 || playerNames.length > 0 || npcNames.length > 0 || lastSentCreatures.length > 0 || lastSentTarget !== null;
+    const perfStartTime = hasWork ? performance.now() : null;
+    
+    // Initialize performance checkpoints for detailed tracking
+    if (perfStartTime !== null) {
+      perfCheckpoints = {
+        start: perfStartTime,
+        afterBattleListCheck: 0,
+        afterHealthBarScan: 0,
+        afterCreatureMatching: 0,
+        afterReachabilityCalc: 0,
+        afterTargetScan: 0,
+        afterSABWrite: 0,
+      };
+    }
 
     if (
       battleListEntries.length === 0 &&
@@ -614,6 +770,8 @@ async function performOperation() {
       previousTargetedCreatureCounts = new Map();
       return;
     }
+    
+    if (perfCheckpoints) perfCheckpoints.afterBattleListCheck = performance.now();
 
     // Get current player position from unified SAB
     let currentPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
@@ -654,89 +812,28 @@ async function performOperation() {
       height: Math.max(0, gameWorld.height - 28),
     };
 
-    // Skip expensive health bar/target scans unless the game world changed or the player moved
-    const intersectsGameWorld =
-      dirtyRects.length > 0 && dirtyRects.some((r) => rectsIntersect(r, constrainedGameWorld));
-    if (!intersectsGameWorld && !playerPositionChanged) {
-      // Still propagate lightweight list updates if we refreshed them above
-      postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
-      if (battleListEntries.length > 0)
-        parentPort.postMessage({ storeUpdate: true, type: 'battleList/updateLastSeenMs' });
-      postUpdateOnce('uiValues/setPlayers', playerNames);
-      if (playerNames.length > 0)
-        parentPort.postMessage({ storeUpdate: true, type: 'uiValues/updateLastSeenPlayerMs' });
-      postUpdateOnce('uiValues/setNpcs', npcNames);
-      if (npcNames.length > 0)
-        parentPort.postMessage({ storeUpdate: true, type: 'uiValues/updateLastSeenNpcMs' });
-      return;
-    }
+    // Always scan health bars when we have battle list entries (no early return)
+    // Previously this early return would skip health bar scanning, causing mismatches
 
-    // Minimal interval to smooth out bursts when frames arrive very fast
-    if (!playerPositionChanged && now - lastHealthScanTime < HEALTHBAR_SCAN_MIN_INTERVAL_MS) {
-      postUpdateOnce('battleList/setBattleListEntries', battleListEntries);
-      postUpdateOnce('uiValues/setPlayers', playerNames);
-      postUpdateOnce('uiValues/setNpcs', npcNames);
-      return;
-    }
-
-    // Compute dirty union for ROI and skip if not touching previous bar areas
-    let dirtyUnion = null;
-    if (dirtyRects.length > 0) {
-      const margin = Math.max(8, Math.floor((tileSize?.width || 32) * 0.5));
-      dirtyUnion = unionRect(dirtyRects, margin);
-    }
-
-    let skipHealthScan = false;
-    if (!playerPositionChanged && dirtyUnion && lastBarAreas && lastBarAreas.length) {
-      let touchesBar = false;
-      for (const area of lastBarAreas) {
-        if (rectsIntersect(area, dirtyUnion)) { touchesBar = true; break; }
-      }
-      if (!touchesBar) skipHealthScan = true;
-    }
-
-    // Crop health bar scan to dirty union area inside the game world if available
-    let healthScanArea = null;
-    if (!skipHealthScan && dirtyUnion) {
-      healthScanArea = intersectRects(dirtyUnion, constrainedGameWorld);
-    }
-
+    // ALWAYS scan full game world - no optimizations (for debugging native module)
     let healthBars = [];
-    if (!skipHealthScan) {
-      healthBars = await findHealthBars.findHealthBars(
-        sharedBufferView,
-        healthScanArea || constrainedGameWorld,
-      );
-      lastHealthScanTime = now;
+    let didScanHealthBars = false;
+    // CRITICAL: Get fresh buffer immediately before health bar scan
+    // Previous async operations may have allowed buffer swap
+    sharedBufferView = getReadableBuffer();
+    healthBars = await findHealthBars.findHealthBars(
+      sharedBufferView,
+      constrainedGameWorld,
+    );
+    lastHealthScanTime = now;
+    lastActualHealthBarCount = healthBars.length; // Track actual scan result
+    didScanHealthBars = true;
+    // Track positions for diagnostic
+    if (healthBars.length > 0) {
+      lastHealthBarPositions = healthBars.map(hb => ({ x: hb.x, y: hb.y }));
     }
     let newActiveCreatures = new Map();
     const matchedHealthBars = new Set();
-    if (skipHealthScan) {
-      // Reuse previous activeCreatures if skipping heavy scan
-      // Update lastSeen and positions to prevent flicker grace period expiration
-      newActiveCreatures = new Map();
-      for (const [id, creature] of activeCreatures.entries()) {
-        const updated = { ...creature, lastSeen: now };
-        // If player moved, update creature's expected screen position
-        if (playerPositionChanged && creature.gameCoords) {
-          const expectedScreenPos = getAbsoluteGameWorldClickCoordinates(
-            creature.gameCoords.x,
-            creature.gameCoords.y,
-            currentPlayerMinimapPosition,
-            regions.gameWorld,
-            regions.tileSize
-          );
-          if (expectedScreenPos) {
-            updated.absoluteCoords = {
-              x: expectedScreenPos.x,
-              y: expectedScreenPos.y,
-              lastUpdate: now,
-            };
-          }
-        }
-        newActiveCreatures.set(id, updated);
-      }
-    }
 
     // Build canonical names list for OCR matching
     // Strategy: 
@@ -778,6 +875,8 @@ async function performOperation() {
         width: clampedWidth,
         height: clampedHeight,
       };
+      // Note: recognizeText is synchronous, so using the current sharedBufferView is safe
+      // as long as it was refreshed before the health bar scan that produced this hb
       const nameplateOcrResults =
         recognizeText(
           sharedBufferView,
@@ -820,7 +919,7 @@ async function performOperation() {
         // Use fuzzy matching to handle OCR errors (missing chars, typos)
         if (preOcrName && !isSimilarName(preOcrName, oldCreature.name)) {
           // Names are completely different - this is probably a different creature
-          logger('info', `[CREATURE REJECT] ID ${id} "${oldCreature.name}" rejected match - OCR read "${preOcrName}" (not similar)`);
+          logger('debug', `[CREATURE REJECT] ID ${id} "${oldCreature.name}" rejected match - OCR read "${preOcrName}" (not similar)`);
           bestMatch = null;
         }
       }
@@ -923,7 +1022,7 @@ async function performOperation() {
       }
     }
 
-    if (!skipHealthScan && healthBars.length > matchedHealthBars.size) {
+    if (healthBars.length > matchedHealthBars.size) {
       for (const hb of healthBars) {
         if (!matchedHealthBars.has(hb)) {
           const creatureName = await performOcrForHealthBar(hb);
@@ -934,7 +1033,7 @@ async function performOperation() {
             hp: hb.healthTag,
           };
           const newId = nextInstanceId++;
-          logger('info', `[CREATURE NEW] ${creatureName || 'unknown'} created with ID ${newId} at screen pos (${hb.x}, ${hb.y})`);
+          logger('debug', `[CREATURE NEW] ${creatureName || 'unknown'} created with ID ${newId} at screen pos (${hb.x}, ${hb.y})`);
           let newCreature = { instanceId: newId };
           newCreature = updateCreatureState(
             newCreature,
@@ -968,7 +1067,7 @@ async function performOperation() {
         const stillInBattleList = currentBattleListNames.get(creature.name) > 0;
         if (!stillInBattleList) {
           // This creature is NOT in battle list anymore - it's dead!
-          logger('info', `[CREATURE REMOVED] ID ${id} "${creature.name}" - not in battle list (died/despawned)`);
+          logger('debug', `[CREATURE REMOVED] ID ${id} "${creature.name}" - not in battle list (died/despawned)`);
           newActiveCreatures.delete(id);
         }
       }
@@ -998,16 +1097,18 @@ async function performOperation() {
     activeCreatures = newActiveCreatures;
     lastBattleListCount = currentBattleListCount;
     battleListCreatureNames = currentBattleListNames;
+    
+    if (perfCheckpoints) perfCheckpoints.afterHealthBarScan = performance.now();
 
-    // Update lastBarAreas for next-frame proximity checks
-    if (!skipHealthScan && Array.isArray(healthBars)) {
-      lastBarAreas = healthBars.map((hb) => ({
-        x: hb.x - (tileSize?.width || 32),
-        y: hb.y - 20,
-        width: (tileSize?.width || 32) * 2,
-        height: 40,
-      }));
-    }
+    // Update lastBarAreas for next-frame proximity checks (not used anymore but keep for future)
+    lastBarAreas = healthBars.map((hb) => ({
+      x: hb.x - (tileSize?.width || 32),
+      y: hb.y - 20,
+      width: (tileSize?.width || 32) * 2,
+      height: 40,
+    }));
+    
+    if (perfCheckpoints) perfCheckpoints.afterCreatureMatching = performance.now();
 
     let detectedEntities = Array.from(activeCreatures.values());
     const blockingCreatures = new Set();
@@ -1105,13 +1206,15 @@ async function performOperation() {
         return { ...entity, isReachable, isAdjacent, isBlockingPath };
       });
     }
+    
+    if (perfCheckpoints) perfCheckpoints.afterReachabilityCalc = performance.now();
 
     const creaturesChanged = !deepCompareEntities(
       detectedEntities,
       lastSentCreatures,
     );
     if (creaturesChanged) {
-      const duration = (performance.now() - startTime).toFixed(2);
+      const duration = perfStartTime ? (performance.now() - perfStartTime).toFixed(2) : '0.00';
       postUpdateOnce('targeting/setEntities', {
         creatures: detectedEntities,
         duration,
@@ -1127,8 +1230,8 @@ async function performOperation() {
     if (!allObstructed) {
       let didScanTarget = false;
       let targetRect = null;
+      // Always scan target when creatures changed or fallback timer expires
       const needsTargetScan =
-        intersectsGameWorld ||
         playerPositionChanged ||
         creaturesChanged ||
         now - lastTargetScanTime >= TARGET_SCAN_FALLBACK_MS;
@@ -1140,6 +1243,8 @@ async function performOperation() {
           const dirtyUnion = unionRect(dirtyRects, margin);
           if (dirtyUnion) targetScanArea = intersectRects(dirtyUnion, gameWorld);
         }
+        // Get fresh buffer for target scan
+        sharedBufferView = getReadableBuffer();
         targetRect = await findTarget.findTarget(
           sharedBufferView,
           targetScanArea || gameWorld,
@@ -1194,6 +1299,8 @@ async function performOperation() {
           gameWorldTarget = lastSentTarget;
       }
     }
+    
+    if (perfCheckpoints) perfCheckpoints.afterTargetScan = performance.now();
 
     let unifiedTarget = null;
     const battleListRegion = currentState.regionCoordinates.regions.battleList;
@@ -1218,6 +1325,8 @@ async function performOperation() {
         };
       }
       
+      // Get fresh buffer for battle list target marker scan
+      sharedBufferView = getReadableBuffer();
       const result = await findSequences.findSequencesNative(
         sharedBufferView,
         sequences,
@@ -1362,6 +1471,8 @@ async function performOperation() {
         logger('error', `[CreatureMonitor] Failed to write to unified SAB: ${err.message}`);
       }
     }
+    
+    if (perfCheckpoints) perfCheckpoints.afterSABWrite = performance.now();
 
     // Legacy SAB support (keep for targeting worker compatibility)
     sabStateManager.writeWorldState({
@@ -1397,6 +1508,134 @@ async function performOperation() {
     const currentTarget = sabStateManager.getCurrentTarget();
     previousTargetName = currentTarget?.name || null;
     previousTargetedCreatureCounts = new Map(currentTargetedCreatureCounts);
+    
+    // Log health bars and battle list counts ONLY when there's a mismatch
+    // Track ACTUAL health bar scan results from native module
+    // IMPORTANT: Only log when we actually performed a health bar scan (not using stale data)
+    if (didScanHealthBars) {
+      const healthBarCountForLog = lastActualHealthBarCount;
+      const battleListCountForLog = battleListEntries.length;
+      
+      // Only log if counts changed AND there's a mismatch (HB != BL)
+      const countsChanged = healthBarCountForLog !== lastLoggedHealthBarCount || 
+                            battleListCountForLog !== lastLoggedBattleListCount;
+      const isMismatch = healthBarCountForLog !== battleListCountForLog;
+      
+      if (countsChanged && isMismatch) {
+        mismatchCount++;
+        logger('info', `[Detection MISMATCH #${mismatchCount}] ${healthBarCountForLog} HB / ${battleListCountForLog} BL`);
+        
+        // Dump frame on 5th mismatch for analysis
+        if (mismatchCount === 5 && healthBarCountForLog < battleListCountForLog) {
+          try {
+            const fs = await import('fs/promises');
+            const timestamp = Date.now();
+            const width = new Uint32Array(sharedBufferView.buffer, sharedBufferView.byteOffset, 1)[0];
+            const height = new Uint32Array(sharedBufferView.buffer, sharedBufferView.byteOffset + 4, 1)[0];
+            const dumpPath = `/tmp/hb_mismatch_${timestamp}.raw`;
+            
+            // Write the frame
+            await fs.writeFile(dumpPath, sharedBufferView);
+            
+            // Log details
+            const battleListNames = battleListEntries.map(e => e.name).join(', ');
+            const healthBarPositions = healthBars.length > 0 
+              ? healthBars.map(hb => `(${hb.x},${hb.y})`).join(', ')
+              : 'NONE';
+            const lastKnownPositions = lastHealthBarPositions.length > 0
+              ? lastHealthBarPositions.map(p => `(${p.x},${p.y})`).join(', ')
+              : 'NONE';
+            const scanArea = `x=${constrainedGameWorld.x} y=${constrainedGameWorld.y} w=${constrainedGameWorld.width} h=${constrainedGameWorld.height}`;
+            
+            logger('info', `[FRAME DUMP] Saved to ${dumpPath}`);
+            logger('info', `[FRAME DUMP] Dimensions: ${width}x${height} BGRA (8-byte header)`);
+            logger('info', `[FRAME DUMP] Battle list creatures: ${battleListNames}`);
+            logger('info', `[FRAME DUMP] Health bars found THIS frame: ${healthBarPositions}`);
+            logger('info', `[FRAME DUMP] Health bars from PREVIOUS frame: ${lastKnownPositions}`);
+            logger('info', `[FRAME DUMP] Scan area: ${scanArea}`);
+            logger('info', `[FRAME DUMP] Expected: ${battleListCountForLog} creatures, found ${healthBarCountForLog} health bars`);
+            logger('info', `[FRAME DUMP] **Check pixels around these previous positions: ${lastKnownPositions}**`);
+          } catch (err) {
+            logger('error', `[FRAME DUMP] Failed: ${err.message}`);
+          }
+        }
+        lastLoggedHealthBarCount = healthBarCountForLog;
+        lastLoggedBattleListCount = battleListCountForLog;
+      } else if (countsChanged) {
+        // Update tracked counts silently when they match
+        lastLoggedHealthBarCount = healthBarCountForLog;
+        lastLoggedBattleListCount = battleListCountForLog;
+      }
+    }
+    
+    // Track performance only if we had work to do
+    if (perfStartTime !== null) {
+      const duration = performance.now() - perfStartTime;
+      performanceStats.iterations.push(duration);
+      
+      // Check for outliers and log detailed breakdown
+      if (performanceStats.iterations.length >= 10) {
+        const sorted = [...performanceStats.iterations].sort((a, b) => a - b);
+        const count = sorted.length;
+        const median = count % 2 === 0 
+          ? (sorted[count / 2 - 1] + sorted[count / 2]) / 2 
+          : sorted[Math.floor(count / 2)];
+        
+        const outlierThreshold = median * performanceStats.OUTLIER_THRESHOLD_MULTIPLIER;
+        
+        if (duration > outlierThreshold && perfCheckpoints) {
+          const breakdown = {
+            battleListCheck: (perfCheckpoints.afterBattleListCheck - perfCheckpoints.start).toFixed(2),
+            healthBarScan: (perfCheckpoints.afterHealthBarScan - perfCheckpoints.afterBattleListCheck).toFixed(2),
+            creatureMatching: (perfCheckpoints.afterCreatureMatching - perfCheckpoints.afterHealthBarScan).toFixed(2),
+            reachabilityCalc: (perfCheckpoints.afterReachabilityCalc - perfCheckpoints.afterCreatureMatching).toFixed(2),
+            targetScan: (perfCheckpoints.afterTargetScan - perfCheckpoints.afterReachabilityCalc).toFixed(2),
+            sabWrite: (perfCheckpoints.afterSABWrite - perfCheckpoints.afterTargetScan).toFixed(2),
+          };
+          
+          const context = {
+            creatures: detectedEntities.length,
+            healthBars: healthBars.length,
+            battleList: battleListEntries.length,
+            targetChanged: targetChanged,
+            creaturesChanged: creaturesChanged,
+          };
+          
+          logger('info', `[CreatureMonitor OUTLIER] ${duration.toFixed(2)}ms (${(duration/median).toFixed(1)}x median) - ` +
+            `Breakdown: BL=${breakdown.battleListCheck}ms, HB=${breakdown.healthBarScan}ms, Match=${breakdown.creatureMatching}ms, ` +
+            `Reach=${breakdown.reachabilityCalc}ms, Target=${breakdown.targetScan}ms, SAB=${breakdown.sabWrite}ms | ` +
+            `Context: creatures=${context.creatures}, healthBars=${context.healthBars}, battleList=${context.battleList}, ` +
+            `targetChanged=${context.targetChanged}, creaturesChanged=${context.creaturesChanged}`);
+        }
+      }
+      
+      // Keep only last MAX_SAMPLES
+      if (performanceStats.iterations.length > performanceStats.MAX_SAMPLES) {
+        performanceStats.iterations.shift();
+      }
+      
+      // Report stats every REPORT_INTERVAL_MS
+      if (now - performanceStats.lastReportTime >= performanceStats.REPORT_INTERVAL_MS) {
+        const sorted = [...performanceStats.iterations].sort((a, b) => a - b);
+        const count = sorted.length;
+        
+        if (count > 0) {
+          const min = sorted[0];
+          const max = sorted[count - 1];
+          const median = count % 2 === 0 
+            ? (sorted[count / 2 - 1] + sorted[count / 2]) / 2 
+            : sorted[Math.floor(count / 2)];
+          const avg = sorted.reduce((sum, val) => sum + val, 0) / count;
+          
+          logger('info', `[CreatureMonitor PERF] ${count} work iterations - Min: ${min.toFixed(2)}ms, Avg: ${avg.toFixed(2)}ms, Median: ${median.toFixed(2)}ms, Max: ${max.toFixed(2)}ms`);
+        }
+        
+        performanceStats.lastReportTime = now;
+      }
+      
+      // Reset checkpoints
+      perfCheckpoints = null;
+    }
   } catch (error) {
     logger('error', '[CreatureMonitor] Error in operation:', error);
   }

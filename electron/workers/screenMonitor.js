@@ -16,9 +16,17 @@ const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
 
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
-const { imageSAB, syncSAB } = sharedData;
+const { imageSAB_A, imageSAB_B, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
-const sharedBufferView = Buffer.from(imageSAB);
+
+// Double buffering
+const imageBuffers = [Buffer.from(imageSAB_A), Buffer.from(imageSAB_B)];
+const READABLE_BUFFER_INDEX = 5;
+function getReadableBuffer() {
+  const index = Atomics.load(syncArray, READABLE_BUFFER_INDEX);
+  return imageBuffers[index];
+}
+let sharedBufferView = getReadableBuffer();
 
 const WIDTH_INDEX = 1;
 const HEIGHT_INDEX = 2;
@@ -335,6 +343,9 @@ function calculateWalkingState() {
 
 async function processGameState() {
   if (!isInitialized) return;
+  
+  // Double buffering: refresh buffer at start of operation
+  sharedBufferView = getReadableBuffer();
 
   // Ensure we have regions or request snapshot; continue with cached regions if stale
   const rc = currentState?.regionCoordinates;
@@ -503,9 +514,11 @@ async function processGameState() {
       const hkDirty = isDirty(regions.hotkeyBar);
       const hkSince = now - lastScanTs.hotkeyBar;
       if ((hkDirty && hkSince > MIN_HOTKEY_INTERVAL_MS) || hkSince > FALLBACK.hotkeyBar || !hasScannedInitially) {
+        // Get fresh buffer before async hotkey bar scan
+        const freshBuffer = getReadableBuffer();
         lastCalculatedState.activeActionItems = await calculateActiveActionItems(
           regions.hotkeyBar,
-          bufferToUse,
+          freshBuffer,
           metadata,
         );
         lastScanTs.hotkeyBar = now;

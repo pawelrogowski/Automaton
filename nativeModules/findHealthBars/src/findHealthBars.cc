@@ -130,7 +130,9 @@ void HealthBarWorker(WorkerData data) {
             _mm_prefetch((const char*)(data.bgraData + (prefetchY * data.stride)), _MM_HINT_T0);
         }
 
-        if (y + 3 >= endY) break;
+        // Check if we have enough rows remaining for a 4-pixel-tall health bar
+        // Need y, y+1, y+2, y+3 all to be valid
+        if (y + 3 >= data.height) break;
 
         const uint8_t* row0 = data.bgraData + (y * data.stride);
         const uint8_t* row1 = data.bgraData + ((y + 1) * data.stride);

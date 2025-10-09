@@ -437,11 +437,7 @@ export async function manageMovement(
     pathStart.z !== playerMinimapPosition.z;
   
   if (isPathStale) {
-    console.log(
-      `[Targeting] Skipping movement - path is stale ` +
-      `(path starts at {x:${pathStart.x}, y:${pathStart.y}, z:${pathStart.z}}, ` +
-      `player at {x:${playerMinimapPosition.x}, y:${playerMinimapPosition.y}, z:${playerMinimapPosition.z}})`
-    );
+    // Path is stale - silently skip movement and wait for new path
     return;
   }
 
@@ -461,19 +457,7 @@ export async function manageMovement(
   movementTracking.lastMoveTimestamp = now;
   movementTracking.moveCount++;
   
-  // Log movement stats every 5 seconds
-  if (now - movementTracking.lastLogTime >= 5000) {
-    console.log(
-      `[Targeting] Move stats: ${movementTracking.moveCount} moves in last 5s`,
-    );
-    movementTracking.moveCount = 0;
-    movementTracking.lastLogTime = now;
-  }
-  
-  console.log(
-    `[Targeting] Walking ${dirKey} to {x:${nextStep.x}, y:${nextStep.y}, z:${nextStep.z}} ` +
-    `(diagonal: ${isDiagonalMovement(dirKey)}, timeout: ${timeout}ms, last move: ${timeSinceLastMove}ms ago)`,
-  );
+  // Silently track movement stats (no logging)
 
   parentPort.postMessage({
     type: 'inputAction',
@@ -489,8 +473,8 @@ export async function manageMovement(
       { stateChangePollIntervalMs: 5 },
       timeout
     );
-    console.log('[Targeting] Movement confirmed successfully');
+    // Movement confirmed - no logging needed
   } catch (error) {
-    console.log(`[Targeting] Movement confirmation failed: ${error.message}`);
+    // Movement failed - silently retry on next iteration
   }
 }
