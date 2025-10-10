@@ -14,7 +14,7 @@ import {
   PATH_STATUS_IDLE,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
+const logger = createLogger({ info: true, error: true, debug: true });
 
 // Track last target for change detection
 let lastLoggedTarget = null;
@@ -135,7 +135,11 @@ const isLootingRequired = () => {
 
 // --- State Transition Helper ---
 function transitionTo(newState, reason = '') {
-  if (targetingState.state === newState) return;
+  if (targetingState.state === newState) {
+    logger('debug', `[TRANSITION] Already in ${newState}, skipping`);
+    return;
+  }
+  logger('info', `[TRANSITION] ${targetingState.state} → ${newState} (${reason})`);
   targetingState.state = newState;
 
   if (newState === FSM_STATE.SELECTING) {
@@ -146,6 +150,7 @@ function transitionTo(newState, reason = '') {
   }
   if (newState === FSM_STATE.ACQUIRING) {
     targetingState.lastAcquireAttempt.timestamp = 0;
+    targetingState.lastAcquireAttempt.clickCount = 0;
   }
 }
 
@@ -183,7 +188,7 @@ function handleSelectingState() {
     targetingState.pathfindingTarget = bestTarget;
     // Only update if target actually changed to prevent redundant updates
     if (targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId) {
-      logger('debug', `[TARGET CHANGE] SELECTING → ${bestTarget.name} (ID: ${bestTarget.instanceId}, distance: ${bestTarget.distance?.toFixed(1)}, adjacent: ${bestTarget.isAdjacent})`);
+      logger('debug', `[TARGET CHANGE] SELECTING → ${bestTarget.name} (ID: ${bestTarget.instanceId}, distance: ${bestTarget.distance?.toFixed(1)}, adjacent: ${bestTarget.isAdjacent}, reachable: ${bestTarget.isReachable})`);
       updateDynamicTarget(
         parentPort,
         bestTarget,
@@ -211,12 +216,42 @@ function handleAcquiringState() {
   const now = performance.now();
   const { pathfindingTarget } = targetingState;
   const creatures = getCreaturesFromSAB();
-
+  
+  // Don't check if pathfindingTarget is unreachable here - we need to cycle through
+  // battle list entries to find a reachable one with the same name
+  
   // 1. Always check for success first.
   const currentInGameTarget = getCurrentTargetFromSAB();
   const isTargetLive = currentInGameTarget
     ? creatures.some((c) => c.instanceId === currentInGameTarget.instanceId)
     : false;
+
+  // 1a. If we have a target but it's unreachable, cycle after timeout
+  // BUT: Only if we're actually waiting for a target (timestamp != 0)
+  // This prevents infinite loop where we keep waiting for timeout on stale target
+  if (
+    currentInGameTarget &&
+    isTargetLive &&
+    currentInGameTarget.name === pathfindingTarget.name &&
+    !currentInGameTarget.isReachable &&
+    targetingState.lastAcquireAttempt.timestamp !== 0  // Only if we're waiting for THIS click
+  ) {
+    if (targetingState.unreachableSince === 0) {
+      targetingState.unreachableSince = now;
+    } else if (now - targetingState.unreachableSince > config.unreachableTimeoutMs) {
+      logger('debug', `[FSM-ACQUIRING] Target ${currentInGameTarget.name} unreachable for > ${config.unreachableTimeoutMs}ms - cycling to next battle list entry`);
+      targetingState.unreachableSince = 0;
+      // Reset timestamp to allow immediate click of next battle list entry
+      // Keep battleListIndex so we cycle to the NEXT entry
+      targetingState.lastAcquireAttempt.timestamp = 0;
+      return;
+    }
+    // Still waiting for timeout
+    return;
+  } else if (targetingState.unreachableSince > 0) {
+    // Target became reachable again, reset timer
+    targetingState.unreachableSince = 0;
+  }
 
   if (
     currentInGameTarget &&
@@ -224,35 +259,81 @@ function handleAcquiringState() {
     currentInGameTarget.name === pathfindingTarget.name &&
     currentInGameTarget.isReachable
   ) {
-    targetingState.currentTarget = currentInGameTarget;
+    // Find the actual creature object with full details
+    const actualTargetCreature = creatures.find(c => 
+      c.instanceId === currentInGameTarget.instanceId
+    );
     
-    // Update dynamic target with the actual acquired target to sync instance IDs
-    // (The pathfindingTarget might have a different instance ID)
-    const targetingList = workerState.globalState.targeting.targetingList;
-    const rule = findRuleForCreatureName(currentInGameTarget.name, targetingList);
-    if (rule && rule.stance !== 'Stand') {
-      if (targetingState.lastDispatchedDynamicTargetId !== currentInGameTarget.instanceId) {
-        updateDynamicTarget(parentPort, currentInGameTarget, targetingList);
-        targetingState.lastDispatchedDynamicTargetId = currentInGameTarget.instanceId;
-      }
+    if (!actualTargetCreature) {
+      // Target exists in game but not in creatures list yet, wait
+      return;
     }
     
+    // CRITICAL: Reject unreachable creatures immediately and cycle to next battle list entry
+    if (!actualTargetCreature.isReachable) {
+      logger('debug', `[FSM-ACQUIRING] Target ${actualTargetCreature.name} (ID: ${actualTargetCreature.instanceId}) is unreachable - will cycle to next battle list entry`);
+      // Clear timestamp to allow next click attempt
+      // Keep battleListIndex so the next click will try the NEXT entry in the list
+      targetingState.lastAcquireAttempt.timestamp = 0;
+      return;
+    }
+    
+    // SIMPLE CHECK: Does the instance ID match what we want?
+    const isInstanceMatch = actualTargetCreature.instanceId === pathfindingTarget.instanceId;
+    
+    if (isInstanceMatch) {
+      // Perfect! We found the exact creature we wanted
+      logger('debug', `[FSM-ACQUIRING] Accepted ${actualTargetCreature.name} (ID: ${actualTargetCreature.instanceId}) - instance ID match`);
+      
+      targetingState.pathfindingTarget = actualTargetCreature;
+      targetingState.currentTarget = actualTargetCreature;
+      targetingState.lastAcquireAttempt.clickCount = 0;
+      
+      // Update dynamic target
+      const targetingList = workerState.globalState.targeting.targetingList;
+      const rule = findRuleForCreatureName(actualTargetCreature.name, targetingList);
+      if (rule && rule.stance !== 'Stand') {
+        if (targetingState.lastDispatchedDynamicTargetId !== actualTargetCreature.instanceId) {
+          updateDynamicTarget(parentPort, actualTargetCreature, targetingList);
+          targetingState.lastDispatchedDynamicTargetId = actualTargetCreature.instanceId;
+        }
+      }
+      
+      transitionTo(
+        FSM_STATE.ENGAGING,
+        `Acquired target ${actualTargetCreature.name} - instance ID match`
+      );
+      return;
+    } else {
+      // Wrong creature - cycle to next battle list entry
+      logger('debug', `[FSM-ACQUIRING] Wrong creature (wanted ID: ${pathfindingTarget.instanceId}, got ID: ${actualTargetCreature.instanceId}) - cycling`);
+      targetingState.lastAcquireAttempt.timestamp = 0;
+      return;
+    }
+  }
+
+  // 2. Check if there are ANY creatures with the same name (reachable or not)
+  // If the original pathfindingTarget is unreachable, we'll cycle through battle list
+  // to find another creature with the same name that IS reachable
+  const creaturesWithSameName = creatures.filter(c => c.name === pathfindingTarget.name);
+  
+  if (creaturesWithSameName.length === 0) {
+    // No creatures with this name exist anymore - go back to SELECTING
     transitionTo(
-      FSM_STATE.ENGAGING,
-      `Acquired target ${currentInGameTarget.name}`
+      FSM_STATE.SELECTING,
+      'No creatures with target name found'
     );
     return;
   }
-
-  // 2. Check if our desired target is still valid.
-  const pathfindingTargetStillExists = creatures.some(
-    (c) => c.instanceId === pathfindingTarget.instanceId && c.isReachable
-  );
-
-  if (!pathfindingTargetStillExists) {
+  
+  // Check if ANY creature with this name is reachable
+  const anyReachable = creaturesWithSameName.some(c => c.isReachable);
+  if (!anyReachable) {
+    // All creatures with this name are unreachable - go back to SELECTING
+    logger('debug', `[FSM-ACQUIRING] All ${pathfindingTarget.name} creatures unreachable - reselecting`);
     transitionTo(
       FSM_STATE.SELECTING,
-      'Pathfinding target disappeared or became unreachable'
+      'All creatures with target name are unreachable'
     );
     return;
   }
@@ -268,12 +349,20 @@ function handleAcquiringState() {
     return;
   }
 
+  // Only reset battleListIndex if we're targeting a DIFFERENT creature name
+  // This preserves cycling progress when SELECTING picks another creature with same name
   if (targetingState.lastAcquireAttempt.targetName !== pathfindingTarget.name) {
+    // Different creature name - reset cycling
     targetingState.lastAcquireAttempt.battleListIndex = -1;
     targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
+    logger('debug', `[FSM-ACQUIRING] New creature name ${pathfindingTarget.name}, resetting battleListIndex`);
+  } else {
+    logger('debug', `[FSM-ACQUIRING] Same creature name ${pathfindingTarget.name}, preserving battleListIndex: ${targetingState.lastAcquireAttempt.battleListIndex}`);
   }
 
-  logger('debug', `[FSM-ACQUIRING] Attempting to click ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId})`);
+  // We cannot correlate battle list UI coordinates with game world coordinates,
+  // so we always cycle through battle list entries and verify each one in game world
+  logger('debug', `[FSM-ACQUIRING] Attempting to click ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId}, lastIndex: ${targetingState.lastAcquireAttempt.battleListIndex})`);
   const result = acquireTarget(
     getBattleListFromSAB,
     parentPort,
@@ -282,12 +371,13 @@ function handleAcquiringState() {
     workerState.globalState,  // Pass globalState for region access
     getCreaturesFromSAB,      // Pass creature getter function
     () => workerState.playerMinimapPosition,  // Pass player position getter
-    pathfindingTarget.instanceId  // Pass instance ID to ensure we click the RIGHT creature
+    null  // Don't pass instance ID - we'll verify after clicking
   );
 
   targetingState.lastAcquireAttempt.timestamp = now;
 
   if (result.success) {
+    logger('debug', `[FSM-ACQUIRING] Clicked battle list entry ${result.clickedIndex} (method: ${result.method || 'unknown'})`);
     targetingState.lastAcquireAttempt.battleListIndex = result.clickedIndex;
   } else {
     transitionTo(FSM_STATE.SELECTING, `${pathfindingTarget.name} not in battle list`);
@@ -384,15 +474,23 @@ async function handleEngagingState() {
   if (!updatedTarget.isReachable) {
     if (targetingState.unreachableSince === 0) {
       targetingState.unreachableSince = now;
+      logger('info', `[ENGAGING] Target ${updatedTarget.name} (ID: ${updatedTarget.instanceId}) became unreachable - starting ${config.unreachableTimeoutMs}ms timeout`);
     } else if (now - targetingState.unreachableSince > config.unreachableTimeoutMs) {
+      logger('info', `[ENGAGING] Target ${updatedTarget.name} unreachable for > ${config.unreachableTimeoutMs}ms - reselecting`);
       transitionTo(
         FSM_STATE.SELECTING,
         `Target unreachable for > ${config.unreachableTimeoutMs}ms`
       );
       targetingState.unreachableSince = 0;
       return;
+    } else {
+      const elapsed = now - targetingState.unreachableSince;
+      logger('debug', `[ENGAGING] Target ${updatedTarget.name} still unreachable (${elapsed}ms / ${config.unreachableTimeoutMs}ms)`);
     }
   } else {
+    if (targetingState.unreachableSince > 0) {
+      logger('debug', `[ENGAGING] Target ${updatedTarget.name} became reachable again - resetting timer`);
+    }
     targetingState.unreachableSince = 0;
   }
 

@@ -53,6 +53,7 @@ namespace AStar {
         std::vector<int> parent;
         std::vector<int> mark;
         std::vector<int> closedMark;
+        std::vector<int> lastDirection; // Track last direction: 0=none, 1=+x, 2=-x, 3=+y, 4=-y
         int visitToken = 1;
     };
 
@@ -64,6 +65,7 @@ namespace AStar {
             sb.parent.assign(required, -1);
             sb.mark.assign(required, 0);
             sb.closedMark.assign(required, 0);
+            sb.lastDirection.assign(required, 0);
             sb.visitToken = 1;
         }
     }
@@ -135,8 +137,14 @@ namespace AStar {
             sb.closedMark[idx] = visit;
             int cx = idx % W;
             int cy = idx / W;
+            
+            int dx_to_goal = isGoal.end_x - cx;
+            int dy_to_goal = isGoal.end_y - cy;
+            int dx_abs = std::abs(dx_to_goal);
+            int dy_abs = std::abs(dy_to_goal);
+            bool bothAxesNeedMovement = (dx_abs > 0 && dy_abs > 0);
 
-            auto processNeighbor = [&](int nx, int ny, bool isDiagonal) {
+            auto processNeighbor = [&](int nx, int ny, bool isDiagonal, int newDirection) {
                 if (!inBounds(nx, ny, mapData)) return;
 
                 int nIdx = indexOf(nx, ny);
@@ -153,60 +161,135 @@ namespace AStar {
                 int baseMoveCost = isDiagonal ? DIAGONAL_MOVE_COST : BASE_MOVE_COST;
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
-                int tentativeG = g + baseMoveCost + addedCost + creatureCost;
+                
+                // Add small penalty for continuing in same direction (to encourage stairs pattern)
+                int stairsPenalty = 0;
+                if (!isDiagonal && bothAxesNeedMovement && newDirection > 0) {
+                    int lastDir = sb.lastDirection[idx];
+                    // If moving in same axis as last move, add tiny penalty
+                    if (lastDir > 0) {
+                        bool lastWasXAxis = (lastDir == 1 || lastDir == 2);
+                        bool currentIsXAxis = (newDirection == 1 || newDirection == 2);
+                        if (lastWasXAxis == currentIsXAxis) {
+                            stairsPenalty = 1; // Very small penalty to prefer alternating
+                        }
+                    }
+                }
+                
+                int tentativeG = g + baseMoveCost + addedCost + creatureCost + stairsPenalty;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;
                     sb.parent[nIdx] = idx;
                     sb.mark[nIdx] = visit;
+                    sb.lastDirection[nIdx] = newDirection;
                     int h = isGoal.heuristic(nx, ny);
                     open.emplace(tentativeG + h, generation + 1, nIdx);
                 }
             };
 
-            int dx_to_goal = isGoal.end_x - cx;
-            int dy_to_goal = isGoal.end_y - cy;
-
-            int dx_abs = std::abs(dx_to_goal);
-            int dy_abs = std::abs(dy_to_goal);
-
             int dir_x = (dx_to_goal > 0) ? 1 : -1;
             int dir_y = (dy_to_goal > 0) ? 1 : -1;
 
-            std::vector<std::pair<int, int>> neighbors;
+            // Direction codes: 1=+x, 2=-x, 3=+y, 4=-y, 5=diagonal
+            std::vector<std::tuple<int, int, int>> neighbors; // x, y, direction
+            
+            int dir_pos_x = (dir_x > 0) ? 1 : 2;
+            int dir_neg_x = (dir_x > 0) ? 2 : 1;
+            int dir_pos_y = (dir_y > 0) ? 3 : 4;
+            int dir_neg_y = (dir_y > 0) ? 4 : 3;
+            
             if (dx_abs > dy_abs) {
-                neighbors.push_back({cx + dir_x, cy});
-                neighbors.push_back({cx, cy + dir_y});
-                neighbors.push_back({cx, cy - dir_y});
-                neighbors.push_back({cx - dir_x, cy});
-            } else if (dy_abs > dx_abs) {
-                neighbors.push_back({cx, cy + dir_y});
-                neighbors.push_back({cx + dir_x, cy});
-                neighbors.push_back({cx - dir_x, cy});
-                neighbors.push_back({cx, cy - dir_y});
-            } else {
-                 if (generation % 2 == 0) {
-                    neighbors.push_back({cx + dir_x, cy});
-                    neighbors.push_back({cx, cy + dir_y});
-                    neighbors.push_back({cx - dir_x, cy});
-                    neighbors.push_back({cx, cy - dir_y});
+                // More distance on X axis - prioritize X moves
+                if (bothAxesNeedMovement) {
+                    // When distances differ significantly, strongly prefer the longer axis
+                    int distDiff = dx_abs - dy_abs;
+                    if (distDiff > dy_abs) {
+                        // Much more X than Y - walk X until we can enter stairs pattern
+                        neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                        neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                    } else {
+                        // Close enough for stairs - alternate but prefer X slightly
+                        int lastDir = sb.lastDirection[idx];
+                        bool lastWasX = (lastDir == 1 || lastDir == 2);
+                        if (lastWasX) {
+                            neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                            neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                        } else {
+                            neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                            neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                        }
+                    }
                 } else {
-                    neighbors.push_back({cx, cy + dir_y});
-                    neighbors.push_back({cx + dir_x, cy});
-                    neighbors.push_back({cx, cy - dir_y});
-                    neighbors.push_back({cx - dir_x, cy});
+                    // Only X needs movement
+                    neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                    neighbors.push_back({cx, cy + dir_y, dir_pos_y});
                 }
+                neighbors.push_back({cx, cy - dir_y, dir_neg_y});
+                neighbors.push_back({cx - dir_x, cy, dir_neg_x});
+            } else if (dy_abs > dx_abs) {
+                // More distance on Y axis - prioritize Y moves
+                if (bothAxesNeedMovement) {
+                    // When distances differ significantly, strongly prefer the longer axis
+                    int distDiff = dy_abs - dx_abs;
+                    if (distDiff > dx_abs) {
+                        // Much more Y than X - walk Y until we can enter stairs pattern
+                        neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                        neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                    } else {
+                        // Close enough for stairs - alternate but prefer Y slightly
+                        int lastDir = sb.lastDirection[idx];
+                        bool lastWasY = (lastDir == 3 || lastDir == 4);
+                        if (lastWasY) {
+                            neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                            neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                        } else {
+                            neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                            neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                        }
+                    }
+                } else {
+                    // Only Y needs movement
+                    neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                    neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                }
+                neighbors.push_back({cx - dir_x, cy, dir_neg_x});
+                neighbors.push_back({cx, cy - dir_y, dir_neg_y});
+            } else if (dx_abs == dy_abs && dx_abs > 0) {
+                // Equal distances - pure stairs pattern
+                // Strictly alternate based on last direction
+                int lastDir = sb.lastDirection[idx];
+                bool lastWasX = (lastDir == 1 || lastDir == 2);
+                if (lastWasX || lastDir == 0) {
+                    neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                    neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                    neighbors.push_back({cx, cy - dir_y, dir_neg_y});
+                    neighbors.push_back({cx - dir_x, cy, dir_neg_x});
+                } else {
+                    neighbors.push_back({cx + dir_x, cy, dir_pos_x});
+                    neighbors.push_back({cx, cy + dir_y, dir_pos_y});
+                    neighbors.push_back({cx - dir_x, cy, dir_neg_x});
+                    neighbors.push_back({cx, cy - dir_y, dir_neg_y});
+                }
+            } else {
+                // At goal or no clear direction
+                neighbors.push_back({cx + 1, cy, 1});
+                neighbors.push_back({cx - 1, cy, 2});
+                neighbors.push_back({cx, cy + 1, 3});
+                neighbors.push_back({cx, cy - 1, 4});
             }
 
-            for(const auto& p : neighbors) {
-                processNeighbor(p.first, p.second, false);
+            // Process cardinal neighbors first (for stairs pattern preference)
+            for(const auto& [nx, ny, dir] : neighbors) {
+                processNeighbor(nx, ny, false, dir);
             }
 
-            // Diagonals last
-            processNeighbor(cx + 1, cy + 1, true);
-            processNeighbor(cx - 1, cy - 1, true);
-            processNeighbor(cx + 1, cy - 1, true);
-            processNeighbor(cx - 1, cy + 1, true);
+            // Process diagonals - they'll be used when cost-effective
+            // A* will naturally choose them when they save moves
+            processNeighbor(cx + dir_x, cy + dir_y, true, 5);
+            processNeighbor(cx - dir_x, cy - dir_y, true, 5);
+            processNeighbor(cx + dir_x, cy - dir_y, true, 5);
+            processNeighbor(cx - dir_x, cy + dir_y, true, 5);
         }
         return path;
     }

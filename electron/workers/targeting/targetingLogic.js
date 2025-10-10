@@ -324,32 +324,19 @@ export function acquireTarget(
     return { success: false, reason: 'not_in_battlelist' };
   }
 
-  // NEW: If we have a specific instance ID and multiple creatures with the same name,
-  // try to match by screen position (Y coordinate) to click the right one
+  // Cycle through battle list entries to find the right creature
+  // We can't match battle list UI coordinates to game world coordinates,
+  // so we need to click each entry and verify in game world
   let targetEntry = null;
-  if (targetInstanceId && potentialEntries.length > 1 && targetCreature && targetCreature.absoluteCoords) {
-    // Find battle list entry closest to the target creature's screen position
-    let minDistance = Infinity;
-    for (const entry of potentialEntries) {
-      const distance = Math.abs(entry.y - targetCreature.absoluteCoords.y);
-      if (distance < minDistance) {
-        minDistance = distance;
-        targetEntry = entry;
-      }
-    }
-  }
   
-  // Fallback to original logic if no specific instance or only one entry
-  if (!targetEntry) {
-    // Find the next entry to click after the last one we tried
-    targetEntry = potentialEntries.find(
-      (entry) => entry.index > lastClickedIndex
-    );
+  // Find the next entry to click after the last one we tried
+  targetEntry = potentialEntries.find(
+    (entry) => entry.index > lastClickedIndex
+  );
 
-    // If no entry is found after the last index, wrap around to the first one
-    if (!targetEntry) {
-      targetEntry = potentialEntries[0];
-    }
+  // If no entry is found after the last index, wrap around to the first one
+  if (!targetEntry) {
+    targetEntry = potentialEntries[0];
   }
 
   // Add randomization to battle list click coordinates

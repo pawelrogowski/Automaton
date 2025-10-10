@@ -1399,8 +1399,19 @@ async function performOperation() {
       }
     }
 
+    // Clear target if no creatures detected
     if (detectedEntities.length === 0 && unifiedTarget !== null) {
       unifiedTarget = null;
+    }
+    
+    // CRITICAL: Also clear target if it's not in the detected creatures list
+    // This handles cases where we have a red box on unreachable creature
+    if (unifiedTarget && detectedEntities.length > 0) {
+      const targetStillExists = detectedEntities.some(c => c.instanceId === unifiedTarget.instanceId);
+      if (!targetStillExists) {
+        logger('debug', `[CreatureMonitor] Target ${unifiedTarget.name} (ID: ${unifiedTarget.instanceId}) no longer in creatures list - clearing`);
+        unifiedTarget = null;
+      }
     }
 
     const targetChanged = !deepCompareEntities(unifiedTarget, lastSentTarget);
