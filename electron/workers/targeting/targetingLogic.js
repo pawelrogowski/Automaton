@@ -74,13 +74,13 @@ export function findRuleForCreatureName(creatureName, targetingList) {
  * Special case: If a rule with name "Others" or "others" exists, it will match any creature
  * that doesn't have an explicit rule defined. This acts as a catch-all fallback.
  * 
- * @param {object} sabStateManager - The SAB state manager for reading creature data
+ * @param {Function} getCreatures - Function that returns array of creatures
  * @param {Array} targetingList - List of targeting rules
  * @param {object|null} currentTarget - Currently targeted creature (for hysteresis)
  * @returns {object|null} The best creature object or null if no valid target is found.
  */
-export function selectBestTarget(sabStateManager, targetingList, currentTarget = null) {
-  const creatures = sabStateManager.getCreatures();
+export function selectBestTarget(getCreatures, targetingList, currentTarget = null) {
+  const creatures = getCreatures();
   if (!targetingList?.length || !creatures?.length) {
     return null;
   }
@@ -174,13 +174,15 @@ export function selectBestTarget(sabStateManager, targetingList, currentTarget =
  * @returns {{success: boolean, reason?: string, clickedIndex?: number}}
  */
 export function acquireTarget(
-  sabStateManager,
+  getBattleList,
   parentPort,
   targetName,
   lastClickedIndex,
-  globalState = null  // Optional: for region/player position access
+  globalState = null,  // Optional: for region/player position access
+  getCreatures = null,  // Function to get creatures array
+  getPlayerPosition = null  // Function to get player position
 ) {
-  const battleList = sabStateManager.getBattleList() || [];
+  const battleList = getBattleList() || [];
   if (battleList.length === 0) {
     return { success: false, reason: 'battlelist_empty' };
   }
@@ -203,7 +205,8 @@ export function acquireTarget(
   const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
   const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
 
-  const creatures = sabStateManager.getCreatures();
+  // Get creatures for game world click logic (optional)
+  const creatures = getCreatures ? getCreatures() : [];
   const targetCreature = creatures.find(c => c.name === targetName && c.isReachable);
   
   if (targetCreature && GAMEWORLD_CONFIG.ENABLED) {
@@ -213,7 +216,7 @@ export function acquireTarget(
       
       if (isAdjacent && adjacentStationaryDur >= GAMEWORLD_CONFIG.STATIONARY_THRESHOLD_MS) {
         const regions = globalState?.regionCoordinates?.regions;
-        const playerPos = sabStateManager.getCurrentPlayerPosition();
+        const playerPos = getPlayerPosition ? getPlayerPosition() : null;
         
         if (regions?.gameWorld && regions?.tileSize && playerPos && targetCreature.gameCoords) {
           const clickCoords = getAbsoluteGameWorldClickCoordinates(
@@ -390,13 +393,24 @@ export async function manageMovement(
     path,
     playerMinimapPosition,
     parentPort,
-    sabStateManager,
     sabInterface,
   } = workerContext;
   const { targetingList } = targetingContext;
 
-  if (!currentTarget || sabStateManager.isLootingRequired()) {
+  // Check if looting is required from unified SAB
+  if (!currentTarget) {
     return;
+  }
+  
+  if (sabInterface) {
+    try {
+      const lootingResult = sabInterface.get('looting');
+      if (lootingResult && lootingResult.data && lootingResult.data.required === 1) {
+        return;  // Skip movement while looting
+      }
+    } catch (err) {
+      // Continue with movement if looting check fails
+    }
   }
 
   const rule = findRuleForCreatureName(currentTarget.name, targetingList);

@@ -8,7 +8,6 @@ import { createWorkerInterface, WORKER_IDS } from '../sabState/index.js';
 import { config } from './config.js';
 import { createFsm } from './fsm.js';
 import { delay } from './helpers/asyncUtils.js';
-import { SABStateManager } from '../sabStateManager.js';
 import Pathfinder from 'pathfinder-native';
 import {
   postStoreUpdate,
@@ -70,21 +69,12 @@ const workerState = {
 // --- Initialization ---
 const fsm = createFsm(workerState, config);
 
-// Initialize SAB state manager
-workerState.sabStateManager = new SABStateManager({
-  playerPosSAB: workerData.playerPosSAB,
-  battleListSAB: workerData.battleListSAB,
-  creaturesSAB: workerData.creaturesSAB,
-  lootingSAB: workerData.lootingSAB,
-  targetingListSAB: workerData.targetingListSAB,
-  targetSAB: workerData.targetSAB,
-  pathDataSAB: workerData.pathDataSAB,
-});
-
 // Initialize unified SAB interface
 if (workerData.unifiedSAB) {
   workerState.sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.CAVEBOT);
   workerState.logger('info', '[Cavebot] Unified SAB interface initialized');
+} else {
+  throw new Error('[Cavebot] Unified SAB interface is required');
 }
 
 // --- Main Loop & Orchestration ---
@@ -98,6 +88,20 @@ function handleControlHandover() {
   workerState.path = [];
   workerState.pathfindingStatus = 0;
   workerState.shouldRequestNewPath = true;
+  
+  // CRITICAL: Reset map-click controller state to prevent stale coordinate issues
+  // Targeting may have moved the character, so old startPos/lastObservedPos are invalid
+  // Add a short cooldown to ensure fresh path is calculated before attempting map-click
+  const now = Date.now();
+  workerState.mapClick = {
+    mode: 'idle',
+    attemptAt: 0,
+    startPos: null,
+    lastObservedAt: 0,
+    lastObservedPos: null,
+    fallbackUntil: now + 500, // 500ms cooldown to allow fresh path calculation
+  };
+  workerState.logger('debug', '[Cavebot] Reset map-click controller with 500ms cooldown after control handover');
   
   // Clear targeting path in SAB to prevent stale path usage
   if (workerState.sabInterface) {
@@ -252,7 +256,19 @@ async function performOperation() {
     return;
   }
 
-  if (workerState.sabStateManager.isLootingRequired()) {
+  // Check if looting is required from unified SAB
+  let lootingRequired = false;
+  if (workerState.sabInterface) {
+    try {
+      const lootingResult = workerState.sabInterface.get('looting');
+      if (lootingResult && lootingResult.data) {
+        lootingRequired = lootingResult.data.required === 1;
+      }
+    } catch (err) {
+      workerState.logger('error', `[Cavebot] Failed to read looting state: ${err.message}`);
+    }
+  }
+  if (lootingRequired) {
     workerState.logger('debug', '[Cavebot] Looting required, skipping tick.');
     if (workerState.fsmState !== 'IDLE') resetInternalState(workerState, fsm);
     return;

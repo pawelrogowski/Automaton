@@ -1,7 +1,6 @@
 // targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
-import { SABStateManager } from './sabStateManager.js';
 import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 import { performance } from 'perf_hooks';
 import {
@@ -65,52 +64,71 @@ const targetingState = {
   },
 };
 
-const sabStateManager = new SABStateManager(workerData);
-
 // Initialize unified SAB interface
 let sabInterface = null;
 if (workerData.unifiedSAB) {
   sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.TARGETING);
   logger('info', '[TargetingWorker] Unified SAB interface initialized');
+} else {
+  throw new Error('[TargetingWorker] Unified SAB interface is required');
 }
 
 // --- Unified SAB Wrappers ---
-// These wrap sabStateManager to use unified SAB when available
 const getCreaturesFromSAB = () => {
-  if (sabInterface) {
-    try {
-      const result = sabInterface.get('creatures');
-      if (result && result.data && Array.isArray(result.data)) {
-        // Add gameCoords property from x,y,z fields for compatibility
-        return result.data.map(creature => ({
-          ...creature,
-          gameCoords: { x: creature.x, y: creature.y, z: creature.z }
-        }));
-      }
-    } catch (err) {
-      logger('debug', `[TargetingWorker] Failed to read creatures from unified SAB: ${err.message}`);
+  try {
+    const result = sabInterface.get('creatures');
+    if (result && result.data && Array.isArray(result.data)) {
+      // Add gameCoords property from x,y,z fields for compatibility
+      return result.data.map(creature => ({
+        ...creature,
+        gameCoords: { x: creature.x, y: creature.y, z: creature.z }
+      }));
     }
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read creatures from unified SAB: ${err.message}`);
   }
-  return sabStateManager.getCreatures() || [];
+  return [];
 };
 
 const getCurrentTargetFromSAB = () => {
-  if (sabInterface) {
-    try {
-      const result = sabInterface.get('target');
-      if (result && result.data) {
-        const target = result.data;
-        // instanceId: 0 means no target
-        if (target.instanceId !== 0) {
-          return target;
-        }
+  try {
+    const result = sabInterface.get('target');
+    if (result && result.data) {
+      const target = result.data;
+      // instanceId: 0 means no target
+      if (target.instanceId !== 0) {
+        return target;
       }
-      return null;
-    } catch (err) {
-      logger('debug', `[TargetingWorker] Failed to read target from unified SAB: ${err.message}`);
     }
+    return null;
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read target from unified SAB: ${err.message}`);
   }
-  return sabStateManager.getCurrentTarget();
+  return null;
+};
+
+const getBattleListFromSAB = () => {
+  try {
+    const result = sabInterface.get('battleList');
+    if (result && result.data && Array.isArray(result.data)) {
+      return result.data;
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read battle list from unified SAB: ${err.message}`);
+  }
+  return [];
+};
+
+const isLootingRequired = () => {
+  try {
+    const result = sabInterface.get('looting');
+    if (result && result.data) {
+      return result.data.required === 1;
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read looting state: ${err.message}`);
+  }
+  return false;
 };
 
 // --- State Transition Helper ---
@@ -135,7 +153,7 @@ function transitionTo(newState, reason = '') {
 function handleIdleState() {
   if (
     workerState.globalState?.targeting?.enabled &&
-    !sabStateManager.isLootingRequired()
+    !isLootingRequired()
   ) {
     transitionTo(FSM_STATE.SELECTING, 'Targeting enabled');
   } else {
@@ -155,7 +173,7 @@ function handleIdleState() {
 function handleSelectingState() {
   // Don't pass current target in SELECTING state - we want fresh evaluation
   const bestTarget = selectBestTarget(
-    sabStateManager,
+    getCreaturesFromSAB,
     workerState.globalState.targeting.targetingList,
     null
   );
@@ -256,11 +274,13 @@ function handleAcquiringState() {
 
   logger('debug', `[FSM-ACQUIRING] Attempting to click ${pathfindingTarget.name}`);
   const result = acquireTarget(
-    sabStateManager,
+    getBattleListFromSAB,
     parentPort,
     pathfindingTarget.name,
     targetingState.lastAcquireAttempt.battleListIndex,
-    workerState.globalState  // Pass globalState for region access
+    workerState.globalState,  // Pass globalState for region access
+    getCreaturesFromSAB,      // Pass creature getter function
+    () => workerState.playerMinimapPosition  // Pass player position getter
   );
 
   targetingState.lastAcquireAttempt.timestamp = now;
@@ -301,7 +321,7 @@ async function handleEngagingState() {
   }
 
   // Pass current target for hysteresis - prevents switching for minor score differences
-  const bestOverallTarget = selectBestTarget(sabStateManager, targetingList, targetingState.currentTarget);
+  const bestOverallTarget = selectBestTarget(getCreaturesFromSAB, targetingList, targetingState.currentTarget);
   if (
     bestOverallTarget &&
     bestOverallTarget.instanceId !== targetingState.currentTarget.instanceId
@@ -382,7 +402,6 @@ async function handleEngagingState() {
     { 
       ...workerState, 
       parentPort, 
-      sabStateManager,
       sabInterface,
     },
     movementContext,
@@ -448,9 +467,16 @@ async function performTargeting() {
   const { globalState, isInitialized } = workerState;
   if (!isInitialized || !globalState?.targeting) return;
 
-  sabStateManager.writeTargetingList(globalState.targeting.targetingList);
+  // Write targeting list to unified SAB
+  if (sabInterface) {
+    try {
+      sabInterface.set('targetingList', globalState.targeting.targetingList);
+    } catch (err) {
+      logger('error', `[TargetingWorker] Failed to write targeting list: ${err.message}`);
+    }
+  }
 
-  if (!globalState.targeting.enabled || sabStateManager.isLootingRequired()) {
+  if (!globalState.targeting.enabled || isLootingRequired()) {
     transitionTo(FSM_STATE.IDLE, 'Targeting disabled or looting');
   }
 
@@ -529,7 +555,7 @@ async function performTargeting() {
     targetingState.state === FSM_STATE.ENGAGING;
 
   const anyValidTargetExists = selectBestTarget(
-    sabStateManager,
+    getCreaturesFromSAB,
     globalState.targeting.targetingList
   );
 

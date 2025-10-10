@@ -12,7 +12,21 @@ import {
 
 /**
  * Unified SAB State Manager
- * Provides atomic read/write operations with version control for all worker state
+ * 
+ * ARCHITECTURE:
+ * - Polled reads: Workers explicitly read when needed in their main loops (~20 Hz)
+ * - No callbacks/watchers: Keeps control flow explicit and debuggable
+ * - Version checking: Prevents torn reads with optimistic concurrency control
+ * - Manual caching: Workers cache reads in workerState for iteration consistency
+ * 
+ * USAGE:
+ *   // Read once at iteration start
+ *   const creatures = sabInterface.get('creatures').data;
+ *   
+ *   // Use throughout iteration
+ *   if (creatures.length > 0) { ... }
+ * 
+ * For urgent inter-worker communication, use Control Channel instead.
  */
 export class SABState {
   constructor(existingSAB = null) {
@@ -24,9 +38,6 @@ export class SABState {
     if (!existingSAB) {
       this._initializeVersions();
     }
-    
-    // Watchers: Map<propertyName, Set<callback>>
-    this.watchers = new Map();
   }
 
   /**
@@ -130,9 +141,6 @@ export class SABState {
     
     // Increment version atomically
     this._incrementVersion(propertyName);
-    
-    // Notify watchers
-    this._notifyWatchers(propertyName, value);
   }
 
   /**
@@ -140,7 +148,7 @@ export class SABState {
    * @param {Object} updates - { propertyName: value, ... }
    * @returns {boolean} Success
    */
-  batch(updates) {
+  setMany(updates) {
     // Write all properties
     for (const [propertyName, value] of Object.entries(updates)) {
       const { schema, offset } = getPropertyInfo(propertyName);
@@ -159,11 +167,6 @@ export class SABState {
       this._incrementVersion(propertyName);
     }
     
-    // Notify watchers
-    for (const [propertyName, value] of Object.entries(updates)) {
-      this._notifyWatchers(propertyName, value);
-    }
-    
     return true;
   }
 
@@ -172,7 +175,7 @@ export class SABState {
    * @param {string[]} propertyNames
    * @returns {Object} { propertyName: {data, version}, versionsMatch: boolean }
    */
-  snapshot(propertyNames) {
+  getMany(propertyNames) {
     const maxRetries = 5;
     let attempt = 0;
     
@@ -218,28 +221,6 @@ export class SABState {
       snapshot[name] = this.get(name);
     }
     return { ...snapshot, versionsMatch: false };
-  }
-
-  /**
-   * Watch a property for changes
-   * @param {string} propertyName
-   * @param {Function} callback - (value, version) => void
-   * @returns {Function} Unwatch function
-   */
-  watch(propertyName, callback) {
-    if (!this.watchers.has(propertyName)) {
-      this.watchers.set(propertyName, new Set());
-    }
-    
-    this.watchers.get(propertyName).add(callback);
-    
-    // Return unwatch function
-    return () => {
-      const watchers = this.watchers.get(propertyName);
-      if (watchers) {
-        watchers.delete(callback);
-      }
-    };
   }
 
   /**
@@ -476,25 +457,6 @@ export class SABState {
     } else if (schema.type === 'path') {
       const versionOffset = offset + schema.headerSize - 1;
       Atomics.add(this.array, versionOffset, 1);
-    }
-  }
-
-  /**
-   * Notify watchers of property change
-   * @private
-   */
-  _notifyWatchers(propertyName, value) {
-    const watchers = this.watchers.get(propertyName);
-    if (!watchers) return;
-    
-    const version = this.getVersion(propertyName);
-    
-    for (const callback of watchers) {
-      try {
-        callback(value, version);
-      } catch (error) {
-        console.error(`[SABState] Watcher error for ${propertyName}:`, error);
-      }
     }
   }
 }

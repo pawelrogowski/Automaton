@@ -1,5 +1,21 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/sharedConstants.js
 
+// =============================================================================
+// LEGACY SAB CONSTANTS - DEPRECATED AS OF 2025-10-09
+// =============================================================================
+// These constants are kept for backward compatibility with sabStateManager.js
+// which is now DEPRECATED. All new code should use the unified SAB system.
+//
+// Migration status:
+// - All workers migrated to unified SAB: ✓
+// - workerManager.js no longer creates legacy SAB buffers: ✓
+//
+// For new code, use:
+// - Import: createWorkerInterface from './sabState/index.js'
+// - Usage: sabInterface.get('propertyName') / sabInterface.set('propertyName', value)
+// - Schema: See ./sabState/schema.js for available properties
+// =============================================================================
+
 // --- SharedArrayBuffer (SAB) Indices for Player Position ---
 export const PLAYER_X_INDEX = 0;
 export const PLAYER_Y_INDEX = 1;

@@ -12,6 +12,7 @@ const logger = createLogger({ info: false, error: true, debug: false });
 
 let state = null;
 let pathfinderInstance = null;
+let sabInterface = null; // Store SAB interface at module level
 
 const logicContext = {};
 
@@ -77,19 +78,27 @@ function handleMessage(message) {
       return;
     }
 
-    if (!state || !state.gameState || !state.targeting || !state.cavebot) {
+    // Check if SAB has required data before running pathfinding logic
+    if (!sabInterface) {
+      logger('debug', '[PathfinderCore] SAB interface not available');
       return;
     }
 
-    // Early exit if both cavebot and targeting are disabled
-    if (!state.cavebot.enabled && !state.targeting.enabled) {
+    // Quick check: do we have a valid position in SAB?
+    const playerPosResult = sabInterface.get('playerPos');
+    if (!playerPosResult || !playerPosResult.data || typeof playerPosResult.data.x !== 'number') {
+      logger('debug', '[PathfinderCore] No valid player position in SAB');
       return;
     }
 
-    const playerMinimapPosition = state.gameState.playerMinimapPosition;
+    // Quick check: is pathfinding needed? (at least one system enabled)
+    const cavebotConfigResult = sabInterface.get('cavebotConfig');
+    const targetingConfigResult = sabInterface.get('targetingConfig');
+    const cavebotEnabled = cavebotConfigResult?.data?.enabled === 1;
+    const targetingEnabled = targetingConfigResult?.data?.enabled === 1;
 
-    if (!playerMinimapPosition || typeof playerMinimapPosition.x !== 'number') {
-      return;
+    if (!cavebotEnabled && !targetingEnabled) {
+      return; // Neither system needs pathfinding
     }
 
     runPathfindingLogic({
@@ -113,9 +122,12 @@ export async function start() {
   
   // Initialize unified SAB interface
   if (workerData.unifiedSAB) {
-    const sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.PATHFINDER);
+    sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.PATHFINDER);
     setSABInterface(sabInterface);
     logger('info', 'Unified SAB interface initialized');
+  } else {
+    logger('error', 'Pathfinder worker requires unified SAB');
+    process.exit(1);
   }
   
   try {

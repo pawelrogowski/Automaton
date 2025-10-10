@@ -11,17 +11,7 @@ import { playSound } from './globalShortcuts.js';
 import { deepHash } from './utils/deepHash.js';
 import { rectsIntersect } from './utils/rectsIntersect.js';
 
-import {
-  PLAYER_POS_SAB_SIZE,
-  PATH_DATA_SAB_SIZE,
-  BATTLE_LIST_SAB_SIZE,
-  CREATURES_SAB_SIZE,
-  LOOTING_SAB_SIZE,
-  TARGETING_LIST_SAB_SIZE,
-  TARGET_SAB_SIZE,
-} from './workers/sharedConstants.js';
-
-// NEW: Unified SAB State Management
+// Unified SAB State Management
 import { SABState, CONTROL_STATES } from './workers/sabState/index.js';
 
 const log = createLogger();
@@ -224,40 +214,12 @@ class WorkerManager {
     const syncSAB = new SharedArrayBuffer(
       SYNC_BUFFER_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
-    const playerPosSAB = new SharedArrayBuffer(
-      PLAYER_POS_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
-    const pathDataSAB = new SharedArrayBuffer(
-      PATH_DATA_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
-    const battleListSAB = new SharedArrayBuffer(
-      BATTLE_LIST_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
-    const creaturesSAB = new SharedArrayBuffer(
-      CREATURES_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
-    const lootingSAB = new SharedArrayBuffer(
-      LOOTING_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
-    const targetingListSAB = new SharedArrayBuffer(
-      TARGETING_LIST_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
-    const targetSAB = new SharedArrayBuffer(
-      TARGET_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
 
     this.sharedData = {
       imageSAB,
       syncSAB,
-      playerPosSAB,
-      pathDataSAB,
-      battleListSAB,
-      creaturesSAB,
-      lootingSAB,
-      targetingListSAB,
-      targetSAB,
     };
-    log('info', '[Worker Manager] Created SharedArrayBuffers.');
+    log('info', '[Worker Manager] Created SharedArrayBuffers (imageSAB, syncSAB).');
     
     // NEW: Create unified SAB state manager
     try {
@@ -306,10 +268,99 @@ class WorkerManager {
             wptId: state.cavebot?.wptId ?? '',
           });
           
+          // Sync pathfinding data (high-performance structures)
+          // Sync dynamicTarget
+          const dynamicTarget = state.cavebot?.dynamicTarget;
+          if (dynamicTarget && dynamicTarget.targetCreaturePos) {
+            const stanceMap = { 'Follow': 0, 'Stand': 1, 'Reach': 2 };
+            this.sabState.set('dynamicTarget', {
+              targetCreaturePosX: dynamicTarget.targetCreaturePos.x ?? 0,
+              targetCreaturePosY: dynamicTarget.targetCreaturePos.y ?? 0,
+              targetCreaturePosZ: dynamicTarget.targetCreaturePos.z ?? 0,
+              targetInstanceId: dynamicTarget.targetInstanceId ?? 0,
+              stance: stanceMap[dynamicTarget.stance] ?? 0,
+              distance: dynamicTarget.distance ?? 0,
+              valid: 1,
+            });
+          } else {
+            // Clear dynamicTarget if null
+            this.sabState.set('dynamicTarget', {
+              targetCreaturePosX: 0,
+              targetCreaturePosY: 0,
+              targetCreaturePosZ: 0,
+              targetInstanceId: 0,
+              stance: 0,
+              distance: 0,
+              valid: 0,
+            });
+          }
+          
+          // Sync targetWaypoint (resolve current waypoint coordinates)
+          const wptId = state.cavebot?.wptId;
+          const currentSection = state.cavebot?.currentSection;
+          const waypointSections = state.cavebot?.waypointSections;
+          
+          if (wptId && currentSection && waypointSections && waypointSections[currentSection]) {
+            const targetWaypoint = waypointSections[currentSection].waypoints.find(
+              (wp) => wp.id === wptId
+            );
+            
+            if (targetWaypoint) {
+              this.sabState.set('targetWaypoint', {
+                x: targetWaypoint.x ?? 0,
+                y: targetWaypoint.y ?? 0,
+                z: targetWaypoint.z ?? 0,
+                valid: 1,
+              });
+            } else {
+              // Waypoint ID exists but not found - clear
+              this.sabState.set('targetWaypoint', {
+                x: 0, y: 0, z: 0, valid: 0,
+              });
+            }
+          } else {
+            // No target waypoint
+            this.sabState.set('targetWaypoint', {
+              x: 0, y: 0, z: 0, valid: 0,
+            });
+          }
+          
+          // Sync specialAreas
+          const specialAreas = state.cavebot?.specialAreas || [];
+          this.sabState.set('specialAreas', specialAreas.map(area => ({
+            x: area.x ?? 0,
+            y: area.y ?? 0,
+            z: area.z ?? 0,
+            sizeX: area.sizeX ?? 1,
+            sizeY: area.sizeY ?? 1,
+            avoidance: area.avoidance ?? 0,
+            enabled: area.enabled ? 1 : 0,
+            hollow: area.hollow ? 1 : 0,
+          })));
+          
+          // Sync temporaryBlockedTiles
+          const temporaryBlockedTiles = state.cavebot?.temporaryBlockedTiles || [];
+          this.sabState.set('temporaryBlockedTiles', temporaryBlockedTiles.map(tile => ({
+            x: tile.x ?? 0,
+            y: tile.y ?? 0,
+            z: tile.z ?? 0,
+            expiresAt: Math.floor((tile.expiresAt ?? 0) / 100), // Scale down to fit int32
+          })));
+          
+          // Sync visitedTiles
+          const visitedTiles = state.cavebot?.visitedTiles || [];
+          this.sabState.set('visitedTiles', visitedTiles.map(tile => ({
+            x: tile.x ?? 0,
+            y: tile.y ?? 0,
+            z: tile.z ?? 0,
+          })));
+          
           this.previousConfigState.cavebot = {
             version: state.cavebot?.version,
             enabled: state.cavebot?.enabled,
             controlState: state.cavebot?.controlState,
+            wptId: state.cavebot?.wptId,
+            dynamicTarget: state.cavebot?.dynamicTarget,
           };
         }
         
@@ -363,7 +414,9 @@ class WorkerManager {
     // Fallback: deep check key properties
     if (sliceName === 'cavebot') {
       return currentSlice?.enabled !== prev.enabled ||
-             currentSlice?.controlState !== prev.controlState;
+             currentSlice?.controlState !== prev.controlState ||
+             currentSlice?.wptId !== prev.wptId ||
+             currentSlice?.dynamicTarget !== prev.dynamicTarget;
     } else if (sliceName === 'targeting') {
       return currentSlice?.enabled !== prev.enabled;
     } else if (sliceName === 'global') {
@@ -781,61 +834,12 @@ class WorkerManager {
         'ocrWorker',
         'creatureMonitor',
       ].includes(name);
-      const needsPlayerPosSAB = [
-        'minimapMonitor',
-        'pathfinderWorker',
-        'cavebotWorker',
-        'targetingWorker',
-        'creatureMonitor',
-      ].includes(name);
-      const needsPathDataSAB = [
-        'pathfinderWorker',
-        'cavebotWorker',
-        'targetingWorker',
-        'creatureMonitor',
-      ].includes(name);
-      const needsBattleListSAB = [
-        'creatureMonitor',
-        'cavebotWorker',
-        'targetingWorker',
-      ].includes(name);
-      const needsCreaturesSAB = [
-        'creatureMonitor',
-        'cavebotWorker',
-        'targetingWorker',
-      ].includes(name);
-      const needsLootingSAB = [
-        'creatureMonitor',
-        'cavebotWorker',
-        'targetingWorker',
-      ].includes(name);
-      const needsTargetingListSAB = [
-        'creatureMonitor',
-        'targetingWorker',
-      ].includes(name);
-      const needsTargetSAB = [
-        'creatureMonitor',
-        'cavebotWorker',
-        'targetingWorker',
-      ].includes(name);
-
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedData : null,
-        playerPosSAB: needsPlayerPosSAB ? this.sharedData.playerPosSAB : null,
-        pathDataSAB: needsPathDataSAB ? this.sharedData.pathDataSAB : null,
-        battleListSAB: needsBattleListSAB
-          ? this.sharedData.battleListSAB
-          : null,
-        creaturesSAB: needsCreaturesSAB ? this.sharedData.creaturesSAB : null,
-        lootingSAB: needsLootingSAB ? this.sharedData.lootingSAB : null,
-        targetingListSAB: needsTargetingListSAB
-          ? this.sharedData.targetingListSAB
-          : null,
-        targetSAB: needsTargetSAB ? this.sharedData.targetSAB : null,
-        sharedLuaGlobals: this.sharedLuaGlobals, // NEW: Pass the shared Lua globals object
+        sharedLuaGlobals: this.sharedLuaGlobals,
         enableMemoryLogging: true,
-        // NEW: Pass unified SAB state
+        // Pass unified SAB state to all workers that need it
         unifiedSAB: this.sabState ? this.sabState.getSharedArrayBuffer() : null,
       };
       if (needsSharedScreen) {

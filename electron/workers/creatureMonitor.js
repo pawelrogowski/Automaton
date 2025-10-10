@@ -14,7 +14,6 @@ import {
   getAbsoluteGameWorldClickCoordinates,
 } from '../utils/gameWorldClickTranslator.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
-import { SABStateManager } from './sabStateManager.js';
 import { findBestNameMatch } from '../utils/nameMatcher.js';
 import { processPlayerList, processNpcList } from './creatureMonitor/ocr.js';
 import {
@@ -51,21 +50,13 @@ const {
 const syncArray = new Int32Array(syncSAB);
 const sharedBufferView = Buffer.from(imageSAB);
 
-const sabStateManager = new SABStateManager({
-  playerPosSAB,
-  pathDataSAB,
-  battleListSAB,
-  creaturesSAB,
-  lootingSAB,
-  targetingListSAB,
-  targetSAB,
-});
-
 // Initialize unified SAB interface
 let sabInterface = null;
 if (workerData.unifiedSAB) {
   sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.CREATURE_MONITOR);
   logger('info', '[CreatureMonitor] Unified SAB interface initialized');
+} else {
+  throw new Error('[CreatureMonitor] Unified SAB interface is required');
 }
 
 const PLAYER_ANIMATION_FREEZE_MS = 25;
@@ -642,7 +633,18 @@ async function performOperation() {
     lastPlayerNames = playerNames;
     lastNpcNames = npcNames;
 
-    const targetingList = sabStateManager.getTargetingList();
+    // Get targeting list from unified SAB
+    let targetingList = [];
+    if (sabInterface) {
+      try {
+        const result = sabInterface.get('targetingList');
+        if (result && result.data && Array.isArray(result.data)) {
+          targetingList = result.data;
+        }
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to read targeting list: ${err.message}`);
+      }
+    }
     let lootReason = '';
     const currentTargetedCreatureCounts = new Map();
     for (const targetingCreature of targetingList) {
@@ -687,7 +689,19 @@ async function performOperation() {
       await performImmediateLooting();
     }
 
-    if (sabStateManager.isLootingRequired()) return;
+    // Check if looting is required
+    let lootingRequired = false;
+    if (sabInterface) {
+      try {
+        const result = sabInterface.get('looting');
+        if (result && result.data) {
+          lootingRequired = result.data.required === 1;
+        }
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to read looting state: ${err.message}`);
+      }
+    }
+    if (lootingRequired) return;
 
     // START performance tracking only when we have actual work to do
     // (creatures detected or need to clear previous state)
@@ -720,7 +734,7 @@ async function performOperation() {
         // Write to unified SAB (null target becomes empty object with instanceId: 0)
         if (sabInterface) {
           try {
-            sabInterface.batch({
+            sabInterface.setMany({
               creatures: [],
               target: { instanceId: 0, x: 0, y: 0, z: 0, distance: 0, isReachable: 0, name: '' },
               battleList: [],
@@ -730,12 +744,6 @@ async function performOperation() {
           }
         }
         
-        // Legacy SAB support (keep for targeting worker compatibility)
-        sabStateManager.writeWorldState({
-          creatures: [],
-          target: null,
-          battleList: [],
-        });
         postUpdateOnce('targeting/setEntities', { creatures: [], duration: 0 });
         postUpdateOnce('targeting/setTarget', null);
       }
@@ -1057,8 +1065,23 @@ async function performOperation() {
     let detectedEntities = Array.from(activeCreatures.values());
     const blockingCreatures = new Set();
 
-    
-    const cavebotTargetWpt = sabStateManager.getCavebotTargetWaypoint();
+    // Get cavebot target waypoint from unified SAB
+    let cavebotTargetWpt = null;
+    if (sabInterface) {
+      try {
+        const result = sabInterface.get('cavebotPathData');
+        if (result && result.data) {
+          const pathData = result.data;
+          cavebotTargetWpt = {
+            x: pathData.targetX || 0,
+            y: pathData.targetY || 0,
+            z: pathData.targetZ || 0,
+          };
+        }
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to read cavebot path data: ${err.message}`);
+      }
+    }
     
     // Check if we have a valid waypoint (coordinates are not zero/null)
     const hasValidWaypoint = cavebotTargetWpt && (cavebotTargetWpt.x !== 0 || cavebotTargetWpt.y !== 0);
@@ -1396,7 +1419,7 @@ async function performOperation() {
           isTarget: b.isTarget ? 1 : 0,
         }));
         
-        sabInterface.batch({
+        sabInterface.setMany({
           creatures: sabCreatures,
           battleList: sabBattleList,
           target: sabTarget,
@@ -1407,15 +1430,6 @@ async function performOperation() {
     }
     
     if (perfCheckpoints) perfCheckpoints.afterSABWrite = performance.now();
-
-    // Legacy SAB support (keep for targeting worker compatibility)
-    sabStateManager.writeWorldState({
-      creatures: detectedEntities,
-      target: unifiedTarget,
-      battleList: sanitizedBattleList,
-    });
-
-    sabStateManager.writeCreatureMonitorLastProcessedZ(zLevelAtScanStart);
 
     // Send all updates as a single batch to maintain consistency
     // This prevents Redux version from bumping by 7 per iteration
@@ -1463,8 +1477,19 @@ async function performOperation() {
       parentPort.postMessage({ type: 'batch-update', payload: batchUpdates });
     }
 
-    const currentTarget = sabStateManager.getCurrentTarget();
-    previousTargetName = currentTarget?.name || null;
+    // Get current target name for looting detection
+    let currentTargetName = null;
+    if (sabInterface) {
+      try {
+        const result = sabInterface.get('target');
+        if (result && result.data && result.data.instanceId !== 0) {
+          currentTargetName = result.data.name || null;
+        }
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to read target name: ${err.message}`);
+      }
+    }
+    previousTargetName = currentTargetName;
     previousTargetedCreatureCounts = new Map(currentTargetedCreatureCounts);
     
     // Log health bars and battle list counts ONLY when there's a mismatch
@@ -1607,7 +1632,16 @@ async function performImmediateLooting() {
   try {
     isLootingInProgress = true;
     logger('info', '[CreatureMonitor] Starting immediate looting action');
-    sabStateManager.setLootingRequired(true);
+    
+    // Set looting required in unified SAB
+    if (sabInterface) {
+      try {
+        sabInterface.set('looting', { required: 1 });
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to set looting required: ${err.message}`);
+      }
+    }
+    
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setLootingRequired',
@@ -1621,7 +1655,16 @@ async function performImmediateLooting() {
       },
     });
     await delay(50);
-    sabStateManager.setLootingRequired(false);
+    
+    // Clear looting required in unified SAB
+    if (sabInterface) {
+      try {
+        sabInterface.set('looting', { required: 0 });
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to clear looting required: ${err.message}`);
+      }
+    }
+    
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setLootingRequired',
@@ -1630,7 +1673,16 @@ async function performImmediateLooting() {
     logger('info', '[CreatureMonitor] Immediate looting action completed');
   } catch (error) {
     logger('error', '[CreatureMonitor] Error during immediate looting:', error);
-    sabStateManager.setLootingRequired(false);
+    
+    // Clear looting required on error
+    if (sabInterface) {
+      try {
+        sabInterface.set('looting', { required: 0 });
+      } catch (err) {
+        logger('error', `[CreatureMonitor] Failed to clear looting on error: ${err.message}`);
+      }
+    }
+    
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/setLootingRequired',
@@ -1697,7 +1749,14 @@ parentPort.on('message', async (message) => {
       if (pathfinderInstance) pathfinderInstance.destroy();
       return;
     } else if (message.type === 'sab_sync_targeting_list') {
-      sabStateManager.writeTargetingList(message.payload);
+      // Write targeting list to unified SAB
+      if (sabInterface) {
+        try {
+          sabInterface.set('targetingList', message.payload);
+        } catch (err) {
+          logger('error', `[CreatureMonitor] Failed to write targeting list: ${err.message}`);
+        }
+      }
       return;
     } else if (message.type === 'manual_loot_trigger') {
       logger('info', '[CreatureMonitor] Manual looting trigger received');

@@ -190,6 +190,36 @@ export const SCHEMA = {
     description: 'Targeting pathfinding result (written by pathfinderWorker)',
   },
 
+  looting: {
+    category: PROPERTY_CATEGORIES.REALTIME,
+    type: 'struct',
+    fields: {
+      required: FIELD_TYPES.INT32,  // bool as int
+      version: FIELD_TYPES.INT32,
+    },
+    size: 2,
+    description: 'Looting state (written by creatureMonitor)',
+  },
+
+  targetingList: {
+    category: PROPERTY_CATEGORIES.REALTIME,
+    type: 'array',
+    maxCount: 50,
+    itemFields: {
+      name: { type: FIELD_TYPES.STRING, maxLength: 32 },
+      action: { type: FIELD_TYPES.STRING, maxLength: 4 },
+      priority: FIELD_TYPES.INT32,
+      stickiness: FIELD_TYPES.INT32,
+      stance: FIELD_TYPES.INT32,  // 0=Follow, 1=Stand, 2=Reach
+      distance: FIELD_TYPES.INT32,
+      onlyIfTrapped: FIELD_TYPES.INT32,  // bool as int
+    },
+    itemSize: 41, // 32 + 4 + 5 ints = 41
+    headerSize: 3, // count + version + update_counter
+    size: 3 + (50 * 41),
+    description: 'Targeting rules list (written by targetingWorker/creatureMonitor)',
+  },
+
   // ==================== UI CONFIG DATA ====================
   // Written by workerManager from Redux, read by workers
 
@@ -231,6 +261,92 @@ export const SCHEMA = {
     },
     size: 3,
     description: 'Global configuration (written by workerManager from Redux)',
+  },
+
+  // ==================== PATHFINDING DATA ====================
+  // High-performance pathfinding data structures
+  // Written by workerManager from Redux, read by pathfinder worker
+
+  dynamicTarget: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'struct',
+    fields: {
+      targetCreaturePosX: FIELD_TYPES.INT32,
+      targetCreaturePosY: FIELD_TYPES.INT32,
+      targetCreaturePosZ: FIELD_TYPES.INT32,
+      targetInstanceId: FIELD_TYPES.INT32,
+      stance: FIELD_TYPES.INT32,     // enum: 0=Follow, 1=Stand, 2=Reach
+      distance: FIELD_TYPES.INT32,
+      valid: FIELD_TYPES.INT32,      // bool: 1=valid target, 0=null
+      version: FIELD_TYPES.INT32,
+    },
+    size: 8,
+    description: 'Dynamic targeting creature (written by workerManager from Redux)',
+  },
+
+  targetWaypoint: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'struct',
+    fields: {
+      x: FIELD_TYPES.INT32,
+      y: FIELD_TYPES.INT32,
+      z: FIELD_TYPES.INT32,
+      valid: FIELD_TYPES.INT32,      // bool: 1=valid waypoint, 0=no target
+      version: FIELD_TYPES.INT32,
+    },
+    size: 5,
+    description: 'Current target waypoint coordinates (written by workerManager from Redux)',
+  },
+
+  specialAreas: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'array',
+    maxCount: 100,
+    itemFields: {
+      x: FIELD_TYPES.INT32,
+      y: FIELD_TYPES.INT32,
+      z: FIELD_TYPES.INT32,
+      sizeX: FIELD_TYPES.INT32,
+      sizeY: FIELD_TYPES.INT32,
+      avoidance: FIELD_TYPES.INT32,
+      enabled: FIELD_TYPES.INT32,    // bool as int
+      hollow: FIELD_TYPES.INT32,     // bool as int
+    },
+    itemSize: 8,
+    headerSize: 3, // count + version + update_counter
+    size: 3 + (100 * 8), // 803 Int32 units
+    description: 'Permanent special avoid areas (written by workerManager from Redux)',
+  },
+
+  temporaryBlockedTiles: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'array',
+    maxCount: 50,
+    itemFields: {
+      x: FIELD_TYPES.INT32,
+      y: FIELD_TYPES.INT32,
+      z: FIELD_TYPES.INT32,
+      expiresAt: FIELD_TYPES.INT32,  // timestamp (ms / 100 to fit in int32)
+    },
+    itemSize: 4,
+    headerSize: 3, // count + version + update_counter
+    size: 3 + (50 * 4), // 203 Int32 units
+    description: 'Temporarily blocked tiles (written by workerManager from Redux)',
+  },
+
+  visitedTiles: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'array',
+    maxCount: 100,
+    itemFields: {
+      x: FIELD_TYPES.INT32,
+      y: FIELD_TYPES.INT32,
+      z: FIELD_TYPES.INT32,
+    },
+    itemSize: 3,
+    headerSize: 3, // count + version + update_counter
+    size: 3 + (100 * 3), // 303 Int32 units
+    description: 'Visited tiles during targeting mode (written by workerManager from Redux)',
   },
 
   // ==================== CONTROL CHANNEL ====================
