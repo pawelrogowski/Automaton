@@ -84,6 +84,8 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
   if (!targetingList?.length || !creatures?.length) {
     return null;
   }
+  
+  // Debug logging removed to reduce spam
 
   // Get explicit creature names (excluding "Others" wildcard)
   const explicitNames = new Set(
@@ -122,6 +124,7 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
   const validCandidates = creatures
     .map((creature) => {
       const rule = findRuleForCreature(creature);
+      
       if (!rule || !creature.isReachable) {
         return null;
       }
@@ -180,7 +183,8 @@ export function acquireTarget(
   lastClickedIndex,
   globalState = null,  // Optional: for region/player position access
   getCreatures = null,  // Function to get creatures array
-  getPlayerPosition = null  // Function to get player position
+  getPlayerPosition = null,  // Function to get player position
+  targetInstanceId = null  // NEW: Specific instance ID to target (prevents wrong creature)
 ) {
   const battleList = getBattleList() || [];
   if (battleList.length === 0) {
@@ -207,7 +211,10 @@ export function acquireTarget(
 
   // Get creatures for game world click logic (optional)
   const creatures = getCreatures ? getCreatures() : [];
-  const targetCreature = creatures.find(c => c.name === targetName && c.isReachable);
+  // If we have a specific instance ID, use it to find the EXACT creature we want to path to
+  const targetCreature = targetInstanceId 
+    ? creatures.find(c => c.instanceId === targetInstanceId && c.isReachable)
+    : creatures.find(c => c.name === targetName && c.isReachable);
   
   if (targetCreature && GAMEWORLD_CONFIG.ENABLED) {
     if (targetCreature.hp !== 'Obstructed') {
@@ -317,14 +324,32 @@ export function acquireTarget(
     return { success: false, reason: 'not_in_battlelist' };
   }
 
-  // Find the next entry to click after the last one we tried
-  let targetEntry = potentialEntries.find(
-    (entry) => entry.index > lastClickedIndex
-  );
-
-  // If no entry is found after the last index, wrap around to the first one
+  // NEW: If we have a specific instance ID and multiple creatures with the same name,
+  // try to match by screen position (Y coordinate) to click the right one
+  let targetEntry = null;
+  if (targetInstanceId && potentialEntries.length > 1 && targetCreature && targetCreature.absoluteCoords) {
+    // Find battle list entry closest to the target creature's screen position
+    let minDistance = Infinity;
+    for (const entry of potentialEntries) {
+      const distance = Math.abs(entry.y - targetCreature.absoluteCoords.y);
+      if (distance < minDistance) {
+        minDistance = distance;
+        targetEntry = entry;
+      }
+    }
+  }
+  
+  // Fallback to original logic if no specific instance or only one entry
   if (!targetEntry) {
-    targetEntry = potentialEntries[0];
+    // Find the next entry to click after the last one we tried
+    targetEntry = potentialEntries.find(
+      (entry) => entry.index > lastClickedIndex
+    );
+
+    // If no entry is found after the last index, wrap around to the first one
+    if (!targetEntry) {
+      targetEntry = potentialEntries[0];
+    }
   }
 
   // Add randomization to battle list click coordinates

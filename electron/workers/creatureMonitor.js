@@ -80,7 +80,6 @@ let lastNpcNames = [];
 let nextInstanceId = 1;
 let activeCreatures = new Map();
 const lastPostedResults = new Map();
-let previousTargetedCreatureCounts = new Map();
 let previousTargetName = null;
 let isLootingInProgress = false;
 let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
@@ -120,6 +119,29 @@ let perfCheckpoints = null;
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
   return pos1.x === pos2.x && pos1.y === pos2.y && pos1.z === pos2.z;
+}
+
+/**
+ * Checks if a creature name matches a battle list entry name.
+ * Handles truncated names (e.g., "Emerald Damselfly" matches "Emerald Damsel...").
+ * This is needed for exalted creatures where the status icon causes truncation.
+ * @param {string} creatureName - The full creature name from nameplate OCR
+ * @param {string} battleListName - The name from battle list (may be truncated)
+ * @returns {boolean} True if names match (exact or truncated match)
+ */
+function isNameMatchingBattleList(creatureName, battleListName) {
+  if (!creatureName || !battleListName) return false;
+  
+  // Exact match
+  if (creatureName === battleListName) return true;
+  
+  // Truncated name match (e.g., "Emerald Damsel..." matches "Emerald Damselfly")
+  if (battleListName.endsWith('...')) {
+    const truncatedPart = battleListName.slice(0, -3);
+    return creatureName.startsWith(truncatedPart);
+  }
+  
+  return false;
 }
 
 // Helper function to calculate Levenshtein (edit) distance
@@ -633,59 +655,48 @@ async function performOperation() {
     lastPlayerNames = playerNames;
     lastNpcNames = npcNames;
 
-    // Get targeting list from unified SAB
+    // Get targeting configuration and list from unified SAB
+    let targetingEnabled = false;
     let targetingList = [];
     if (sabInterface) {
       try {
-        const result = sabInterface.get('targetingList');
-        if (result && result.data && Array.isArray(result.data)) {
-          targetingList = result.data;
+        // Read targeting config
+        const targetingConfigResult = sabInterface.get('targetingConfig');
+        if (targetingConfigResult && targetingConfigResult.data) {
+          targetingEnabled = targetingConfigResult.data.enabled === 1;
+        }
+        
+        // Read targeting list (still needed for creature matching/reachability logic)
+        const targetingListResult = sabInterface.get('targetingList');
+        if (targetingListResult && targetingListResult.data && Array.isArray(targetingListResult.data)) {
+          targetingList = targetingListResult.data;
         }
       } catch (err) {
-        logger('error', `[CreatureMonitor] Failed to read targeting list: ${err.message}`);
+        logger('error', `[CreatureMonitor] Failed to read targeting config/list: ${err.message}`);
       }
     }
+    
+    // NEW LOOTING LOGIC: Only trigger when actual targeting target disappears AND targeting is enabled
     let lootReason = '';
-    const currentTargetedCreatureCounts = new Map();
-    for (const targetingCreature of targetingList) {
-      const count = battleListEntries.filter((entry) => {
-        if (targetingCreature.name === entry.name) return true;
-        if (entry.name.endsWith('...')) {
-          const truncatedPart = entry.name.slice(0, -3);
-          return targetingCreature.name.startsWith(truncatedPart);
-        }
-        return false;
-      }).length;
-      if (count > 0)
-        currentTargetedCreatureCounts.set(targetingCreature.name, count);
-    }
-
-    const disappearedCreatures = new Set();
-    for (const [
-      creatureName,
-      previousCount,
-    ] of previousTargetedCreatureCounts) {
-      const currentCount = currentTargetedCreatureCounts.get(creatureName) || 0;
-      if (currentCount < previousCount) disappearedCreatures.add(creatureName);
-    }
-    if (disappearedCreatures.size > 0) {
-      lootReason = `Count decreased for: ${[...disappearedCreatures].join(', ')}`;
-    } else if (previousTargetName) {
-      // Only check target disappearance if no count-based trigger already fired
+    if (targetingEnabled && previousTargetName && !isLootingInProgress) {
+      // Check if the previous target (the one that was being targeted) still exists in battle list
       const targetStillPresent = battleListEntries.some((entry) => {
         if (previousTargetName === entry.name) return true;
+        // Handle truncated names in battle list
         if (entry.name.endsWith('...')) {
           const truncatedPart = entry.name.slice(0, -3);
           return previousTargetName.startsWith(truncatedPart);
         }
         return false;
       });
-      if (!targetStillPresent)
-        lootReason = `Target '${previousTargetName}' disappeared from battle list`;
+      
+      if (!targetStillPresent) {
+        lootReason = `Targeting target '${previousTargetName}' disappeared from battle list`;
+      }
     }
 
-    if (lootReason && !isLootingInProgress) {
-      logger('debug', `[Looting] ${lootReason}`);
+    if (lootReason) {
+      logger('info', `[Looting] ${lootReason}`);
       await performImmediateLooting();
     }
 
@@ -751,7 +762,6 @@ async function performOperation() {
       postUpdateOnce('uiValues/setPlayers', playerNames);
       postUpdateOnce('uiValues/setNpcs', npcNames);
       previousTargetName = null;
-      previousTargetedCreatureCounts = new Map();
       return;
     }
     
@@ -1016,7 +1026,16 @@ async function performOperation() {
     // FIRST: Remove creatures that are NO LONGER in battle list at all (died/despawned)
     for (const [id, creature] of newActiveCreatures.entries()) {
       if (creature.name) {
-        const stillInBattleList = currentBattleListNames.get(creature.name) > 0;
+        // Check if creature name matches any battle list entry (including truncated names)
+        let stillInBattleList = false;
+        
+        for (const battleListName of currentBattleListNames.keys()) {
+          if (isNameMatchingBattleList(creature.name, battleListName)) {
+            stillInBattleList = true;
+            break;
+          }
+        }
+        
         if (!stillInBattleList) {
           // This creature is NOT in battle list anymore - it's dead!
           logger('debug', `[CREATURE REMOVED] ID ${id} "${creature.name}" - not in battle list (died/despawned)`);
@@ -1031,16 +1050,39 @@ async function performOperation() {
       for (const [id, oldCreature] of activeCreatures.entries()) {
         if (!newActiveCreatures.has(id) && oldCreature.name) {
           // This creature lost its health bar detection
-          const battleListCountForName = currentBattleListNames.get(oldCreature.name) || 0;
+          // Handle truncated names: check both direct match and prefix match
+          let battleListCountForName = 0;
+          
+          for (const [battleListName, count] of currentBattleListNames.entries()) {
+            if (isNameMatchingBattleList(oldCreature.name, battleListName)) {
+              battleListCountForName += count;
+            }
+          }
+          
           const detectedCountForName = Array.from(newActiveCreatures.values())
             .filter(c => c.name === oldCreature.name).length;
           
           // If battle list shows MORE of this creature than we detected, keep the old one
           if (battleListCountForName > detectedCountForName) {
             // Keep creature alive but mark position as uncertain
+            // Set timestamp when uncertainty started (for timeout logic)
+            if (!oldCreature.positionUncertain) {
+              oldCreature.positionUncertainSince = now;
+            }
             oldCreature.lastSeen = now;
             oldCreature.positionUncertain = true;
-            newActiveCreatures.set(id, oldCreature);
+            
+            // TIMEOUT: If creature has been uncertain for > 2 seconds, don't keep it
+            // This prevents creatures from being stuck in uncertain state forever
+            const POSITION_UNCERTAIN_TIMEOUT_MS = 2000;
+            const uncertainDuration = now - (oldCreature.positionUncertainSince || now);
+            
+            if (uncertainDuration < POSITION_UNCERTAIN_TIMEOUT_MS) {
+              newActiveCreatures.set(id, oldCreature);
+            } else {
+              // Creature has been uncertain too long - let it be removed
+              logger('debug', `[CREATURE TIMEOUT] ID ${id} "${oldCreature.name}" - uncertain position for ${uncertainDuration}ms, removing`);
+            }
           }
         }
       }
@@ -1170,6 +1212,15 @@ async function performOperation() {
           }
         }
         const isBlockingPath = blockingCreatures.has(entity.instanceId);
+        
+        // DEBUG: Log creature reachability (only for creatures with names containing "damsel" - case insensitive)
+        if (entity.name && entity.name.toLowerCase().includes('damsel')) {
+          logger('info', `[CREATURE REACHABLE] "${entity.name}" (ID: ${entity.instanceId}): ` +
+            `isReachable=${isReachable}, positionUncertain=${!!entity.positionUncertain}, ` +
+            `coords=${coordsKey}, inReachableTiles=${typeof reachableTiles[coordsKey] !== 'undefined'}, ` +
+            `distance=${entity.distance?.toFixed(1)}, isAdjacent=${isAdjacent}`);
+        }
+        
         return { ...entity, isReachable, isAdjacent, isBlockingPath };
       });
     }
@@ -1367,7 +1418,23 @@ async function performOperation() {
     
     
     const detectedCreatureNames = new Set(detectedEntities.map(c => c.name));
-    const sanitizedBattleList = battleListEntries.filter(entry => detectedCreatureNames.has(entry.name));
+    // Sanitize battle list but handle truncated names (exalted creatures)
+    const sanitizedBattleList = battleListEntries.filter(entry => {
+      // Direct match
+      if (detectedCreatureNames.has(entry.name)) return true;
+      
+      // Check for truncated name matches
+      if (entry.name.endsWith('...')) {
+        const truncatedPart = entry.name.slice(0, -3);
+        for (const creatureName of detectedCreatureNames) {
+          if (creatureName.startsWith(truncatedPart)) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    });
 
     if (sanitizedBattleList.length < battleListEntries.length) {
         logger('debug', `[CreatureMonitor] Sanitized battle list. Removed ${battleListEntries.length - sanitizedBattleList.length} ghost entries.`);
@@ -1490,7 +1557,6 @@ async function performOperation() {
       }
     }
     previousTargetName = currentTargetName;
-    previousTargetedCreatureCounts = new Map(currentTargetedCreatureCounts);
     
     // Log health bars and battle list counts ONLY when there's a mismatch
     // Track ACTUAL health bar scan results from native module

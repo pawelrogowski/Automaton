@@ -79,8 +79,10 @@ const getCreaturesFromSAB = () => {
     const result = sabInterface.get('creatures');
     if (result && result.data && Array.isArray(result.data)) {
       // Add gameCoords property from x,y,z fields for compatibility
+      // Convert distance back from SAB format (stored as * 100)
       return result.data.map(creature => ({
         ...creature,
+        distance: creature.distance / 100, // SAB stores distance * 100
         gameCoords: { x: creature.x, y: creature.y, z: creature.z }
       }));
     }
@@ -134,7 +136,6 @@ const isLootingRequired = () => {
 // --- State Transition Helper ---
 function transitionTo(newState, reason = '') {
   if (targetingState.state === newState) return;
-  // Silently transition states (no logging)
   targetingState.state = newState;
 
   if (newState === FSM_STATE.SELECTING) {
@@ -272,7 +273,7 @@ function handleAcquiringState() {
     targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
   }
 
-  logger('debug', `[FSM-ACQUIRING] Attempting to click ${pathfindingTarget.name}`);
+  logger('debug', `[FSM-ACQUIRING] Attempting to click ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId})`);
   const result = acquireTarget(
     getBattleListFromSAB,
     parentPort,
@@ -280,7 +281,8 @@ function handleAcquiringState() {
     targetingState.lastAcquireAttempt.battleListIndex,
     workerState.globalState,  // Pass globalState for region access
     getCreaturesFromSAB,      // Pass creature getter function
-    () => workerState.playerMinimapPosition  // Pass player position getter
+    () => workerState.playerMinimapPosition,  // Pass player position getter
+    pathfindingTarget.instanceId  // Pass instance ID to ensure we click the RIGHT creature
   );
 
   targetingState.lastAcquireAttempt.timestamp = now;
