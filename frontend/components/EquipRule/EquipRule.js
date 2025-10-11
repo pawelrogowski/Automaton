@@ -2,7 +2,12 @@ import React, { useCallback, useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
-import { removeRule, updateRule, updateRuleFields, updateCondition } from '../../redux/slices/ruleSlice.js';
+import {
+  removeRule,
+  updateRule,
+  updateRuleFields,
+  updateCondition,
+} from '../../redux/slices/ruleSlice.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
 import CustomIconSelect from '../CustomIconSelect/CustomIconSelect.js';
@@ -17,16 +22,25 @@ const EquipRule = ({ rule, className }) => {
 
   const dispatch = useDispatch();
 
-  const condition_options = useMemo(() => [
-    { value: '<=', label: '≤' }, { value: '<', label: '<' },
-    { value: '=', label: '=' }, { value: '>', label: '>' },
-    { value: '>=', label: '≥' }, { value: '!=', label: '≠' },
-  ], []);
+  const condition_options = useMemo(
+    () => [
+      { value: '<=', label: '≤' },
+      { value: '<', label: '<' },
+      { value: '=', label: '=' },
+      { value: '>', label: '>' },
+      { value: '>=', label: '≥' },
+      { value: '!=', label: '≠' },
+    ],
+    [],
+  );
 
-
-  const handle_status_condition_change = useCallback((status, value) => {
-    if (rule.id) dispatch(updateCondition({ id: rule.id, condition: status, value }));
-  }, [dispatch, rule.id]);
+  const handle_status_condition_change = useCallback(
+    (status, value) => {
+      if (rule.id)
+        dispatch(updateCondition({ id: rule.id, condition: status, value }));
+    },
+    [dispatch, rule.id],
+  );
 
   const handle_remove_rule = useCallback(() => set_show_confirm(true), []);
   const handle_confirm_remove = useCallback(() => {
@@ -35,73 +49,106 @@ const EquipRule = ({ rule, className }) => {
   }, [dispatch, rule.id]);
   const handle_cancel_remove = useCallback(() => set_show_confirm(false), []);
 
-  const handle_field_change = useCallback((field) => (event) => {
-    let value;
-    if (event.target.type === 'checkbox') {
-      value = event.target.checked;
-    } else {
-      value = event.target.value;
-    }
+  const handle_field_change = useCallback(
+    (field) => (event) => {
+      let value;
+      if (event.target.type === 'checkbox') {
+        value = event.target.checked;
+      } else {
+        value = event.target.value;
+      }
 
-    if (['hpTriggerPercentage', 'manaTriggerPercentage', 'monsterNum', 'priority', 'delay'].includes(field)) {
-      value = Number(value);
-    }
+      if (
+        [
+          'hpTriggerPercentage',
+          'manaTriggerPercentage',
+          'monsterNum',
+          'priority',
+          'delay',
+        ].includes(field)
+      ) {
+        value = Number(value);
+      }
 
-    if (field === 'equipOnlyIfSlotIsEmpty') {
-      value = !!value;
-    }
+      if (field === 'equipOnlyIfSlotIsEmpty') {
+        value = !!value;
+      }
 
+      if (rule.id) {
+        dispatch(updateRule({ id: rule.id, field, value }));
+      }
+    },
+    [dispatch, rule.id],
+  );
 
-    if (rule.id) {
-      dispatch(updateRule({ id: rule.id, field, value }));
-    }
-  }, [dispatch, rule.id]);
-
-
-  const handle_action_item_change = useCallback((selected_action_item_key) => {
-    console.log('[EquipRule] handle_action_item_change called with:', selected_action_item_key);
-    console.log('[EquipRule] rule.id:', rule.id);
-    if (rule.id && selected_action_item_key !== null) {
-      const item_data = actionBarItemsData[selected_action_item_key];
-      const inferred_slot = item_data?.slot;
-      console.log('[EquipRule] Dispatching updateRuleFields for actionItem and targetSlot:', inferred_slot);
-      // Update both fields atomically to avoid validateRule overwriting targetSlot
-      dispatch(updateRuleFields({
-        id: rule.id,
-        fields: {
-          actionItem: selected_action_item_key,
-          targetSlot: inferred_slot || ''
-        }
-      }));
-    } else if (rule.id && selected_action_item_key === null) {
-      dispatch(updateRuleFields({
-        id: rule.id,
-        fields: {
-          actionItem: '',
-          targetSlot: ''
-        }
-      }));
-    }
-  }, [dispatch, rule.id]);
+  const handle_action_item_change = useCallback(
+    (selected_action_item_key) => {
+      console.log(
+        '[EquipRule] handle_action_item_change called with:',
+        selected_action_item_key,
+      );
+      console.log('[EquipRule] rule.id:', rule.id);
+      if (rule.id && selected_action_item_key !== null) {
+        const item_data = actionBarItemsData[selected_action_item_key];
+        const inferred_slot = item_data?.slot;
+        console.log(
+          '[EquipRule] Dispatching updateRuleFields for actionItem and targetSlot:',
+          inferred_slot,
+        );
+        // Update both fields atomically to avoid validateRule overwriting targetSlot
+        dispatch(
+          updateRuleFields({
+            id: rule.id,
+            fields: {
+              actionItem: selected_action_item_key,
+              targetSlot: inferred_slot || '',
+            },
+          }),
+        );
+      } else if (rule.id && selected_action_item_key === null) {
+        dispatch(
+          updateRuleFields({
+            id: rule.id,
+            fields: {
+              actionItem: '',
+              targetSlot: '',
+            },
+          }),
+        );
+      }
+    },
+    [dispatch, rule.id],
+  );
 
   // NOTE: Removed useEffect that watched actionItem/targetSlot - it caused an infinite loop
   // because it dispatched updates that changed targetSlot, which triggered the effect again.
   // The handle_action_item_change callback already sets both actionItem and targetSlot correctly.
 
   const handle_toggle_expand = useCallback(() => {
-    set_is_expanded(prev => !prev);
+    set_is_expanded((prev) => !prev);
   }, []);
-
 
   const equipment_action_item_options = useMemo(() => {
     const equipment_category_key = 'equipment';
     const items_group = { [equipment_category_key]: [] };
     Object.entries(actionBarItemsData).forEach(([key, item]) => {
-      if (item && item.categories && item.categories.includes(equipment_category_key) && item.slot) {
-        items_group[equipment_category_key].push({ value: key, label: item.name, iconName: item.iconName });
+      if (
+        item &&
+        item.categories &&
+        item.categories.includes(equipment_category_key) &&
+        item.slot
+      ) {
+        items_group[equipment_category_key].push({
+          value: key,
+          label: item.name,
+          iconName: item.iconName,
+        });
       }
     });
-    if (items_group[equipment_category_key].length > 0) items_group[equipment_category_key].sort((a, b) => a.label.localeCompare(b.label));
+    if (items_group[equipment_category_key].length > 0)
+      items_group[equipment_category_key].sort((a, b) =>
+        a.label.localeCompare(b.label),
+      );
     return items_group[equipment_category_key].length > 0 ? items_group : {};
   }, []);
 
@@ -110,7 +157,8 @@ const EquipRule = ({ rule, className }) => {
   const rule_enabled = rule.enabled ?? false;
   const rule_action_item = rule.actionItem || '';
   const rule_key = rule.key || 'F1';
-  const rule_target_slot = rule.targetSlot || actionBarItemsData[rule_action_item]?.slot || '';
+  const rule_target_slot =
+    rule.targetSlot || actionBarItemsData[rule_action_item]?.slot || '';
   const rule_equip_only_if_slot_is_empty = rule.equipOnlyIfSlotIsEmpty ?? true;
   const rule_hp_trigger_condition = rule.hpTriggerCondition || '<=';
   const rule_hp_trigger_percentage = rule.hpTriggerPercentage ?? 0;
@@ -121,8 +169,7 @@ const EquipRule = ({ rule, className }) => {
   const rule_priority = rule.priority ?? 0;
   const rule_delay = rule.delay ?? 250;
 
-  const is_disabled_equip_checkbox = (!rule_action_item || !rule_target_slot);
-
+  const is_disabled_equip_checkbox = !rule_action_item || !rule_target_slot;
 
   return (
     <>
@@ -135,7 +182,7 @@ const EquipRule = ({ rule, className }) => {
         />
       )}
       <EquipRuleWrapper className={className} $running={rule_enabled}>
-        <div className='row1'>
+        <div className="row1">
           <CustomSwitch
             checked={rule_enabled}
             onChange={handle_field_change('enabled')}
@@ -161,7 +208,12 @@ const EquipRule = ({ rule, className }) => {
             label="Hotkey"
           />
 
-          <button type="button" className="button-expand" onClick={handle_toggle_expand} $is_expanded={is_expanded}>
+          <button
+            type="button"
+            className="button-expand"
+            onClick={handle_toggle_expand}
+            $is_expanded={is_expanded}
+          >
             {is_expanded ? '▲' : '▼'}
           </button>
 
@@ -177,10 +229,10 @@ const EquipRule = ({ rule, className }) => {
 
         {is_expanded && (
           <>
-            <div className='row2'>
-              <div className='input-group'>
-                <label className='label-text'>HP Trigger</label>
-                <div className='input-row'>
+            <div className="row2">
+              <div className="input-group">
+                <label className="label-text">HP Trigger</label>
+                <div className="input-row">
                   <CustomSelect
                     id="hpTriggerCondition"
                     value={rule_hp_trigger_condition}
@@ -202,9 +254,9 @@ const EquipRule = ({ rule, className }) => {
                 </div>
               </div>
 
-              <div className='input-group'>
-                <label className='label-text'>Mana Trigger</label>
-                <div className='input-row'>
+              <div className="input-group">
+                <label className="label-text">Mana Trigger</label>
+                <div className="input-row">
                   <CustomSelect
                     id="manaTriggerCondition"
                     value={rule_mana_trigger_condition}
@@ -226,9 +278,9 @@ const EquipRule = ({ rule, className }) => {
                 </div>
               </div>
 
-              <div className='input-group'>
-                <label className='label-text'>Mobs Trigger</label>
-                <div className='input-row'>
+              <div className="input-group">
+                <label className="label-text">Mobs Trigger</label>
+                <div className="input-row">
                   <CustomSelect
                     id="monsterNumCondition"
                     value={rule_monster_num_condition}
@@ -249,8 +301,8 @@ const EquipRule = ({ rule, className }) => {
                 </div>
               </div>
 
-              <div className='input-group'>
-                <label className='label-text' >Priority</label>
+              <div className="input-group">
+                <label className="label-text">Priority</label>
                 <input
                   type="number"
                   min="-999"
@@ -263,8 +315,8 @@ const EquipRule = ({ rule, className }) => {
                 />
               </div>
 
-              <div className='input-group'>
-                <label className='label-text' >Delay (ms)</label>
+              <div className="input-group">
+                <label className="label-text">Delay (ms)</label>
                 <input
                   type="number"
                   min="0"
@@ -277,26 +329,30 @@ const EquipRule = ({ rule, className }) => {
                 />
               </div>
 
-              <div className='input-group'>
-                <label className='label-text' >Only if slot is empty</label>
+              <div className="input-group">
+                <label className="label-text">Only if slot is empty</label>
                 <CustomSwitch
                   checked={rule_equip_only_if_slot_is_empty}
                   onChange={handle_field_change('equipOnlyIfSlotIsEmpty')}
                   disabled={is_disabled_equip_checkbox}
-                  title={is_disabled_equip_checkbox ? "Select an item with a slot to enable this" : "Only try to equip if the target slot is currently empty"}
+                  title={
+                    is_disabled_equip_checkbox
+                      ? 'Select an item with a slot to enable this'
+                      : 'Only try to equip if the target slot is currently empty'
+                  }
                 />
               </div>
             </div>
-            <div className='row3'>
+            <div className="row3">
               <CharacterStatusConditions
                 ruleId={rule.id}
                 onStatusConditionChange={handle_status_condition_change}
-                className='conditions'
+                className="conditions"
               />
             </div>
           </>
         )}
-      </EquipRuleWrapper >
+      </EquipRuleWrapper>
     </>
   );
 };

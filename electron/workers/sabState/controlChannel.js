@@ -1,7 +1,12 @@
 // electron/workers/sabState/controlChannel.js
 // Lock-free control channel for worker-to-worker messaging
 
-import { getPropertyInfo, WORKER_IDS, CONTROL_COMMANDS, CONTROL_PRIORITIES } from './schema.js';
+import {
+  getPropertyInfo,
+  WORKER_IDS,
+  CONTROL_COMMANDS,
+  CONTROL_PRIORITIES,
+} from './schema.js';
 
 /**
  * Control Channel for direct worker-to-worker messaging
@@ -11,26 +16,28 @@ export class ControlChannel {
   constructor(sabStateArray) {
     this.array = sabStateArray;
     const { offset, schema } = getPropertyInfo('controlChannel');
-    
+
     this.baseOffset = offset;
     this.messageSize = schema.messageSize;
     this.maxMessages = schema.maxMessages;
-    
+
     // Ring buffer header indices
     this.WRITE_INDEX = this.baseOffset + 0;
     this.READ_INDEX = this.baseOffset + 1;
     this.COUNT = this.baseOffset + 2;
     this.LOCK = this.baseOffset + 3;
-    
+
     // Messages start after header
     this.messagesStart = this.baseOffset + schema.headerSize;
-    
+
     // Initialize if needed
-    if (Atomics.load(this.array, this.WRITE_INDEX) === 0 &&
-        Atomics.load(this.array, this.READ_INDEX) === 0) {
+    if (
+      Atomics.load(this.array, this.WRITE_INDEX) === 0 &&
+      Atomics.load(this.array, this.READ_INDEX) === 0
+    ) {
       this._initialize();
     }
-    
+
     this.workerId = WORKER_IDS.BROADCAST; // Will be set by worker
   }
 
@@ -69,38 +76,42 @@ export class ControlChannel {
         return false;
       }
     }
-    
+
     try {
       const count = Atomics.load(this.array, this.COUNT);
-      
+
       // Check if buffer is full
       if (count >= this.maxMessages) {
         console.warn('[ControlChannel] Buffer full, dropping message');
         return false;
       }
-      
+
       // Get write position
       const writeIdx = Atomics.load(this.array, this.WRITE_INDEX);
-      const messageOffset = this.messagesStart + (writeIdx * this.messageSize);
-      
+      const messageOffset = this.messagesStart + writeIdx * this.messageSize;
+
       // Write message
       Atomics.store(this.array, messageOffset + 0, this.workerId);
       Atomics.store(this.array, messageOffset + 1, target);
       Atomics.store(this.array, messageOffset + 2, command);
       Atomics.store(this.array, messageOffset + 3, priority);
-      Atomics.store(this.array, messageOffset + 4, Date.now() % 0x7FFFFFFF);
+      Atomics.store(this.array, messageOffset + 4, Date.now() % 0x7fffffff);
       Atomics.store(this.array, messageOffset + 5, payload.type || 0);
       Atomics.store(this.array, messageOffset + 6, payload.a || 0);
       Atomics.store(this.array, messageOffset + 7, payload.b || 0);
       Atomics.store(this.array, messageOffset + 8, payload.c || 0);
-      
+
       // Advance write index (circular)
-      Atomics.store(this.array, this.WRITE_INDEX, (writeIdx + 1) % this.maxMessages);
+      Atomics.store(
+        this.array,
+        this.WRITE_INDEX,
+        (writeIdx + 1) % this.maxMessages,
+      );
       Atomics.add(this.array, this.COUNT, 1);
-      
+
       // Wake any waiting workers
       Atomics.notify(this.array, this.COUNT, 1);
-      
+
       return true;
     } finally {
       // Release lock
@@ -114,7 +125,7 @@ export class ControlChannel {
    */
   poll() {
     const messages = [];
-    
+
     // Acquire lock (spin briefly)
     let attempts = 0;
     while (Atomics.compareExchange(this.array, this.LOCK, 0, 1) !== 0) {
@@ -122,17 +133,17 @@ export class ControlChannel {
         return messages; // Return empty if can't acquire
       }
     }
-    
+
     try {
       let count = Atomics.load(this.array, this.COUNT);
-      
+
       while (count > 0) {
         const readIdx = Atomics.load(this.array, this.READ_INDEX);
-        const messageOffset = this.messagesStart + (readIdx * this.messageSize);
-        
+        const messageOffset = this.messagesStart + readIdx * this.messageSize;
+
         // Peek at message target
         const target = Atomics.load(this.array, messageOffset + 1);
-        
+
         // Check if message is for us or broadcast
         if (target === this.workerId || target === WORKER_IDS.BROADCAST) {
           // Read full message
@@ -149,16 +160,20 @@ export class ControlChannel {
               c: Atomics.load(this.array, messageOffset + 8),
             },
           };
-          
+
           messages.push(message);
         }
-        
+
         // Advance read index
-        Atomics.store(this.array, this.READ_INDEX, (readIdx + 1) % this.maxMessages);
+        Atomics.store(
+          this.array,
+          this.READ_INDEX,
+          (readIdx + 1) % this.maxMessages,
+        );
         Atomics.sub(this.array, this.COUNT, 1);
         count--;
       }
-      
+
       return messages;
     } finally {
       // Release lock
@@ -173,14 +188,14 @@ export class ControlChannel {
    */
   waitForMessage(timeoutMs = 1000) {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeoutMs) {
       // Check for messages
       const messages = this.poll();
       if (messages.length > 0) {
         return messages[0];
       }
-      
+
       // Wait for notification or timeout
       const count = Atomics.load(this.array, this.COUNT);
       if (count === 0) {
@@ -190,7 +205,7 @@ export class ControlChannel {
         }
       }
     }
-    
+
     return null;
   }
 

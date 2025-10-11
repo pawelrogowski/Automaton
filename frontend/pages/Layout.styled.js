@@ -29,7 +29,7 @@ const StyledDiv = styled.div`
     flex-direction: column;
     overflow: hidden; /* Prevent content scrolling */
     min-height: 0; /* Important for flex children */
-    
+
     .routes-wrapper {
       flex: 1;
       overflow: hidden;
@@ -37,7 +37,7 @@ const StyledDiv = styled.div`
       flex-direction: column;
       min-height: 0;
     }
-    
+
     ol {
       font-size: 13px;
     }

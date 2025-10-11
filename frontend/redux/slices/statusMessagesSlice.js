@@ -21,6 +21,7 @@ const statusMessagesSlice = createSlice({
   },
 });
 
-export const { setNotPossibleTimestamp, setThereIsNoWayTimestamp } = statusMessagesSlice.actions;
+export const { setNotPossibleTimestamp, setThereIsNoWayTimestamp } =
+  statusMessagesSlice.actions;
 
 export default statusMessagesSlice;

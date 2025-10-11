@@ -21,4 +21,4 @@ export const rectsIntersect = (rectA, rectB) => {
     rectA.y < rectB.y + rectB.height &&
     rectA.y + rectA.height > rectB.y
   );
-}
+};

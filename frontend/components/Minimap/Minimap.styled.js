@@ -158,7 +158,9 @@ export const ModalContent = styled.div`
   height: 90vh;
   max-width: 1400px;
   max-height: 900px;
-  box-shadow: 0 20px 60px rgba(183, 0, 255, 0.4), 0 0 100px rgba(183, 0, 255, 0.1);
+  box-shadow:
+    0 20px 60px rgba(183, 0, 255, 0.4),
+    0 0 100px rgba(183, 0, 255, 0.1);
   color: #fafafa;
   display: flex;
   flex-direction: column;
@@ -282,7 +284,7 @@ export const ColorInput = styled.input.attrs({ type: 'color' })`
     border-radius: 5px;
     border: none;
   }
-  
+
   &::-moz-color-swatch {
     border-radius: 5px;
     border: none;
@@ -340,7 +342,11 @@ export const ContextMenuItem = styled.div`
 
   &:hover {
     background-color: ${(props) =>
-      props.disabled ? 'transparent' : props.dangerHover ? '#B22222' : '#007ACC'};
+      props.disabled
+        ? 'transparent'
+        : props.dangerHover
+          ? '#B22222'
+          : '#007ACC'};
   }
 `;
 

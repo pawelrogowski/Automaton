@@ -42,11 +42,7 @@ export function findFirstValidWaypoint(globalState) {
   return null;
 }
 
-export async function advanceToNextWaypoint(
-  workerState,
-  config,
-  options = {},
-) {
+export async function advanceToNextWaypoint(workerState, config, options = {}) {
   const { skipCurrent = false } = options;
   workerState.scriptErrorWaypointId = null;
   workerState.scriptErrorCount = 0;

@@ -88,8 +88,6 @@ const GRACEFUL_SHUTDOWN_WORKERS = new Set([
   'pathfinderWorker',
 ]);
 
-
-
 const WORKER_REGION_DEPENDENCIES = {
   screenMonitor: [
     'healthBar',
@@ -111,7 +109,7 @@ const WORKER_REGION_DEPENDENCIES = {
     'gameWorld',
     'battleList',
   ],
-  creatureMonitor: ['gameWorld','battleList','playerList','npcList'],
+  creatureMonitor: ['gameWorld', 'battleList', 'playerList', 'npcList'],
   // `null` is a special case: regionMonitor needs an update on ANY screen change.
   regionMonitor: null,
 };
@@ -148,7 +146,7 @@ class WorkerManager {
     this.precalculatedWorkerPayloads = new Map(); // New map for pre-calculated payloads
     this.debounceMs = 16; // adaptive debounce interval for store updates
     this.updateTimeEma = 8; // ms, exponential moving average of update time
-    
+
     // NEW: Unified SAB State Management
     this.sabState = null; // Will be initialized with SABState instance
     this.reduxSyncInterval = null; // Interval for SAB → Redux sync
@@ -219,16 +217,19 @@ class WorkerManager {
       imageSAB,
       syncSAB,
     };
-    log('info', '[Worker Manager] Created SharedArrayBuffers (imageSAB, syncSAB).');
-    
+    log(
+      'info',
+      '[Worker Manager] Created SharedArrayBuffers (imageSAB, syncSAB).',
+    );
+
     // NEW: Create unified SAB state manager
     try {
       this.sabState = new SABState();
       log('info', '[Worker Manager] Created unified SABState manager.');
-      
+
       // Start Redux → SAB sync (immediate on store changes)
       this.setupReduxToSABSync();
-      
+
       // Start SAB → Redux sync (throttled 100ms)
       this.startSABToReduxSync();
     } catch (error) {
@@ -242,37 +243,39 @@ class WorkerManager {
    */
   setupReduxToSABSync() {
     if (!this.sabState) return;
-    
+
     // Subscribe to Redux store changes
     const unsubscribe = store.subscribe(() => {
       if (!this.sabState) return;
-      
+
       try {
         const state = store.getState();
-        
+
         // Sync cavebot config
         if (this.configChanged('cavebot', state.cavebot)) {
           const controlStateMap = {
-            'CAVEBOT': CONTROL_STATES.CAVEBOT,
-            'HANDOVER_TO_TARGETING': CONTROL_STATES.HANDOVER_TO_TARGETING,
-            'TARGETING': CONTROL_STATES.TARGETING,
-            'HANDOVER_TO_CAVEBOT': CONTROL_STATES.HANDOVER_TO_CAVEBOT,
+            CAVEBOT: CONTROL_STATES.CAVEBOT,
+            HANDOVER_TO_TARGETING: CONTROL_STATES.HANDOVER_TO_TARGETING,
+            TARGETING: CONTROL_STATES.TARGETING,
+            HANDOVER_TO_CAVEBOT: CONTROL_STATES.HANDOVER_TO_CAVEBOT,
           };
-          
+
           this.sabState.set('cavebotConfig', {
             enabled: state.cavebot?.enabled ? 1 : 0,
-            controlState: controlStateMap[state.cavebot?.controlState] ?? CONTROL_STATES.CAVEBOT,
+            controlState:
+              controlStateMap[state.cavebot?.controlState] ??
+              CONTROL_STATES.CAVEBOT,
             nodeRange: state.cavebot?.nodeRange ?? 1,
             isPausedByScript: state.cavebot?.isPausedByScript ? 1 : 0,
             currentSection: state.cavebot?.currentSection ?? '',
             wptId: state.cavebot?.wptId ?? '',
           });
-          
+
           // Sync pathfinding data (high-performance structures)
           // Sync dynamicTarget
           const dynamicTarget = state.cavebot?.dynamicTarget;
           if (dynamicTarget && dynamicTarget.targetCreaturePos) {
-            const stanceMap = { 'Follow': 0, 'Stand': 1, 'Reach': 2 };
+            const stanceMap = { Follow: 0, Stand: 1, Reach: 2 };
             this.sabState.set('dynamicTarget', {
               targetCreaturePosX: dynamicTarget.targetCreaturePos.x ?? 0,
               targetCreaturePosY: dynamicTarget.targetCreaturePos.y ?? 0,
@@ -294,17 +297,22 @@ class WorkerManager {
               valid: 0,
             });
           }
-          
+
           // Sync targetWaypoint (resolve current waypoint coordinates)
           const wptId = state.cavebot?.wptId;
           const currentSection = state.cavebot?.currentSection;
           const waypointSections = state.cavebot?.waypointSections;
-          
-          if (wptId && currentSection && waypointSections && waypointSections[currentSection]) {
-            const targetWaypoint = waypointSections[currentSection].waypoints.find(
-              (wp) => wp.id === wptId
-            );
-            
+
+          if (
+            wptId &&
+            currentSection &&
+            waypointSections &&
+            waypointSections[currentSection]
+          ) {
+            const targetWaypoint = waypointSections[
+              currentSection
+            ].waypoints.find((wp) => wp.id === wptId);
+
             if (targetWaypoint) {
               this.sabState.set('targetWaypoint', {
                 x: targetWaypoint.x ?? 0,
@@ -315,46 +323,62 @@ class WorkerManager {
             } else {
               // Waypoint ID exists but not found - clear
               this.sabState.set('targetWaypoint', {
-                x: 0, y: 0, z: 0, valid: 0,
+                x: 0,
+                y: 0,
+                z: 0,
+                valid: 0,
               });
             }
           } else {
             // No target waypoint
             this.sabState.set('targetWaypoint', {
-              x: 0, y: 0, z: 0, valid: 0,
+              x: 0,
+              y: 0,
+              z: 0,
+              valid: 0,
             });
           }
-          
+
           // Sync specialAreas
           const specialAreas = state.cavebot?.specialAreas || [];
-          this.sabState.set('specialAreas', specialAreas.map(area => ({
-            x: area.x ?? 0,
-            y: area.y ?? 0,
-            z: area.z ?? 0,
-            sizeX: area.sizeX ?? 1,
-            sizeY: area.sizeY ?? 1,
-            avoidance: area.avoidance ?? 0,
-            enabled: area.enabled ? 1 : 0,
-            hollow: area.hollow ? 1 : 0,
-          })));
-          
+          this.sabState.set(
+            'specialAreas',
+            specialAreas.map((area) => ({
+              x: area.x ?? 0,
+              y: area.y ?? 0,
+              z: area.z ?? 0,
+              sizeX: area.sizeX ?? 1,
+              sizeY: area.sizeY ?? 1,
+              avoidance: area.avoidance ?? 0,
+              enabled: area.enabled ? 1 : 0,
+              hollow: area.hollow ? 1 : 0,
+            })),
+          );
+
           // Sync temporaryBlockedTiles
-          const temporaryBlockedTiles = state.cavebot?.temporaryBlockedTiles || [];
-          this.sabState.set('temporaryBlockedTiles', temporaryBlockedTiles.map(tile => ({
-            x: tile.x ?? 0,
-            y: tile.y ?? 0,
-            z: tile.z ?? 0,
-            expiresAt: Math.floor((tile.expiresAt ?? 0) / 100), // Scale down to fit int32
-          })));
-          
+          const temporaryBlockedTiles =
+            state.cavebot?.temporaryBlockedTiles || [];
+          this.sabState.set(
+            'temporaryBlockedTiles',
+            temporaryBlockedTiles.map((tile) => ({
+              x: tile.x ?? 0,
+              y: tile.y ?? 0,
+              z: tile.z ?? 0,
+              expiresAt: Math.floor((tile.expiresAt ?? 0) / 100), // Scale down to fit int32
+            })),
+          );
+
           // Sync visitedTiles
           const visitedTiles = state.cavebot?.visitedTiles || [];
-          this.sabState.set('visitedTiles', visitedTiles.map(tile => ({
-            x: tile.x ?? 0,
-            y: tile.y ?? 0,
-            z: tile.z ?? 0,
-          })));
-          
+          this.sabState.set(
+            'visitedTiles',
+            visitedTiles.map((tile) => ({
+              x: tile.x ?? 0,
+              y: tile.y ?? 0,
+              z: tile.z ?? 0,
+            })),
+          );
+
           this.previousConfigState.cavebot = {
             version: state.cavebot?.version,
             enabled: state.cavebot?.enabled,
@@ -363,26 +387,26 @@ class WorkerManager {
             dynamicTarget: state.cavebot?.dynamicTarget,
           };
         }
-        
+
         // Sync targeting config
         if (this.configChanged('targeting', state.targeting)) {
           this.sabState.set('targetingConfig', {
             enabled: state.targeting?.enabled ? 1 : 0,
           });
-          
+
           this.previousConfigState.targeting = {
             version: state.targeting?.version,
             enabled: state.targeting?.enabled,
           };
         }
-        
+
         // Sync global config
         if (this.configChanged('global', state.global)) {
           this.sabState.set('globalConfig', {
             windowId: parseInt(state.global?.windowId ?? 0, 10),
             display: state.global?.display ? 1 : 0,
           });
-          
+
           this.previousConfigState.global = {
             version: state.global?.version,
             windowId: state.global?.windowId,
@@ -393,7 +417,7 @@ class WorkerManager {
         log('error', '[Worker Manager] Error in Redux → SAB sync:', error);
       }
     });
-    
+
     // Store unsubscribe function for cleanup
     this.reduxSyncUnsubscribe = unsubscribe;
     log('info', '[Worker Manager] Redux → SAB sync enabled');
@@ -405,25 +429,32 @@ class WorkerManager {
   configChanged(sliceName, currentSlice) {
     const prev = this.previousConfigState[sliceName];
     if (!prev) return true; // First time
-    
+
     // Check version if available
-    if (typeof currentSlice?.version === 'number' && typeof prev.version === 'number') {
+    if (
+      typeof currentSlice?.version === 'number' &&
+      typeof prev.version === 'number'
+    ) {
       return currentSlice.version !== prev.version;
     }
-    
+
     // Fallback: deep check key properties
     if (sliceName === 'cavebot') {
-      return currentSlice?.enabled !== prev.enabled ||
-             currentSlice?.controlState !== prev.controlState ||
-             currentSlice?.wptId !== prev.wptId ||
-             currentSlice?.dynamicTarget !== prev.dynamicTarget;
+      return (
+        currentSlice?.enabled !== prev.enabled ||
+        currentSlice?.controlState !== prev.controlState ||
+        currentSlice?.wptId !== prev.wptId ||
+        currentSlice?.dynamicTarget !== prev.dynamicTarget
+      );
     } else if (sliceName === 'targeting') {
       return currentSlice?.enabled !== prev.enabled;
     } else if (sliceName === 'global') {
-      return currentSlice?.windowId !== prev.windowId ||
-             currentSlice?.display !== prev.display;
+      return (
+        currentSlice?.windowId !== prev.windowId ||
+        currentSlice?.display !== prev.display
+      );
     }
-    
+
     return false;
   }
 
@@ -434,7 +465,7 @@ class WorkerManager {
   startSABToReduxSync() {
     if (!this.sabState) return;
     if (this.reduxSyncInterval) return; // Already started
-    
+
     // Track last synced versions to avoid redundant Redux updates
     this.lastSyncedVersions = {
       playerPos: -1,
@@ -443,29 +474,32 @@ class WorkerManager {
       target: -1,
       pathData: -1,
     };
-    
+
     this.reduxSyncInterval = setInterval(() => {
       if (!this.sabState) return;
-      
+
       try {
         const now = Date.now();
-        
+
         // Throttle to once per 100ms
         if (now - this.lastReduxSyncTime < 100) return;
         this.lastReduxSyncTime = now;
-        
+
         // Read real-time data from SAB
         const playerPosResult = this.sabState.get('playerPos');
         const creaturesResult = this.sabState.get('creatures');
         const battleListResult = this.sabState.get('battleList');
         const targetResult = this.sabState.get('target');
         const pathDataResult = this.sabState.get('pathData');
-        
+
         // Build batch update payload
         const updates = {};
         let hasUpdates = false;
-        
-        if (playerPosResult?.data && playerPosResult.version !== this.lastSyncedVersions.playerPos) {
+
+        if (
+          playerPosResult?.data &&
+          playerPosResult.version !== this.lastSyncedVersions.playerPos
+        ) {
           this.lastSyncedVersions.playerPos = playerPosResult.version;
           updates.gameState = updates.gameState || {};
           updates.gameState.playerMinimapPosition = {
@@ -475,23 +509,29 @@ class WorkerManager {
           };
           hasUpdates = true;
         }
-        
-        if (creaturesResult?.data && creaturesResult.version !== this.lastSyncedVersions.creatures) {
+
+        if (
+          creaturesResult?.data &&
+          creaturesResult.version !== this.lastSyncedVersions.creatures
+        ) {
           this.lastSyncedVersions.creatures = creaturesResult.version;
           updates.targeting = updates.targeting || {};
           updates.targeting.creatures = creaturesResult.data;
           hasUpdates = true;
         }
-        
-        if (battleListResult?.data && battleListResult.version !== this.lastSyncedVersions.battleList) {
+
+        if (
+          battleListResult?.data &&
+          battleListResult.version !== this.lastSyncedVersions.battleList
+        ) {
           this.lastSyncedVersions.battleList = battleListResult.version;
           updates.battleList = { entries: battleListResult.data };
           hasUpdates = true;
         }
-        
+
         if (
-          targetResult?.data && 
-          targetResult.data.instanceId !== 0 && 
+          targetResult?.data &&
+          targetResult.data.instanceId !== 0 &&
           targetResult.version !== this.lastSyncedVersions.target
         ) {
           this.lastSyncedVersions.target = targetResult.version;
@@ -509,18 +549,23 @@ class WorkerManager {
           };
           hasUpdates = true;
         }
-        
-        if (pathDataResult?.data && pathDataResult.version !== this.lastSyncedVersions.pathData) {
+
+        if (
+          pathDataResult?.data &&
+          pathDataResult.version !== this.lastSyncedVersions.pathData
+        ) {
           this.lastSyncedVersions.pathData = pathDataResult.version;
           updates.pathfinder = {
             pathWaypoints: pathDataResult.data.waypoints || [],
             wptDistance: pathDataResult.data.waypoints?.length || null,
-            pathfindingStatus: this.getPathStatusString(pathDataResult.data.status),
+            pathfindingStatus: this.getPathStatusString(
+              pathDataResult.data.status,
+            ),
             routeSearchMs: 0, // SAB doesn't store this, so default to 0
           };
           hasUpdates = true;
         }
-        
+
         // Dispatch batch update to Redux using setGlobalState
         if (hasUpdates) {
           for (const [sliceName, sliceUpdates] of Object.entries(updates)) {
@@ -539,7 +584,7 @@ class WorkerManager {
         log('error', '[Worker Manager] Error in SAB → Redux sync:', error);
       }
     }, 100);
-    
+
     log('info', '[Worker Manager] SAB → Redux sync started (100ms interval)');
   }
 
@@ -721,9 +766,14 @@ class WorkerManager {
       showNotification(message.notification.title, message.notification.body);
     } else if (message.storeUpdate) {
       // Track duplicate actions being queued
-      const existingIndex = this.incomingActionQueue.findIndex(a => a.type === message.type);
+      const existingIndex = this.incomingActionQueue.findIndex(
+        (a) => a.type === message.type,
+      );
       if (existingIndex !== -1) {
-        log('warn', `[Worker Manager] Duplicate action queued from ${workerName}: ${message.type} (${this.incomingActionQueue.length} items in queue)`);
+        log(
+          'warn',
+          `[Worker Manager] Duplicate action queued from ${workerName}: ${message.type} (${this.incomingActionQueue.length} items in queue)`,
+        );
       }
       this.incomingActionQueue.push({
         type: message.type,
@@ -964,8 +1014,10 @@ class WorkerManager {
         continue;
       }
 
-      const currVer = curr && typeof curr.version === 'number' ? curr.version : null;
-      const prevVer = prev && typeof prev.version === 'number' ? prev.version : null;
+      const currVer =
+        curr && typeof curr.version === 'number' ? curr.version : null;
+      const prevVer =
+        prev && typeof prev.version === 'number' ? prev.version : null;
 
       if (currVer !== null && prevVer !== null) {
         if (currVer !== prevVer) {
@@ -999,7 +1051,8 @@ class WorkerManager {
     for (const [name, workerEntry] of this.workers) {
       if (!workerEntry.worker || name === 'captureWorker') continue;
 
-      const isLuaWorker = /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
+      const isLuaWorker =
+        /^[0-9a-fA-F]{8}-/.test(name) || name === 'cavebotWorker';
 
       if (!this.workerInitialized.get(name) || isLuaWorker) {
         // For initial setup or Lua workers, always send the full state
@@ -1022,7 +1075,10 @@ class WorkerManager {
       for (const dep of workerDeps) {
         if (Object.prototype.hasOwnProperty.call(changedSlices, dep)) {
           const slice = changedSlices[dep];
-          const ver = slice && typeof slice.version === 'number' ? slice.version : quickHash(slice);
+          const ver =
+            slice && typeof slice.version === 'number'
+              ? slice.version
+              : quickHash(slice);
           signature = (((signature ^ (ver >>> 0)) >>> 0) * FNV_PRIME) >>> 0;
           hasRelevant = true;
         }
@@ -1037,9 +1093,15 @@ class WorkerManager {
       const relevant = {};
       for (const dep of workerDeps) {
         if (Object.prototype.hasOwnProperty.call(changedSlices, dep)) {
-if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'screenMonitor' || name === 'ocrWorker')) {
+          if (
+            dep === 'regionCoordinates' &&
+            (name === 'minimapMonitor' ||
+              name === 'screenMonitor' ||
+              name === 'ocrWorker')
+          ) {
             const v = changedSlices[dep]?.version;
-            relevant[dep] = typeof v === 'number' ? { version: v } : { version: 0 };
+            relevant[dep] =
+              typeof v === 'number' ? { version: v } : { version: 0 };
           } else {
             relevant[dep] = changedSlices[dep];
           }
@@ -1047,7 +1109,10 @@ if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'scree
       }
 
       if (Object.keys(relevant).length) {
-        workerEntry.worker.postMessage({ type: 'state_diff', payload: relevant });
+        workerEntry.worker.postMessage({
+          type: 'state_diff',
+          payload: relevant,
+        });
       }
     }
   }
@@ -1161,7 +1226,7 @@ if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'scree
           !this.workers.has('inputOrchestrator')
         )
           this.startWorker('inputOrchestrator');
-        
+
         // if (
         //   this.workerConfig.mouseNoiseWorker &&
         //   !this.workers.has('mouseNoiseWorker')
@@ -1265,7 +1330,10 @@ if (dep === 'regionCoordinates' && (name === 'minimapMonitor' || name === 'scree
     this.incomingActionQueue = [];
     this.incomingActionInterval = setInterval(() => {
       if (this.incomingActionQueue.length > 0) {
-        const batch = this.incomingActionQueue.splice(0, this.incomingActionQueue.length);
+        const batch = this.incomingActionQueue.splice(
+          0,
+          this.incomingActionQueue.length,
+        );
 
         // Coalesce high-frequency updates: keep only the last action per type,
         // except for additive event types that must not be deduplicated.

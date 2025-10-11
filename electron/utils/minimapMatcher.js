@@ -102,7 +102,10 @@ class MinimapMatcher {
           artificialLandmarkData.set(z, parseLandmarks(artificialBuffer));
         } catch (e) {
           if (e.code !== 'ENOENT') {
-            logger('error', `Could not load landmarks_artificial.bin for Z=${z}: ${e.message}`);
+            logger(
+              'error',
+              `Could not load landmarks_artificial.bin for Z=${z}: ${e.message}`,
+            );
           }
           artificialLandmarkData.set(z, []);
         }
@@ -115,20 +118,32 @@ class MinimapMatcher {
           naturalLandmarkData.set(z, parseLandmarks(naturalBuffer));
         } catch (e) {
           if (e.code !== 'ENOENT') {
-            logger('error', `Could not load landmarks_natural.bin for Z=${z}: ${e.message}`);
+            logger(
+              'error',
+              `Could not load landmarks_natural.bin for Z=${z}: ${e.message}`,
+            );
           }
           naturalLandmarkData.set(z, []);
         }
 
-        if (!artificialLandmarkData.get(z).length && !naturalLandmarkData.get(z).length) {
-            logger('warn', `No landmarks found for Z=${z}. Position finding will be unavailable for this floor.`);
+        if (
+          !artificialLandmarkData.get(z).length &&
+          !naturalLandmarkData.get(z).length
+        ) {
+          logger(
+            'warn',
+            `No landmarks found for Z=${z}. Position finding will be unavailable for this floor.`,
+          );
         }
       }
 
       // Sync data to the native module once on load
       this.nativeMatcher.palette = palette;
-      this.nativeMatcher.artificialLandmarkData = Object.fromEntries(artificialLandmarkData);
-      this.nativeMatcher.naturalLandmarkData = Object.fromEntries(naturalLandmarkData);
+      this.nativeMatcher.artificialLandmarkData = Object.fromEntries(
+        artificialLandmarkData,
+      );
+      this.nativeMatcher.naturalLandmarkData =
+        Object.fromEntries(naturalLandmarkData);
       this.nativeMatcher.isLoaded = true;
       this.isLoaded = true;
 

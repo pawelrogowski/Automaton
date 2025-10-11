@@ -17,7 +17,6 @@ const SAFE_ZONE_RADIUS = 9;
 const MIN_DISTANCE_RANGE = [3];
 const CANDIDATE_SPACING_RANGE = [1];
 
-
 const logger = createLogger({ info: false, error: true, debug: false });
 
 // --- PATH CONFIGURATION ---
@@ -77,10 +76,26 @@ function calculateDistanceTransform(grid, width, height) {
       const i = y * width + x;
       if (grid[i] !== 0) {
         let minNeighborDist = Infinity;
-        if (y > 0) minNeighborDist = Math.min(minNeighborDist, dist[(y - 1) * width + x] + 1);
-        if (x > 0) minNeighborDist = Math.min(minNeighborDist, dist[y * width + x - 1] + 1);
-        if (y > 0 && x > 0) minNeighborDist = Math.min(minNeighborDist, dist[(y - 1) * width + x - 1] + 1.414);
-        if (y > 0 && x < width - 1) minNeighborDist = Math.min(minNeighborDist, dist[(y - 1) * width + x + 1] + 1.414);
+        if (y > 0)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[(y - 1) * width + x] + 1,
+          );
+        if (x > 0)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[y * width + x - 1] + 1,
+          );
+        if (y > 0 && x > 0)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[(y - 1) * width + x - 1] + 1.414,
+          );
+        if (y > 0 && x < width - 1)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[(y - 1) * width + x + 1] + 1.414,
+          );
         dist[i] = Math.min(dist[i], minNeighborDist);
       }
     }
@@ -90,10 +105,26 @@ function calculateDistanceTransform(grid, width, height) {
       const i = y * width + x;
       if (grid[i] !== 0) {
         let minNeighborDist = dist[i];
-        if (y < height - 1) minNeighborDist = Math.min(minNeighborDist, dist[(y + 1) * width + x] + 1);
-        if (x < width - 1) minNeighborDist = Math.min(minNeighborDist, dist[y * width + x + 1] + 1);
-        if (y < height - 1 && x < width - 1) minNeighborDist = Math.min(minNeighborDist, dist[(y + 1) * width + x + 1] + 1.414);
-        if (y < height - 1 && x > 0) minNeighborDist = Math.min(minNeighborDist, dist[(y + 1) * width + x - 1] + 1.414);
+        if (y < height - 1)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[(y + 1) * width + x] + 1,
+          );
+        if (x < width - 1)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[y * width + x + 1] + 1,
+          );
+        if (y < height - 1 && x < width - 1)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[(y + 1) * width + x + 1] + 1.414,
+          );
+        if (y < height - 1 && x > 0)
+          minNeighborDist = Math.min(
+            minNeighborDist,
+            dist[(y + 1) * width + x - 1] + 1.414,
+          );
         dist[i] = minNeighborDist;
       }
     }
@@ -108,7 +139,7 @@ function injectArtificialLandmarks({
   mapHeight,
   indexData,
   minDistance,
-  candidateSpacing
+  candidateSpacing,
 }) {
   const injectedLandmarks = [];
   const halfLandmark = Math.floor(LANDMARK_SIZE / 2);
@@ -117,11 +148,23 @@ function injectArtificialLandmarks({
   const visibilityRadiusX = halfMinimapW - halfLandmark;
   const visibilityRadiusY = halfMinimapH - halfLandmark;
 
-  const distanceMap = calculateDistanceTransform(safeZoneGrid, mapWidth, mapHeight);
+  const distanceMap = calculateDistanceTransform(
+    safeZoneGrid,
+    mapWidth,
+    mapHeight,
+  );
 
   const candidates = [];
-  for (let y = halfLandmark; y < mapHeight - halfLandmark; y += candidateSpacing) {
-    for (let x = halfLandmark; x < mapWidth - halfLandmark; x += candidateSpacing) {
+  for (
+    let y = halfLandmark;
+    y < mapHeight - halfLandmark;
+    y += candidateSpacing
+  ) {
+    for (
+      let x = halfLandmark;
+      x < mapWidth - halfLandmark;
+      x += candidateSpacing
+    ) {
       const i = y * mapWidth + x;
       if (safeZoneGrid[i] === 1) {
         candidates.push({ x, y, dist: distanceMap[i] });
@@ -132,16 +175,16 @@ function injectArtificialLandmarks({
   candidates.sort((a, b) => a.dist - b.dist);
 
   const uncoveredWalkablePixels = new Set();
-  for(let i = 0; i < walkableGrid.length; i++) {
-    if(walkableGrid[i] === 1) {
+  for (let i = 0; i < walkableGrid.length; i++) {
+    if (walkableGrid[i] === 1) {
       uncoveredWalkablePixels.add(i);
     }
   }
-  
+
   const minSqDist = minDistance * minDistance;
   let remainingCandidates = [...candidates];
 
-  while(uncoveredWalkablePixels.size > 0) {
+  while (uncoveredWalkablePixels.size > 0) {
     let bestCandidate = null;
     let maxNewCoverage = 0;
     let bestCoverageSet = null;
@@ -185,35 +228,44 @@ function injectArtificialLandmarks({
     }
 
     if (bestCandidate) {
-      injectedLandmarks.push({ x: bestCandidate.x + indexData.minX, y: bestCandidate.y + indexData.minY });
+      injectedLandmarks.push({
+        x: bestCandidate.x + indexData.minX,
+        y: bestCandidate.y + indexData.minY,
+      });
       for (const pixel of bestCoverageSet) {
         uncoveredWalkablePixels.delete(pixel);
       }
       remainingCandidates.splice(bestCandidateIndex, 1);
     } else {
-      break; 
+      break;
     }
   }
 
   let totalWalkable = 0;
   let coveredWalkable = 0;
-  for(let i = 0; i < walkableGrid.length; i++) {
-    if(walkableGrid[i] === 1) {
+  for (let i = 0; i < walkableGrid.length; i++) {
+    if (walkableGrid[i] === 1) {
       totalWalkable++;
-      if(coveredWalkablePixels[i] === 1) {
+      if (coveredWalkablePixels[i] === 1) {
         coveredWalkable++;
       }
     }
   }
-  
-  const coveragePercentage = totalWalkable > 0 ? (coveredWalkable / totalWalkable) * 100 : 0;
 
-  return { landmarkCount: injectedLandmarks.length, coverage: coveragePercentage };
+  const coveragePercentage =
+    totalWalkable > 0 ? (coveredWalkable / totalWalkable) * 100 : 0;
+
+  return {
+    landmarkCount: injectedLandmarks.length,
+    coverage: coveragePercentage,
+  };
 }
 
-
 async function analyze() {
-  logger('info', `--- Starting Landmark Setting Analysis for Z-Level ${Z_LEVEL_TO_ANALYZE} ---`);
+  logger(
+    'info',
+    `--- Starting Landmark Setting Analysis for Z-Level ${Z_LEVEL_TO_ANALYZE} ---`,
+  );
 
   const allFiles = await fs.readdir(TIBIA_MINIMAP_BASE_PATH);
   const zLevelIndexData = new Map();
@@ -287,12 +339,20 @@ async function analyze() {
         }
       }
     } catch (err) {
-      logger('warn', `Could not process waypoint tile ${inputFilePath}. Error: ${err.message}`);
+      logger(
+        'warn',
+        `Could not process waypoint tile ${inputFilePath}. Error: ${err.message}`,
+      );
     }
   }
 
   logger('info', 'Generating safe zone grid...');
-  const safeZoneGrid = generateSafeZoneGrid(walkableGrid, mapWidth, mapHeight, SAFE_ZONE_RADIUS);
+  const safeZoneGrid = generateSafeZoneGrid(
+    walkableGrid,
+    mapWidth,
+    mapHeight,
+    SAFE_ZONE_RADIUS,
+  );
 
   logger('info', '--- Starting Analysis Loop ---');
   console.log('Distance | Spacing | Landmarks | Coverage (%)');
@@ -307,10 +367,10 @@ async function analyze() {
         mapHeight,
         indexData,
         minDistance,
-        candidateSpacing
+        candidateSpacing,
       });
       console.log(
-        `${minDistance.toString().padEnd(8)} | ${candidateSpacing.toString().padEnd(7)} | ${result.landmarkCount.toString().padEnd(9)} | ${result.coverage.toFixed(2)}`
+        `${minDistance.toString().padEnd(8)} | ${candidateSpacing.toString().padEnd(7)} | ${result.landmarkCount.toString().padEnd(9)} | ${result.coverage.toFixed(2)}`,
       );
     }
   }
@@ -318,7 +378,7 @@ async function analyze() {
   logger('info', '--- Analysis Complete ---');
 }
 
-analyze().catch(err => {
+analyze().catch((err) => {
   logger('error', `Fatal error during analysis: ${err.message}`);
   console.error(err.stack);
 });

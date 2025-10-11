@@ -33,7 +33,6 @@ async function restoreMinimaps() {
     }
     console.log(`Successfully restored ${restoredCount} files.`);
     console.log('You can now safely re-run the preprocessing script.');
-
   } catch (error) {
     if (error.code === 'ENOENT') {
       console.log('Backup directory not found. It seems no backups were made.');

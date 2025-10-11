@@ -1,9 +1,9 @@
 // /workers/cavebot/helpers/asyncUtils.js
 
 import { getDistance } from '../../../utils/distance.js';
-import { 
-  delay as movementDelay, 
-  awaitWalkConfirmation as movementAwaitWalkConfirmation 
+import {
+  delay as movementDelay,
+  awaitWalkConfirmation as movementAwaitWalkConfirmation,
 } from '../../movementUtils/confirmationHelpers.js';
 
 export const delay = movementDelay;
@@ -50,7 +50,7 @@ export const awaitZLevelChange = (workerState, config, initialZ, timeoutMs) => {
       } else {
         currentZ = workerState.playerMinimapPosition?.z;
       }
-      
+
       if (currentZ !== null && currentZ !== initialZ) {
         clearInterval(intervalId);
         resolve(true);

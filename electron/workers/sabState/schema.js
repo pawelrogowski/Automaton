@@ -14,16 +14,16 @@ const sizeInInt32 = (bytes) => Math.ceil(bytes / 4);
 
 // Property categories
 export const PROPERTY_CATEGORIES = {
-  CONFIG: 'config',        // Written by workerManager from Redux, read by workers
-  REALTIME: 'realtime',    // Written by workers, synced to Redux
-  CONTROL: 'control',      // Worker-to-worker messaging
+  CONFIG: 'config', // Written by workerManager from Redux, read by workers
+  REALTIME: 'realtime', // Written by workers, synced to Redux
+  CONTROL: 'control', // Worker-to-worker messaging
 };
 
 // Schema definition for all SAB properties
 export const SCHEMA = {
   // ==================== REAL-TIME DATA ====================
   // Written by workers, read by workers + synced to Redux
-  
+
   playerPos: {
     category: PROPERTY_CATEGORIES.REALTIME,
     type: 'struct',
@@ -48,16 +48,16 @@ export const SCHEMA = {
       z: FIELD_TYPES.INT32,
       absoluteX: FIELD_TYPES.INT32,
       absoluteY: FIELD_TYPES.INT32,
-      isReachable: FIELD_TYPES.INT32,  // bool as int
-      isAdjacent: FIELD_TYPES.INT32,   // bool as int
+      isReachable: FIELD_TYPES.INT32, // bool as int
+      isAdjacent: FIELD_TYPES.INT32, // bool as int
       isBlockingPath: FIELD_TYPES.INT32, // bool as int
-      distance: FIELD_TYPES.INT32,     // multiplied by 100
-      hp: FIELD_TYPES.INT32,           // encoded enum
+      distance: FIELD_TYPES.INT32, // multiplied by 100
+      hp: FIELD_TYPES.INT32, // encoded enum
       name: { type: FIELD_TYPES.STRING, maxLength: 32 }, // 32 chars
     },
     itemSize: 43, // 11 ints + 32 chars = 43
     headerSize: 3, // count + version + update_counter
-    size: 3 + (100 * 43), // header + (maxCount * itemSize)
+    size: 3 + 100 * 43, // header + (maxCount * itemSize)
     description: 'Detected creatures (written by creatureMonitor)',
   },
 
@@ -67,13 +67,13 @@ export const SCHEMA = {
     maxCount: 50,
     itemFields: {
       name: { type: FIELD_TYPES.STRING, maxLength: 32 },
-      x: FIELD_TYPES.INT32,  // screen coordinate
-      y: FIELD_TYPES.INT32,  // screen coordinate
+      x: FIELD_TYPES.INT32, // screen coordinate
+      y: FIELD_TYPES.INT32, // screen coordinate
       isTarget: FIELD_TYPES.INT32, // bool as int
     },
     itemSize: 35, // 32 chars + 3 ints
     headerSize: 3, // count + version + update_counter
-    size: 3 + (50 * 35),
+    size: 3 + 50 * 35,
     description: 'Battle list entries (written by creatureMonitor)',
   },
 
@@ -85,8 +85,8 @@ export const SCHEMA = {
       x: FIELD_TYPES.INT32,
       y: FIELD_TYPES.INT32,
       z: FIELD_TYPES.INT32,
-      distance: FIELD_TYPES.INT32,     // multiplied by 100
-      isReachable: FIELD_TYPES.INT32,  // bool as int
+      distance: FIELD_TYPES.INT32, // multiplied by 100
+      isReachable: FIELD_TYPES.INT32, // bool as int
       name: { type: FIELD_TYPES.STRING, maxLength: 32 },
       version: FIELD_TYPES.INT32,
     },
@@ -117,12 +117,12 @@ export const SCHEMA = {
       blockingCreatureX: FIELD_TYPES.INT32,
       blockingCreatureY: FIELD_TYPES.INT32,
       blockingCreatureZ: FIELD_TYPES.INT32,
-      wptId: FIELD_TYPES.INT32,       // waypoint ID hash
-      instanceId: FIELD_TYPES.INT32,  // creature instance ID
+      wptId: FIELD_TYPES.INT32, // waypoint ID hash
+      instanceId: FIELD_TYPES.INT32, // creature instance ID
       version: FIELD_TYPES.INT32,
     },
     headerSize: 15,
-    size: 15 + (1000 * 3), // header + waypoints
+    size: 15 + 1000 * 3, // header + waypoints
     description: 'LEGACY: Combined pathfinding result - being phased out',
   },
 
@@ -149,12 +149,12 @@ export const SCHEMA = {
       blockingCreatureX: FIELD_TYPES.INT32,
       blockingCreatureY: FIELD_TYPES.INT32,
       blockingCreatureZ: FIELD_TYPES.INT32,
-      wptId: FIELD_TYPES.INT32,       // waypoint ID hash (always used)
-      instanceId: FIELD_TYPES.INT32,  // always 0 for cavebot
+      wptId: FIELD_TYPES.INT32, // waypoint ID hash (always used)
+      instanceId: FIELD_TYPES.INT32, // always 0 for cavebot
       version: FIELD_TYPES.INT32,
     },
     headerSize: 15,
-    size: 15 + (1000 * 3), // header + waypoints
+    size: 15 + 1000 * 3, // header + waypoints
     description: 'Cavebot pathfinding result (written by pathfinderWorker)',
   },
 
@@ -181,12 +181,12 @@ export const SCHEMA = {
       blockingCreatureX: FIELD_TYPES.INT32,
       blockingCreatureY: FIELD_TYPES.INT32,
       blockingCreatureZ: FIELD_TYPES.INT32,
-      wptId: FIELD_TYPES.INT32,       // always 0 for targeting
-      instanceId: FIELD_TYPES.INT32,  // creature instance ID (always used)
+      wptId: FIELD_TYPES.INT32, // always 0 for targeting
+      instanceId: FIELD_TYPES.INT32, // creature instance ID (always used)
       version: FIELD_TYPES.INT32,
     },
     headerSize: 15,
-    size: 15 + (1000 * 3), // header + waypoints
+    size: 15 + 1000 * 3, // header + waypoints
     description: 'Targeting pathfinding result (written by pathfinderWorker)',
   },
 
@@ -194,7 +194,7 @@ export const SCHEMA = {
     category: PROPERTY_CATEGORIES.REALTIME,
     type: 'struct',
     fields: {
-      required: FIELD_TYPES.INT32,  // bool as int
+      required: FIELD_TYPES.INT32, // bool as int
       version: FIELD_TYPES.INT32,
     },
     size: 2,
@@ -210,14 +210,15 @@ export const SCHEMA = {
       action: { type: FIELD_TYPES.STRING, maxLength: 4 },
       priority: FIELD_TYPES.INT32,
       stickiness: FIELD_TYPES.INT32,
-      stance: FIELD_TYPES.INT32,  // 0=Follow, 1=Stand, 2=Reach
+      stance: FIELD_TYPES.INT32, // 0=Follow, 1=Stand, 2=Reach
       distance: FIELD_TYPES.INT32,
-      onlyIfTrapped: FIELD_TYPES.INT32,  // bool as int
+      onlyIfTrapped: FIELD_TYPES.INT32, // bool as int
     },
     itemSize: 41, // 32 + 4 + 5 ints = 41
     headerSize: 3, // count + version + update_counter
-    size: 3 + (50 * 41),
-    description: 'Targeting rules list (written by targetingWorker/creatureMonitor)',
+    size: 3 + 50 * 41,
+    description:
+      'Targeting rules list (written by targetingWorker/creatureMonitor)',
   },
 
   // ==================== UI CONFIG DATA ====================
@@ -227,10 +228,10 @@ export const SCHEMA = {
     category: PROPERTY_CATEGORIES.CONFIG,
     type: 'config',
     fields: {
-      enabled: FIELD_TYPES.INT32,           // bool as int
-      controlState: FIELD_TYPES.INT32,      // enum encoded
+      enabled: FIELD_TYPES.INT32, // bool as int
+      controlState: FIELD_TYPES.INT32, // enum encoded
       nodeRange: FIELD_TYPES.INT32,
-      isPausedByScript: FIELD_TYPES.INT32,  // bool as int
+      isPausedByScript: FIELD_TYPES.INT32, // bool as int
       currentSection: { type: FIELD_TYPES.STRING, maxLength: 64 },
       wptId: { type: FIELD_TYPES.STRING, maxLength: 64 },
       version: FIELD_TYPES.INT32,
@@ -243,12 +244,13 @@ export const SCHEMA = {
     category: PROPERTY_CATEGORIES.CONFIG,
     type: 'config',
     fields: {
-      enabled: FIELD_TYPES.INT32,  // bool as int
+      enabled: FIELD_TYPES.INT32, // bool as int
       version: FIELD_TYPES.INT32,
     },
     size: 2,
     // Note: targetingList is complex (array of rules), kept in existing targetingListSAB
-    description: 'Targeting configuration (written by workerManager from Redux)',
+    description:
+      'Targeting configuration (written by workerManager from Redux)',
   },
 
   globalConfig: {
@@ -275,13 +277,14 @@ export const SCHEMA = {
       targetCreaturePosY: FIELD_TYPES.INT32,
       targetCreaturePosZ: FIELD_TYPES.INT32,
       targetInstanceId: FIELD_TYPES.INT32,
-      stance: FIELD_TYPES.INT32,     // enum: 0=Follow, 1=Stand, 2=Reach
+      stance: FIELD_TYPES.INT32, // enum: 0=Follow, 1=Stand, 2=Reach
       distance: FIELD_TYPES.INT32,
-      valid: FIELD_TYPES.INT32,      // bool: 1=valid target, 0=null
+      valid: FIELD_TYPES.INT32, // bool: 1=valid target, 0=null
       version: FIELD_TYPES.INT32,
     },
     size: 8,
-    description: 'Dynamic targeting creature (written by workerManager from Redux)',
+    description:
+      'Dynamic targeting creature (written by workerManager from Redux)',
   },
 
   targetWaypoint: {
@@ -291,11 +294,12 @@ export const SCHEMA = {
       x: FIELD_TYPES.INT32,
       y: FIELD_TYPES.INT32,
       z: FIELD_TYPES.INT32,
-      valid: FIELD_TYPES.INT32,      // bool: 1=valid waypoint, 0=no target
+      valid: FIELD_TYPES.INT32, // bool: 1=valid waypoint, 0=no target
       version: FIELD_TYPES.INT32,
     },
     size: 5,
-    description: 'Current target waypoint coordinates (written by workerManager from Redux)',
+    description:
+      'Current target waypoint coordinates (written by workerManager from Redux)',
   },
 
   specialAreas: {
@@ -309,13 +313,14 @@ export const SCHEMA = {
       sizeX: FIELD_TYPES.INT32,
       sizeY: FIELD_TYPES.INT32,
       avoidance: FIELD_TYPES.INT32,
-      enabled: FIELD_TYPES.INT32,    // bool as int
-      hollow: FIELD_TYPES.INT32,     // bool as int
+      enabled: FIELD_TYPES.INT32, // bool as int
+      hollow: FIELD_TYPES.INT32, // bool as int
     },
     itemSize: 8,
     headerSize: 3, // count + version + update_counter
-    size: 3 + (100 * 8), // 803 Int32 units
-    description: 'Permanent special avoid areas (written by workerManager from Redux)',
+    size: 3 + 100 * 8, // 803 Int32 units
+    description:
+      'Permanent special avoid areas (written by workerManager from Redux)',
   },
 
   temporaryBlockedTiles: {
@@ -326,12 +331,13 @@ export const SCHEMA = {
       x: FIELD_TYPES.INT32,
       y: FIELD_TYPES.INT32,
       z: FIELD_TYPES.INT32,
-      expiresAt: FIELD_TYPES.INT32,  // timestamp (ms / 100 to fit in int32)
+      expiresAt: FIELD_TYPES.INT32, // timestamp (ms / 100 to fit in int32)
     },
     itemSize: 4,
     headerSize: 3, // count + version + update_counter
-    size: 3 + (50 * 4), // 203 Int32 units
-    description: 'Temporarily blocked tiles (written by workerManager from Redux)',
+    size: 3 + 50 * 4, // 203 Int32 units
+    description:
+      'Temporarily blocked tiles (written by workerManager from Redux)',
   },
 
   visitedTiles: {
@@ -345,8 +351,9 @@ export const SCHEMA = {
     },
     itemSize: 3,
     headerSize: 3, // count + version + update_counter
-    size: 3 + (100 * 3), // 303 Int32 units
-    description: 'Visited tiles during targeting mode (written by workerManager from Redux)',
+    size: 3 + 100 * 3, // 303 Int32 units
+    description:
+      'Visited tiles during targeting mode (written by workerManager from Redux)',
   },
 
   // ==================== CONTROL CHANNEL ====================
@@ -357,19 +364,19 @@ export const SCHEMA = {
     type: 'ring_buffer',
     maxMessages: 32,
     messageFields: {
-      sender: FIELD_TYPES.INT32,      // enum: worker ID
-      target: FIELD_TYPES.INT32,      // enum: worker ID or BROADCAST
-      command: FIELD_TYPES.INT32,     // enum: message type
-      priority: FIELD_TYPES.INT32,    // enum: CRITICAL/NORMAL/LOW
-      timestamp: FIELD_TYPES.INT32,   // ms since epoch (mod 2^31)
+      sender: FIELD_TYPES.INT32, // enum: worker ID
+      target: FIELD_TYPES.INT32, // enum: worker ID or BROADCAST
+      command: FIELD_TYPES.INT32, // enum: message type
+      priority: FIELD_TYPES.INT32, // enum: CRITICAL/NORMAL/LOW
+      timestamp: FIELD_TYPES.INT32, // ms since epoch (mod 2^31)
       payloadType: FIELD_TYPES.INT32, // enum: NONE/POS/ID
-      payloadA: FIELD_TYPES.INT32,    // generic payload field 1
-      payloadB: FIELD_TYPES.INT32,    // generic payload field 2
-      payloadC: FIELD_TYPES.INT32,    // generic payload field 3
+      payloadA: FIELD_TYPES.INT32, // generic payload field 1
+      payloadB: FIELD_TYPES.INT32, // generic payload field 2
+      payloadC: FIELD_TYPES.INT32, // generic payload field 3
     },
     messageSize: 9,
     headerSize: 4, // writeIndex, readIndex, count, lock
-    size: 4 + (32 * 9), // header + messages
+    size: 4 + 32 * 9, // header + messages
     description: 'Lock-free control channel for worker-to-worker messaging',
   },
 };
@@ -397,9 +404,9 @@ export const CONTROL_COMMANDS = {
 
 // Control channel priorities
 export const CONTROL_PRIORITIES = {
-  CRITICAL: 0,  // Movement, pathfinding
-  NORMAL: 1,    // Targeting, combat
-  LOW: 2,       // Stats updates
+  CRITICAL: 0, // Movement, pathfinding
+  NORMAL: 1, // Targeting, combat
+  LOW: 2, // Stats updates
 };
 
 // Control state enum (for cavebotConfig.controlState)

@@ -55,15 +55,24 @@ function handleMessage(message) {
   try {
     // ====================== DEBUG LOGGING START ======================
     if (message.type === 'state_diff') {
-      logger('debug', `[PathfinderCore] Received state_diff. Keys: ${Object.keys(message.payload).join(', ')}`);
+      logger(
+        'debug',
+        `[PathfinderCore] Received state_diff. Keys: ${Object.keys(message.payload).join(', ')}`,
+      );
       if (message.payload.cavebot) {
-        logger('debug', `[PathfinderCore] New cavebot state received. WptId: ${message.payload.cavebot.wptId}, Section: ${message.payload.cavebot.currentSection}`);
+        logger(
+          'debug',
+          `[PathfinderCore] New cavebot state received. WptId: ${message.payload.cavebot.wptId}, Section: ${message.payload.cavebot.currentSection}`,
+        );
       }
       if (message.payload.targeting) {
-        logger('debug', `[PathfinderCore] New targeting state received. Creature count: ${message.payload.targeting.creatures?.length || 0}`);
+        logger(
+          'debug',
+          `[PathfinderCore] New targeting state received. Creature count: ${message.payload.targeting.creatures?.length || 0}`,
+        );
       }
     } else if (typeof message === 'object' && !message.type) {
-        logger('debug', `[PathfinderCore] Received FULL state sync.`);
+      logger('debug', `[PathfinderCore] Received FULL state sync.`);
     }
     // ======================= DEBUG LOGGING END =======================
 
@@ -86,7 +95,11 @@ function handleMessage(message) {
 
     // Quick check: do we have a valid position in SAB?
     const playerPosResult = sabInterface.get('playerPos');
-    if (!playerPosResult || !playerPosResult.data || typeof playerPosResult.data.x !== 'number') {
+    if (
+      !playerPosResult ||
+      !playerPosResult.data ||
+      typeof playerPosResult.data.x !== 'number'
+    ) {
       logger('debug', '[PathfinderCore] No valid player position in SAB');
       return;
     }
@@ -119,17 +132,20 @@ function handleMessage(message) {
 
 export async function start() {
   logger('info', 'Pathfinder worker starting up...');
-  
+
   // Initialize unified SAB interface
   if (workerData.unifiedSAB) {
-    sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.PATHFINDER);
+    sabInterface = createWorkerInterface(
+      workerData.unifiedSAB,
+      WORKER_IDS.PATHFINDER,
+    );
     setSABInterface(sabInterface);
     logger('info', 'Unified SAB interface initialized');
   } else {
     logger('error', 'Pathfinder worker requires unified SAB');
     process.exit(1);
   }
-  
+
   try {
     pathfinderInstance = new Pathfinder.Pathfinder();
     logger('info', 'Native Pathfinder addon loaded successfully.');

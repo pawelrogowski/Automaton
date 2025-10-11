@@ -54,7 +54,10 @@ export const SwitchThumb = styled.div`
   left: 1px;
   width: 20px;
   height: 20px;
-  background: ${({ checked }) => (checked ? 'rgb(183, 0, 255);' : 'rgb(103, 103, 103);')}; // Green when checked, grey when unchecked
+  background: ${({ checked }) =>
+    checked
+      ? 'rgb(183, 0, 255);'
+      : 'rgb(103, 103, 103);'}; // Green when checked, grey when unchecked
   border-radius: 50%; // Circle shape
   transition: all 0.2s ease-in-out;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);

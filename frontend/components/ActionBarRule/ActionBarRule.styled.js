@@ -23,7 +23,7 @@ export const ActionBarItemRuleWrapper = styled.div`
 
   .h38 {
     height: 38px;
-    >div {
+    > div {
       height: 38px;
     }
   }
@@ -46,7 +46,7 @@ export const ActionBarItemRuleWrapper = styled.div`
     display: flex;
     flex-direction: column;
     gap: 3px;
-    align-items:center;
+    align-items: center;
     justify-content: center;
   }
   .input-row {
@@ -58,7 +58,7 @@ export const ActionBarItemRuleWrapper = styled.div`
     font-size: 10px;
   }
   .conditions {
-    align-self: flex-end
+    align-self: flex-end;
   }
   .button {
     &-expand {

@@ -29,12 +29,26 @@ export const Healing = () => {
   const hash = location.hash;
 
   // Memoize filtered rule lists to prevent unnecessary recalculation
-  const mana_sync_rules = useMemo(() => rules.filter((rule) => rule.id.includes('manaSync')), [rules]);
-  const action_bar_rules = useMemo(() => rules.filter((rule) => rule.id.includes('actionBarItem')), [rules]);
-  const heal_friend_rules = useMemo(() => rules.filter((rule) => rule.id.includes('healFriend')), [rules]);
-  const rotation_rules = useMemo(() => rules.filter((rule) => rule.id.includes('rotationRule')), [rules]);
-  const equip_rules = useMemo(() => rules.filter((rule) => rule.id.includes('equipRule')), [rules]);
-
+  const mana_sync_rules = useMemo(
+    () => rules.filter((rule) => rule.id.includes('manaSync')),
+    [rules],
+  );
+  const action_bar_rules = useMemo(
+    () => rules.filter((rule) => rule.id.includes('actionBarItem')),
+    [rules],
+  );
+  const heal_friend_rules = useMemo(
+    () => rules.filter((rule) => rule.id.includes('healFriend')),
+    [rules],
+  );
+  const rotation_rules = useMemo(
+    () => rules.filter((rule) => rule.id.includes('rotationRule')),
+    [rules],
+  );
+  const equip_rules = useMemo(
+    () => rules.filter((rule) => rule.id.includes('equipRule')),
+    [rules],
+  );
 
   // Memoize render_rules to prevent recreation on every render
   const render_rules = useCallback((rules_to_render) => {
@@ -61,13 +75,16 @@ export const Healing = () => {
 
       // Add a check to ensure the component exists before rendering
       if (!RuleComponent) {
-         console.error(`No component determined for rule ID: ${rule.id}`);
-         return null; // Don't render if component is missing
+        console.error(`No component determined for rule ID: ${rule.id}`);
+        return null; // Don't render if component is missing
       }
 
       return (
-        <RuleComponent key={rule.id} rule={rule} className={class_name}>
-        </RuleComponent>
+        <RuleComponent
+          key={rule.id}
+          rule={rule}
+          className={class_name}
+        ></RuleComponent>
       );
     });
   }, []);
@@ -101,21 +118,40 @@ export const Healing = () => {
   }, [dispatch, hash]);
 
   const filterButtons = [
-    { hash: '#actionbar', label: 'Action Bar', icon: ActionBarIcon, tooltip: 'Show action bar rules' },
-    { hash: '#party', label: 'Party Heal', icon: healParty, tooltip: 'Show party heal rules' },
-    { hash: '#manasync', label: 'Potion-Sync', icon: UMP, tooltip: 'Show potion-sync rules' },
-    { hash: '#equip', label: 'Auto Equip', icon: SSA, tooltip: 'Show auto equip rules' },
-    { hash: '#rotations', label: 'Rotations', icon: mageHat, tooltip: 'Show spell rotation rules' },
+    {
+      hash: '#actionbar',
+      label: 'Action Bar',
+      icon: ActionBarIcon,
+      tooltip: 'Show action bar rules',
+    },
+    {
+      hash: '#party',
+      label: 'Party Heal',
+      icon: healParty,
+      tooltip: 'Show party heal rules',
+    },
+    {
+      hash: '#manasync',
+      label: 'Potion-Sync',
+      icon: UMP,
+      tooltip: 'Show potion-sync rules',
+    },
+    {
+      hash: '#equip',
+      label: 'Auto Equip',
+      icon: SSA,
+      tooltip: 'Show auto equip rules',
+    },
+    {
+      hash: '#rotations',
+      label: 'Rotations',
+      icon: mageHat,
+      tooltip: 'Show spell rotation rules',
+    },
   ];
 
   const render_section = (hash_key, title, rules_to_render) => {
-    return (
-      hash === hash_key && (
-        <>
-          {render_rules(rules_to_render)}
-        </>
-      )
-    );
+    return hash === hash_key && <>{render_rules(rules_to_render)}</>;
   };
 
   return (
@@ -134,7 +170,11 @@ export const Healing = () => {
             </button>
           ))}
         </div>
-        <button className="add-rule-button" onClick={handleAddRule} title="Add a new rule to selected section">
+        <button
+          className="add-rule-button"
+          onClick={handleAddRule}
+          title="Add a new rule to selected section"
+        >
           + Add Rule
         </button>
       </div>
@@ -144,35 +184,15 @@ export const Healing = () => {
 
         <StyledSection>
           {/* Sections now pass the filtered rules directly */}
-          {render_section(
-            '#actionbar',
-            'Action Bar Rules',
-            action_bar_rules
-          )}
+          {render_section('#actionbar', 'Action Bar Rules', action_bar_rules)}
 
-          {render_section(
-            '#manasync',
-            'Attack-Sync Rules',
-            mana_sync_rules
-          )}
+          {render_section('#manasync', 'Attack-Sync Rules', mana_sync_rules)}
 
-          {render_section(
-            '#party',
-            'Party Heal Rules',
-            heal_friend_rules
-          )}
+          {render_section('#party', 'Party Heal Rules', heal_friend_rules)}
 
-          {render_section(
-            '#equip',
-            'Auto Equip Rules',
-            equip_rules
-          )}
+          {render_section('#equip', 'Auto Equip Rules', equip_rules)}
 
-          {render_section(
-            '#rotations',
-            'Spell Rotation Rules',
-            rotation_rules
-          )}
+          {render_section('#rotations', 'Spell Rotation Rules', rotation_rules)}
         </StyledSection>
       </div>
     </StyledMain>

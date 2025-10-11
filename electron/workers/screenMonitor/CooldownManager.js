@@ -68,13 +68,19 @@ export class CooldownManager {
 
     // Determine consistent state
     const activeCount = cooldown.history.filter((state) => state).length;
-    const consistentActive = activeCount >= Math.ceil(CONFIG.HISTORY_LENGTH / 2);
+    const consistentActive =
+      activeCount >= Math.ceil(CONFIG.HISTORY_LENGTH / 2);
 
     // Activation logic
-    if (consistentActive && !cooldown.active && now >= cooldown.debounceEndTime) {
+    if (
+      consistentActive &&
+      !cooldown.active &&
+      now >= cooldown.debounceEndTime
+    ) {
       cooldown.active = true;
       cooldown.startTime = now;
-      cooldown.debounceEndTime = now + COOLDOWN_DURATIONS[type] - CONFIG.DEBOUNCE_DURATION;
+      cooldown.debounceEndTime =
+        now + COOLDOWN_DURATIONS[type] - CONFIG.DEBOUNCE_DURATION;
 
       if (CONFIG.ENABLE_COOLDOWN_LOGGING) {
         console.log(`${type} cooldown activated`);
@@ -82,16 +88,25 @@ export class CooldownManager {
     }
 
     // Deactivation logic
-    if (!consistentActive && cooldown.active && now >= cooldown.debounceEndTime) {
+    if (
+      !consistentActive &&
+      cooldown.active &&
+      now >= cooldown.debounceEndTime
+    ) {
       const elapsedTime = now - cooldown.startTime;
       const maxDuration = CONFIG.MAX_COOLDOWN_DURATIONS[type];
 
-      if (elapsedTime >= COOLDOWN_DURATIONS[type] || elapsedTime >= maxDuration) {
+      if (
+        elapsedTime >= COOLDOWN_DURATIONS[type] ||
+        elapsedTime >= maxDuration
+      ) {
         cooldown.active = false;
         cooldown.debounceEndTime = now + CONFIG.DEBOUNCE_DURATION;
 
         if (CONFIG.ENABLE_COOLDOWN_LOGGING) {
-          console.log(`${type} cooldown naturally deactivated after ${elapsedTime.toFixed(1)}ms`);
+          console.log(
+            `${type} cooldown naturally deactivated after ${elapsedTime.toFixed(1)}ms`,
+          );
         }
       }
     }
@@ -111,7 +126,9 @@ export class CooldownManager {
         cooldown.debounceEndTime = perf.now() + CONFIG.DEBOUNCE_DURATION;
 
         if (CONFIG.ENABLE_COOLDOWN_LOGGING) {
-          console.log(`${type} cooldown forced expiration after ${elapsedTime.toFixed(2)}ms`);
+          console.log(
+            `${type} cooldown forced expiration after ${elapsedTime.toFixed(2)}ms`,
+          );
         }
       }
     }

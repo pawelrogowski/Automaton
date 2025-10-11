@@ -6,7 +6,14 @@ import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { tokyoNight } from '@uiw/codemirror-theme-tokyo-night';
 import { updateScript, removeScript } from '../../redux/slices/luaSlice.js';
-import { File, Trash2, Save, X, ChevronRight, ChevronDown } from 'react-feather';
+import {
+  File,
+  Trash2,
+  Save,
+  X,
+  ChevronRight,
+  ChevronDown,
+} from 'react-feather';
 
 // Styled Components for the IDE-like Editor
 const ModalOverlay = styled.div`
@@ -69,7 +76,7 @@ const ScriptNameInput = styled.input`
   border: 1px solid #555;
   border-radius: 4px;
   min-width: 250px;
-  
+
   &:focus {
     outline: none;
     border-color: #007bff;
@@ -94,12 +101,12 @@ const SettingsRow = styled.div`
     color: #ffffff;
     border: 1px solid #555;
     border-radius: 4px;
-    
+
     &:focus {
       outline: none;
       border-color: #007bff;
     }
-    
+
     &.error {
       border-color: #cc3333;
     }
@@ -118,21 +125,21 @@ const IconButton = styled.button`
   gap: 6px;
   font-size: 13px;
   transition: all 0.2s;
-  
+
   &:hover {
     background-color: rgba(255, 255, 255, 0.1);
     color: #fff;
   }
-  
+
   &.primary {
     background-color: #007bff;
     color: #fff;
-    
+
     &:hover {
       background-color: #0056b3;
     }
   }
-  
+
   &.danger {
     &:hover {
       background-color: #cc3333;
@@ -149,7 +156,7 @@ const ContentArea = styled.div`
 `;
 
 const Sidebar = styled.div`
-  width: ${props => props.$collapsed ? '0' : '250px'};
+  width: ${(props) => (props.$collapsed ? '0' : '250px')};
   background-color: rgb(35, 35, 35);
   border-right: 1px solid rgb(60, 60, 60);
   display: flex;
@@ -176,19 +183,19 @@ const SidebarContent = styled.div`
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  
+
   &::-webkit-scrollbar {
     width: 8px;
   }
-  
+
   &::-webkit-scrollbar-track {
     background: rgb(35, 35, 35);
   }
-  
+
   &::-webkit-scrollbar-thumb {
     background: rgb(60, 60, 60);
     border-radius: 4px;
-    
+
     &:hover {
       background: rgb(80, 80, 80);
     }
@@ -202,33 +209,36 @@ const ScriptListItem = styled.div`
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: ${props => props.$active ? '#fff' : '#aaa'};
-  background-color: ${props => props.$active ? 'rgba(0, 123, 255, 0.2)' : 'transparent'};
-  border-left: 3px solid ${props => props.$active ? '#007bff' : 'transparent'};
+  color: ${(props) => (props.$active ? '#fff' : '#aaa')};
+  background-color: ${(props) =>
+    props.$active ? 'rgba(0, 123, 255, 0.2)' : 'transparent'};
+  border-left: 3px solid
+    ${(props) => (props.$active ? '#007bff' : 'transparent')};
   transition: all 0.2s;
-  
+
   &:hover {
-    background-color: ${props => props.$active ? 'rgba(0, 123, 255, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
+    background-color: ${(props) =>
+      props.$active ? 'rgba(0, 123, 255, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
     color: #fff;
   }
-  
+
   .script-icon {
     flex-shrink: 0;
   }
-  
+
   .script-name {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  
+
   .script-badge {
     flex-shrink: 0;
     font-size: 10px;
     padding: 2px 6px;
     border-radius: 10px;
-    background-color: ${props => props.$enabled ? '#28a745' : '#555'};
+    background-color: ${(props) => (props.$enabled ? '#28a745' : '#555')};
     color: #fff;
   }
 `;
@@ -248,13 +258,13 @@ const EditorContainer = styled.div`
   display: flex;
   flex-direction: column;
   background-color: #1a1a1a;
-  
+
   /* Ensure CodeMirror's internal scroller works correctly */
   .cm-editor {
     height: 100%;
     overflow: auto;
   }
-  
+
   .cm-scroller {
     overflow: auto !important;
   }
@@ -265,11 +275,11 @@ const ResizeHandle = styled.div`
   background-color: rgb(50, 50, 50);
   cursor: ns-resize;
   position: relative;
-  
+
   &:hover {
     background-color: rgb(70, 70, 70);
   }
-  
+
   &::before {
     content: '';
     position: absolute;
@@ -284,7 +294,7 @@ const ResizeHandle = styled.div`
 `;
 
 const LogPanel = styled.div`
-  height: ${props => props.$height}px;
+  height: ${(props) => props.$height}px;
   min-height: 100px;
   max-height: 70vh;
   display: flex;
@@ -306,13 +316,13 @@ const LogHeader = styled.div`
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  
+
   .log-title {
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  
+
   .log-count {
     font-size: 11px;
     padding: 2px 6px;
@@ -331,20 +341,20 @@ const LogContent = styled.div`
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   color: #ccc;
   line-height: 1.5;
-  
+
   &::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
-  
+
   &::-webkit-scrollbar-track {
     background: #1a1a1a;
   }
-  
+
   &::-webkit-scrollbar-thumb {
     background: rgb(60, 60, 60);
     border-radius: 4px;
-    
+
     &:hover {
       background: rgb(80, 80, 80);
     }
@@ -363,11 +373,18 @@ const ValidationError = styled.div`
   font-size: 11px;
   margin-left: 4px;
   animation: shake 0.3s;
-  
+
   @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-4px); }
-    75% { transform: translateX(4px); }
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-4px);
+    }
+    75% {
+      transform: translateX(4px);
+    }
   }
 `;
 
@@ -388,15 +405,15 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
   const resizeStartHeight = useRef(0);
 
   const scriptId = scriptData?.id;
-  
+
   // Get all scripts for sidebar
   const persistentScripts = useSelector((state) => state.lua.persistentScripts);
   const hotkeyScripts = useSelector((state) => state.lua.hotkeyScripts);
-  
+
   // Only subscribe to the log array to avoid re-rendering on other script changes
   const scriptLog = useSelector((state) => {
     if (!scriptId) return [];
-    const script = 
+    const script =
       state.lua.persistentScripts.find((s) => s.id === scriptId) ||
       state.lua.hotkeyScripts.find((s) => s.id === scriptId);
     return script?.log || [];
@@ -406,53 +423,68 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
   const validateLoopValues = useCallback((min, max) => {
     const minVal = Number(min);
     const maxVal = Number(max);
-    
+
     if (isNaN(minVal) || isNaN(maxVal)) {
       setValidationError('Values must be numbers');
       return false;
     }
-    
+
     if (minVal < 0 || maxVal < 0) {
       setValidationError('Values must be positive');
       return false;
     }
-    
+
     if (minVal > maxVal) {
       setValidationError('Min delay cannot be greater than max delay');
       return false;
     }
-    
+
     setValidationError('');
     return true;
   }, []);
-  
+
   // Handle loop value changes with validation
-  const handleLoopMinChange = useCallback((e) => {
-    const value = e.target.value;
-    setLoopMin(value);
-    validateLoopValues(value, loopMax);
-  }, [loopMax, validateLoopValues]);
-  
-  const handleLoopMaxChange = useCallback((e) => {
-    const value = e.target.value;
-    setLoopMax(value);
-    validateLoopValues(loopMin, value);
-  }, [loopMin, validateLoopValues]);
-  
+  const handleLoopMinChange = useCallback(
+    (e) => {
+      const value = e.target.value;
+      setLoopMin(value);
+      validateLoopValues(value, loopMax);
+    },
+    [loopMax, validateLoopValues],
+  );
+
+  const handleLoopMaxChange = useCallback(
+    (e) => {
+      const value = e.target.value;
+      setLoopMax(value);
+      validateLoopValues(loopMin, value);
+    },
+    [loopMin, validateLoopValues],
+  );
+
   // Resize handlers for log panel
-  const handleResizeStart = useCallback((e) => {
-    setIsResizing(true);
-    resizeStartY.current = e.clientY;
-    resizeStartHeight.current = logPanelHeight;
-  }, [logPanelHeight]);
-  
-  const handleResizeMove = useCallback((e) => {
-    if (!isResizing) return;
-    const delta = resizeStartY.current - e.clientY;
-    const newHeight = Math.max(100, Math.min(resizeStartHeight.current + delta, window.innerHeight * 0.7));
-    setLogPanelHeight(newHeight);
-  }, [isResizing]);
-  
+  const handleResizeStart = useCallback(
+    (e) => {
+      setIsResizing(true);
+      resizeStartY.current = e.clientY;
+      resizeStartHeight.current = logPanelHeight;
+    },
+    [logPanelHeight],
+  );
+
+  const handleResizeMove = useCallback(
+    (e) => {
+      if (!isResizing) return;
+      const delta = resizeStartY.current - e.clientY;
+      const newHeight = Math.max(
+        100,
+        Math.min(resizeStartHeight.current + delta, window.innerHeight * 0.7),
+      );
+      setLogPanelHeight(newHeight);
+    },
+    [isResizing],
+  );
+
   const handleResizeEnd = useCallback(() => {
     setIsResizing(false);
   }, []);
@@ -461,8 +493,10 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
     if (scriptData) {
       setScriptName(scriptData.name || 'Unnamed Script');
       setCode(scriptData.code || '');
-      const minVal = scriptData.loopMin !== undefined ? scriptData.loopMin : 1000;
-      const maxVal = scriptData.loopMax !== undefined ? scriptData.loopMax : 5000;
+      const minVal =
+        scriptData.loopMin !== undefined ? scriptData.loopMin : 1000;
+      const maxVal =
+        scriptData.loopMax !== undefined ? scriptData.loopMax : 5000;
       setLoopMin(minVal);
       setLoopMax(maxVal);
       validateLoopValues(minVal, maxVal);
@@ -498,28 +532,43 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
 
   const handleSave = useCallback(() => {
     if (!scriptData) return;
-    
+
     // Validate loop values before saving
-    if (scriptData.type === 'persistent' && !validateLoopValues(loopMin, loopMax)) {
+    if (
+      scriptData.type === 'persistent' &&
+      !validateLoopValues(loopMin, loopMax)
+    ) {
       return;
     }
-    
+
     const updates = {
       name: scriptName,
       code: code,
     };
-    
+
     if (scriptData.type === 'persistent') {
       updates.loopMin = Number(loopMin);
       updates.loopMax = Number(loopMax);
     }
-    
+
     dispatch(updateScript({ id: scriptData.id, updates }));
     onClose();
-  }, [scriptData, scriptName, code, loopMin, loopMax, dispatch, onClose, validateLoopValues]);
+  }, [
+    scriptData,
+    scriptName,
+    code,
+    loopMin,
+    loopMax,
+    dispatch,
+    onClose,
+    validateLoopValues,
+  ]);
 
   const handleRemove = useCallback(() => {
-    if (scriptData && window.confirm(`Are you sure you want to remove script: ${scriptName}?`)) {
+    if (
+      scriptData &&
+      window.confirm(`Are you sure you want to remove script: ${scriptName}?`)
+    ) {
       dispatch(removeScript(scriptData.id));
       onClose();
     }
@@ -529,31 +578,46 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
     setCode(value);
   }, []);
 
-  const handleScriptSwitch = useCallback((script) => {
-    // Save current script before switching
-    if (scriptData && scriptData.id !== script.id) {
-      if (scriptData.type === 'persistent' && !validateLoopValues(loopMin, loopMax)) {
-        return; // Don't switch if current script has validation errors
+  const handleScriptSwitch = useCallback(
+    (script) => {
+      // Save current script before switching
+      if (scriptData && scriptData.id !== script.id) {
+        if (
+          scriptData.type === 'persistent' &&
+          !validateLoopValues(loopMin, loopMax)
+        ) {
+          return; // Don't switch if current script has validation errors
+        }
+
+        const updates = {
+          name: scriptName,
+          code: code,
+        };
+
+        if (scriptData.type === 'persistent') {
+          updates.loopMin = Number(loopMin);
+          updates.loopMax = Number(loopMax);
+        }
+
+        dispatch(updateScript({ id: scriptData.id, updates }));
       }
-      
-      const updates = {
-        name: scriptName,
-        code: code,
-      };
-      
-      if (scriptData.type === 'persistent') {
-        updates.loopMin = Number(loopMin);
-        updates.loopMax = Number(loopMax);
-      }
-      
-      dispatch(updateScript({ id: scriptData.id, updates }));
-    }
-    
-    // Switch to new script
-    onClose();
-    // The parent should handle opening the new script
-    // For now, we'll just close and they can click the new one
-  }, [scriptData, scriptName, code, loopMin, loopMax, dispatch, onClose, validateLoopValues]);
+
+      // Switch to new script
+      onClose();
+      // The parent should handle opening the new script
+      // For now, we'll just close and they can click the new one
+    },
+    [
+      scriptData,
+      scriptName,
+      code,
+      loopMin,
+      loopMax,
+      dispatch,
+      onClose,
+      validateLoopValues,
+    ],
+  );
 
   const handleKeyDown = useCallback(
     (event) => {
@@ -587,42 +651,52 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
           <HeaderLeft>
             <File size={18} style={{ color: '#007bff' }} />
             <ScriptNameInput
-              type="text" 
-              value={scriptName} 
+              type="text"
+              value={scriptName}
               onChange={(e) => setScriptName(e.target.value)}
               placeholder="Script Name"
             />
             {scriptData?.type === 'persistent' && (
               <SettingsRow>
                 <label htmlFor="loop-min">Min:</label>
-                <input 
-                  type="number" 
-                  id="loop-min" 
-                  value={loopMin} 
+                <input
+                  type="number"
+                  id="loop-min"
+                  value={loopMin}
                   onChange={handleLoopMinChange}
                   min="0"
                   className={validationError ? 'error' : ''}
                 />
                 <label htmlFor="loop-max">Max:</label>
-                <input 
-                  type="number" 
-                  id="loop-max" 
-                  value={loopMax} 
+                <input
+                  type="number"
+                  id="loop-max"
+                  value={loopMax}
                   onChange={handleLoopMaxChange}
                   min="0"
                   className={validationError ? 'error' : ''}
                 />
                 <span style={{ fontSize: '12px', color: '#666' }}>ms</span>
-                {validationError && <ValidationError>{validationError}</ValidationError>}
+                {validationError && (
+                  <ValidationError>{validationError}</ValidationError>
+                )}
               </SettingsRow>
             )}
           </HeaderLeft>
           <HeaderRight>
-            <IconButton onClick={handleSave} className="primary" title="Save (Ctrl+S)">
+            <IconButton
+              onClick={handleSave}
+              className="primary"
+              title="Save (Ctrl+S)"
+            >
               <Save size={16} />
               Save
             </IconButton>
-            <IconButton onClick={handleRemove} className="danger" title="Delete Script">
+            <IconButton
+              onClick={handleRemove}
+              className="danger"
+              title="Delete Script"
+            >
               <Trash2 size={16} />
             </IconButton>
             <IconButton onClick={onClose} title="Close (Esc)">
@@ -630,35 +704,41 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
             </IconButton>
           </HeaderRight>
         </ModalHeader>
-        
+
         <ContentArea>
           {/* Sidebar with script list */}
           <Sidebar $collapsed={sidebarCollapsed}>
             <SidebarHeader>
               <span>Scripts</span>
-              <IconButton 
+              <IconButton
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                 style={{ padding: '2px' }}
                 title={sidebarCollapsed ? 'Expand' : 'Collapse'}
               >
-                {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                {sidebarCollapsed ? (
+                  <ChevronRight size={14} />
+                ) : (
+                  <ChevronDown size={14} />
+                )}
               </IconButton>
             </SidebarHeader>
             <SidebarContent>
               {/* Persistent Scripts */}
               {persistentScripts.length > 0 && (
                 <div style={{ padding: '8px 0' }}>
-                  <div style={{ 
-                    padding: '4px 12px', 
-                    fontSize: '11px', 
-                    fontWeight: 'bold', 
-                    color: '#666',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
+                  <div
+                    style={{
+                      padding: '4px 12px',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      color: '#666',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}
+                  >
                     Persistent
                   </div>
-                  {persistentScripts.map(script => (
+                  {persistentScripts.map((script) => (
                     <ScriptListItem
                       key={script.id}
                       $active={script.id === scriptId}
@@ -668,26 +748,30 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
                     >
                       <File size={14} className="script-icon" />
                       <span className="script-name">{script.name}</span>
-                      {script.enabled && <span className="script-badge">ON</span>}
+                      {script.enabled && (
+                        <span className="script-badge">ON</span>
+                      )}
                     </ScriptListItem>
                   ))}
                 </div>
               )}
-              
+
               {/* Hotkey Scripts */}
               {hotkeyScripts.length > 0 && (
                 <div style={{ padding: '8px 0' }}>
-                  <div style={{ 
-                    padding: '4px 12px', 
-                    fontSize: '11px', 
-                    fontWeight: 'bold', 
-                    color: '#666',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
+                  <div
+                    style={{
+                      padding: '4px 12px',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      color: '#666',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}
+                  >
                     Hotkey
                   </div>
-                  {hotkeyScripts.map(script => (
+                  {hotkeyScripts.map((script) => (
                     <ScriptListItem
                       key={script.id}
                       $active={script.id === scriptId}
@@ -702,7 +786,7 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
               )}
             </SidebarContent>
           </Sidebar>
-          
+
           {/* Main Editor Area */}
           <MainEditorArea>
             <EditorContainer>
@@ -741,7 +825,7 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
                 }}
               />
             </EditorContainer>
-            
+
             {/* Resizable Log Panel */}
             {!logCollapsed && (
               <>
@@ -752,7 +836,7 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
                       <span>Output</span>
                       <span className="log-count">{scriptLog.length}</span>
                     </div>
-                    <IconButton 
+                    <IconButton
                       onClick={() => setLogCollapsed(true)}
                       style={{ padding: '2px' }}
                       title="Collapse Output"
@@ -766,29 +850,40 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
                 </LogPanel>
               </>
             )}
-            
+
             {/* Collapsed Log Panel Button */}
             {logCollapsed && (
-              <div style={{ 
-                padding: '6px 12px', 
-                borderTop: '1px solid rgb(60, 60, 60)',
-                background: 'rgb(35, 35, 35)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer'
-              }}
-              onClick={() => setLogCollapsed(false)}
+              <div
+                style={{
+                  padding: '6px 12px',
+                  borderTop: '1px solid rgb(60, 60, 60)',
+                  background: 'rgb(35, 35, 35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setLogCollapsed(false)}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '12px',
+                  }}
+                >
                   <ChevronRight size={14} />
                   <span>Output</span>
-                  <span className="log-count" style={{ 
-                    fontSize: '11px',
-                    padding: '2px 6px',
-                    background: '#555',
-                    borderRadius: '10px'
-                  }}>
+                  <span
+                    className="log-count"
+                    style={{
+                      fontSize: '11px',
+                      padding: '2px 6px',
+                      background: '#555',
+                      borderRadius: '10px',
+                    }}
+                  >
                     {scriptLog.length}
                   </span>
                 </div>
@@ -800,6 +895,5 @@ const ScriptEditorModal = ({ isOpen, onClose, scriptData }) => {
     </ModalOverlay>
   );
 };
-
 
 export default ScriptEditorModal;

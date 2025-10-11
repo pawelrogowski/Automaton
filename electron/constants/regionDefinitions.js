@@ -1865,7 +1865,6 @@ const regionDefinitions = {
       [32, 24, 20],
       [56, 41, 33],
       [60, 43, 36],
-
     ],
     width: 20,
     height: 20,

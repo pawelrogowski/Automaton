@@ -8,11 +8,11 @@ export const StyledLink = styled(NavLink)`
   color: ${({ $isActive }) => ($isActive ? '#fafafa' : '#757676')};
   height: 36px;
   width: 100%;
-  position: relative; 
+  position: relative;
 
   background: ${({ $isActive }) => ($isActive ? '#2b2b2b' : 'transparent')};
   border-radius: 6px;
-  border: 1px solid rgba( 255, 255, 255, 0.18 );
+  border: 1px solid rgba(255, 255, 255, 0.18);
 
   ${({ $isActive }) =>
     $isActive &&

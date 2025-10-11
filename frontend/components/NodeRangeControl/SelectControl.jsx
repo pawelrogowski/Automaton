@@ -1,4 +1,3 @@
-
 import React from 'react';
 import {
   StyledValueControl,
@@ -8,19 +7,20 @@ import {
 
 const SelectControl = ({ label, value, onChange, options }) => {
   const handleChange = (e) => {
-    const newValue = e.target.value === 'true' ? true : e.target.value === 'false' ? false : e.target.value;
+    const newValue =
+      e.target.value === 'true'
+        ? true
+        : e.target.value === 'false'
+          ? false
+          : e.target.value;
     onChange(newValue);
   };
 
   return (
     <StyledValueControl>
       <ControlLabel>{label}</ControlLabel>
-      <ControlInput
-        as="select"
-        value={value}
-        onChange={handleChange}
-      >
-        {options.map(option => (
+      <ControlInput as="select" value={value} onChange={handleChange}>
+        {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>

@@ -75,59 +75,62 @@ const lastBarChecksums = {
  * 2. Vertical sampling at top/middle/bottom of bar
  * 3. Edge detection to catch bar transitions
  * 4. Color distribution histogram for robust change detection
- * 
+ *
  * This ensures we catch even 1-2 pixel changes in the bar while maintaining performance.
  */
 function computeBarChecksum(buffer, screenWidth, region, barWidth = 94) {
   if (!region || region.width <= 0 || region.height <= 0) return null;
-  
+
   const { x: startX, y: startY, height } = region;
-  
+
   // Sample points: every 2-3 pixels horizontally for dense coverage
   const HORIZONTAL_STEP = 3; // Sample every 3rd pixel across the bar
   const sampleCount = Math.floor(barWidth / HORIZONTAL_STEP);
-  
+
   // Multi-component checksum for robustness
   let checksumParts = {
-    topRow: 0,      // Top edge of bar
-    middleRow: 0,   // Middle of bar
-    bottomRow: 0,   // Bottom edge of bar
-    colorHist: {},  // Histogram of unique colors
+    topRow: 0, // Top edge of bar
+    middleRow: 0, // Middle of bar
+    bottomRow: 0, // Bottom edge of bar
+    colorHist: {}, // Histogram of unique colors
     transitionCount: 0, // Number of color transitions (edge detection)
   };
-  
+
   // Sample three horizontal lines through the bar
   const rows = [
-    Math.floor(startY + height * 0.25),  // Upper quarter
-    Math.floor(startY + height * 0.5),   // Middle
-    Math.floor(startY + height * 0.75),  // Lower quarter
+    Math.floor(startY + height * 0.25), // Upper quarter
+    Math.floor(startY + height * 0.5), // Middle
+    Math.floor(startY + height * 0.75), // Lower quarter
   ];
   const rowKeys = ['topRow', 'middleRow', 'bottomRow'];
-  
+
   let prevColor = null;
-  
+
   for (let i = 0; i < sampleCount; i++) {
     const x = startX + i * HORIZONTAL_STEP;
     if (x >= startX + barWidth) break;
-    
+
     // Sample all three rows at this x position
     for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
       const y = rows[rowIdx];
       const idx = ((y * screenWidth + x) * 4) >>> 0; // BGRA
-      
+
       const b = buffer[idx] || 0;
       const g = buffer[idx + 1] || 0;
       const r = buffer[idx + 2] || 0;
-      
+
       // Row-specific checksum with better mixing
-      const pixelHash = (r * 16777619) ^ (g * 16777619) ^ (b * 16777619) ^ (i * 2654435761);
-      checksumParts[rowKeys[rowIdx]] = (checksumParts[rowKeys[rowIdx]] + pixelHash) >>> 0;
-      
+      const pixelHash =
+        (r * 16777619) ^ (g * 16777619) ^ (b * 16777619) ^ (i * 2654435761);
+      checksumParts[rowKeys[rowIdx]] =
+        (checksumParts[rowKeys[rowIdx]] + pixelHash) >>> 0;
+
       // Color histogram (only for middle row to reduce overhead)
       if (rowIdx === 1) {
         const colorKey = `${r},${g},${b}`;
-        checksumParts.colorHist[colorKey] = (checksumParts.colorHist[colorKey] || 0) + 1;
-        
+        checksumParts.colorHist[colorKey] =
+          (checksumParts.colorHist[colorKey] || 0) + 1;
+
         // Detect color transitions (edges in the bar)
         if (prevColor && prevColor !== colorKey) {
           checksumParts.transitionCount++;
@@ -136,7 +139,7 @@ function computeBarChecksum(buffer, screenWidth, region, barWidth = 94) {
       }
     }
   }
-  
+
   // Create composite checksum that's highly sensitive to changes
   const histKeys = Object.keys(checksumParts.colorHist).sort();
   let histHash = 0;
@@ -144,7 +147,7 @@ function computeBarChecksum(buffer, screenWidth, region, barWidth = 94) {
     const count = checksumParts.colorHist[key];
     histHash = (histHash * 31 + count) >>> 0;
   }
-  
+
   // Return object with multiple checksum components
   return {
     top: checksumParts.topRow,
@@ -153,13 +156,13 @@ function computeBarChecksum(buffer, screenWidth, region, barWidth = 94) {
     hist: histHash,
     trans: checksumParts.transitionCount,
     // Composite hash for quick comparison
-    composite: (
-      checksumParts.topRow ^ 
-      (checksumParts.middleRow << 5) ^ 
-      (checksumParts.bottomRow << 10) ^
-      (histHash << 15) ^
-      (checksumParts.transitionCount << 20)
-    ) >>> 0,
+    composite:
+      (checksumParts.topRow ^
+        (checksumParts.middleRow << 5) ^
+        (checksumParts.bottomRow << 10) ^
+        (histHash << 15) ^
+        (checksumParts.transitionCount << 20)) >>>
+      0,
   };
 }
 
@@ -172,11 +175,13 @@ function checksumsMatch(ck1, ck2) {
   // Fast path: compare composite hash first
   if (ck1.composite !== ck2.composite) return false;
   // Verify all components match (guards against hash collisions)
-  return ck1.top === ck2.top &&
-         ck1.mid === ck2.mid &&
-         ck1.bot === ck2.bot &&
-         ck1.hist === ck2.hist &&
-         ck1.trans === ck2.trans;
+  return (
+    ck1.top === ck2.top &&
+    ck1.mid === ck2.mid &&
+    ck1.bot === ck2.bot &&
+    ck1.hist === ck2.hist &&
+    ck1.trans === ck2.trans
+  );
 }
 
 const reusableGameStateUpdate = {
@@ -197,7 +202,11 @@ function runRules(ruleInput) {
   if (!rules?.enabled) return;
   const currentRules = rules.rules;
   if (!currentRules || !Array.isArray(currentRules)) return;
-  if (!regionCoordinates?.regions || Object.keys(regionCoordinates.regions).length === 0) return;
+  if (
+    !regionCoordinates?.regions ||
+    Object.keys(regionCoordinates.regions).length === 0
+  )
+    return;
   try {
     ruleProcessorInstance.processRules(currentRules, ruleInput, {
       ...global,
@@ -274,43 +283,50 @@ function calculateEquippedItems(amuletSlot, ringSlot, bootsSlot) {
 }
 
 async function findActionItemsInHotkeyBar(hotkeyBarRegion, buffer, metadata) {
-    if (!hotkeyBarRegion || !hotkeyBarRegion.width || !hotkeyBarRegion.height) {
-        return {};
-    }
+  if (!hotkeyBarRegion || !hotkeyBarRegion.width || !hotkeyBarRegion.height) {
+    return {};
+  }
 
-    const tasks = {};
-    for (const [key, value] of Object.entries(actionBarItems)) {
-        tasks[key] = {
-            sequences: { [key]: value },
-            searchArea: hotkeyBarRegion,
-            occurrence: "first",
-        };
-    }
+  const tasks = {};
+  for (const [key, value] of Object.entries(actionBarItems)) {
+    tasks[key] = {
+      sequences: { [key]: value },
+      searchArea: hotkeyBarRegion,
+      occurrence: 'first',
+    };
+  }
 
-    const results = await findSequences.findSequencesNativeBatch(buffer, tasks);
-    const foundItems = {};
-    for (const [itemName, itemResult] of Object.entries(results)) {
-        if (itemResult[itemName]) {
-            const def = actionBarItems[itemName];
-            const result = itemResult[itemName];
-            foundItems[itemName] = {
-                x: result.x,
-                y: result.y,
-                width: def.direction === 'vertical' ? 1 : def.sequence.length,
-                height: def.direction === 'vertical' ? def.sequence.length : 1,
-                rawPos: {
-                    x: result.x - (def.offset?.x || 0),
-                    y: result.y - (def.offset?.y || 0),
-                },
-            };
-        }
+  const results = await findSequences.findSequencesNativeBatch(buffer, tasks);
+  const foundItems = {};
+  for (const [itemName, itemResult] of Object.entries(results)) {
+    if (itemResult[itemName]) {
+      const def = actionBarItems[itemName];
+      const result = itemResult[itemName];
+      foundItems[itemName] = {
+        x: result.x,
+        y: result.y,
+        width: def.direction === 'vertical' ? 1 : def.sequence.length,
+        height: def.direction === 'vertical' ? def.sequence.length : 1,
+        rawPos: {
+          x: result.x - (def.offset?.x || 0),
+          y: result.y - (def.offset?.y || 0),
+        },
+      };
     }
-    return foundItems;
+  }
+  return foundItems;
 }
 
-
-async function calculateActiveActionItems(hotkeyBarRegion, bufferToUse, metadata) {
-    return await findActionItemsInHotkeyBar(hotkeyBarRegion, bufferToUse, metadata);
+async function calculateActiveActionItems(
+  hotkeyBarRegion,
+  bufferToUse,
+  metadata,
+) {
+  return await findActionItemsInHotkeyBar(
+    hotkeyBarRegion,
+    bufferToUse,
+    metadata,
+  );
 }
 
 function calculateWalkingState() {
@@ -365,7 +381,12 @@ async function processGameState() {
           changed = false;
           for (let i = list.length - 1; i >= 0; i--) {
             const o = list[i];
-            const ix = !(r.x + r.width < o.x || o.x + o.width < r.x || r.y + r.height < o.y || o.y + o.height < r.y);
+            const ix = !(
+              r.x + r.width < o.x ||
+              o.x + o.width < r.x ||
+              r.y + r.height < o.y ||
+              o.y + o.height < r.y
+            );
             if (ix) {
               const nx = Math.min(r.x, o.x);
               const ny = Math.min(r.y, o.y);
@@ -402,7 +423,11 @@ async function processGameState() {
     const width = Atomics.load(syncArray, WIDTH_INDEX);
     const height = Atomics.load(syncArray, HEIGHT_INDEX);
     // If regions are stale, request snapshot but keep using cached regions
-    if (regionsStale && typeof version === 'number' && version !== lastRequestedRegionsVersion) {
+    if (
+      regionsStale &&
+      typeof version === 'number' &&
+      version !== lastRequestedRegionsVersion
+    ) {
       parentPort.postMessage({ type: 'request_regions_snapshot' });
       lastRequestedRegionsVersion = version;
     }
@@ -429,14 +454,31 @@ async function processGameState() {
     const scanIfNeeded = async () => {
       // Health percentage with robust checksum gating
       const hbDirty = isDirty(regions.healthBar);
-      if (hbDirty || now - lastScanTs.healthBar > FALLBACK.healthBar || !hasScannedInitially) {
-        const ck = computeBarChecksum(bufferToUse, width, regions.healthBar, 94);
-        const checksumUnchanged = checksumsMatch(lastBarChecksums.healthBar, ck);
+      if (
+        hbDirty ||
+        now - lastScanTs.healthBar > FALLBACK.healthBar ||
+        !hasScannedInitially
+      ) {
+        const ck = computeBarChecksum(
+          bufferToUse,
+          width,
+          regions.healthBar,
+          94,
+        );
+        const checksumUnchanged = checksumsMatch(
+          lastBarChecksums.healthBar,
+          ck,
+        );
         const withinFallback = now - lastScanTs.healthBar < FALLBACK.healthBar;
         // Skip calculation only if checksum is unchanged AND we're within fallback period AND we've scanned before
-        const shouldSkip = checksumUnchanged && withinFallback && hasScannedInitially;
+        const shouldSkip =
+          checksumUnchanged && withinFallback && hasScannedInitially;
         if (!shouldSkip) {
-          const hpValue = calculateHealthBar(bufferToUse, metadata, regions.healthBar);
+          const hpValue = calculateHealthBar(
+            bufferToUse,
+            metadata,
+            regions.healthBar,
+          );
           // Validate returned value before storing
           if (hpValue >= 0 && hpValue <= 100) {
             lastCalculatedState.hppc = hpValue;
@@ -452,14 +494,23 @@ async function processGameState() {
 
       // Mana percentage with robust checksum gating
       const mbDirty = isDirty(regions.manaBar);
-      if (mbDirty || now - lastScanTs.manaBar > FALLBACK.manaBar || !hasScannedInitially) {
+      if (
+        mbDirty ||
+        now - lastScanTs.manaBar > FALLBACK.manaBar ||
+        !hasScannedInitially
+      ) {
         const ck = computeBarChecksum(bufferToUse, width, regions.manaBar, 94);
         const checksumUnchanged = checksumsMatch(lastBarChecksums.manaBar, ck);
         const withinFallback = now - lastScanTs.manaBar < FALLBACK.manaBar;
         // Skip calculation only if checksum is unchanged AND we're within fallback period AND we've scanned before
-        const shouldSkip = checksumUnchanged && withinFallback && hasScannedInitially;
+        const shouldSkip =
+          checksumUnchanged && withinFallback && hasScannedInitially;
         if (!shouldSkip) {
-          const mpValue = calculateManaBar(bufferToUse, metadata, regions.manaBar);
+          const mpValue = calculateManaBar(
+            bufferToUse,
+            metadata,
+            regions.manaBar,
+          );
           // Validate returned value before storing
           if (mpValue >= 0 && mpValue <= 100) {
             lastCalculatedState.mppc = mpValue;
@@ -475,22 +526,41 @@ async function processGameState() {
 
       // Cooldowns
       const cdDirty = isDirty(regions.cooldownBar);
-      if (cdDirty || now - lastScanTs.cooldownBar > FALLBACK.cooldownBar || !hasScannedInitially) {
-        Object.assign(lastCalculatedState, calculateCooldowns(regions.cooldownBar));
+      if (
+        cdDirty ||
+        now - lastScanTs.cooldownBar > FALLBACK.cooldownBar ||
+        !hasScannedInitially
+      ) {
+        Object.assign(
+          lastCalculatedState,
+          calculateCooldowns(regions.cooldownBar),
+        );
         lastScanTs.cooldownBar = now;
       }
 
       // Character status
       const sbDirty = isDirty(regions.statusBar);
-      if (sbDirty || now - lastScanTs.statusBar > FALLBACK.statusBar || !hasScannedInitially) {
-        lastCalculatedState.characterStatus = calculateCharacterStatus(regions.statusBar);
+      if (
+        sbDirty ||
+        now - lastScanTs.statusBar > FALLBACK.statusBar ||
+        !hasScannedInitially
+      ) {
+        lastCalculatedState.characterStatus = calculateCharacterStatus(
+          regions.statusBar,
+        );
         lastScanTs.statusBar = now;
       }
 
       // Equipped items (amulet/ring/boots)
       const equipDirty =
-        isDirty(regions.amuletSlot) || isDirty(regions.ringSlot) || isDirty(regions.bootsSlot);
-      if (equipDirty || now - lastScanTs.equip > FALLBACK.equip || !hasScannedInitially) {
+        isDirty(regions.amuletSlot) ||
+        isDirty(regions.ringSlot) ||
+        isDirty(regions.bootsSlot);
+      if (
+        equipDirty ||
+        now - lastScanTs.equip > FALLBACK.equip ||
+        !hasScannedInitially
+      ) {
         lastCalculatedState.equippedItems = calculateEquippedItems(
           regions.amuletSlot,
           regions.ringSlot,
@@ -502,12 +572,17 @@ async function processGameState() {
       // Hotkey bar action items (heaviest)
       const hkDirty = isDirty(regions.hotkeyBar);
       const hkSince = now - lastScanTs.hotkeyBar;
-      if ((hkDirty && hkSince > MIN_HOTKEY_INTERVAL_MS) || hkSince > FALLBACK.hotkeyBar || !hasScannedInitially) {
-        lastCalculatedState.activeActionItems = await calculateActiveActionItems(
-          regions.hotkeyBar,
-          bufferToUse,
-          metadata,
-        );
+      if (
+        (hkDirty && hkSince > MIN_HOTKEY_INTERVAL_MS) ||
+        hkSince > FALLBACK.hotkeyBar ||
+        !hasScannedInitially
+      ) {
+        lastCalculatedState.activeActionItems =
+          await calculateActiveActionItems(
+            regions.hotkeyBar,
+            bufferToUse,
+            metadata,
+          );
         lastScanTs.hotkeyBar = now;
       }
     };
@@ -515,8 +590,7 @@ async function processGameState() {
     await scanIfNeeded();
 
     // Correctly calculate monsterNum from the battleList state.
-    lastCalculatedState.monsterNum =
-      currentState.battleList?.entriesCount || 0;
+    lastCalculatedState.monsterNum = currentState.battleList?.entriesCount || 0;
     lastCalculatedState.isWalking = calculateWalkingState();
 
     reusableGameStateUpdate.payload = {
@@ -581,7 +655,8 @@ parentPort.on('message', (message) => {
       if (payload.regionCoordinates) {
         const rc = payload.regionCoordinates;
         if (typeof rc.version === 'number' && !rc.regions) {
-          if (!currentState.regionCoordinates) currentState.regionCoordinates = {};
+          if (!currentState.regionCoordinates)
+            currentState.regionCoordinates = {};
           if (currentState.regionCoordinates.version !== rc.version) {
             currentState.regionCoordinates.version = rc.version;
             regionsStale = true;

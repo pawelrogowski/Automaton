@@ -101,8 +101,7 @@ export const CREATURES_SAB_SIZE =
   CREATURES_DATA_START_INDEX + MAX_CREATURES * CREATURE_DATA_SIZE + 1;
 
 // --- SharedArrayBuffer (SAB) Indices for Creature Monitor Handshake ---
-export const CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX =
-  CREATURES_SAB_SIZE - 1;
+export const CREATURE_MONITOR_LAST_PROCESSED_Z_INDEX = CREATURES_SAB_SIZE - 1;
 
 // --- SharedArrayBuffer (SAB) Indices for Looting State ---
 export const LOOTING_REQUIRED_INDEX = 0;

@@ -3,7 +3,7 @@ import { PALETTE_DATA } from '../../constants/palette.js';
 // --- Worker Timing ---
 
 export const MINIMAP_FALLBACK_INTERVAL_MS = 5000;
- 
+
 // --- Performance Logging ---
 export const PERFORMANCE_LOGGING_ENABLED = false; // Set to false to disable logging
 export const PERFORMANCE_LOG_INTERVAL_MS = 10000; // Log stats every 10 seconds

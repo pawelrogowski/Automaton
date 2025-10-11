@@ -262,14 +262,19 @@ export const createStateShortcutObject = (getState, type) => {
       const targetX = target.gameCoordinates?.x || target.x || null;
       const targetY = target.gameCoordinates?.y || target.y || null;
       const targetZ = target.gameCoordinates?.z || target.z || null;
-      
+
       // Use distanceFrom first (more accurate), fallback to distance, then to calculated distance from gameCoordinates
-      const distance = target.distanceFrom || target.distance || target.gameCoordinates?.distance || null;
-      
+      const distance =
+        target.distanceFrom ||
+        target.distance ||
+        target.gameCoordinates?.distance ||
+        null;
+
       // Get all available properties
       const name = target.name || null;
       const hp = target.hp || null;
-      const isReachable = target.isReachable !== undefined ? target.isReachable : null;
+      const isReachable =
+        target.isReachable !== undefined ? target.isReachable : null;
       const instanceId = target.instanceId || null;
 
       // Return the target object with all properties
@@ -283,7 +288,7 @@ export const createStateShortcutObject = (getState, type) => {
         isReachable: isReachable,
         instanceId: instanceId,
         // Include absolute coordinates if available
-        abs: target.abs || null
+        abs: target.abs || null,
       };
     },
     enumerable: true,
@@ -531,9 +536,9 @@ export const createLuaApi = async (context) => {
       if (args.length > 0) {
         if (typeof args[0] === 'number') {
           distanceFilter = args[0];
-          nameFilters = args.slice(1).filter(arg => typeof arg === 'string');
+          nameFilters = args.slice(1).filter((arg) => typeof arg === 'string');
         } else {
-          nameFilters = args.filter(arg => typeof arg === 'string');
+          nameFilters = args.filter((arg) => typeof arg === 'string');
         }
       }
 
@@ -546,7 +551,8 @@ export const createLuaApi = async (context) => {
         return 0;
       }
 
-      const nameFilterSet = nameFilters.length > 0 ? new Set(nameFilters) : null;
+      const nameFilterSet =
+        nameFilters.length > 0 ? new Set(nameFilters) : null;
 
       let count = 0;
       for (const creature of creatures) {
@@ -828,7 +834,8 @@ export const createLuaApi = async (context) => {
         const n = String(t).trim().toLowerCase();
         return n === 'hi' || n === 'hello';
       };
-      const resolveGreetingIfNeeded = (t) => (isGreeting(t) ? (Math.random() < 0.5 ? 'hi' : 'hello') : String(t));
+      const resolveGreetingIfNeeded = (t) =>
+        isGreeting(t) ? (Math.random() < 0.5 ? 'hi' : 'hello') : String(t);
 
       // Partition inputs into trigger and other messages preserving original order
       const triggerMessages = [];
@@ -839,14 +846,19 @@ export const createLuaApi = async (context) => {
         else otherMessages.push(text);
       }
 
-      const getTabsState = () => getState().uiValues?.chatboxTabs || { tabs: {}, activeTab: null };
+      const getTabsState = () =>
+        getState().uiValues?.chatboxTabs || { tabs: {}, activeTab: null };
 
       const findTabByName = (tabsObj, target) => {
         if (!tabsObj) return null;
         const keys = Object.keys(tabsObj);
-        const exact = keys.find((k) => k.toLowerCase() === target.toLowerCase());
+        const exact = keys.find(
+          (k) => k.toLowerCase() === target.toLowerCase(),
+        );
         if (exact) return exact;
-        const contains = keys.find((k) => k.toLowerCase().includes(target.toLowerCase()));
+        const contains = keys.find((k) =>
+          k.toLowerCase().includes(target.toLowerCase()),
+        );
         return contains || null;
       };
 
@@ -854,8 +866,14 @@ export const createLuaApi = async (context) => {
         const state = getState();
         const tabs = state.uiValues?.chatboxTabs?.tabs;
         const tab = tabs ? tabs[tabName] : null;
-        if (tab && tab.tabPosition && typeof tab.tabPosition.x === 'number' && typeof tab.tabPosition.y === 'number') {
-          const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+        if (
+          tab &&
+          tab.tabPosition &&
+          typeof tab.tabPosition.x === 'number' &&
+          typeof tab.tabPosition.y === 'number'
+        ) {
+          const randInt = (min, max) =>
+            Math.floor(Math.random() * (max - min + 1)) + min;
           const baseX = tab.tabPosition.x;
           const baseY = tab.tabPosition.y;
           const clickX = baseX + randInt(-70, 70);
@@ -870,7 +888,10 @@ export const createLuaApi = async (context) => {
           });
           return true;
         }
-        logger('warn', `[Lua/${scriptName}] Cannot focus tab: '${tabName}' not found or missing position`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot focus tab: '${tabName}' not found or missing position`,
+        );
         return false;
       };
 
@@ -885,7 +906,8 @@ export const createLuaApi = async (context) => {
         });
       };
 
-      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const randInt = (min, max) =>
+        Math.floor(Math.random() * (max - min + 1)) + min;
 
       // Refresh state before we start
       if (typeof context.refreshLuaGlobalState === 'function') {
@@ -914,7 +936,8 @@ export const createLuaApi = async (context) => {
       }
 
       // NPC tab not present: focus Local Chat, send trigger messages there
-      const localChatTabName = findTabByName(tabsMap, 'local chat') || findTabByName(tabsMap, 'local');
+      const localChatTabName =
+        findTabByName(tabsMap, 'local chat') || findTabByName(tabsMap, 'local');
       if (localChatTabName && activeTab !== localChatTabName) {
         await clickTabIfAvailable(localChatTabName);
         await wait(100);
@@ -929,7 +952,10 @@ export const createLuaApi = async (context) => {
           }
         }
       } else {
-        logger('info', `[Lua/${scriptName}] npcTalk: No trigger messages provided (hi/hello/hail king).`);
+        logger(
+          'info',
+          `[Lua/${scriptName}] npcTalk: No trigger messages provided (hi/hello/hail king).`,
+        );
       }
 
       // Wait 2000-3000ms for NPC tab to appear
@@ -942,7 +968,10 @@ export const createLuaApi = async (context) => {
       ({ tabs: tabsMap, activeTab } = getTabsState());
       npcTabName = findTabByName(tabsMap, 'npc');
       if (!npcTabName) {
-        logger('warn', `[Lua/${scriptName}] npcTalk: NPC tab did not appear after trigger messages.`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] npcTalk: NPC tab did not appear after trigger messages.`,
+        );
         return false;
       }
 
@@ -1259,7 +1288,8 @@ export const createLuaApi = async (context) => {
         return false;
       }
       const { x, y } = tab.tabPosition;
-      const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      const randInt = (min, max) =>
+        Math.floor(Math.random() * (max - min + 1)) + min;
       const clickX = x + randInt(-70, 70);
       const clickY = y + randInt(-7, 7);
       await postInputAction({
@@ -1376,22 +1406,29 @@ export const createLuaApi = async (context) => {
     useItemOnSelf: async (itemName) => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
-      const hotkeyBarChildren = state.regionCoordinates?.regions?.hotkeyBar?.children || {};
+      const hotkeyBarChildren =
+        state.regionCoordinates?.regions?.hotkeyBar?.children || {};
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
-      
+
       if (!playerPos || !gameWorld || !tileSize) {
-        logger('warn', `[Lua/${scriptName}] useItemOnSelf: Missing player position or game world data`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnSelf: Missing player position or game world data`,
+        );
         return false;
       }
-      
+
       // Find the item in the hotkey bar
       const item = hotkeyBarChildren[itemName];
       if (!item || item.x === undefined || item.y === undefined) {
-        logger('warn', `[Lua/${scriptName}] useItemOnSelf: Item '${itemName}' not found in hotkey bar`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnSelf: Item '${itemName}' not found in hotkey bar`,
+        );
         return false;
       }
-      
+
       // Click on the item
       await postInputAction({
         type: 'script',
@@ -1402,7 +1439,7 @@ export const createLuaApi = async (context) => {
         },
       });
       await wait(100);
-      
+
       // Click on player position
       const playerCoords = getAbsoluteGameWorldClickCoordinates(
         playerPos.x,
@@ -1410,14 +1447,17 @@ export const createLuaApi = async (context) => {
         playerPos,
         gameWorld,
         tileSize,
-        'center'
+        'center',
       );
-      
+
       if (!playerCoords) {
-        logger('warn', `[Lua/${scriptName}] useItemOnSelf: Could not calculate player screen coordinates`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnSelf: Could not calculate player screen coordinates`,
+        );
         return false;
       }
-      
+
       await postInputAction({
         type: 'script',
         action: {
@@ -1426,35 +1466,45 @@ export const createLuaApi = async (context) => {
           args: [playerCoords.x, playerCoords.y],
         },
       });
-      
+
       logger('info', `[Lua/${scriptName}] Used item '${itemName}' on self`);
       return true;
     },
     useItemOnTile: async (itemName, x, y, z) => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
-      const hotkeyBarChildren = state.regionCoordinates?.regions?.hotkeyBar?.children || {};
+      const hotkeyBarChildren =
+        state.regionCoordinates?.regions?.hotkeyBar?.children || {};
       const gameWorld = state.regionCoordinates?.regions?.gameWorld;
       const tileSize = state.regionCoordinates?.regions?.tileSize;
-      
+
       if (!playerPos || !gameWorld || !tileSize) {
-        logger('warn', `[Lua/${scriptName}] useItemOnTile: Missing player position or game world data`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnTile: Missing player position or game world data`,
+        );
         return false;
       }
-      
+
       // Check if tile is on same floor
       if (playerPos.z !== z) {
-        logger('warn', `[Lua/${scriptName}] useItemOnTile: Target tile is on different floor`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnTile: Target tile is on different floor`,
+        );
         return false;
       }
-      
+
       // Find the item in the hotkey bar
       const item = hotkeyBarChildren[itemName];
       if (!item || item.x === undefined || item.y === undefined) {
-        logger('warn', `[Lua/${scriptName}] useItemOnTile: Item '${itemName}' not found in hotkey bar`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnTile: Item '${itemName}' not found in hotkey bar`,
+        );
         return false;
       }
-      
+
       // Click on the item
       await postInputAction({
         type: 'script',
@@ -1465,7 +1515,7 @@ export const createLuaApi = async (context) => {
         },
       });
       await wait(100);
-      
+
       // Click on target tile
       const tileCoords = getAbsoluteGameWorldClickCoordinates(
         x,
@@ -1473,14 +1523,17 @@ export const createLuaApi = async (context) => {
         playerPos,
         gameWorld,
         tileSize,
-        'center'
+        'center',
       );
-      
+
       if (!tileCoords) {
-        logger('warn', `[Lua/${scriptName}] useItemOnTile: Could not calculate tile screen coordinates`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useItemOnTile: Could not calculate tile screen coordinates`,
+        );
         return false;
       }
-      
+
       await postInputAction({
         type: 'script',
         action: {
@@ -1489,8 +1542,11 @@ export const createLuaApi = async (context) => {
           args: [tileCoords.x, tileCoords.y],
         },
       });
-      
-      logger('info', `[Lua/${scriptName}] Used item '${itemName}' on tile (${x}, ${y}, ${z})`);
+
+      logger(
+        'info',
+        `[Lua/${scriptName}] Used item '${itemName}' on tile (${x}, ${y}, ${z})`,
+      );
       return true;
     },
     waitForHealth: async (percentage, timeout = 5000) => {
@@ -1499,16 +1555,19 @@ export const createLuaApi = async (context) => {
         await context.refreshLuaGlobalState();
         const state = getState();
         const currentHp = state.gameState?.hppc;
-        
+
         if (currentHp >= percentage) {
           logger('info', `[Lua/${scriptName}] Health reached ${percentage}%`);
           return true;
         }
-        
+
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      
-      logger('info', `[Lua/${scriptName}] waitForHealth timed out waiting for ${percentage}% health`);
+
+      logger(
+        'info',
+        `[Lua/${scriptName}] waitForHealth timed out waiting for ${percentage}% health`,
+      );
       return false;
     },
     waitForMana: async (percentage, timeout = 5000) => {
@@ -1517,29 +1576,32 @@ export const createLuaApi = async (context) => {
         await context.refreshLuaGlobalState();
         const state = getState();
         const currentMp = state.gameState?.mppc;
-        
+
         if (currentMp >= percentage) {
           logger('info', `[Lua/${scriptName}] Mana reached ${percentage}%`);
           return true;
         }
-        
+
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      
-      logger('info', `[Lua/${scriptName}] waitForMana timed out waiting for ${percentage}% mana`);
+
+      logger(
+        'info',
+        `[Lua/${scriptName}] waitForMana timed out waiting for ${percentage}% mana`,
+      );
       return false;
     },
     hasStatus: (statusName) => {
       const state = getState();
       const characterStatus = state.gameState?.characterStatus;
-      
+
       if (!characterStatus) {
         return false;
       }
-      
+
       // Convert status name to the format used in state (e.g., "hasted", "poisoned")
       const normalizedStatus = statusName.toLowerCase();
-      
+
       // Check if the status exists and is true
       return characterStatus[normalizedStatus] === true;
     },
@@ -1547,96 +1609,100 @@ export const createLuaApi = async (context) => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
       const specialAreas = state.cavebot?.specialAreas || [];
-      
+
       if (!playerPos) {
         return false;
       }
-      
+
       // Find the special area by name
-      const area = specialAreas.find(area => 
-        area.enabled && area.name === specialAreaName
+      const area = specialAreas.find(
+        (area) => area.enabled && area.name === specialAreaName,
       );
-      
+
       if (!area) {
         return false;
       }
-      
+
       // Check if player is on the same floor
       if (playerPos.z !== area.z) {
         return false;
       }
-      
+
       // Check if player is within the area bounds (rectangle)
-      const inBoundsX = playerPos.x >= area.x && playerPos.x < (area.x + area.sizeX);
-      const inBoundsY = playerPos.y >= area.y && playerPos.y < (area.y + area.sizeY);
-      
+      const inBoundsX =
+        playerPos.x >= area.x && playerPos.x < area.x + area.sizeX;
+      const inBoundsY =
+        playerPos.y >= area.y && playerPos.y < area.y + area.sizeY;
+
       return inBoundsX && inBoundsY;
     },
     getCurrentSpecialArea: () => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
       const specialAreas = state.cavebot?.specialAreas || [];
-      
+
       if (!playerPos) {
-        return "none";
+        return 'none';
       }
-      
+
       // Check all enabled special areas to find the first match
       for (const area of specialAreas) {
         if (!area.enabled) {
           continue;
         }
-        
+
         // Check if player is on the same floor
         if (playerPos.z !== area.z) {
           continue;
         }
-        
+
         // Check if player is within the area bounds (rectangle)
-        const inBoundsX = playerPos.x >= area.x && playerPos.x < (area.x + area.sizeX);
-        const inBoundsY = playerPos.y >= area.y && playerPos.y < (area.y + area.sizeY);
-        
+        const inBoundsX =
+          playerPos.x >= area.x && playerPos.x < area.x + area.sizeX;
+        const inBoundsY =
+          playerPos.y >= area.y && playerPos.y < area.y + area.sizeY;
+
         if (inBoundsX && inBoundsY) {
           return area.name;
         }
       }
-      
-      return "none";
+
+      return 'none';
     },
     isAtLocation: (x, y, z, range = 0) => {
       const state = getState();
       const playerPos = state.gameState?.playerMinimapPosition;
-      
+
       if (!playerPos) {
         return false;
       }
-      
+
       // Check if on same floor
       if (playerPos.z !== z) {
         return false;
       }
-      
+
       // Calculate Chebyshev distance (max of absolute differences)
       const distance = Math.max(
         Math.abs(playerPos.x - x),
-        Math.abs(playerPos.y - y)
+        Math.abs(playerPos.y - y),
       );
-      
+
       return distance <= range;
     },
     getWaypointByLabel: (label) => {
       const state = getState();
       const cavebotState = state.cavebot;
-      
+
       if (!cavebotState || !cavebotState.waypointSections) {
         return null;
       }
-      
+
       // Search through all sections for the waypoint with the given label
       for (const sectionId in cavebotState.waypointSections) {
         const section = cavebotState.waypointSections[sectionId];
         if (section.waypoints) {
-          const waypoint = section.waypoints.find(wp => wp.label === label);
+          const waypoint = section.waypoints.find((wp) => wp.label === label);
           if (waypoint) {
             return {
               x: waypoint.x,
@@ -1645,26 +1711,26 @@ export const createLuaApi = async (context) => {
               type: waypoint.type,
               label: waypoint.label,
               section: section.name,
-              id: waypoint.id
+              id: waypoint.id,
             };
           }
         }
       }
-      
+
       return null;
     },
     caroundByHealth: (distance, healthStatus) => {
       const state = getState();
       const creatures = state.targeting?.creatures || [];
       const playerPos = state.gameState?.playerMinimapPosition;
-      
+
       if (!playerPos) {
         return 0;
       }
-      
+
       // Normalize health status for comparison
       const normalizedHealth = healthStatus ? healthStatus.toLowerCase() : null;
-      
+
       let count = 0;
       for (const creature of creatures) {
         // Check distance if specified (null means all distances)
@@ -1674,7 +1740,7 @@ export const createLuaApi = async (context) => {
             continue;
           }
         }
-        
+
         // Check health status if specified (null means any health)
         if (normalizedHealth) {
           const creatureHealth = creature.hp ? creature.hp.toLowerCase() : '';
@@ -1682,10 +1748,10 @@ export const createLuaApi = async (context) => {
             continue;
           }
         }
-        
+
         count++;
       }
-      
+
       return count;
     },
     waitFor,

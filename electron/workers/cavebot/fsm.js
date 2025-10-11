@@ -35,7 +35,10 @@ export function createFsm(workerState, config) {
       },
       execute: (context) => {
         if (context.targetWaypoint) {
-          logger('debug', '[FSM] Target waypoint found, moving to EVALUATING_WAYPOINT.');
+          logger(
+            'debug',
+            '[FSM] Target waypoint found, moving to EVALUATING_WAYPOINT.',
+          );
           return 'EVALUATING_WAYPOINT';
         }
         return 'IDLE';
@@ -48,7 +51,6 @@ export function createFsm(workerState, config) {
         workerState.evaluatingWaypointSince = Date.now();
       },
       execute: async (context) => {
-
         const { playerPos, targetWaypoint } = context;
         const { unreachableWaypointIds = [], waypointSections = {} } =
           workerState.globalState.cavebot;
@@ -62,7 +64,8 @@ export function createFsm(workerState, config) {
         // DEFENSIVE FIX: Timeout detection for infinite EVALUATING_WAYPOINT loops
         const now = Date.now();
         const timeInState = now - (workerState.evaluatingWaypointSince || now);
-        if (timeInState > 5000) { // 5 second timeout
+        if (timeInState > 5000) {
+          // 5 second timeout
           logger(
             'warn',
             `[FSM] EVALUATING_WAYPOINT timeout after ${timeInState}ms for waypoint ${waypointIndex + 1}. Forcing path reset.`,
@@ -134,7 +137,8 @@ export function createFsm(workerState, config) {
         // 3. Compare Desired State vs. Actual State
         if (desiredWptIdHash !== pathWptIdHash) {
           // DIAGNOSTIC: Log hash mismatch for debugging
-          if (timeInState > 1000) { // Only log after 1 second to avoid spam
+          if (timeInState > 1000) {
+            // Only log after 1 second to avoid spam
             logger(
               'debug',
               `[FSM] Hash mismatch persisting for ${timeInState}ms: desired=${desiredWptIdHash}, actual=${pathWptIdHash}`,
@@ -149,7 +153,13 @@ export function createFsm(workerState, config) {
             if (workerState.path && workerState.path.length > 1) {
               // Adjacency check for special actions
               const isAdjacent = context.chebyshevDist <= 1;
-              const isActionType = ['Ladder', 'Rope', 'Shovel', 'Machete', 'Door'].includes(targetWaypoint.type);
+              const isActionType = [
+                'Ladder',
+                'Rope',
+                'Shovel',
+                'Machete',
+                'Door',
+              ].includes(targetWaypoint.type);
 
               // Special check for Ladder: if player is at +1,+1 (bottom-right diagonal) from ladder, skip action and proceed to walk
               if (
@@ -184,7 +194,9 @@ export function createFsm(workerState, config) {
                 waypointIndex + 1
               } due to path status: ${status}. Skipping.`,
             );
-            await advanceToNextWaypoint(workerState, config, { skipCurrent: true });
+            await advanceToNextWaypoint(workerState, config, {
+              skipCurrent: true,
+            });
             return 'IDLE';
 
           case PATH_STATUS_WAYPOINT_REACHED:
@@ -313,9 +325,7 @@ export function createFsm(workerState, config) {
         } else {
           logger(
             'warn',
-            `[FSM] Action '${
-              targetWaypoint.type
-            }' failed for waypoint index ${
+            `[FSM] Action '${targetWaypoint.type}' failed for waypoint index ${
               waypointIndex + 1
             }. Retrying after delay.`,
           );

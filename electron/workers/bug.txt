@@ -1,3 +1,26 @@
+hello, I have problems with my targeting system, it is meant to correctly work with creatureMontitor and handle all possible situations.
+
+first lets provide some context:
+1. battleList is a seperate ui widget that is a source of truth for what creatures and how many of them appear in gameWorld.
+2. battleList provides only names and indicator for which battleList entry is targeted(the red vertical bar).
+3. each entry in battleList is a seperate and unique creature.
+4. it is possible for battleList to show many creatures with same name. fe. 4 Wasp.
+5. gameWorld is the players view into the playable game area, it is a stationary viewport and content inside of it can change freely
+6. All creatures that are present in battleList are present in gameWorld, along with all npcs and all players.
+7. Each creature in gameWorld that also shows in battleList has its own unique health bar that we detect, each creature has its nameplate that we also link to health bar and detect.
+8. if battleList shows 4 creatures there are at least 4 monsters in gameWorld that are targetable
+9. to target a creature a player can use battleList to target creature by clicking its entry directly with mouse/ pressing tab / pressing grave or player can click the creature directly in the game world to target it.
+10. We have 3 different types of "target" in our logic:
+     - pathfindingTarget - this is where pathfinder paths towards
+     - battleList target - creature in battleList that has vertical red bar indicator
+     - gameWorld target - creature in gameWorld area with red box around it.
+     - when a creature is targeted in battleList it means that there is a red boxed target in gameWorld and vice versa, it is the same creature shown in 2 different contexts, game world and ui battleList.
+11. the creatureMonitor assigns unique instanceId to every creature it detects.
+12. the Tab key targets first battleList entry if we dont have any target, if we have a target it targets next battleList entry cycling to first if last was targeted, the grave key works the same way but backwards and if we dont have target it does not target anything on its own unlike tab. left mouse click on battleList directly targets clicked creature. mouse click on creature in game world also correctly targets it.
+
+the targeting system should correctly target creature with the highest score and it looks like this is done correctly unless we have many creatures with same name where it should target one, verify if its the one we want to target and if its not we should target next entry with same name in the battleList then verify again and so on - it fails here, the behavior when we have many creatures with same name is not correct, we get all sorts of errors. this probably stems mostly from ambiguity between gameWorld creatures from which we pick best target and battleList targeting system where we might have creatures with same name and battleList does not provide ingame coordinates or instance id. I want you to deeply review the system, find the failure points, edge cases, potential deadlocks and improvements to whole targeting system so it works correctly.
+
+@creatureMonitor.js:
 import { parentPort, workerData } from 'worker_threads';
 import { performance } from 'perf_hooks';
 import { createLogger } from '../utils/logger.js';
@@ -1421,7 +1444,7 @@ async function performOperation() {
     let unifiedTarget = null;
     const battleListRegion = currentState.regionCoordinates.regions.battleList;
 
-    let battleListTargetEntry = null;
+    let battleListTargetName = null;
     if (battleListRegion) {
       // Check for target marker colors (only when actually TARGETED, not just hovered):
       // [255, 0, 0] - targeted, [255, 128, 128] - targeted+hovered
@@ -1465,12 +1488,10 @@ async function performOperation() {
           }
         }
         if (closestEntry) {
-          battleListTargetEntry = closestEntry;
+          battleListTargetName = closestEntry.name;
         }
       }
     }
-
-    const battleListTargetName = battleListTargetEntry?.name || null;
 
     if (gameWorldTarget && battleListTargetName) {
       // Use gameWorldTarget (OCR'd name is full), keep it instead of truncated battle list name
@@ -1603,12 +1624,7 @@ async function performOperation() {
           name: b.name || '',
           x: b.x || 0,
           y: b.y || 0,
-          isTarget: 
-            battleListTargetEntry &&
-            b.x === battleListTargetEntry.x &&
-            b.y === battleListTargetEntry.y
-              ? 1
-              : 0,
+          isTarget: b.isTarget ? 1 : 0,
         }));
 
         sabInterface.setMany({
@@ -2090,3 +2106,1180 @@ parentPort.on('message', async (message) => {
     logger('error', '[CreatureMonitor] Error handling message:', e);
   }
 });
+
+@targetingWorker.js:
+// targetingWorker.js
+import { parentPort, workerData } from 'worker_threads';
+import { createLogger } from '../utils/logger.js';
+import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
+import { performance } from 'perf_hooks';
+import {
+  selectBestTarget,
+  acquireTarget,
+  updateDynamicTarget,
+  manageMovement,
+  findRuleForCreatureName,
+} from './targeting/targetingLogic.js';
+import {
+  PATH_STATUS_IDLE,
+} from './sharedConstants.js';
+
+const logger = createLogger({ info: true, error: true, debug: true });
+
+// Track last target for change detection
+let lastLoggedTarget = null;
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// --- FSM States ---
+const FSM_STATE = {
+  IDLE: 'IDLE',
+  SELECTING: 'SELECTING',
+  ACQUIRING: 'ACQUIRING',
+  ENGAGING: 'ENGAGING',
+};
+
+// --- Configuration ---
+const config = {
+  mainLoopIntervalMs: 50,
+  unreachableTimeoutMs: 400,
+  acquireTimeoutMs: 400,
+};
+
+// --- Worker State (data from other sources) ---
+const workerState = {
+  globalState: null,
+  isInitialized: false,
+  isShuttingDown: false,
+  playerMinimapPosition: null,
+  path: [],
+  pathfindingStatus: PATH_STATUS_IDLE,
+  pathWptId: 0,
+  pathInstanceId: 0,
+  // Movement lock to prevent double-stepping
+  isWaitingForMovement: false,
+  movementWaitUntil: 0,
+};
+
+// --- Targeting FSM State ---
+const targetingState = {
+  state: FSM_STATE.IDLE,
+  pathfindingTarget: null, // The creature object we WANT to target
+  currentTarget: null, // The creature object we ARE currently targeting
+  unreachableSince: 0, // Timestamp for when currentTarget became unreachable
+  lastDispatchedDynamicTargetId: null, // Track last dispatched target to prevent redundant updates
+  lastAcquireAttempt: {
+    timestamp: 0,
+    battleListIndex: -1,
+    targetName: '',
+    targetInstanceId: null, // The specific instance we are trying to acquire
+  },
+};
+
+// Initialize unified SAB interface
+let sabInterface = null;
+if (workerData.unifiedSAB) {
+  sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.TARGETING);
+  logger('info', '[TargetingWorker] Unified SAB interface initialized');
+} else {
+  throw new Error('[TargetingWorker] Unified SAB interface is required');
+}
+
+// --- Unified SAB Wrappers ---
+const getCreaturesFromSAB = () => {
+  try {
+    const result = sabInterface.get('creatures');
+    if (result && result.data && Array.isArray(result.data)) {
+      // Add gameCoords property from x,y,z fields for compatibility
+      // Convert distance back from SAB format (stored as * 100)
+      return result.data.map(creature => ({
+        ...creature,
+        distance: creature.distance / 100, // SAB stores distance * 100
+        gameCoords: { x: creature.x, y: creature.y, z: creature.z }
+      }));
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read creatures from unified SAB: ${err.message}`);
+  }
+  return [];
+};
+
+const getCurrentTargetFromSAB = () => {
+  try {
+    const result = sabInterface.get('target');
+    if (result && result.data) {
+      const target = result.data;
+      // instanceId: 0 means no target
+      if (target.instanceId !== 0) {
+        return target;
+      }
+    }
+    return null;
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read target from unified SAB: ${err.message}`);
+  }
+  return null;
+};
+
+const getBattleListFromSAB = () => {
+  try {
+    const result = sabInterface.get('battleList');
+    if (result && result.data && Array.isArray(result.data)) {
+      return result.data;
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read battle list from unified SAB: ${err.message}`);
+  }
+  return [];
+};
+
+const isLootingRequired = () => {
+  try {
+    const result = sabInterface.get('looting');
+    if (result && result.data) {
+      return result.data.required === 1;
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] Failed to read looting state: ${err.message}`);
+  }
+  return false;
+};
+
+// --- State Transition Helper ---
+function transitionTo(newState, reason = '') {
+  if (targetingState.state === newState) {
+    logger('debug', `[TRANSITION] Already in ${newState}, skipping`);
+    return;
+  }
+  logger('info', `[TRANSITION] ${targetingState.state} → ${newState} (${reason})`);
+  targetingState.state = newState;
+
+  if (newState === FSM_STATE.SELECTING) {
+    targetingState.pathfindingTarget = null;
+    targetingState.currentTarget = null;
+    // DON'T clear dynamicTarget here to prevent flickering
+    // It will be cleared in handleSelectingState if no targets found
+  }
+  if (newState === FSM_STATE.ACQUIRING) {
+    targetingState.lastAcquireAttempt.timestamp = 0;
+    targetingState.lastAcquireAttempt.clickCount = 0;
+  }
+}
+
+// --- FSM State Handlers ---
+
+function handleIdleState() {
+  if (
+    workerState.globalState?.targeting?.enabled &&
+    !isLootingRequired()
+  ) {
+    transitionTo(FSM_STATE.SELECTING, 'Targeting enabled');
+  } else {
+    // Clear dynamicTarget only when targeting is disabled and we're truly idle
+    if (targetingState.lastDispatchedDynamicTargetId !== null) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
+      targetingState.lastDispatchedDynamicTargetId = null;
+    }
+    targetingState.pathfindingTarget = null;
+  }
+}
+
+function handleSelectingState() {
+  // Don't pass current target in SELECTING state - we want fresh evaluation
+  const bestTarget = selectBestTarget(
+    getCreaturesFromSAB,
+    workerState.globalState.targeting.targetingList,
+    null
+  );
+
+  if (bestTarget) {
+    targetingState.pathfindingTarget = bestTarget;
+    // Only update if target actually changed to prevent redundant updates
+    if (targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId) {
+      logger('debug', `[TARGET CHANGE] SELECTING → ${bestTarget.name} (ID: ${bestTarget.instanceId}, distance: ${bestTarget.distance?.toFixed(1)}, adjacent: ${bestTarget.isAdjacent}, reachable: ${bestTarget.isReachable})`);
+      updateDynamicTarget(
+        parentPort,
+        bestTarget,
+        workerState.globalState.targeting.targetingList
+      );
+      targetingState.lastDispatchedDynamicTargetId = bestTarget.instanceId;
+    }
+    transitionTo(FSM_STATE.ACQUIRING, `Found target: ${bestTarget.name}`);
+  } else {
+    // No valid targets found - NOW clear dynamicTarget
+    if (targetingState.lastDispatchedDynamicTargetId !== null) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
+      targetingState.lastDispatchedDynamicTargetId = null;
+    }
+    targetingState.pathfindingTarget = null;
+    transitionTo(FSM_STATE.IDLE, 'No valid targets');
+  }
+}
+
+function handleAcquiringState() {
+  const now = performance.now();
+  const creatures = getCreaturesFromSAB();
+  const { pathfindingTarget } = targetingState;
+
+  // 1. VALIDATION: Ensure we have a valid target to work with.
+  if (!pathfindingTarget) {
+    transitionTo(FSM_STATE.SELECTING, 'Acquiring with no target');
+    return;
+  }
+  const targetStillExists = creatures.some(
+    (c) => c.instanceId === pathfindingTarget.instanceId,
+  );
+  if (!targetStillExists) {
+    transitionTo(FSM_STATE.SELECTING, 'Pathfinding target disappeared');
+    return;
+  }
+
+  // 2. SUCCESS CHECK: Check if we already have the correct creature targeted.
+  const currentInGameTarget = getCurrentTargetFromSAB();
+  if (
+    currentInGameTarget &&
+    currentInGameTarget.instanceId === pathfindingTarget.instanceId
+  ) {
+    const actualTargetCreature = creatures.find(
+      (c) => c.instanceId === currentInGameTarget.instanceId,
+    );
+    // Also ensure the successfully acquired target is actually reachable.
+    if (actualTargetCreature && actualTargetCreature.isReachable) {
+      logger(
+        'debug',
+        `[FSM-ACQUIRING] Success! Acquired ${actualTargetCreature.name} (ID: ${actualTargetCreature.instanceId})`,
+      );
+      targetingState.currentTarget = actualTargetCreature;
+      targetingState.lastAcquireAttempt.targetInstanceId = null; // Clear acquisition goal
+      transitionTo(
+        FSM_STATE.ENGAGING,
+        `Acquired target ${actualTargetCreature.name}`,
+      );
+      return;
+    }
+  }
+
+  // 3. FAILURE/CONTINUATION: If we are here, we have no target or the wrong target.
+  // This is the unified failure path that ensures cycling works correctly.
+
+  // First, check if we're waiting for a previous click to be verified.
+  const hasClickedAndIsWaiting = targetingState.lastAcquireAttempt.timestamp !== 0;
+  if (hasClickedAndIsWaiting) {
+    // If the timeout has expired, reset the timestamp to allow a new attempt.
+    if (now > targetingState.lastAcquireAttempt.timestamp + config.acquireTimeoutMs) {
+      logger('debug', `[FSM-ACQUIRING] Verification for ${targetingState.lastAcquireAttempt.targetName} timed out. Retrying.`);
+      targetingState.lastAcquireAttempt.timestamp = 0;
+    } else {
+      // Otherwise, we are still waiting for verification. Do nothing this tick.
+      return;
+    }
+  }
+
+  // If we are not waiting, it's time to perform the next acquisition action.
+  // Check if we need to reset the cycle (i.e., we are starting to acquire a new, different instance).
+  if (
+    targetingState.lastAcquireAttempt.targetInstanceId !==
+    pathfindingTarget.instanceId
+  ) {
+    logger('debug', `[FSM-ACQUIRING] New acquisition goal: ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId}). Resetting cycle.`);
+    targetingState.lastAcquireAttempt.battleListIndex = -1; // Start cycle from the beginning.
+    targetingState.lastAcquireAttempt.targetInstanceId = pathfindingTarget.instanceId;
+  }
+
+  // Call acquireTarget to perform the next step (Tab or Mouse Click).
+  const result = acquireTarget(
+    getBattleListFromSAB,
+    parentPort,
+    pathfindingTarget.name,
+    targetingState.lastAcquireAttempt.battleListIndex,
+    workerState.globalState,
+    () => creatures, // Pass cached creature list
+    () => workerState.playerMinimapPosition,
+    pathfindingTarget.instanceId,
+  );
+
+  // After any click, set the timestamp so we will wait for verification.
+  targetingState.lastAcquireAttempt.timestamp = now;
+
+  if (result.success) {
+    logger('debug', `[FSM-ACQUIRING] Performed cycle action (method: ${result.method}, index: ${result.clickedIndex})`);
+    // Record the index we just clicked so the next attempt can advance from here.
+    targetingState.lastAcquireAttempt.battleListIndex = result.clickedIndex;
+  } else {
+    // If acquireTarget fails (e.g., creature not in battle list), go back to SELECTING.
+    transitionTo(FSM_STATE.SELECTING, `${pathfindingTarget.name} not in battle list`);
+  }
+}
+
+async function handleEngagingState() {
+  const now = Date.now();
+  
+  // Don't engage if we're waiting for movement confirmation
+  if (workerState.isWaitingForMovement) {
+    if (now < workerState.movementWaitUntil) {
+      // Still waiting - skip engagement
+      return;
+    } else {
+      // Timeout expired, clear the lock
+      workerState.isWaitingForMovement = false;
+    }
+  }
+  
+  const creatures = getCreaturesFromSAB();
+  const { globalState } = workerState;
+  const targetingList = globalState.targeting.targetingList;
+
+  const actualInGameTarget = getCurrentTargetFromSAB();
+  if (!targetingState.currentTarget || !actualInGameTarget || actualInGameTarget.instanceId !== targetingState.currentTarget.instanceId) {
+    const reason = !targetingState.currentTarget ? 'no currentTarget' : 
+                   !actualInGameTarget ? 'no in-game target' :
+                   'instance ID mismatch';
+    logger('debug', `[TARGET LOST] ${targetingState.currentTarget?.name || 'unknown'} (ID: ${targetingState.currentTarget?.instanceId || 'N/A'}) - Reason: ${reason} (game ID: ${actualInGameTarget?.instanceId || 'N/A'})`);
+    transitionTo(FSM_STATE.SELECTING, 'Target lost or changed');
+    return;
+  }
+
+  // Pass current target for hysteresis - prevents switching for minor score differences
+  const bestOverallTarget = selectBestTarget(
+    () => creatures,
+    targetingList,
+    targetingState.currentTarget
+  );
+  if (
+    bestOverallTarget &&
+    bestOverallTarget.instanceId !== targetingState.currentTarget.instanceId
+  ) {
+    // selectBestTarget already handles priority in scoring (-priority * 1000)
+    // and has hysteresis (SCORE_THRESHOLD = 10) to prevent flip-flopping
+    // Trust its decision - if it returns a different target, we should switch
+    const currentRule = findRuleForCreatureName(
+      targetingState.currentTarget.name,
+      targetingList
+    );
+    const bestRule = findRuleForCreatureName(
+      bestOverallTarget.name,
+      targetingList
+    );
+
+    logger(
+      'debug',
+      `[TARGET CHANGE] PREEMPT → ${bestOverallTarget.name} (ID: ${bestOverallTarget.instanceId}, Prio: ${bestRule?.priority || 'N/A'}, Adjacent: ${bestOverallTarget.isAdjacent}) replaces ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}, Prio: ${currentRule?.priority || 'N/A'}, Adjacent: ${targetingState.currentTarget.isAdjacent})`
+    );
+    targetingState.pathfindingTarget = bestOverallTarget;
+    updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
+    transitionTo(FSM_STATE.ACQUIRING, `Found better target`);
+    return;
+  }
+
+  const updatedTarget = creatures.find(
+    (c) => c.instanceId === targetingState.currentTarget.instanceId
+  );
+
+  if (!updatedTarget) {
+    logger('debug', `[TARGET LOST] ${targetingState.currentTarget.name} (ID: ${targetingState.currentTarget.instanceId}) - Reason: not found in creatures list`);
+    transitionTo(FSM_STATE.SELECTING, 'Target died or disappeared');
+    return;
+  }
+
+  // Check if the creature's position changed significantly, update dynamic target
+  const positionChanged = 
+    !targetingState.currentTarget.gameCoords ||
+    !updatedTarget.gameCoords ||
+    targetingState.currentTarget.gameCoords.x !== updatedTarget.gameCoords.x ||
+    targetingState.currentTarget.gameCoords.y !== updatedTarget.gameCoords.y ||
+    targetingState.currentTarget.gameCoords.z !== updatedTarget.gameCoords.z;
+  
+  targetingState.currentTarget = updatedTarget;
+  
+  // Update dynamic target if position changed to keep pathfinder in sync
+  if (positionChanged) {
+    const rule = findRuleForCreatureName(updatedTarget.name, targetingList);
+    if (rule && rule.stance !== 'Stand') {
+      // Always update on position change to trigger pathfinder recalculation
+      updateDynamicTarget(parentPort, updatedTarget, targetingList);
+    }
+  }
+
+  if (!updatedTarget.isReachable) {
+    if (targetingState.unreachableSince === 0) {
+      targetingState.unreachableSince = now;
+      logger('info', `[ENGAGING] Target ${updatedTarget.name} (ID: ${updatedTarget.instanceId}) became unreachable - starting ${config.unreachableTimeoutMs}ms timeout`);
+    } else if (now - targetingState.unreachableSince > config.unreachableTimeoutMs) {
+      logger('info', `[ENGAGING] Target ${updatedTarget.name} unreachable for > ${config.unreachableTimeoutMs}ms - reselecting`);
+      transitionTo(
+        FSM_STATE.SELECTING,
+        `Target unreachable for > ${config.unreachableTimeoutMs}ms`
+      );
+      targetingState.unreachableSince = 0;
+      return;
+    } else {
+      const elapsed = now - targetingState.unreachableSince;
+      logger('debug', `[ENGAGING] Target ${updatedTarget.name} still unreachable (${elapsed}ms / ${config.unreachableTimeoutMs}ms)`);
+    }
+  } else {
+    if (targetingState.unreachableSince > 0) {
+      logger('debug', `[ENGAGING] Target ${updatedTarget.name} became reachable again - resetting timer`);
+    }
+    targetingState.unreachableSince = 0;
+  }
+
+  const movementContext = {
+    targetingList: globalState.targeting.targetingList,
+  };
+  
+  await manageMovement(
+    { 
+      ...workerState, 
+      parentPort, 
+      sabInterface,
+    },
+    movementContext,
+    targetingState.currentTarget
+  );
+}
+
+// --- Main Loop ---
+
+function updateSABData() {
+  if (!sabInterface) {
+    logger('error', '[TargetingWorker] Unified SAB interface not available!');
+    return;
+  }
+  
+  try {
+    // Read player position from unified SAB
+    const posResult = sabInterface.get('playerPos');
+    if (posResult && posResult.data) {
+      const pos = posResult.data;
+      if (pos.x !== 0 || pos.y !== 0 || pos.z !== 0) {
+        workerState.playerMinimapPosition = pos;
+      }
+    }
+    
+    // Read path data from targeting-specific SAB array
+    const pathResult = sabInterface.get('targetingPathData');
+    if (pathResult && pathResult.data) {
+      const pathData = pathResult.data;
+      
+      // Accept valid targeting paths: instanceId > 0 means targeting mode
+      const PATH_STATUS_PATH_FOUND = 1;
+      const isTargetingPath = (pathData.instanceId || 0) > 0;
+      const newInstanceId = pathData.instanceId || 0;
+      const isNewTarget = newInstanceId !== workerState.pathInstanceId && newInstanceId > 0;
+      const isValidPath = 
+        pathData.status === PATH_STATUS_PATH_FOUND && 
+        pathData.waypoints && 
+        pathData.waypoints.length >= 2;
+      
+      // Clear path when switching to a new target (even if new path is invalid yet)
+      if (isNewTarget) {
+        workerState.path = [];
+        workerState.pathInstanceId = newInstanceId;
+      }
+      
+      // Only accept valid paths
+      if (isTargetingPath && isValidPath) {
+        workerState.path = pathData.waypoints;
+        workerState.pathfindingStatus = pathData.status;
+        workerState.pathWptId = pathData.wptId || 0;
+        workerState.pathInstanceId = newInstanceId;
+      }
+    }
+  } catch (err) {
+    logger('error', `[TargetingWorker] SAB read failed: ${err.message}`);
+  }
+}
+
+async function performTargeting() {
+  updateSABData();
+
+  const { globalState, isInitialized } = workerState;
+  if (!isInitialized || !globalState?.targeting) return;
+
+  // Write targeting list to unified SAB
+  if (sabInterface) {
+    try {
+      sabInterface.set('targetingList', globalState.targeting.targetingList);
+    } catch (err) {
+      logger('error', `[TargetingWorker] Failed to write targeting list: ${err.message}`);
+    }
+  }
+
+  if (!globalState.targeting.enabled || isLootingRequired()) {
+    transitionTo(FSM_STATE.IDLE, 'Targeting disabled or looting');
+  }
+
+  const { controlState } = globalState.cavebot;
+
+  if (controlState === 'HANDOVER_TO_TARGETING') {
+    // Clear cavebot path in SAB to prevent stale path usage
+    if (sabInterface) {
+      try {
+        sabInterface.set('cavebotPathData', {
+          waypoints: [],
+          length: 0,
+          status: 0,
+          chebyshevDistance: 0,
+          startX: 0,
+          startY: 0,
+          startZ: 0,
+          targetX: 0,
+          targetY: 0,
+          targetZ: 0,
+          blockingCreatureX: 0,
+          blockingCreatureY: 0,
+          blockingCreatureZ: 0,
+          wptId: 0,
+          instanceId: 0,
+        });
+        logger('debug', '[TargetingWorker] Cleared cavebot path on control handover');
+      } catch (err) {
+        logger('error', `[TargetingWorker] Failed to clear cavebot path: ${err.message}`);
+      }
+    }
+    
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/confirmTargetingControl',
+    });
+    return;
+  }
+
+  // Report visited tiles only when position changes during targeting control
+  if (controlState === 'TARGETING' && workerState.playerMinimapPosition) {
+    const currentPos = workerState.playerMinimapPosition;
+    
+    if (
+      !targetingState.lastDispatchedVisitedTile ||
+      targetingState.lastDispatchedVisitedTile.x !== currentPos.x ||
+      targetingState.lastDispatchedVisitedTile.y !== currentPos.y ||
+      targetingState.lastDispatchedVisitedTile.z !== currentPos.z
+    ) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/addVisitedTile',
+        payload: currentPos,
+      });
+      targetingState.lastDispatchedVisitedTile = { ...currentPos };
+    }
+  }
+
+  switch (targetingState.state) {
+    case FSM_STATE.IDLE:
+      handleIdleState();
+      break;
+    case FSM_STATE.SELECTING:
+      handleSelectingState();
+      break;
+    case FSM_STATE.ACQUIRING:
+      if (controlState === 'TARGETING') handleAcquiringState();
+      break;
+    case FSM_STATE.ENGAGING:
+      if (controlState === 'TARGETING') await handleEngagingState();
+      break;
+  }
+
+  const hasValidTarget =
+    targetingState.state === FSM_STATE.ACQUIRING ||
+    targetingState.state === FSM_STATE.ENGAGING;
+
+  const anyValidTargetExists = selectBestTarget(
+    getCreaturesFromSAB,
+    globalState.targeting.targetingList
+  );
+
+  if (hasValidTarget && controlState === 'CAVEBOT') {
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
+  }
+
+  if (!hasValidTarget && !anyValidTargetExists && controlState === 'TARGETING') {
+    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
+  }
+}
+
+async function mainLoop() {
+  logger('info', '[TargetingWorker] Starting FSM-based main loop...');
+  while (!workerState.isShuttingDown) {
+    const loopStart = performance.now();
+    try {
+      await performTargeting();
+    } catch (error) {
+      logger('error', '[TargetingWorker] Unhandled error in main loop:', error);
+      await delay(1000);
+    }
+    const loopEnd = performance.now();
+    const elapsedTime = loopEnd - loopStart;
+    const delayTime = Math.max(0, config.mainLoopIntervalMs - elapsedTime);
+    if (delayTime > 0) {
+      await delay(delayTime);
+    }
+  }
+  logger('info', '[TargetingWorker] Main loop stopped.');
+}
+
+// --- Worker Initialization and Message Handling ---
+
+parentPort.on('message', (message) => {
+  if (workerState.isShuttingDown) return;
+  try {
+    if (message.type === 'shutdown') {
+      workerState.isShuttingDown = true;
+      return;
+    } else if (message.type === 'state_diff') {
+      if (!workerState.globalState) workerState.globalState = {};
+      Object.assign(workerState.globalState, message.payload);
+    } else if (typeof message === 'object' && !message.type) {
+      workerState.globalState = message;
+      if (!workerState.isInitialized) {
+        workerState.isInitialized = true;
+        logger('info', '[TargetingWorker] Initial state received, starting main loop.');
+        mainLoop().catch((error) => {
+          logger('error', '[TargetingWorker] Fatal error in main loop:', error);
+          process.exit(1);
+        });
+      }
+    }
+  } catch (error) {
+    logger('error', '[TargetingWorker] Error handling message:', error);
+  }
+});
+
+function startWorker() {
+  if (!workerData) {
+    throw new Error('[TargetingWorker] Worker data not provided');
+  }
+  logger('info', '[TargetingWorker] Worker initialized, waiting for initial state...');
+}
+
+startWorker();
+
+@targetingLogic.js:
+// targeting/targetingLogic.js
+
+import {
+  getAbsoluteGameWorldClickCoordinates,
+} from '../../utils/gameWorldClickTranslator.js';
+import {
+  awaitWalkConfirmation,
+  getDirectionKey,
+  isDiagonalMovement,
+} from '../movementUtils/confirmationHelpers.js';
+
+// ==================== GAME WORLD CLICK CONFIG ====================
+// Production-ready configuration based on testing
+
+const GAMEWORLD_CONFIG = {
+  ENABLED: true,
+  STATIONARY_THRESHOLD_MS: 300,
+};
+
+// ====================================================================
+
+// Movement tracking for logging
+const movementTracking = {
+  lastMoveTimestamp: 0,
+  moveCount: 0,
+  lastLogTime: 0,
+};
+
+/**
+ * Helper function to find the appropriate targeting rule for a creature.
+ * Supports "Others" wildcard matching for creatures without explicit rules.
+ * @param {string} creatureName - The name of the creature
+ * @param {Array} targetingList - List of targeting rules
+ * @returns {object|null} The matching rule or null
+ */
+export function findRuleForCreatureName(creatureName, targetingList) {
+  if (!creatureName || !targetingList?.length) return null;
+  
+  // First try to find an explicit rule
+  const explicitRule = targetingList.find(
+    (r) => r.action === 'Attack' && r.name === creatureName
+  );
+  
+  if (explicitRule) {
+    return explicitRule;
+  }
+  
+  // Check if "Others" wildcard rule exists
+  const othersRule = targetingList.find(
+    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
+  );
+  
+  if (othersRule) {
+    // Get all explicit creature names
+    const explicitNames = new Set(
+      targetingList
+        .filter((r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others')
+        .map((r) => r.name)
+    );
+    
+    // If this creature has no explicit rule, use "Others"
+    if (!explicitNames.has(creatureName)) {
+      return othersRule;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Selects the best target from a list of creatures based on targeting rules.
+ * This function is "pure" - it doesn't consider the current state, only the best possible choice right now.
+ * 
+ * Special case: If a rule with name "Others" or "others" exists, it will match any creature
+ * that doesn't have an explicit rule defined. This acts as a catch-all fallback.
+ * 
+ * @param {Function} getCreatures - Function that returns array of creatures
+ * @param {Array} targetingList - List of targeting rules
+ * @param {object|null} currentTarget - Currently targeted creature (for hysteresis)
+ * @returns {object|null} The best creature object or null if no valid target is found.
+ */
+export function selectBestTarget(getCreatures, targetingList, currentTarget = null) {
+  const creatures = getCreatures();
+  if (!targetingList?.length || !creatures?.length) {
+    return null;
+  }
+  
+  // Debug logging removed to reduce spam
+
+  // Get explicit creature names (excluding "Others" wildcard)
+  const explicitNames = new Set(
+    targetingList
+      .filter((r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others')
+      .map((r) => r.name)
+  );
+
+  // Find the "Others" rule if it exists
+  const othersRule = targetingList.find(
+    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
+  );
+
+  const findRuleForCreature = (creature) => {
+    if (!creature || !creature.name) {
+      return null;
+    }
+    
+    // First try to find an explicit rule
+    const explicitRule = targetingList.find(
+      (r) => r.action === 'Attack' && r.name === creature.name
+    );
+    
+    if (explicitRule) {
+      return explicitRule;
+    }
+    
+    // If no explicit rule and "Others" exists, use it as fallback
+    if (othersRule && !explicitNames.has(creature.name)) {
+      return { ...othersRule, isWildcard: true, originalName: creature.name };
+    }
+    
+    return null;
+  };
+
+  const validCandidates = creatures
+    .map((creature) => {
+      const rule = findRuleForCreature(creature);
+      
+      if (!rule || !creature.isReachable) {
+        return null;
+      }
+      if (rule.onlyIfTrapped && !creature.isBlockingPath) {
+        return null;
+      }
+
+      // Lower score is better.
+      let score = -rule.priority * 1000; // Higher priority = much lower score.
+      score += creature.distance; // Closer is better.
+      if (creature.isAdjacent) {
+        score -= 500; // Strongly prefer adjacent creatures.
+      }
+
+      return { creature, rule, score };
+    })
+    .filter(Boolean);
+
+  if (validCandidates.length === 0) {
+    return null;
+  }
+
+  validCandidates.sort((a, b) => a.score - b.score);
+  const bestCandidate = validCandidates[0];
+  
+  // Hysteresis: If we have a current target, only switch if the new target is significantly better
+  if (currentTarget && currentTarget.instanceId) {
+    const currentCandidate = validCandidates.find(
+      (c) => c.creature.instanceId === currentTarget.instanceId
+    );
+    
+    if (currentCandidate) {
+      const SCORE_THRESHOLD = 10; // Must be at least 10 points better to switch
+      const scoreDifference = currentCandidate.score - bestCandidate.score;
+      
+      // Only switch if the best candidate is significantly better (lower score)
+      if (scoreDifference < SCORE_THRESHOLD) {
+        // Current target is still good enough, keep it
+        return currentTarget;
+      }
+    }
+  }
+  
+  return bestCandidate.creature;
+}
+
+/**
+ * Clicks the next available entry in the battle list for a given creature name,
+ * or uses the Tab key if the target is the first entry (and nothing is targeted) or next after the current target.
+ * @returns {{success: boolean, reason?: string, clickedIndex?: number}}
+ */
+export function acquireTarget(
+  getBattleList,
+  parentPort,
+  targetName,
+  lastClickedIndex,
+  globalState = null,  // Optional: for region/player position access
+  getCreatures = null,  // Function to get creatures array
+  getPlayerPosition = null,  // Function to get player position
+  targetInstanceId = null  // NEW: Specific instance ID to target (prevents wrong creature)
+) {
+  const battleList = getBattleList() || [];
+  if (battleList.length === 0) {
+    return { success: false, reason: 'battlelist_empty' };
+  }
+
+  // Find the desired target and current target indices
+  // Support truncated names (e.g., "troll trained sala..." matching "troll trained salamander")
+  const desiredTargetEntry = battleList.find((entry) => {
+    if (entry.name === targetName) return true;
+    // Check if battle list entry is truncated (ends with ...)
+    if (entry.name.endsWith('...')) {
+      const truncatedPart = entry.name.slice(0, -3);
+      return targetName.startsWith(truncatedPart);
+    }
+    return false;
+  });
+  if (!desiredTargetEntry) {
+    return { success: false, reason: 'not_in_battlelist' };
+  }
+
+  const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
+  const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
+
+  // Get creatures for game world click logic (optional)
+  const creatures = getCreatures ? getCreatures() : [];
+  // If we have a specific instance ID, use it to find the EXACT creature we want to path to
+  const targetCreature = targetInstanceId 
+    ? creatures.find(c => c.instanceId === targetInstanceId && c.isReachable)
+    : creatures.find(c => c.name === targetName && c.isReachable);
+  
+  // DEBUG: Log game world click decision
+  if (targetCreature) {
+    console.log(`[acquireTarget] Found targetCreature: ${targetCreature.name} (ID: ${targetInstanceId}), adjacent: ${targetCreature.isAdjacent}, stationaryDur: ${targetCreature.adjacentStationaryDuration || 0}ms, hp: ${targetCreature.hp}, config.enabled: ${GAMEWORLD_CONFIG.ENABLED}`);
+  } else if (targetInstanceId) {
+    console.log(`[acquireTarget] No targetCreature found for instanceId: ${targetInstanceId} (creatures: ${creatures.length})`);
+  }
+  
+  if (targetCreature && GAMEWORLD_CONFIG.ENABLED) {
+    if (targetCreature.hp !== 'Obstructed') {
+      const adjacentStationaryDur = targetCreature.adjacentStationaryDuration ?? 0;
+      const isAdjacent = targetCreature.isAdjacent ?? false;
+      
+      if (isAdjacent && adjacentStationaryDur >= GAMEWORLD_CONFIG.STATIONARY_THRESHOLD_MS) {
+        const regions = globalState?.regionCoordinates?.regions;
+        const playerPos = getPlayerPosition ? getPlayerPosition() : null;
+        
+        if (regions?.gameWorld && regions?.tileSize && playerPos && targetCreature.gameCoords) {
+          const clickCoords = getAbsoluteGameWorldClickCoordinates(
+            targetCreature.gameCoords.x,
+            targetCreature.gameCoords.y,
+            playerPos,
+            regions.gameWorld,
+            regions.tileSize,
+            'center'
+          );
+          
+          if (clickCoords) {
+            const offsetX = Math.floor(Math.random() * 11) - 5;
+            const offsetY = Math.floor(Math.random() * 11) - 5;
+            
+            clickCoords.x += offsetX;
+            clickCoords.y += offsetY;
+            
+            parentPort.postMessage({
+              type: 'inputAction',
+              payload: {
+                type: 'targeting',
+                action: {
+                  module: 'mouseController',
+                  method: 'leftClick',
+                  args: [clickCoords.x, clickCoords.y],
+                },
+              },
+            });
+            
+            return {
+              success: true, 
+              clickedIndex: desiredTargetIndex, 
+              method: 'gameworld'
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // --- ORIGINAL: Determine the targeting method ---
+  // Tab: Move forward (currentIndex + 1 = desiredIndex)
+  // Grave: Move backward (currentIndex - 1 = desiredIndex)
+  // Mouse: Everything else OR 15% random override
+  
+  let method = null; // 'tab', 'grave', or 'mouse'
+  
+  // Check if we can use Tab or Grave
+  const canUseTab = desiredTargetIndex === currentTargetIndex + 1;
+  const canUseGrave = currentTargetIndex !== -1 && desiredTargetIndex === currentTargetIndex - 1;
+  
+  // CRITICAL FIX: When cycling (lastClickedIndex >= 0), prefer mouse over Tab/Grave
+  // This prevents infinite Tab loops when multiple creatures share the same name
+  // Only use Tab/Grave on the FIRST attempt (lastClickedIndex === -1)
+  const isCycling = lastClickedIndex >= 0;
+  
+  // 15% chance to force mouse click even when Tab/Grave would work
+  const forceMouseClick = Math.random() < 0.15;
+  
+  if (canUseTab && !forceMouseClick && !isCycling) {
+    method = 'tab';
+  } else if (canUseGrave && !forceMouseClick && !isCycling) {
+    method = 'grave';
+  } else {
+    method = 'mouse';
+  }
+
+  // --- KEYBOARD METHOD (Tab or Grave) ---
+  if (method === 'tab' || method === 'grave') {
+    const key = method === 'tab' ? 'tab' : 'grave';
+    
+    parentPort.postMessage({
+      type: 'inputAction',
+      payload: {
+        type: 'targeting',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: [key, null],
+        },
+      },
+    });
+    
+    return { success: true, clickedIndex: desiredTargetIndex, method };
+  }
+
+  // --- MOUSE CLICK METHOD ---
+  // Get all entries with matching name (including truncated names)
+  const potentialEntries = battleList
+    .map((entry, index) => ({ ...entry, index }))
+    .filter((entry) => {
+      if (entry.name === targetName) return true;
+      // Check if battle list entry is truncated (ends with ...)
+      if (entry.name.endsWith('...')) {
+        const truncatedPart = entry.name.slice(0, -3);
+        return targetName.startsWith(truncatedPart);
+      }
+      return false;
+    });
+
+  if (potentialEntries.length === 0) {
+    return { success: false, reason: 'not_in_battlelist' };
+  }
+
+  // Cycle through battle list entries to find the right creature
+  // We can't match battle list UI coordinates to game world coordinates,
+  // so we need to click each entry and verify in game world
+  let targetEntry = null;
+  
+  // Find the next entry to click after the last one we tried
+  targetEntry = potentialEntries.find(
+    (entry) => entry.index > lastClickedIndex
+  );
+
+  // If no entry is found after the last index, wrap around to the first one
+  if (!targetEntry) {
+    targetEntry = potentialEntries[0];
+  }
+
+  // Add randomization to battle list click coordinates
+  // Vertical: ±3 pixels, Horizontal: ±30 pixels
+  const verticalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3
+  const horizontalOffset = Math.floor(Math.random() * 61) - 30; // -30 to +30
+  
+  const clickX = targetEntry.x + horizontalOffset;
+  const clickY = targetEntry.y + verticalOffset;
+  
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload: {
+      type: 'targeting',
+      action: {
+        module: 'mouseController',
+        method: 'leftClick',
+        args: [clickX, clickY],
+      },
+    },
+  });
+
+  return { success: true, clickedIndex: targetEntry.index, method: 'mouse' };
+}
+
+/**
+ * Updates the pathfinding goal for the cavebot module.
+ */
+export function updateDynamicTarget(parentPort, pathfindingTarget, targetingList) {
+  if (!pathfindingTarget) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setDynamicTarget',
+      payload: null,
+    });
+    return;
+  }
+
+  // Use helper to find rule (supports "Others" wildcard)
+  const rule = findRuleForCreatureName(pathfindingTarget.name, targetingList);
+  if (!rule) return;
+
+  const dynamicGoal = {
+    stance: rule.stance || 'Follow',
+    distance: rule.distance ?? 1,
+    targetCreaturePos: pathfindingTarget.gameCoords,
+    targetInstanceId: pathfindingTarget.instanceId,
+  };
+
+  parentPort.postMessage({
+    storeUpdate: true,
+    type: 'cavebot/setDynamicTarget',
+    payload: dynamicGoal,
+  });
+}
+
+/**
+ * Manages movement towards the target.
+ */
+export async function manageMovement(
+  workerContext,
+  targetingContext,
+  currentTarget
+) {
+  const {
+    path,
+    playerMinimapPosition,
+    parentPort,
+    sabInterface,
+  } = workerContext;
+  const { targetingList } = targetingContext;
+
+  // Check if looting is required from unified SAB
+  if (!currentTarget) {
+    return;
+  }
+  
+  if (sabInterface) {
+    try {
+      const lootingResult = sabInterface.get('looting');
+      if (lootingResult && lootingResult.data && lootingResult.data.required === 1) {
+        return;  // Skip movement while looting
+      }
+    } catch (err) {
+      // Continue with movement if looting check fails
+    }
+  }
+
+  const rule = findRuleForCreatureName(currentTarget.name, targetingList);
+  
+  if (!rule || rule.stance === 'Stand') {
+    return;
+  }
+
+  const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
+  
+  if (rule.stance === 'Reach') {
+    if (currentTarget.isAdjacent) {
+      return;
+    }
+  } else {
+    if (
+      (desiredDistance === 1 && currentTarget.isAdjacent) ||
+      currentTarget.distance <= desiredDistance
+    ) {
+      return;
+    }
+  }
+  
+  if (
+    !playerMinimapPosition ||
+    !sabInterface ||
+    !path ||
+    path.length < 2
+  ) {
+    return;
+  }
+
+  // CRITICAL: Validate that path is for current position (prevent stale path usage)
+  const pathStart = path[0];
+  const isPathStale = 
+    pathStart.x !== playerMinimapPosition.x ||
+    pathStart.y !== playerMinimapPosition.y ||
+    pathStart.z !== playerMinimapPosition.z;
+  
+  if (isPathStale) {
+    // Path is stale - silently skip movement and wait for new path
+    return;
+  }
+
+  const nextStep = path[1];
+  const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
+
+  if (!dirKey) {
+    return;
+  }
+
+  const timeout = isDiagonalMovement(dirKey) ? 900 : 400;
+  const now = Date.now();
+  const timeSinceLastMove = movementTracking.lastMoveTimestamp > 0 
+    ? now - movementTracking.lastMoveTimestamp 
+    : 0;
+  
+  movementTracking.lastMoveTimestamp = now;
+  movementTracking.moveCount++;
+  
+  // Set movement lock BEFORE sending keypress (prevent double-stepping)
+  workerContext.isWaitingForMovement = true;
+  workerContext.movementWaitUntil = now + timeout;
+
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload: {
+      type: 'movement',
+      action: { module: 'keypress', method: 'sendKey', args: [dirKey, null] },
+    },
+  });
+
+  try {
+    await awaitWalkConfirmation(
+      workerContext,
+      { stateChangePollIntervalMs: 5 },
+      timeout
+    );
+    // Movement confirmed - clear lock
+    workerContext.isWaitingForMovement = false;
+  } catch (error) {
+    // Movement failed - clear lock and silently retry on next iteration
+    workerContext.isWaitingForMovement = false;
+  }
+}

@@ -2,7 +2,7 @@ import styled from 'styled-components';
 
 export const StyledDiv = styled.div`
   position: relative;
-  border: 1px solid rgba( 255, 255, 255, 0.18 );
+  border: 1px solid rgba(255, 255, 255, 0.18);
   display: flex;
   flex-direction: column;
   padding: 5px;
@@ -11,7 +11,7 @@ export const StyledDiv = styled.div`
   overflow-y: auto;
 
   .blackbox {
-    border: 1px solid rgba( 255, 255, 255, 0.18 );
+    border: 1px solid rgba(255, 255, 255, 0.18);
   }
   .title {
     position: absolute;

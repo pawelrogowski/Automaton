@@ -67,14 +67,14 @@ const pathfinderSlice = createSlice({
   },
 });
 
-export const { 
-  setPathfindingFeedback, 
+export const {
+  setPathfindingFeedback,
   pathWaypoints,
   wptDistance,
   pathfindingStatus,
   routeSearchMs,
-  resetPathfinder, 
-  setState 
+  resetPathfinder,
+  setState,
 } = pathfinderSlice.actions;
 
 export default pathfinderSlice;

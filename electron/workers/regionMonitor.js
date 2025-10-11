@@ -35,13 +35,22 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Geometry utils
 function rectsIntersect(a, b) {
   if (!a || !b) return false;
-  if (a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0) return false;
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  if (a.width <= 0 || a.height <= 0 || b.width <= 0 || b.height <= 0)
+    return false;
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
 }
 
 function unionRect(rects, margin = 0) {
   if (!rects || rects.length === 0) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const r of rects) {
     if (!r) continue;
     minX = Math.min(minX, r.x);
@@ -455,7 +464,11 @@ async function mainLoop() {
       const height = Atomics.load(syncArray, HEIGHT_INDEX);
       const dimensionsChanged = width !== lastWidth || height !== lastHeight;
 
-      if (dirtyRects.length === 0 && !dimensionsChanged && Date.now() - lastFullScanTime < FULL_SCAN_INTERVAL_MS) {
+      if (
+        dirtyRects.length === 0 &&
+        !dimensionsChanged &&
+        Date.now() - lastFullScanTime < FULL_SCAN_INTERVAL_MS
+      ) {
         await delay(MIN_LOOP_DELAY_MS);
         continue;
       }
@@ -480,12 +493,16 @@ async function mainLoop() {
 
       isScanning = true;
       try {
-        const metadata = { width, height};
+        const metadata = { width, height };
 
         const now = Date.now();
         let updatedRegions;
 
-        if (dimensionsChanged || now - lastFullScanTime >= FULL_SCAN_INTERVAL_MS || Object.keys(lastKnownRegions).length === 0) {
+        if (
+          dimensionsChanged ||
+          now - lastFullScanTime >= FULL_SCAN_INTERVAL_MS ||
+          Object.keys(lastKnownRegions).length === 0
+        ) {
           // Full scan path
           const newRegions = await performFullScan(sharedBufferView, metadata);
           lastWidth = width;
@@ -497,8 +514,16 @@ async function mainLoop() {
           // Partial scan path
           const area = unionRect(dirtyRects, PARTIAL_SCAN_MARGIN_PX);
           if (area && area.width > 0 && area.height > 0) {
-            const partial = await performPartialScan(sharedBufferView, metadata, area);
-            lastKnownRegions = mergePartialIntoLast(lastKnownRegions, partial, area);
+            const partial = await performPartialScan(
+              sharedBufferView,
+              metadata,
+              area,
+            );
+            lastKnownRegions = mergePartialIntoLast(
+              lastKnownRegions,
+              partial,
+              area,
+            );
             updatedRegions = lastKnownRegions;
           } else {
             updatedRegions = lastKnownRegions;

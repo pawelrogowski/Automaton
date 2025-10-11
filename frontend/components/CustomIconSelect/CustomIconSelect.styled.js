@@ -36,7 +36,6 @@ export const SelectTrigger = styled.button`
     background: rgba(255, 255, 255, 0.15);
   }
 
-
   /* Styles for the icon inside the trigger */
   .trigger-icon {
     width: ${ICON_SIZE};
@@ -70,12 +69,10 @@ export const OptionsList = styled.ul`
   border-radius: 0 0 4px 4px;
   background: rgba(44, 44, 44, 0.95);
 
-
   list-style: none;
   padding: 0;
   margin: 0;
   z-index: 9999;
-
 
   /* Scrollbar styles */
   &::-webkit-scrollbar {
@@ -95,46 +92,45 @@ export const OptionsList = styled.ul`
   &::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.3);
   }
-
 `;
 
 export const SearchInputWrapper = styled.div`
-   padding: 4px 8px;
-   background-color: rgba(44, 44, 44, 0.95);
-   position: sticky;
-   top: 0;
-   z-index: 1;
-   box-sizing: border-box;
+  padding: 4px 8px;
+  background-color: rgba(44, 44, 44, 0.95);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-sizing: border-box;
 `;
 
 export const SearchInput = styled.input`
-   display: block;
-   width: 100%;
-   padding: 4px 6px;
-   font-size: 11px;
-   line-height: 1;
-   color: #d3d3d3;
-   background-color: rgba(0,0,0,0.3) !important;
-   border: 1px solid rgba(255, 255, 255, 0.1);
-   border-radius: 2px;
-   outline: none !important;
-   box-sizing: border-box;
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: #d3d3d3;
+  background-color: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  outline: none !important;
+  box-sizing: border-box;
 
-   appearance: none;
-   -webkit-appearance: none;
+  appearance: none;
+  -webkit-appearance: none;
 
-   &:focus {
-     border-color: rgba(255, 255, 255, 0.3);
-     outline: none !important;
-   }
+  &:focus {
+    border-color: rgba(255, 255, 255, 0.3);
+    outline: none !important;
+  }
 
-   &::placeholder {
-     color: #a0a0a0;
-     opacity: 1;
-   }
-   &::-ms-input-placeholder {
-     color: #a0a0a0;
-   }
+  &::placeholder {
+    color: #a0a0a0;
+    opacity: 1;
+  }
+  &::-ms-input-placeholder {
+    color: #a0a0a0;
+  }
 `;
 
 export const OptionItem = styled.li`
@@ -148,13 +144,14 @@ export const OptionItem = styled.li`
   transition: background-color 0.1s ease-in-out;
   background-color: transparent; // {{change 2: Ensure default background is transparent}}
 
-  &:hover, &.active {
+  &:hover,
+  &.active {
     background-color: rgba(255, 255, 255, 0.1);
     color: #fff;
 
-     span {
-       color: #fff;
-     }
+    span {
+      color: #fff;
+    }
   }
 
   img {
@@ -171,12 +168,13 @@ export const OptionItem = styled.li`
   }
 
   &.no-results {
-     justify-content: center;
-     color: #a0a0a0;
-     cursor: default;
-     &:hover, &.active {
-       background-color: transparent;
-     }
+    justify-content: center;
+    color: #a0a0a0;
+    cursor: default;
+    &:hover,
+    &.active {
+      background-color: transparent;
+    }
   }
 `;
 

@@ -14,12 +14,11 @@ const CustomCheckbox = ({
 
   const checkedIconSrc = useRunningIcon ? runningManIcon : null;
 
-
   return (
     <TibiaCheckbox
-       width={width}
-       height={height}
-       checkedIconSrc={checkedIconSrc}
+      width={width}
+      height={height}
+      checkedIconSrc={checkedIconSrc}
     >
       <input
         type="checkbox"

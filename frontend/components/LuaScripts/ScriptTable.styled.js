@@ -1,7 +1,9 @@
 import styled from 'styled-components';
 
 export const StyledScriptTable = styled.div`
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    sans-serif;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
@@ -41,19 +43,19 @@ export const StyledScriptTable = styled.div`
     flex-grow: 1;
     overflow-y: auto;
     background-color: rgb(30, 30, 30);
-    
+
     &::-webkit-scrollbar {
       width: 10px;
     }
-    
+
     &::-webkit-scrollbar-track {
       background: rgb(30, 30, 30);
     }
-    
+
     &::-webkit-scrollbar-thumb {
       background: rgb(60, 60, 60);
       border-radius: 4px;
-      
+
       &:hover {
         background: rgb(80, 80, 80);
       }
@@ -66,11 +68,11 @@ export const StyledScriptTable = styled.div`
     border-bottom: 1px solid rgba(60, 60, 60, 0.3);
     min-height: 48px;
     transition: background-color 0.15s ease;
-    
+
     &:hover {
       background-color: rgba(255, 255, 255, 0.03);
     }
-    
+
     &:last-child {
       border-bottom: none;
     }
@@ -195,14 +197,16 @@ export const AddSectionButton = styled.button`
   align-items: center;
   gap: 6px;
   transition: all 0.2s ease;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    sans-serif;
 
   &:hover {
     background-color: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.2);
     transform: translateY(-1px);
   }
-  
+
   &:active {
     transform: translateY(0);
   }

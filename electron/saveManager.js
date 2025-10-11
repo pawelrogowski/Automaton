@@ -314,7 +314,7 @@ export const loadLuaScript = async (callback) => {
     console.error('Failed to load Lua script:', err);
     showNotification('❌ Failed to load script');
   }
-  
+
   if (callback) callback();
   return null;
 };
@@ -333,7 +333,7 @@ export const saveLuaScriptPackage = async (scripts, callback) => {
   }
 
   // Clean the scripts for export
-  const scriptsToSave = scripts.map(script => ({
+  const scriptsToSave = scripts.map((script) => ({
     ...script,
     enabled: false, // Disable by default
     log: [], // Clear logs
@@ -381,7 +381,7 @@ export const loadLuaScriptPackage = async (callback) => {
       }
 
       // Ensure all scripts are disabled and have fresh logs
-      const loaded_scripts = packageData.scripts.map(script => ({
+      const loaded_scripts = packageData.scripts.map((script) => ({
         ...script,
         enabled: false,
         log: [],
@@ -397,7 +397,7 @@ export const loadLuaScriptPackage = async (callback) => {
     console.error('Failed to load Lua script package:', err);
     showNotification('❌ Failed to load script package');
   }
-  
+
   if (callback) callback();
   return null;
 };

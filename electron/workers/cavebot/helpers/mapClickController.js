@@ -38,11 +38,14 @@ function createActionCompletionPromise(workerState, actionId) {
       }
     };
     workerState.parentPort.on('message', messageHandler);
-    
+
     // Timeout after 2 seconds
     setTimeout(() => {
       workerState.parentPort.off('message', messageHandler);
-      workerState.logger('warn', '[MapClick] Action timeout, proceeding anyway');
+      workerState.logger(
+        'warn',
+        '[MapClick] Action timeout, proceeding anyway',
+      );
       resolve(false);
     }, 2000);
   });
@@ -62,6 +65,7 @@ export async function mapClickTick(workerState, config) {
       mode: 'idle', // 'idle' | 'pending' | 'moving'
       attemptAt: 0,
       startPos: null,
+      targetPos: null,
       lastObservedAt: 0,
       lastObservedPos: null,
       fallbackUntil: 0,
@@ -72,14 +76,18 @@ export async function mapClickTick(workerState, config) {
 
   // If very short path AND not currently moving, use keyboard
   // Once we're in 'moving' or 'pending' mode, we commit to the map click regardless of path length
-  if (mc.mode === 'idle' && path.length <= (config.mapClickKeyboardOnlyThreshold ?? 4)) {
+  if (
+    mc.mode === 'idle' &&
+    path.length <= (config.mapClickKeyboardOnlyThreshold ?? 4)
+  ) {
     return 'keyboard';
   }
 
   // Honor fallback window
   if (mc.fallbackUntil && now < mc.fallbackUntil) {
     const remainingMs = mc.fallbackUntil - now;
-    if (now % 5000 < 100) { // Log every ~5 seconds during fallback
+    if (now % 5000 < 100) {
+      // Log every ~5 seconds during fallback
       workerState.logger(
         'debug',
         `[MapClick] In keyboard fallback mode, ${Math.floor(remainingMs / 1000)}s remaining`,
@@ -90,6 +98,18 @@ export async function mapClickTick(workerState, config) {
 
   // State: moving — keep hands off as long as we move
   if (mc.mode === 'moving') {
+    // Check if we have arrived at the destination
+    if (sameTile(playerPos, mc.targetPos)) {
+      workerState.logger(
+        'info',
+        '[MapClick] Arrived at map-click destination. Switching to keyboard.',
+      );
+      mc.mode = 'idle';
+      mc.targetPos = null; // Clear target
+      mc.fallbackUntil = 0; // No fallback needed, we arrived successfully
+      return 'keyboard';
+    }
+
     if (!sameTile(playerPos, mc.lastObservedPos)) {
       const timeSinceLastMove = now - mc.lastObservedAt;
       workerState.logger(
@@ -166,7 +186,8 @@ export async function mapClickTick(workerState, config) {
     const lastTen = path.slice(startInclusive, endExclusive);
 
     // Select only candidates that are clickable within current minimap bounds
-    const minimapRegion = workerState.globalState?.regionCoordinates?.regions?.minimapFull;
+    const minimapRegion =
+      workerState.globalState?.regionCoordinates?.regions?.minimapFull;
     if (!minimapRegion || !playerPos) {
       // Cannot compute minimap click — use keyboard
       return 'keyboard';
@@ -176,7 +197,12 @@ export async function mapClickTick(workerState, config) {
     const clickable = [];
     for (let i = 0; i < lastTen.length; i++) {
       const node = lastTen[i];
-      const coords = getMinimapClickCoords(node.x, node.y, playerPos, minimapRegion);
+      const coords = getMinimapClickCoords(
+        node.x,
+        node.y,
+        playerPos,
+        minimapRegion,
+      );
       if (coords) {
         clickable.push({ node, coords });
       }
@@ -189,7 +215,12 @@ export async function mapClickTick(workerState, config) {
     } else {
       for (let idx = endExclusive - 1; idx >= 1; idx--) {
         const node = path[idx];
-        const coords = getMinimapClickCoords(node.x, node.y, playerPos, minimapRegion);
+        const coords = getMinimapClickCoords(
+          node.x,
+          node.y,
+          playerPos,
+          minimapRegion,
+        );
         if (coords) {
           chosen = { node, coords };
           break;
@@ -202,37 +233,49 @@ export async function mapClickTick(workerState, config) {
       // If we capture it after, the player might have already moved during the await,
       // causing false "NO MOVEMENT" detection at 500ms timeout
       const capturedStartPos = playerPos ? { ...playerPos } : null;
-      
+
       // Generate unique action ID for this click
       const actionId = `mapClick_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       const pathRemaining = path.length;
       const distanceToTarget = Math.sqrt(
-        Math.pow(chosen.node.x - playerPos.x, 2) + 
-        Math.pow(chosen.node.y - playerPos.y, 2)
+        Math.pow(chosen.node.x - playerPos.x, 2) +
+          Math.pow(chosen.node.y - playerPos.y, 2),
       );
-      
+
       workerState.logger(
         'info',
         `[MapClick] CLICKING minimap at screen (${chosen.coords.x}, ${chosen.coords.y}) -> tile {x:${chosen.node.x}, y:${chosen.node.y}, z:${chosen.node.z}} | Path: ${pathRemaining} tiles | Distance: ${distanceToTarget.toFixed(1)} tiles`,
       );
-      
+
       // Send the click and await its completion
-      postMouseLeftClick(workerState, chosen.coords.x, chosen.coords.y, actionId);
-      const completionPromise = createActionCompletionPromise(workerState, actionId);
-      
+      postMouseLeftClick(
+        workerState,
+        chosen.coords.x,
+        chosen.coords.y,
+        actionId,
+      );
+      const completionPromise = createActionCompletionPromise(
+        workerState,
+        actionId,
+      );
+
       // Wait for the mouse action to complete before returning
       const success = await completionPromise;
-      
+
       if (success) {
         workerState.logger('debug', '[MapClick] Click action completed');
       } else {
-        workerState.logger('warn', '[MapClick] Click action failed or timed out');
+        workerState.logger(
+          'warn',
+          '[MapClick] Click action failed or timed out',
+        );
       }
-      
+
       mc.mode = 'pending';
       mc.attemptAt = now;
       mc.startPos = capturedStartPos;
+      mc.targetPos = chosen.node; // Store the destination tile
       mc.lastObservedPos = capturedStartPos;
       mc.lastObservedAt = now;
       return 'handled';

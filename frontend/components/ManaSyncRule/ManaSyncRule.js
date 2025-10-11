@@ -4,7 +4,11 @@ import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import { removeRule, updateCondition, updateRule } from '../../redux/slices/ruleSlice.js';
+import {
+  removeRule,
+  updateCondition,
+  updateRule,
+} from '../../redux/slices/ruleSlice.js';
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
 import CustomIconSelect from '../CustomIconSelect/CustomIconSelect.js';
 import CustomSwitch from '../CustomSwitch/CustomSwitch.js';
@@ -30,19 +34,23 @@ const ManaSyncRule = ({ rule, className }) => {
   // Use the rule prop directly instead of re-selecting from Redux (optimization)
   const current_rule = rule;
 
-  const condition_options = useMemo(() => [
-    { value: '<=', label: '≤' },
-    { value: '<', label: '<' },
-    { value: '=', label: '=' },
-    { value: '>', label: '>' },
-    { value: '>=', label: '≥' },
-    { value: '!=', label: '≠' },
-  ], []);
-
+  const condition_options = useMemo(
+    () => [
+      { value: '<=', label: '≤' },
+      { value: '<', label: '<' },
+      { value: '=', label: '=' },
+      { value: '>', label: '>' },
+      { value: '>=', label: '≥' },
+      { value: '!=', label: '≠' },
+    ],
+    [],
+  );
 
   const handle_status_condition_change = (status, value) => {
     if (current_rule) {
-      dispatch(updateCondition({ id: current_rule.id, condition: status, value }));
+      dispatch(
+        updateCondition({ id: current_rule.id, condition: status, value }),
+      );
     }
   };
 
@@ -76,7 +84,11 @@ const ManaSyncRule = ({ rule, className }) => {
         value = event.target.value;
       }
 
-      if (['priority', 'hpTriggerPercentage', 'manaTriggerPercentage'].includes(field)) {
+      if (
+        ['priority', 'hpTriggerPercentage', 'manaTriggerPercentage'].includes(
+          field,
+        )
+      ) {
         value = Number(value);
       }
       if (current_rule?.id) {
@@ -110,9 +122,10 @@ const ManaSyncRule = ({ rule, className }) => {
     return null;
   }
 
-  const first_available_potion = grouped_potion_options.potion && grouped_potion_options.potion.length > 0
-    ? grouped_potion_options.potion[0].value
-    : '';
+  const first_available_potion =
+    grouped_potion_options.potion && grouped_potion_options.potion.length > 0
+      ? grouped_potion_options.potion[0].value
+      : '';
 
   const ensure_valid_action_item = (current_item_value) => {
     if (current_item_value && ALLOWED_POTION_KEYS.has(current_item_value)) {
@@ -140,8 +153,11 @@ const ManaSyncRule = ({ rule, className }) => {
           onCancel={handle_cancel}
         />
       )}
-      <ManaSyncRuleWrapper className={className} $running={current_rule.enabled}>
-        <div className='row1'>
+      <ManaSyncRuleWrapper
+        className={className}
+        $running={current_rule.enabled}
+      >
+        <div className="row1">
           <CustomSwitch
             className="rule-input-enable-checkbox__custom-checkbox"
             checked={current_rule.enabled}
@@ -153,8 +169,18 @@ const ManaSyncRule = ({ rule, className }) => {
             options={grouped_potion_options}
             allItemsData={actionBarItemsData}
             onChange={(selectedOptionValue) => {
-              if (selectedOptionValue !== undefined && selectedOptionValue !== null && ALLOWED_POTION_KEYS.has(selectedOptionValue)) {
-                dispatch(updateRule({ id: current_rule.id, field: 'actionItem', value: selectedOptionValue }))
+              if (
+                selectedOptionValue !== undefined &&
+                selectedOptionValue !== null &&
+                ALLOWED_POTION_KEYS.has(selectedOptionValue)
+              ) {
+                dispatch(
+                  updateRule({
+                    id: current_rule.id,
+                    field: 'actionItem',
+                    value: selectedOptionValue,
+                  }),
+                );
               }
             }}
           />
@@ -166,7 +192,12 @@ const ManaSyncRule = ({ rule, className }) => {
             onChange={handle_field_change('key')}
           />
 
-          <button type="button" className="button-expand" onClick={handle_toggle_expand} $is_expanded={is_expanded}>
+          <button
+            type="button"
+            className="button-expand"
+            onClick={handle_toggle_expand}
+            $is_expanded={is_expanded}
+          >
             {is_expanded ? '▲' : '▼'}
           </button>
 
@@ -178,13 +209,12 @@ const ManaSyncRule = ({ rule, className }) => {
           >
             ×
           </button>
-
         </div>
         {is_expanded && (
-          <div className='row2'>
-            <div className='input-group'>
-              <label className='label-text'>HP Trigger</label>
-              <div className='input-row'>
+          <div className="row2">
+            <div className="input-group">
+              <label className="label-text">HP Trigger</label>
+              <div className="input-row">
                 <CustomSelect
                   id="hpTriggerCondition"
                   value={rule_hp_trigger_condition}
@@ -206,9 +236,9 @@ const ManaSyncRule = ({ rule, className }) => {
               </div>
             </div>
 
-            <div className='input-group'>
-              <label className='label-text'>Mana Trigger</label>
-              <div className='input-row'>
+            <div className="input-group">
+              <label className="label-text">Mana Trigger</label>
+              <div className="input-row">
                 <CustomSelect
                   id="manaTriggerCondition"
                   value={rule_mana_trigger_condition}
@@ -230,8 +260,8 @@ const ManaSyncRule = ({ rule, className }) => {
               </div>
             </div>
 
-            <div className='input-group'>
-              <label className='label-text' >Priority</label>
+            <div className="input-group">
+              <label className="label-text">Priority</label>
               <input
                 type="number"
                 min="-999"
@@ -247,11 +277,11 @@ const ManaSyncRule = ({ rule, className }) => {
             <CharacterStatusConditions
               ruleId={rule.id}
               onStatusConditionChange={handle_status_condition_change}
-              className='conditions'
+              className="conditions"
             />
           </div>
         )}
-      </ManaSyncRuleWrapper >
+      </ManaSyncRuleWrapper>
     </>
   );
 };

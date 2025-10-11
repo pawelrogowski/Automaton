@@ -157,8 +157,14 @@ class RuleProcessor {
     eligibleRules = this._filterRulesByWalkingState(eligibleRules, gameState);
 
     // ADDED FILTERS
-    eligibleRules = this._filterRulesByBasicConditions(eligibleRules, gameState);
-    eligibleRules = this._filterRulesByItemAvailability(eligibleRules, gameState);
+    eligibleRules = this._filterRulesByBasicConditions(
+      eligibleRules,
+      gameState,
+    );
+    eligibleRules = this._filterRulesByItemAvailability(
+      eligibleRules,
+      gameState,
+    );
     // END ADDED FILTERS
 
     eligibleRules = eligibleRules.filter((rule) => {
@@ -247,8 +253,10 @@ class RuleProcessor {
       const category = rule.category;
 
       // NEW: Rule-specific cooldown
-      const timeSinceLastRuleExecution = now - (this.lastRuleExecutionTime[ruleId] || 0);
-      if (timeSinceLastRuleExecution < 150) { // 150ms cooldown
+      const timeSinceLastRuleExecution =
+        now - (this.lastRuleExecutionTime[ruleId] || 0);
+      if (timeSinceLastRuleExecution < 150) {
+        // 150ms cooldown
         return false;
       }
 
@@ -696,9 +704,9 @@ class RuleProcessor {
               action: {
                 module: 'keypress',
                 method: 'sendKey',
-                args: [rule.key]
-              }
-            }
+                args: [rule.key],
+              },
+            },
           });
           this.parentPort.postMessage({
             type: 'inputAction',
@@ -709,10 +717,10 @@ class RuleProcessor {
                 method: 'leftClick',
                 args: [
                   targetMember.uhCoordinates.x + getRandomNumber(0, 130),
-                  targetMember.uhCoordinates.y + getRandomNumber(0, 11)
-                ]
-              }
-            }
+                  targetMember.uhCoordinates.y + getRandomNumber(0, 11),
+                ],
+              },
+            },
           });
           actionSent = true;
         } else {
@@ -728,9 +736,9 @@ class RuleProcessor {
             action: {
               module: 'keypress',
               method: 'sendKey',
-              args: [rule.key]
-            }
-          }
+              args: [rule.key],
+            },
+          },
         });
         actionSent = true;
       }

@@ -162,21 +162,31 @@ namespace AStar {
                 int addedCost = (tileAvoidance > 0) ? tileAvoidance : 0;
                 int creatureCost = isCreatureTile ? CREATURE_BLOCK_COST : 0;
                 
-                // Add small penalty for continuing in same direction (to encourage stairs pattern)
-                int stairsPenalty = 0;
+                // Penalty logic to prefer moving on the longer axis, and stairs when balanced.
+                int move_penalty = 0;
                 if (!isDiagonal && bothAxesNeedMovement && newDirection > 0) {
-                    int lastDir = sb.lastDirection[idx];
-                    // If moving in same axis as last move, add tiny penalty
-                    if (lastDir > 0) {
-                        bool lastWasXAxis = (lastDir == 1 || lastDir == 2);
-                        bool currentIsXAxis = (newDirection == 1 || newDirection == 2);
-                        if (lastWasXAxis == currentIsXAxis) {
-                            stairsPenalty = 1; // Very small penalty to prefer alternating
+                    bool isMovingOnX = (newDirection == 1 || newDirection == 2);
+
+                    if (dx_abs > dy_abs) { // Longer on X axis
+                        if (!isMovingOnX) { // Penalize moving on shorter Y axis
+                            move_penalty = 1;
+                        }
+                    } else if (dy_abs > dx_abs) { // Longer on Y axis
+                        if (isMovingOnX) { // Penalize moving on shorter X axis
+                            move_penalty = 1;
+                        }
+                    } else { // dx_abs == dy_abs, stairs pattern
+                        int lastDir = sb.lastDirection[idx];
+                        if (lastDir > 0) {
+                            bool lastWasX = (lastDir == 1 || lastDir == 2);
+                            if (lastWasX == isMovingOnX) {
+                                move_penalty = 1; // Penalize continuing on same axis to force alternation
+                            }
                         }
                     }
                 }
-                
-                int tentativeG = g + baseMoveCost + addedCost + creatureCost + stairsPenalty;
+
+                int tentativeG = g + baseMoveCost + addedCost + creatureCost + move_penalty;
 
                 if (!(sb.mark[nIdx] == visit) || tentativeG < sb.gScore[nIdx]) {
                     sb.gScore[nIdx] = tentativeG;

@@ -58,7 +58,8 @@ export const OptionItem = styled.div`
   padding: 8px 12px;
   cursor: pointer;
   color: #ffffff;
-  background-color: ${({ $is_selected }) => ($is_selected ? 'rgba(76, 175, 80, 0.2)' : 'transparent')};
+  background-color: ${({ $is_selected }) =>
+    $is_selected ? 'rgba(76, 175, 80, 0.2)' : 'transparent'};
   &:hover {
     background-color: rgba(255, 255, 255, 0.1);
   }

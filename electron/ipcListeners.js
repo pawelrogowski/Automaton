@@ -101,7 +101,7 @@ ipcMain.handle('is-main-window-visible', () => {
 ipcMain.handle('save-lua-script', async (event, script) => {
   const mainWindow = getMainWindow();
   if (mainWindow) mainWindow.minimize();
-  
+
   await saveLuaScript(script, () => {
     if (mainWindow) mainWindow.restore();
   });
@@ -111,11 +111,11 @@ ipcMain.handle('save-lua-script', async (event, script) => {
 ipcMain.handle('load-lua-script', async () => {
   const mainWindow = getMainWindow();
   if (mainWindow) mainWindow.minimize();
-  
+
   const loadedScript = await loadLuaScript(() => {
     if (mainWindow) mainWindow.restore();
   });
-  
+
   return loadedScript;
 });
 
@@ -123,7 +123,7 @@ ipcMain.handle('load-lua-script', async () => {
 ipcMain.handle('save-lua-script-package', async (event, scripts) => {
   const mainWindow = getMainWindow();
   if (mainWindow) mainWindow.minimize();
-  
+
   await saveLuaScriptPackage(scripts, () => {
     if (mainWindow) mainWindow.restore();
   });
@@ -133,10 +133,10 @@ ipcMain.handle('save-lua-script-package', async (event, scripts) => {
 ipcMain.handle('load-lua-script-package', async () => {
   const mainWindow = getMainWindow();
   if (mainWindow) mainWindow.minimize();
-  
+
   const loadedScripts = await loadLuaScriptPackage(() => {
     if (mainWindow) mainWindow.restore();
   });
-  
+
   return loadedScripts;
 });

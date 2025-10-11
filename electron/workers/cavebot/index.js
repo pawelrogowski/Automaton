@@ -54,6 +54,7 @@ const workerState = {
     mode: 'idle', // 'idle' | 'pending' | 'moving'
     attemptAt: 0,
     startPos: null,
+    targetPos: null,
     lastObservedAt: 0,
     lastObservedPos: null,
     fallbackUntil: 0,
@@ -71,7 +72,10 @@ const fsm = createFsm(workerState, config);
 
 // Initialize unified SAB interface
 if (workerData.unifiedSAB) {
-  workerState.sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.CAVEBOT);
+  workerState.sabInterface = createWorkerInterface(
+    workerData.unifiedSAB,
+    WORKER_IDS.CAVEBOT,
+  );
   workerState.logger('info', '[Cavebot] Unified SAB interface initialized');
 } else {
   throw new Error('[Cavebot] Unified SAB interface is required');
@@ -88,7 +92,7 @@ function handleControlHandover() {
   workerState.path = [];
   workerState.pathfindingStatus = 0;
   workerState.shouldRequestNewPath = true;
-  
+
   // CRITICAL: Reset map-click controller state to prevent stale coordinate issues
   // Targeting may have moved the character, so old startPos/lastObservedPos are invalid
   // Add a short cooldown to ensure fresh path is calculated before attempting map-click
@@ -97,12 +101,16 @@ function handleControlHandover() {
     mode: 'idle',
     attemptAt: 0,
     startPos: null,
+    targetPos: null,
     lastObservedAt: 0,
     lastObservedPos: null,
     fallbackUntil: now + 500, // 500ms cooldown to allow fresh path calculation
   };
-  workerState.logger('debug', '[Cavebot] Reset map-click controller with 500ms cooldown after control handover');
-  
+  workerState.logger(
+    'debug',
+    '[Cavebot] Reset map-click controller with 500ms cooldown after control handover',
+  );
+
   // Clear targeting path in SAB to prevent stale path usage
   if (workerState.sabInterface) {
     try {
@@ -123,12 +131,17 @@ function handleControlHandover() {
         wptId: 0,
         instanceId: 0,
       });
-      workerState.logger('debug', '[Cavebot] Cleared targeting path on control handover');
+      workerState.logger(
+        'debug',
+        '[Cavebot] Cleared targeting path on control handover',
+      );
     } catch (err) {
-      workerState.logger('error', `[Cavebot] Failed to clear targeting path: ${err.message}`);
+      workerState.logger(
+        'error',
+        `[Cavebot] Failed to clear targeting path: ${err.message}`,
+      );
     }
   }
-
 
   const currentWaypoint = findCurrentWaypoint(workerState.globalState);
   const allWaypoints = Object.values(
@@ -184,9 +197,10 @@ async function performOperation() {
 
   // Periodically check for and remove expired temporary blocks
   const now = Date.now();
-  if (now - workerState.lastBlockedTileCheck > 1000) { // Check every second
+  if (now - workerState.lastBlockedTileCheck > 1000) {
+    // Check every second
     if (globalState.cavebot.temporaryBlockedTiles.length > 0) {
-        postStoreUpdate('cavebot/removeExpiredBlockedTiles');
+      postStoreUpdate('cavebot/removeExpiredBlockedTiles');
     }
     workerState.lastBlockedTileCheck = now;
   }
@@ -265,7 +279,10 @@ async function performOperation() {
         lootingRequired = lootingResult.data.required === 1;
       }
     } catch (err) {
-      workerState.logger('error', `[Cavebot] Failed to read looting state: ${err.message}`);
+      workerState.logger(
+        'error',
+        `[Cavebot] Failed to read looting state: ${err.message}`,
+      );
     }
   }
   if (lootingRequired) {
@@ -292,35 +309,36 @@ async function performOperation() {
   }
 
   if (workerState.lastControlState !== 'CAVEBOT') {
-    workerState.logger(
-      'debug',
-      '[Cavebot] Control gained. Handling handover.',
-    );
+    workerState.logger('debug', '[Cavebot] Control gained. Handling handover.');
     handleControlHandover();
-    
+
     // Force fresh player position read after control handover
     // The position might be stale from targeting movement
-    const positionBeforeHandover = workerState.playerMinimapPosition 
-      ? { ...workerState.playerMinimapPosition } 
+    const positionBeforeHandover = workerState.playerMinimapPosition
+      ? { ...workerState.playerMinimapPosition }
       : null;
-    
+
     // Wait for position to update (or timeout after 100ms)
     const maxWait = 100;
     const startWait = Date.now();
     let positionUpdated = false;
-    
+
     while (Date.now() - startWait < maxWait && !positionUpdated) {
       await delay(10); // Check every 10ms
       updateSABData(workerState, config);
-      
+
       const currentPos = workerState.playerMinimapPosition;
       if (currentPos && positionBeforeHandover) {
         // Check if position changed (indicating fresh data)
-        const moved = currentPos.x !== positionBeforeHandover.x ||
-                      currentPos.y !== positionBeforeHandover.y ||
-                      currentPos.z !== positionBeforeHandover.z;
+        const moved =
+          currentPos.x !== positionBeforeHandover.x ||
+          currentPos.y !== positionBeforeHandover.y ||
+          currentPos.z !== positionBeforeHandover.z;
         if (moved) {
-          workerState.logger('debug', `[Cavebot] Fresh position detected after ${Date.now() - startWait}ms`);
+          workerState.logger(
+            'debug',
+            `[Cavebot] Fresh position detected after ${Date.now() - startWait}ms`,
+          );
           positionUpdated = true;
         }
       } else if (currentPos && !positionBeforeHandover) {
@@ -328,14 +346,16 @@ async function performOperation() {
         positionUpdated = true;
       }
     }
-    
+
     if (!positionUpdated && positionBeforeHandover) {
-      workerState.logger('debug', '[Cavebot] Position unchanged after handover, using existing position');
+      workerState.logger(
+        'debug',
+        '[Cavebot] Position unchanged after handover, using existing position',
+      );
     }
   }
 
   updateSABData(workerState, config);
-
 
   let targetWaypoint = findCurrentWaypoint(globalState);
   if (!targetWaypoint) {
@@ -389,7 +409,10 @@ async function performOperation() {
       return;
     } else {
       // Timeout expired
-      workerState.logger('warn', `[Cavebot] Movement timeout expired after ${-remainingWait}ms`);
+      workerState.logger(
+        'warn',
+        `[Cavebot] Movement timeout expired after ${-remainingWait}ms`,
+      );
       workerState.isWaitingForMovement = false;
     }
   }

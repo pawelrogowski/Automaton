@@ -2,7 +2,15 @@ import React from 'react';
 import { StyledLink } from './NavButton.styled.js';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-const NavButton = ({ to, img, text, imageWidth, className, tooltip, children }) => {
+const NavButton = ({
+  to,
+  img,
+  text,
+  imageWidth,
+  className,
+  tooltip,
+  children,
+}) => {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -13,11 +21,15 @@ const NavButton = ({ to, img, text, imageWidth, className, tooltip, children }) 
 
   // Determine active state
   const isBaseLink = !targetHash; // True if the link has no hash
-  const isExactPathActive = currentPath === targetPath && !currentHash && isBaseLink;
-  const isExactHashActive = currentPath === targetPath && currentHash === targetHash;
-  const isBasePathActiveWithHash = currentPath === targetPath && currentHash && isBaseLink;
+  const isExactPathActive =
+    currentPath === targetPath && !currentHash && isBaseLink;
+  const isExactHashActive =
+    currentPath === targetPath && currentHash === targetHash;
+  const isBasePathActiveWithHash =
+    currentPath === targetPath && currentHash && isBaseLink;
 
-  const isActive = isExactPathActive || isExactHashActive || isBasePathActiveWithHash;
+  const isActive =
+    isExactPathActive || isExactHashActive || isBasePathActiveWithHash;
 
   return (
     <StyledLink className={className} $isActive={isActive} tooltip={tooltip}>

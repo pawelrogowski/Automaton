@@ -2,7 +2,12 @@
 import React, { useState, useCallback } from 'react';
 import ScriptEditorModal from '../ScriptEditorModal/ScriptEditorModal.jsx';
 import { useSelector, useDispatch } from 'react-redux';
-import { addScript, removeScript, clearScriptLog, updateScript } from '../../redux/slices/luaSlice';
+import {
+  addScript,
+  removeScript,
+  clearScriptLog,
+  updateScript,
+} from '../../redux/slices/luaSlice';
 import { v4 as uuidv4 } from 'uuid';
 import ScriptTable from './ScriptTable.jsx';
 
@@ -12,7 +17,9 @@ const HotkeyScriptList = () => {
   const dispatch = useDispatch();
   // Use separate selectors to avoid creating new objects on every render
   const hotkey_scripts = useSelector((state) => state.lua.hotkeyScripts);
-  const persistent_scripts = useSelector((state) => state.lua.persistentScripts);
+  const persistent_scripts = useSelector(
+    (state) => state.lua.persistentScripts,
+  );
   const [modalState, setModalState] = useState({ isOpen: false, script: null });
 
   const handleAddScript = useCallback(() => {
@@ -82,14 +89,11 @@ const HotkeyScriptList = () => {
     [dispatch],
   );
 
-  const handleExportScript = useCallback(
-    async (script) => {
-      if (ipcRenderer) {
-        await ipcRenderer.invoke('save-lua-script', script);
-      }
-    },
-    [],
-  );
+  const handleExportScript = useCallback(async (script) => {
+    if (ipcRenderer) {
+      await ipcRenderer.invoke('save-lua-script', script);
+    }
+  }, []);
 
   const handleImportScript = useCallback(async () => {
     if (ipcRenderer) {
@@ -116,7 +120,7 @@ const HotkeyScriptList = () => {
     if (ipcRenderer) {
       const loadedScripts = await ipcRenderer.invoke('load-lua-script-package');
       if (loadedScripts && Array.isArray(loadedScripts)) {
-        loadedScripts.forEach(script => {
+        loadedScripts.forEach((script) => {
           const newScript = {
             ...script,
             id: uuidv4(), // Generate new ID to avoid conflicts

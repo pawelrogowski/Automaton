@@ -15,7 +15,9 @@ const PresetSelectorWrapper = styled.div`
 
 const PresetSelector = () => {
   const dispatch = useDispatch();
-  const activePresetIndex = useSelector((state) => state.rules.activePresetIndex);
+  const activePresetIndex = useSelector(
+    (state) => state.rules.activePresetIndex,
+  );
   const presets = useSelector((state) => state.rules.presets);
 
   // State for managing the confirmation dialog
@@ -37,7 +39,12 @@ const PresetSelector = () => {
   // Confirm the copy action
   const handleConfirm = () => {
     if (pendingCopyIndex !== null) {
-      dispatch(copyPreset({ sourceIndex: pendingCopyIndex, targetIndex: activePresetIndex }));
+      dispatch(
+        copyPreset({
+          sourceIndex: pendingCopyIndex,
+          targetIndex: activePresetIndex,
+        }),
+      );
     }
     setShowConfirm(false);
     setPendingCopyIndex(null);

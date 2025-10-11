@@ -2,12 +2,7 @@ import React, { useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTable, useBlockLayout } from 'react-table';
 import styled from 'styled-components';
-import {
-  Crosshair,
-  Navigation,
-  AlertTriangle,
-  UserCheck,
-} from 'react-feather';
+import { Crosshair, Navigation, AlertTriangle, UserCheck } from 'react-feather';
 import StyledTargeting from './Targeting.styled.js';
 import TargetingTable from '../components/TargetingTable/TargetingTable.jsx';
 import { StyledWaypointTable } from '../components/WaypointTable/WaypointTable.styled.js';

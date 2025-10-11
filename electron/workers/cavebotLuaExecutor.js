@@ -54,14 +54,24 @@ export class CavebotLuaExecutor {
           const filePath = path.join(libPath, file);
           const content = await fs.readFile(filePath, 'utf8');
           await this.lua.doString(content);
-          this.logger('info', `[CavebotLuaExecutor] Loaded Lua library: ${file}`);
+          this.logger(
+            'info',
+            `[CavebotLuaExecutor] Loaded Lua library: ${file}`,
+          );
         }
       }
     } catch (error) {
       if (error.code !== 'ENOENT') {
-        this.logger('error', `[CavebotLuaExecutor] Error loading Lua libraries:`, error);
+        this.logger(
+          'error',
+          `[CavebotLuaExecutor] Error loading Lua libraries:`,
+          error,
+        );
       } else {
-        this.logger('info', `[CavebotLuaExecutor] No Lua libraries found to load.`);
+        this.logger(
+          'info',
+          `[CavebotLuaExecutor] No Lua libraries found to load.`,
+        );
       }
     }
   }
@@ -171,7 +181,10 @@ export class CavebotLuaExecutor {
       // Timeout to prevent promises from hanging forever
       const timeout = setTimeout(() => {
         if (this.pendingInputActions.has(actionId)) {
-          this.logger('error', `[CavebotLuaExecutor] Input action timed out: ${JSON.stringify(action)}`);
+          this.logger(
+            'error',
+            `[CavebotLuaExecutor] Input action timed out: ${JSON.stringify(action)}`,
+          );
           this.pendingInputActions.delete(actionId);
           reject(new Error('Input action timed out after 30 seconds'));
         }
@@ -196,8 +209,14 @@ export class CavebotLuaExecutor {
       if (success) {
         pending.resolve();
       } else {
-        this.logger('error', `[CavebotLuaExecutor] Input action failed: ${error}`, pending.action);
-        pending.reject(new Error(error || 'Input action failed in orchestrator'));
+        this.logger(
+          'error',
+          `[CavebotLuaExecutor] Input action failed: ${error}`,
+          pending.action,
+        );
+        pending.reject(
+          new Error(error || 'Input action failed in orchestrator'),
+        );
       }
       this.pendingInputActions.delete(actionId);
     }
@@ -289,12 +308,16 @@ export class CavebotLuaExecutor {
       // NEW: Wait for any pending async operations triggered by the script to complete
       const asyncWaitStart = performance.now();
       while (this.context.activeAsyncOperations > 0) {
-        if (performance.now() - asyncWaitStart > 60000) { // 60-second timeout
-          this.logger('error', `[CavebotLuaExecutor] Timeout waiting for ${this.context.activeAsyncOperations} async operations to complete.`);
+        if (performance.now() - asyncWaitStart > 60000) {
+          // 60-second timeout
+          this.logger(
+            'error',
+            `[CavebotLuaExecutor] Timeout waiting for ${this.context.activeAsyncOperations} async operations to complete.`,
+          );
           this.context.activeAsyncOperations = 0; // Reset to prevent infinite loop
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 10)); // Poll every 10ms
+        await new Promise((resolve) => setTimeout(resolve, 10)); // Poll every 10ms
       }
 
       const execTime = performance.now() - execStart;

@@ -107,7 +107,7 @@ async function processFrames(force = false) {
       // Only process the LATEST frame to avoid lag
       const queueItem = dirtyRectsQueue[dirtyRectsQueue.length - 1];
       dirtyRectsQueue = []; // Clear entire queue
-      
+
       await performOperation(queueItem.rects || queueItem);
     } else if (force) {
       await performOperation(null);
@@ -149,7 +149,8 @@ function handleMessage(message) {
     if (payload.regionCoordinates) {
       const rc = payload.regionCoordinates;
       if (typeof rc.version === 'number' && !rc.regions) {
-        if (!currentState.regionCoordinates) currentState.regionCoordinates = {};
+        if (!currentState.regionCoordinates)
+          currentState.regionCoordinates = {};
         if (currentState.regionCoordinates.version !== rc.version) {
           currentState.regionCoordinates.version = rc.version;
           regionsStale = true;
@@ -172,14 +173,17 @@ function handleMessage(message) {
 
 export function start() {
   console.log('[MinimapCore] Worker starting up.');
-  
+
   // Initialize unified SAB interface
   if (workerData.unifiedSAB) {
-    const sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.MINIMAP_MONITOR);
+    const sabInterface = createWorkerInterface(
+      workerData.unifiedSAB,
+      WORKER_IDS.MINIMAP_MONITOR,
+    );
     setSABInterface(sabInterface);
     console.log('[MinimapCore] Unified SAB interface initialized');
   }
-  
+
   parentPort.on('message', handleMessage);
 
   setInterval(() => {

@@ -63,7 +63,7 @@ export const PartyHealingRuleWrapper = styled.div`
     display: flex;
     flex-direction: column;
     gap: 3px;
-    align-items:center;
+    align-items: center;
     justify-content: center;
   }
 

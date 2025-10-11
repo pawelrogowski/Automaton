@@ -46,7 +46,13 @@ const regionCoordinatesSlice = createSlice({
     setRegion: (state, action) => {
       const { name, x, y, width, height } = action.payload;
       if (name) {
-        state.regions[name] = { x, y, width, height, pixelCount: width * height };
+        state.regions[name] = {
+          x,
+          y,
+          width,
+          height,
+          pixelCount: width * height,
+        };
         state.version = (state.version || 0) + 1;
       }
     },
@@ -63,7 +69,8 @@ const regionCoordinatesSlice = createSlice({
         Object.assign(state.regions[name], updates);
         // Recalculate pixelCount if width or height are updated
         if (updates.width !== undefined || updates.height !== undefined) {
-          state.regions[name].pixelCount = state.regions[name].width * state.regions[name].height;
+          state.regions[name].pixelCount =
+            state.regions[name].width * state.regions[name].height;
         }
         state.version = (state.version || 0) + 1;
       }
@@ -101,6 +108,13 @@ const regionCoordinatesSlice = createSlice({
   },
 });
 
-export const { setAllRegions, setRegion, updateRegion, removeRegion, resetRegions, setState } = regionCoordinatesSlice.actions;
+export const {
+  setAllRegions,
+  setRegion,
+  updateRegion,
+  removeRegion,
+  resetRegions,
+  setState,
+} = regionCoordinatesSlice.actions;
 
 export default regionCoordinatesSlice;

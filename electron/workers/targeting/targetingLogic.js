@@ -84,8 +84,6 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
   if (!targetingList?.length || !creatures?.length) {
     return null;
   }
-  
-  // Debug logging removed to reduce spam
 
   // Get explicit creature names (excluding "Others" wildcard)
   const explicitNames = new Set(
@@ -121,6 +119,30 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
     return null;
   };
 
+  // FIX: Find creatures that are blocking high-priority targets
+  const blockingBoosts = new Map(); // instanceId -> boost amount
+  
+  for (const creature of creatures) {
+    if (creature.isBlockingPath) {
+      // Find what this creature is blocking
+      const blockedCreatures = creatures.filter(c => 
+        !c.isReachable && 
+        c.instanceId !== creature.instanceId
+      );
+      
+      for (const blocked of blockedCreatures) {
+        const blockedRule = findRuleForCreature(blocked);
+        if (blockedRule && blockedRule.onlyIfTrapped) {
+          // This creature is blocking a trapped target
+          // Boost blocker's priority to match blocked creature
+          const currentBoost = blockingBoosts.get(creature.instanceId) || 0;
+          const newBoost = Math.max(currentBoost, blockedRule.priority);
+          blockingBoosts.set(creature.instanceId, newBoost);
+        }
+      }
+    }
+  }
+
   const validCandidates = creatures
     .map((creature) => {
       const rule = findRuleForCreature(creature);
@@ -128,18 +150,31 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
       if (!rule || !creature.isReachable) {
         return null;
       }
+      
+      // FIX: Skip creatures with uncertain positions
+      if (creature.positionUncertain) {
+        return null;
+      }
+      
       if (rule.onlyIfTrapped && !creature.isBlockingPath) {
         return null;
       }
 
+      // FIX: Apply blocking boost for priority-based blocker targeting
+      let effectivePriority = rule.priority;
+      const boost = blockingBoosts.get(creature.instanceId);
+      if (boost !== undefined) {
+        effectivePriority = Math.max(effectivePriority, boost);
+      }
+
       // Lower score is better.
-      let score = -rule.priority * 1000; // Higher priority = much lower score.
+      let score = -effectivePriority * 1000; // Higher priority = much lower score.
       score += creature.distance; // Closer is better.
       if (creature.isAdjacent) {
         score -= 500; // Strongly prefer adjacent creatures.
       }
 
-      return { creature, rule, score };
+      return { creature, rule, score, effectivePriority };
     })
     .filter(Boolean);
 
@@ -150,18 +185,38 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
   validCandidates.sort((a, b) => a.score - b.score);
   const bestCandidate = validCandidates[0];
   
-  // Hysteresis: If we have a current target, only switch if the new target is significantly better
+  // FIX: Enhanced hysteresis with distance bands
   if (currentTarget && currentTarget.instanceId) {
     const currentCandidate = validCandidates.find(
       (c) => c.creature.instanceId === currentTarget.instanceId
     );
     
     if (currentCandidate) {
-      const SCORE_THRESHOLD = 10; // Must be at least 10 points better to switch
-      const scoreDifference = currentCandidate.score - bestCandidate.score;
+      const currentScore = currentCandidate.score;
+      const bestScore = bestCandidate.score;
+      
+      // Calculate adaptive threshold
+      let threshold = 10;
+      
+      // Increase threshold if current target is close (prevent jitter)
+      if (currentCandidate.creature.distance < 3) {
+        threshold += 20; // Stronger preference for nearby creatures
+      }
+      
+      // Reduce threshold if current target is far (allow switching)
+      if (currentCandidate.creature.distance > 5) {
+        threshold -= 5;
+      }
+      
+      // Increase threshold if creatures have same priority
+      if (currentCandidate.effectivePriority === bestCandidate.effectivePriority) {
+        threshold += 15; // Strong preference to keep current if same priority
+      }
+      
+      const scoreDifference = currentScore - bestScore;
       
       // Only switch if the best candidate is significantly better (lower score)
-      if (scoreDifference < SCORE_THRESHOLD) {
+      if (scoreDifference < threshold) {
         // Current target is still good enough, keep it
         return currentTarget;
       }
@@ -174,17 +229,17 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
 /**
  * Clicks the next available entry in the battle list for a given creature name,
  * or uses the Tab key if the target is the first entry (and nothing is targeted) or next after the current target.
- * @returns {{success: boolean, reason?: string, clickedIndex?: number}}
+ * @returns {{success: boolean, reason?: string, clickedIndex?: number, method?: string}}
  */
 export function acquireTarget(
   getBattleList,
   parentPort,
   targetName,
   lastClickedIndex,
-  globalState = null,  // Optional: for region/player position access
-  getCreatures = null,  // Function to get creatures array
-  getPlayerPosition = null,  // Function to get player position
-  targetInstanceId = null  // NEW: Specific instance ID to target (prevents wrong creature)
+  globalState = null,
+  getCreatures = null,
+  getPlayerPosition = null,
+  targetInstanceId = null
 ) {
   const battleList = getBattleList() || [];
   if (battleList.length === 0) {
@@ -192,16 +247,15 @@ export function acquireTarget(
   }
 
   // Find the desired target and current target indices
-  // Support truncated names (e.g., "troll trained sala..." matching "troll trained salamander")
   const desiredTargetEntry = battleList.find((entry) => {
     if (entry.name === targetName) return true;
-    // Check if battle list entry is truncated (ends with ...)
     if (entry.name.endsWith('...')) {
       const truncatedPart = entry.name.slice(0, -3);
       return targetName.startsWith(truncatedPart);
     }
     return false;
   });
+  
   if (!desiredTargetEntry) {
     return { success: false, reason: 'not_in_battlelist' };
   }
@@ -211,7 +265,6 @@ export function acquireTarget(
 
   // Get creatures for game world click logic (optional)
   const creatures = getCreatures ? getCreatures() : [];
-  // If we have a specific instance ID, use it to find the EXACT creature we want to path to
   const targetCreature = targetInstanceId 
     ? creatures.find(c => c.instanceId === targetInstanceId && c.isReachable)
     : creatures.find(c => c.name === targetName && c.isReachable);
@@ -265,23 +318,21 @@ export function acquireTarget(
     }
   }
 
-  // --- ORIGINAL: Determine the targeting method ---
-  // Tab: Move forward (currentIndex + 1 = desiredIndex)
-  // Grave: Move backward (currentIndex - 1 = desiredIndex)
-  // Mouse: Everything else OR 15% random override
-  
+  // --- Determine the targeting method ---
   let method = null; // 'tab', 'grave', or 'mouse'
   
-  // Check if we can use Tab or Grave
   const canUseTab = desiredTargetIndex === currentTargetIndex + 1;
   const canUseGrave = currentTargetIndex !== -1 && desiredTargetIndex === currentTargetIndex - 1;
+  
+  // FIX: When cycling (lastClickedIndex >= 0), prefer mouse over Tab/Grave
+  const isCycling = lastClickedIndex >= 0;
   
   // 15% chance to force mouse click even when Tab/Grave would work
   const forceMouseClick = Math.random() < 0.15;
   
-  if (canUseTab && !forceMouseClick) {
+  if (canUseTab && !forceMouseClick && !isCycling) {
     method = 'tab';
-  } else if (canUseGrave && !forceMouseClick) {
+  } else if (canUseGrave && !forceMouseClick && !isCycling) {
     method = 'grave';
   } else {
     method = 'mouse';
@@ -307,12 +358,10 @@ export function acquireTarget(
   }
 
   // --- MOUSE CLICK METHOD ---
-  // Get all entries with matching name (including truncated names)
   const potentialEntries = battleList
     .map((entry, index) => ({ ...entry, index }))
     .filter((entry) => {
       if (entry.name === targetName) return true;
-      // Check if battle list entry is truncated (ends with ...)
       if (entry.name.endsWith('...')) {
         const truncatedPart = entry.name.slice(0, -3);
         return targetName.startsWith(truncatedPart);
@@ -324,23 +373,16 @@ export function acquireTarget(
     return { success: false, reason: 'not_in_battlelist' };
   }
 
-  // Cycle through battle list entries to find the right creature
-  // We can't match battle list UI coordinates to game world coordinates,
-  // so we need to click each entry and verify in game world
-  let targetEntry = null;
-  
-  // Find the next entry to click after the last one we tried
-  targetEntry = potentialEntries.find(
+  // Cycle through battle list entries
+  let targetEntry = potentialEntries.find(
     (entry) => entry.index > lastClickedIndex
   );
 
-  // If no entry is found after the last index, wrap around to the first one
   if (!targetEntry) {
     targetEntry = potentialEntries[0];
   }
 
   // Add randomization to battle list click coordinates
-  // Vertical: ±3 pixels, Horizontal: ±30 pixels
   const verticalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3
   const horizontalOffset = Math.floor(Math.random() * 61) - 30; // -30 to +30
   
@@ -375,7 +417,6 @@ export function updateDynamicTarget(parentPort, pathfindingTarget, targetingList
     return;
   }
 
-  // Use helper to find rule (supports "Others" wildcard)
   const rule = findRuleForCreatureName(pathfindingTarget.name, targetingList);
   if (!rule) return;
 
@@ -409,11 +450,11 @@ export async function manageMovement(
   } = workerContext;
   const { targetingList } = targetingContext;
 
-  // Check if looting is required from unified SAB
   if (!currentTarget) {
     return;
   }
   
+  // Check if looting is required from unified SAB
   if (sabInterface) {
     try {
       const lootingResult = sabInterface.get('looting');
@@ -455,7 +496,7 @@ export async function manageMovement(
     return;
   }
 
-  // CRITICAL: Validate that path is for current position (prevent stale path usage)
+  // FIX: Validate that path is for current position (prevent stale path usage)
   const pathStart = path[0];
   const isPathStale = 
     pathStart.x !== playerMinimapPosition.x ||
@@ -476,9 +517,6 @@ export async function manageMovement(
 
   const timeout = isDiagonalMovement(dirKey) ? 900 : 400;
   const now = Date.now();
-  const timeSinceLastMove = movementTracking.lastMoveTimestamp > 0 
-    ? now - movementTracking.lastMoveTimestamp 
-    : 0;
   
   movementTracking.lastMoveTimestamp = now;
   movementTracking.moveCount++;

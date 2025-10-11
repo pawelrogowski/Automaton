@@ -391,12 +391,16 @@ const executeOneShot = async () => {
     // NEW: Wait for any pending async operations triggered by the script to complete
     const asyncWaitStart = Date.now();
     while (activeAsyncOperations > 0) {
-      if (Date.now() - asyncWaitStart > 60000) { // 60-second timeout
-        log('error', `[Lua Script Worker ${scriptConfig.id}] Timeout waiting for ${activeAsyncOperations} async operations to complete.`);
+      if (Date.now() - asyncWaitStart > 60000) {
+        // 60-second timeout
+        log(
+          'error',
+          `[Lua Script Worker ${scriptConfig.id}] Timeout waiting for ${activeAsyncOperations} async operations to complete.`,
+        );
         activeAsyncOperations = 0; // Reset to prevent infinite loop
         break;
       }
-      await new Promise(resolve => setTimeout(resolve, 10)); // Poll every 10ms
+      await new Promise((resolve) => setTimeout(resolve, 10)); // Poll every 10ms
     }
 
     parentPort.postMessage({
@@ -450,12 +454,16 @@ const executeScriptLoop = async () => {
       // NEW: Wait for any pending async operations triggered by the script to complete
       const asyncWaitStart = Date.now();
       while (activeAsyncOperations > 0) {
-        if (Date.now() - asyncWaitStart > 60000) { // 60-second timeout
-          log('error', `[Lua Script Worker ${scriptConfig.id}] Timeout waiting for ${activeAsyncOperations} async operations to complete.`);
+        if (Date.now() - asyncWaitStart > 60000) {
+          // 60-second timeout
+          log(
+            'error',
+            `[Lua Script Worker ${scriptConfig.id}] Timeout waiting for ${activeAsyncOperations} async operations to complete.`,
+          );
           activeAsyncOperations = 0; // Reset to prevent infinite loop
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 10)); // Poll every 10ms
+        await new Promise((resolve) => setTimeout(resolve, 10)); // Poll every 10ms
       }
     } catch (error) {
       const msg = error.message || String(error);

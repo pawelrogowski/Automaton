@@ -8,7 +8,12 @@ const post = (payload) => {
   });
 };
 
-function useItemOnCoordinates(targetX, targetY, key, { type = 'default', maxDuration = 150 } = {}) {
+function useItemOnCoordinates(
+  targetX,
+  targetY,
+  key,
+  { type = 'default', maxDuration = 150 } = {},
+) {
   keyPress(key, { type });
 
   post({

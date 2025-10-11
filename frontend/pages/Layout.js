@@ -86,10 +86,7 @@ const Layout = () => {
         ruleIdPrefix = 'equipRule';
         break;
       default:
-        console.warn(
-          'Cannot add rule on current page/hash:',
-          hash,
-        );
+        console.warn('Cannot add rule on current page/hash:', hash);
         return; // Don't add anything for unknown hash
     }
     if (ruleIdPrefix) {

@@ -139,10 +139,8 @@ const MinimapSettingsModal = React.memo(
           <ControlsGrid>
             {/* Basic Elements Group */}
             <SettingGroup>
-              <GroupTitle>
-                Basic Elements
-              </GroupTitle>
-              
+              <GroupTitle>Basic Elements</GroupTitle>
+
               <SettingRow>
                 <ControlLabel>Player</ControlLabel>
                 <ColorInput
@@ -205,7 +203,11 @@ const MinimapSettingsModal = React.memo(
                   value={settings.specialAreas.cavebot.fill}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) =>
-                    handleSpecialAreaColorChange('cavebot', 'fill', e.target.value)
+                    handleSpecialAreaColorChange(
+                      'cavebot',
+                      'fill',
+                      e.target.value,
+                    )
                   }
                   title="Fill color"
                 />
@@ -217,7 +219,11 @@ const MinimapSettingsModal = React.memo(
                   value={settings.specialAreas.targeting.fill}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) =>
-                    handleSpecialAreaColorChange('targeting', 'fill', e.target.value)
+                    handleSpecialAreaColorChange(
+                      'targeting',
+                      'fill',
+                      e.target.value,
+                    )
                   }
                   title="Fill color"
                 />
@@ -500,8 +506,10 @@ const Minimap = () => {
         .requestFullscreen()
         .catch((err) => console.error(err));
   }, [isFullscreen]);
-  const handleMapModeToggle = useCallback(() =>
-    setMapMode((prevMode) => (prevMode === 'map' ? 'waypoint' : 'map')), []);
+  const handleMapModeToggle = useCallback(
+    () => setMapMode((prevMode) => (prevMode === 'map' ? 'waypoint' : 'map')),
+    [],
+  );
 
   const handleCloseModal = useCallback(() => {
     setIsSettingsModalOpen(false);
@@ -534,74 +542,81 @@ const Minimap = () => {
     setStagePos(e.target.position());
   }, []);
 
-  const handleContextMenu = useCallback((e) => {
-    e.evt.preventDefault();
-    const stage = e.target.getStage();
-    const pointerPos = stage.getPointerPosition();
-    if (!pointerPos || !mapIndex) return;
+  const handleContextMenu = useCallback(
+    (e) => {
+      e.evt.preventDefault();
+      const stage = e.target.getStage();
+      const pointerPos = stage.getPointerPosition();
+      if (!pointerPos || !mapIndex) return;
 
-    const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
-    const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
-    const targetPos = { x: worldX, y: worldY, z: zLevel };
+      const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
+      const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
+      const targetPos = { x: worldX, y: worldY, z: zLevel };
 
-    const existingWaypoint = visibleWaypoints.find(
-      (wp) => wp.x === worldX && wp.y === worldY && wp.z === zLevel,
-    );
-    const existingSpecialArea = visibleSpecialAreas.find(
-      (area) =>
-        worldX >= area.x &&
-        worldX < area.x + area.sizeX &&
-        worldY >= area.y &&
-        worldY < area.y + area.sizeY &&
-        area.z === zLevel,
-    );
+      const existingWaypoint = visibleWaypoints.find(
+        (wp) => wp.x === worldX && wp.y === worldY && wp.z === zLevel,
+      );
+      const existingSpecialArea = visibleSpecialAreas.find(
+        (area) =>
+          worldX >= area.x &&
+          worldX < area.x + area.sizeX &&
+          worldY >= area.y &&
+          worldY < area.y + area.sizeY &&
+          area.z === zLevel,
+      );
 
-    // Use viewport dimensions for better positioning
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const clickX = e.evt.clientX;
-    const clickY = e.evt.clientY;
+      // Use viewport dimensions for better positioning
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const clickX = e.evt.clientX;
+      const clickY = e.evt.clientY;
 
-    const menuWidth = 200;
-    const padding = 10;
-    
-    // Position menu intelligently
-    // Prefer right and down, but flip if not enough space
-    let menuX = clickX + padding;
-    let menuY = clickY + padding;
-    
-    // Check if menu would overflow right edge
-    if (menuX + menuWidth > viewportWidth - padding) {
-      // Flip to left of cursor
-      menuX = clickX - menuWidth - padding;
-    }
-    
-    // Ensure menu doesn't go off left edge
-    if (menuX < padding) {
-      menuX = padding;
-    }
-    
-    // For Y position, we'll let the menu handle overflow with max-height and scroll
-    // But ensure it starts on screen
-    if (menuY < padding) {
-      menuY = padding;
-    }
+      const menuWidth = 200;
+      const padding = 10;
 
-    setRightClickMenu({
-      visible: true,
-      x: menuX,
-      y: menuY,
-      stage: 0, // Always start at the main category selection
-      selectedCategory: null,
-      targetPos: targetPos,
-      targetWaypointId: existingWaypoint ? existingWaypoint.id : null,
-      targetSpecialAreaId: existingSpecialArea ? existingSpecialArea.id : null,
-      hoveredItem: null,
-    });
-  }, [mapIndex, zLevel, visibleWaypoints, visibleSpecialAreas]);
+      // Position menu intelligently
+      // Prefer right and down, but flip if not enough space
+      let menuX = clickX + padding;
+      let menuY = clickY + padding;
 
-  const handleMenuItemHover = useCallback((item) =>
-    setRightClickMenu((prev) => ({ ...prev, hoveredItem: item })), []);
+      // Check if menu would overflow right edge
+      if (menuX + menuWidth > viewportWidth - padding) {
+        // Flip to left of cursor
+        menuX = clickX - menuWidth - padding;
+      }
+
+      // Ensure menu doesn't go off left edge
+      if (menuX < padding) {
+        menuX = padding;
+      }
+
+      // For Y position, we'll let the menu handle overflow with max-height and scroll
+      // But ensure it starts on screen
+      if (menuY < padding) {
+        menuY = padding;
+      }
+
+      setRightClickMenu({
+        visible: true,
+        x: menuX,
+        y: menuY,
+        stage: 0, // Always start at the main category selection
+        selectedCategory: null,
+        targetPos: targetPos,
+        targetWaypointId: existingWaypoint ? existingWaypoint.id : null,
+        targetSpecialAreaId: existingSpecialArea
+          ? existingSpecialArea.id
+          : null,
+        hoveredItem: null,
+      });
+    },
+    [mapIndex, zLevel, visibleWaypoints, visibleSpecialAreas],
+  );
+
+  const handleMenuItemHover = useCallback(
+    (item) => setRightClickMenu((prev) => ({ ...prev, hoveredItem: item })),
+    [],
+  );
 
   const handleMenuCategorySelect = useCallback((category) => {
     setRightClickMenu((prev) => ({
@@ -612,61 +627,64 @@ const Minimap = () => {
     }));
   }, []);
 
-  const handleMenuItemClick = useCallback((item) => {
-    const {
-      selectedCategory,
-      targetPos,
-      targetWaypointId,
-      targetSpecialAreaId,
-    } = rightClickMenu;
+  const handleMenuItemClick = useCallback(
+    (item) => {
+      const {
+        selectedCategory,
+        targetPos,
+        targetWaypointId,
+        targetSpecialAreaId,
+      } = rightClickMenu;
 
-    if (selectedCategory === 'waypoints') {
-      if (item === 'RemoveWaypoint' && targetWaypointId) {
-        dispatch(removeWaypoint(targetWaypointId));
-      } else {
-        const selectedOption = WAYPOINT_TYPE_OPTIONS.find(
-          (opt) => opt.value === item,
-        );
-        if (selectedOption && targetPos) {
-          dispatch(
-            addWaypoint({
-              id: uuidv4(),
-              type: selectedOption.value,
-              ...targetPos,
-              range: 1,
-              action:
-                selectedOption.value === 'Script' ? 'Enter your script' : '',
-            }),
+      if (selectedCategory === 'waypoints') {
+        if (item === 'RemoveWaypoint' && targetWaypointId) {
+          dispatch(removeWaypoint(targetWaypointId));
+        } else {
+          const selectedOption = WAYPOINT_TYPE_OPTIONS.find(
+            (opt) => opt.value === item,
           );
+          if (selectedOption && targetPos) {
+            dispatch(
+              addWaypoint({
+                id: uuidv4(),
+                type: selectedOption.value,
+                ...targetPos,
+                range: 1,
+                action:
+                  selectedOption.value === 'Script' ? 'Enter your script' : '',
+              }),
+            );
+          }
+        }
+      } else if (selectedCategory === 'specialAreas') {
+        if (item === 'RemoveSpecialArea' && targetSpecialAreaId) {
+          dispatch(removeSpecialArea(targetSpecialAreaId));
+        } else {
+          const selectedOption = SPECIAL_AREA_TYPE_OPTIONS.find(
+            (opt) => opt.value === item,
+          );
+          if (selectedOption && targetPos) {
+            dispatch(
+              addSpecialArea({
+                id: uuidv4(),
+                x: targetPos.x,
+                y: targetPos.y,
+                z: targetPos.z,
+                sizeX: 1,
+                sizeY: 1,
+                avoidance: selectedOption.avoidance,
+                type: selectedOption.type,
+                enabled: true,
+              }),
+            );
+          }
         }
       }
-    } else if (selectedCategory === 'specialAreas') {
-      if (item === 'RemoveSpecialArea' && targetSpecialAreaId) {
-        dispatch(removeSpecialArea(targetSpecialAreaId));
-      } else {
-        const selectedOption = SPECIAL_AREA_TYPE_OPTIONS.find(
-          (opt) => opt.value === item,
-        );
-        if (selectedOption && targetPos) {
-          dispatch(
-            addSpecialArea({
-              id: uuidv4(),
-              x: targetPos.x,
-              y: targetPos.y,
-              z: targetPos.z,
-              sizeX: 1,
-              sizeY: 1,
-              avoidance: selectedOption.avoidance,
-              type: selectedOption.type,
-              enabled: true,
-            }),
-          );
-        }
-      }
-    }
 
-    setRightClickMenu({ visible: false, x: 0, y: 0, stage: 0 });
-  }, [dispatch, rightClickMenu]);
+      setRightClickMenu({ visible: false, x: 0, y: 0, stage: 0 });
+    },
+    [dispatch, rightClickMenu],
+  );
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -682,85 +700,101 @@ const Minimap = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [rightClickMenu.visible]);
 
-  const handleWaypointClick = useCallback((e, waypointId) => {
-    if (e.evt.button !== 2) dispatch(setwptSelection(waypointId));
-  }, [dispatch]);
-  const handleWaypointDoubleClick = useCallback((waypointId) =>
-    dispatch(setwptId(waypointId)), [dispatch]);
+  const handleWaypointClick = useCallback(
+    (e, waypointId) => {
+      if (e.evt.button !== 2) dispatch(setwptSelection(waypointId));
+    },
+    [dispatch],
+  );
+  const handleWaypointDoubleClick = useCallback(
+    (waypointId) => dispatch(setwptId(waypointId)),
+    [dispatch],
+  );
 
-  const handleSpecialAreaClick = useCallback((e, areaId) => {
-    if (!resizeMode || e.evt.button === 2) return;
-    
-    // If we're already resizing, let the click propagate to handleStageClick to finish
-    if (resizingArea) {
-      return;
-    }
-    
-    // Starting a new resize
-    e.evt.preventDefault();
-    e.cancelBubble = true;
-    
-    const area = visibleSpecialAreas.find(a => a.id === areaId);
-    if (!area) return;
-    
-    setIsLockedToPlayer(false);
-    setResizingArea({
-      id: areaId,
-      startX: area.x,
-      startY: area.y,
-      originalSizeX: area.sizeX,
-      originalSizeY: area.sizeY,
-    });
-  }, [resizeMode, visibleSpecialAreas, resizingArea]);
+  const handleSpecialAreaClick = useCallback(
+    (e, areaId) => {
+      if (!resizeMode || e.evt.button === 2) return;
 
-  const handleStageMouseMove = useCallback((e) => {
-    if (!resizingArea || !resizeMode) return;
-    
-    const stage = e.target.getStage();
-    const pointerPos = stage.getPointerPosition();
-    if (!pointerPos) return;
-    
-    const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
-    const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
-    
-    // Calculate new size based on cursor position
-    const newSizeX = Math.max(1, worldX - resizingArea.startX + 1);
-    const newSizeY = Math.max(1, worldY - resizingArea.startY + 1);
-    
-    // Store preview size without dispatching to Redux yet
-    setResizingArea(prev => ({
-      ...prev,
-      previewSizeX: newSizeX,
-      previewSizeY: newSizeY
-    }));
-  }, [resizingArea, resizeMode]);
+      // If we're already resizing, let the click propagate to handleStageClick to finish
+      if (resizingArea) {
+        return;
+      }
 
-  const handleStageClick = useCallback((e) => {
-    if (!resizeMode) return;
-    
-    // If we're already resizing, finish the resize
-    if (resizingArea) {
+      // Starting a new resize
+      e.evt.preventDefault();
+      e.cancelBubble = true;
+
+      const area = visibleSpecialAreas.find((a) => a.id === areaId);
+      if (!area) return;
+
+      setIsLockedToPlayer(false);
+      setResizingArea({
+        id: areaId,
+        startX: area.x,
+        startY: area.y,
+        originalSizeX: area.sizeX,
+        originalSizeY: area.sizeY,
+      });
+    },
+    [resizeMode, visibleSpecialAreas, resizingArea],
+  );
+
+  const handleStageMouseMove = useCallback(
+    (e) => {
+      if (!resizingArea || !resizeMode) return;
+
       const stage = e.target.getStage();
       const pointerPos = stage.getPointerPosition();
       if (!pointerPos) return;
-      
+
       const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
       const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
-      
-      // Calculate final size
+
+      // Calculate new size based on cursor position
       const newSizeX = Math.max(1, worldX - resizingArea.startX + 1);
       const newSizeY = Math.max(1, worldY - resizingArea.startY + 1);
-      
-      // Apply the resize
-      dispatch(updateSpecialArea({
-        id: resizingArea.id,
-        updates: { sizeX: newSizeX, sizeY: newSizeY }
+
+      // Store preview size without dispatching to Redux yet
+      setResizingArea((prev) => ({
+        ...prev,
+        previewSizeX: newSizeX,
+        previewSizeY: newSizeY,
       }));
-      
-      // Clear resizing state
-      setResizingArea(null);
-    }
-  }, [resizeMode, resizingArea, dispatch]);
+    },
+    [resizingArea, resizeMode],
+  );
+
+  const handleStageClick = useCallback(
+    (e) => {
+      if (!resizeMode) return;
+
+      // If we're already resizing, finish the resize
+      if (resizingArea) {
+        const stage = e.target.getStage();
+        const pointerPos = stage.getPointerPosition();
+        if (!pointerPos) return;
+
+        const worldX = Math.floor((pointerPos.x - stage.x()) / stage.scaleX());
+        const worldY = Math.floor((pointerPos.y - stage.y()) / stage.scaleY());
+
+        // Calculate final size
+        const newSizeX = Math.max(1, worldX - resizingArea.startX + 1);
+        const newSizeY = Math.max(1, worldY - resizingArea.startY + 1);
+
+        // Apply the resize
+        dispatch(
+          updateSpecialArea({
+            id: resizingArea.id,
+            updates: { sizeX: newSizeX, sizeY: newSizeY },
+          }),
+        );
+
+        // Clear resizing state
+        setResizingArea(null);
+      }
+    },
+    [resizeMode, resizingArea, dispatch],
+  );
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -772,7 +806,13 @@ const Minimap = () => {
 
   return (
     <StyledMinimap ref={minimapContainerRef} tabIndex={0}>
-      <div style={{ position: 'relative', width: '100%', height: isFullscreen ? '100vh' : CANVAS_SIZE }}>
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          height: isFullscreen ? '100vh' : CANVAS_SIZE,
+        }}
+      >
         <StyledMapControls>
           <ControlGroup>
             <ControlButton
@@ -963,33 +1003,47 @@ const Minimap = () => {
               {drawSettings.specialAreas.draw &&
                 visibleSpecialAreas.map((area) => {
                   const isResizing = resizingArea?.id === area.id;
-                  const displaySizeX = isResizing && resizingArea.previewSizeX ? resizingArea.previewSizeX : area.sizeX;
-                  const displaySizeY = isResizing && resizingArea.previewSizeY ? resizingArea.previewSizeY : area.sizeY;
-                  
+                  const displaySizeX =
+                    isResizing && resizingArea.previewSizeX
+                      ? resizingArea.previewSizeX
+                      : area.sizeX;
+                  const displaySizeY =
+                    isResizing && resizingArea.previewSizeY
+                      ? resizingArea.previewSizeY
+                      : area.sizeY;
+
                   // Get colors based on area type
                   const areaType = area.type || 'cavebot';
-                  const typeColors = drawSettings.specialAreas[areaType] || drawSettings.specialAreas.cavebot;
-                  
+                  const typeColors =
+                    drawSettings.specialAreas[areaType] ||
+                    drawSettings.specialAreas.cavebot;
+
                   if (area.hollow) {
                     // Render hollow area as individual border tiles
                     const borderTiles = [];
-                    
+
                     // Top and bottom rows
                     for (let dx = 0; dx < displaySizeX; dx++) {
                       borderTiles.push({ x: area.x + dx, y: area.y }); // top
                       if (displaySizeY > 1) {
-                        borderTiles.push({ x: area.x + dx, y: area.y + displaySizeY - 1 }); // bottom
+                        borderTiles.push({
+                          x: area.x + dx,
+                          y: area.y + displaySizeY - 1,
+                        }); // bottom
                       }
                     }
-                    
+
                     // Left and right columns (excluding corners)
                     for (let dy = 1; dy < displaySizeY - 1; dy++) {
                       borderTiles.push({ x: area.x, y: area.y + dy }); // left
                       if (displaySizeX > 1) {
-                        borderTiles.push({ x: area.x + displaySizeX - 1, y: area.y + dy }); // right
+                        borderTiles.push({
+                          x: area.x + displaySizeX - 1,
+                          y: area.y + dy,
+                        }); // right
                       }
                     }
-                    
+
                     return (
                       <React.Fragment key={area.id}>
                         {borderTiles.map((tile, idx) => (
@@ -1003,16 +1057,22 @@ const Minimap = () => {
                             stroke={isResizing ? '#00ff00' : typeColors.stroke}
                             strokeWidth={isResizing ? 0.2 : 0.1}
                             listening={resizeMode}
-                            onClick={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
-                            onTap={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
+                            onClick={(e) =>
+                              resizeMode && handleSpecialAreaClick(e, area.id)
+                            }
+                            onTap={(e) =>
+                              resizeMode && handleSpecialAreaClick(e, area.id)
+                            }
                             onMouseEnter={(e) => {
                               if (resizeMode) {
-                                e.target.getStage().container().style.cursor = 'nwse-resize';
+                                e.target.getStage().container().style.cursor =
+                                  'nwse-resize';
                               }
                             }}
                             onMouseLeave={(e) => {
                               if (resizeMode && !resizingArea) {
-                                e.target.getStage().container().style.cursor = 'grab';
+                                e.target.getStage().container().style.cursor =
+                                  'grab';
                               }
                             }}
                           />
@@ -1032,16 +1092,22 @@ const Minimap = () => {
                         stroke={isResizing ? '#00ff00' : typeColors.stroke}
                         strokeWidth={isResizing ? 0.2 : 0.1}
                         listening={resizeMode}
-                        onClick={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
-                        onTap={(e) => resizeMode && handleSpecialAreaClick(e, area.id)}
+                        onClick={(e) =>
+                          resizeMode && handleSpecialAreaClick(e, area.id)
+                        }
+                        onTap={(e) =>
+                          resizeMode && handleSpecialAreaClick(e, area.id)
+                        }
                         onMouseEnter={(e) => {
                           if (resizeMode) {
-                            e.target.getStage().container().style.cursor = 'nwse-resize';
+                            e.target.getStage().container().style.cursor =
+                              'nwse-resize';
                           }
                         }}
                         onMouseLeave={(e) => {
                           if (resizeMode && !resizingArea) {
-                            e.target.getStage().container().style.cursor = 'grab';
+                            e.target.getStage().container().style.cursor =
+                              'grab';
                           }
                         }}
                       />
@@ -1175,7 +1241,7 @@ const Minimap = () => {
         >
           {playerTile.x},{playerTile.y},{zLevel}
         </span>
-        
+
         {resizeMode && (
           <div
             style={{
@@ -1193,7 +1259,9 @@ const Minimap = () => {
               backdropFilter: 'blur(8px)',
             }}
           >
-            {resizingArea ? 'Move cursor and click to finish resize' : 'Resize Mode: Click area to start'}
+            {resizingArea
+              ? 'Move cursor and click to finish resize'
+              : 'Resize Mode: Click area to start'}
           </div>
         )}
 
@@ -1260,11 +1328,7 @@ const Minimap = () => {
                     </ContextMenuItem>
                   ))
                 ) : (
-                  <ContextMenuItem
-                    color="#FF5555"
-                    bold
-                    disabled
-                  >
+                  <ContextMenuItem color="#FF5555" bold disabled>
                     Limit Reached ({MAX_WAYPOINTS_PER_SECTION})
                   </ContextMenuItem>
                 )}
@@ -1309,7 +1373,9 @@ const Minimap = () => {
                     bold
                     separator
                     dangerHover
-                    isHovered={rightClickMenu.hoveredItem === 'RemoveSpecialArea'}
+                    isHovered={
+                      rightClickMenu.hoveredItem === 'RemoveSpecialArea'
+                    }
                   >
                     Remove Special Area
                   </ContextMenuItem>

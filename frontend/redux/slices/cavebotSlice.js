@@ -122,7 +122,7 @@ const cavebotSlice = createSlice({
     },
     setState: (state, action) => {
       const newState = { ...initialState, ...(action.payload || {}) };
-      newState.version = ((state.version || 0) + 1);
+      newState.version = (state.version || 0) + 1;
       return newState;
     },
     setStandTime: (state, action) => {

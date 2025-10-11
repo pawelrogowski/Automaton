@@ -37,9 +37,9 @@ export const EquipRuleWrapper = styled.div`
     flex-direction: row;
     gap: 8px;
     align-items: center;
-     > div:has(> label > div) {
-        flex-shrink: 0;
-     }
+    > div:has(> label > div) {
+      flex-shrink: 0;
+    }
   }
 
   .row2 {
@@ -49,36 +49,35 @@ export const EquipRuleWrapper = styled.div`
     gap: 8px;
     align-items: center;
     justify-content: space-between;
-     > div:has(> label > div) {
-        flex-shrink: 0;
-     }
+    > div:has(> label > div) {
+      flex-shrink: 0;
+    }
 
     .input-group {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        align-items: center;
-        justify-content: center;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      align-items: center;
+      justify-content: center;
     }
   }
 
-   .row3 {
-      width: 100%;
-      display: flex;
-      flex-direction: row;
-      gap: 8px;
-      align-items: center;
-      justify-content: center;
-       .conditions {
-       }
-   }
-
+  .row3 {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    .conditions {
+    }
+  }
 
   .input-group {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    align-items:center;
+    align-items: center;
     justify-content: center;
   }
 

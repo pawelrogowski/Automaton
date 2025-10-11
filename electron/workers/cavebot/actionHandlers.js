@@ -65,15 +65,11 @@ async function performWalk(
   // Set movement lock BEFORE sending keypress
   workerState.isWaitingForMovement = true;
   workerState.movementWaitUntil = Date.now() + timeout;
-  
+
   keyPress(dirKey, { type: 'movement' });
-  
+
   try {
-    await awaitWalkConfirmation(
-      workerState,
-      config,
-      timeout,
-    );
+    await awaitWalkConfirmation(workerState, config, timeout);
     workerState.isWaitingForMovement = false;
   } catch (error) {
     workerState.isWaitingForMovement = false;
@@ -134,7 +130,7 @@ export async function handleWalkAction(workerState, config) {
       // BUT: Check if we actually succeeded in moving there (late movement confirmation)
       const currentPos = workerState.playerMinimapPosition;
       const playerIsOnFailedTile = areTilesEqual(currentPos, failedTile);
-      
+
       if (playerIsOnFailedTile) {
         // Success! The movement actually worked, just took longer than timeout
         workerState.logger(
@@ -350,7 +346,7 @@ export async function handleShovelAction(workerState, config, targetCoords) {
     const isAdjacent =
       Math.max(
         Math.abs(initialPos.x - targetCoords.x),
-        Math.abs(initialPos.y - targetCoords.y)
+        Math.abs(initialPos.y - targetCoords.y),
       ) <= 1 && initialPos.z === targetCoords.z;
 
     if (isAdjacent) {
@@ -374,8 +370,14 @@ export async function handleShovelAction(workerState, config, targetCoords) {
         : config.moveConfirmTimeoutMs;
 
       try {
-        await performWalk(workerState, config, targetCoords, timeout, isDiagonal);
-        
+        await performWalk(
+          workerState,
+          config,
+          targetCoords,
+          timeout,
+          isDiagonal,
+        );
+
         // Check if we changed Z-level after walking
         const currentZ = workerState.playerMinimapPosition.z;
         if (currentZ !== initialZ) {
@@ -385,7 +387,7 @@ export async function handleShovelAction(workerState, config, targetCoords) {
           );
           return true;
         }
-        
+
         logger(
           'debug',
           '[handleShovelAction] Standing on waypoint tile, same Z-level. Will use shovel.',
@@ -430,7 +432,7 @@ export async function handleShovelAction(workerState, config, targetCoords) {
   }
 
   await delay(config.animationArrivalTimeoutMs);
-  
+
   logger(
     'debug',
     `[handleShovelAction] Using shovel hotkey '${hotkey}' at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetCoords.x}, y:${targetCoords.y}, z:${targetCoords.z}}`,
@@ -525,13 +527,13 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
     }
 
     // Walk failed, use tool
-  logger(
-    'debug',
-    `[handleMacheteAction] Attempt ${i + 1}: Using machete hotkey '${hotkey}' at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetWaypoint.x}, y:${targetWaypoint.y}, z:${targetWaypoint.z}}`,
-  );
-  useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
-    type: 'movement',
-  });
+    logger(
+      'debug',
+      `[handleMacheteAction] Attempt ${i + 1}: Using machete hotkey '${hotkey}' at (${clickCoords.x}, ${clickCoords.y}) targeting {x:${targetWaypoint.x}, y:${targetWaypoint.y}, z:${targetWaypoint.z}}`,
+    );
+    useItemOnCoordinates(clickCoords.x, clickCoords.y, hotkey, {
+      type: 'movement',
+    });
     await delay(config.actionFailureRetryDelayMs);
 
     try {
@@ -549,9 +551,7 @@ export async function handleMacheteAction(workerState, config, targetWaypoint) {
       );
       logger(
         'debug',
-        `[handleMacheteAction] Attempt ${
-          i + 1
-        }: Walk after machete succeeded.`,
+        `[handleMacheteAction] Attempt ${i + 1}: Walk after machete succeeded.`,
       );
       return true; // Success after using tool
     } catch (error) {
@@ -646,17 +646,16 @@ export async function handleScriptAction(workerState, config, targetWpt) {
   const allWaypoints = Object.values(waypointSections).flatMap(
     (section) => section.waypoints || [],
   );
-  const waypointIndex = allWaypoints.findIndex((wpt) => wpt.id === targetWpt.id);
+  const waypointIndex = allWaypoints.findIndex(
+    (wpt) => wpt.id === targetWpt.id,
+  );
   logger(
     'debug',
     `[handleScriptAction] Executing for waypoint index ${waypointIndex + 1}.`,
   );
 
   if (!luaExecutor || !luaExecutor.isInitialized) {
-    logger(
-      'warn',
-      '[handleScriptAction] Lua executor not ready, delaying...',
-    );
+    logger('warn', '[handleScriptAction] Lua executor not ready, delaying...');
     await delay(config.controlHandoverGraceMs);
     return;
   }

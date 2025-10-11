@@ -44,11 +44,18 @@ function computeRegionChecksum(buffer, screenWidth, region) {
       const g = buffer[idx + 1] || 0;
       const r = buffer[idx + 2] || 0;
       // Mix in position to reduce collisions when regions slide
-      sum = (sum + r + (g << 1) + (b << 2) + ((x & 0xFF) << 3) + ((y & 0xFF) << 4)) >>> 0;
+      sum =
+        (sum +
+          r +
+          (g << 1) +
+          (b << 2) +
+          ((x & 0xff) << 3) +
+          ((y & 0xff) << 4)) >>>
+        0;
     }
   }
   // Mix in region dimensions
-  sum = (sum + ((region.width & 0xFFFF) << 8) + (region.height & 0xFFFF)) >>> 0;
+  sum = (sum + ((region.width & 0xffff) << 8) + (region.height & 0xffff)) >>> 0;
   return sum >>> 0;
 }
 
@@ -131,7 +138,11 @@ async function performOperation() {
       }
       return;
     }
-    if (regionsStale && typeof version === 'number' && version !== lastRequestedRegionsVersion) {
+    if (
+      regionsStale &&
+      typeof version === 'number' &&
+      version !== lastRequestedRegionsVersion
+    ) {
       parentPort.postMessage({ type: 'request_regions_snapshot' });
       lastRequestedRegionsVersion = version;
     }
@@ -180,7 +191,8 @@ async function performOperation() {
         const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
         const lastCk = lastRegionChecksums.get(regionKey);
         const lastTs = lastRegionProcessTimes.get(regionKey) || 0;
-        const withinFallback = now - lastTs < (regionConfig.throttleMs || CHECKSUM_FALLBACK_MS);
+        const withinFallback =
+          now - lastTs < (regionConfig.throttleMs || CHECKSUM_FALLBACK_MS);
         const unchanged = lastCk !== undefined && ck === lastCk;
 
         if (!needsOneTimeInit && unchanged && withinFallback) {
@@ -204,13 +216,21 @@ async function performOperation() {
     if (immediateGenericRegions.size > 0) {
       processingTasks.push(
         (async () => {
-          await processOcrRegions(sharedBufferView, regions, immediateGenericRegions);
+          await processOcrRegions(
+            sharedBufferView,
+            regions,
+            immediateGenericRegions,
+          );
           // Update checksums and last processed times for the regions we just OCR'd
           const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
           for (const regionKey of immediateGenericRegions) {
             const region = regions[regionKey];
             if (!region) continue;
-            const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
+            const ck = computeRegionChecksum(
+              sharedBufferView,
+              screenWidth,
+              region,
+            );
             lastRegionChecksums.set(regionKey, ck);
             lastRegionProcessTimes.set(regionKey, now);
           }
@@ -251,7 +271,8 @@ function handleMessage(message) {
         const rc = payload.regionCoordinates;
         if (typeof rc.version === 'number' && !rc.regions) {
           // version-only diff: mark stale, keep cached regions
-          if (!currentState.regionCoordinates) currentState.regionCoordinates = {};
+          if (!currentState.regionCoordinates)
+            currentState.regionCoordinates = {};
           if (currentState.regionCoordinates.version !== rc.version) {
             currentState.regionCoordinates.version = rc.version;
             regionsStale = true;

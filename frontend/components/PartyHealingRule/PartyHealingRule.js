@@ -4,7 +4,11 @@ import keyboardKeys from '../../constants/keyboardKeys.js';
 import actionBarItemsData from '../../../electron/constants/actionBarItems.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import { removeRule, updateCondition, updateRule } from '../../redux/slices/ruleSlice.js';
+import {
+  removeRule,
+  updateCondition,
+  updateRule,
+} from '../../redux/slices/ruleSlice.js';
 
 import ConfirmDialog from '../ConfirmDialog/ConfirmDialog.jsx';
 import CustomIconSelect from '../CustomIconSelect/CustomIconSelect.js';
@@ -21,11 +25,16 @@ const PartyHealingRule = ({ rule, className }) => {
   // Use the rule prop directly instead of re-selecting from Redux (optimization)
   const current_rule = rule;
 
-  const handle_status_condition_change = useCallback((status, value) => {
-    if (current_rule) {
-      dispatch(updateCondition({ id: current_rule.id, condition: status, value }));
-    }
-  }, [dispatch, current_rule]);
+  const handle_status_condition_change = useCallback(
+    (status, value) => {
+      if (current_rule) {
+        dispatch(
+          updateCondition({ id: current_rule.id, condition: status, value }),
+        );
+      }
+    },
+    [dispatch, current_rule],
+  );
 
   const handle_remove_rule = () => {
     set_show_confirm(true);
@@ -57,7 +66,11 @@ const PartyHealingRule = ({ rule, className }) => {
         value = event.target.value;
       }
 
-      if (['partyPosition', 'friendHpTriggerPercentage', 'priority'].includes(field)) {
+      if (
+        ['partyPosition', 'friendHpTriggerPercentage', 'priority'].includes(
+          field,
+        )
+      ) {
         value = Number(value);
       }
       if (current_rule?.id) {
@@ -84,7 +97,6 @@ const PartyHealingRule = ({ rule, className }) => {
     return options;
   }, []);
 
-
   const grouped_icon_options = useMemo(() => {
     const allowed_item_keys = [
       'ultimateHealingRune',
@@ -92,11 +104,11 @@ const PartyHealingRule = ({ rule, className }) => {
       'healFriendSpell',
       'exuraSio',
       'exuraGranSio',
-      'exuraGranMasRes'
+      'exuraGranMasRes',
     ];
     const party_heal_options = [];
 
-    allowed_item_keys.forEach(key => {
+    allowed_item_keys.forEach((key) => {
       if (actionBarItemsData[key]) {
         party_heal_options.push({
           value: key,
@@ -119,11 +131,12 @@ const PartyHealingRule = ({ rule, className }) => {
   const rule_action_item = current_rule.actionItem || 'ultimateHealingRune';
   const rule_key = current_rule.key || 'F1';
   const rule_party_position = current_rule.partyPosition ?? 0;
-  const rule_friend_hp_trigger_condition = current_rule.friendHpTriggerCondition || '<=';
-  const rule_friend_hp_trigger_percentage = current_rule.friendHpTriggerPercentage ?? 50;
+  const rule_friend_hp_trigger_condition =
+    current_rule.friendHpTriggerCondition || '<=';
+  const rule_friend_hp_trigger_percentage =
+    current_rule.friendHpTriggerPercentage ?? 50;
   const rule_priority = current_rule.priority ?? 0;
   const rule_require_attack_cooldown = !!current_rule.requireAttackCooldown;
-
 
   return (
     <>
@@ -135,8 +148,11 @@ const PartyHealingRule = ({ rule, className }) => {
           onCancel={handle_cancel}
         />
       )}
-      <PartyHealingRuleWrapper className={className} $running={current_rule.enabled}>
-        <div className='row1'>
+      <PartyHealingRuleWrapper
+        className={className}
+        $running={current_rule.enabled}
+      >
+        <div className="row1">
           <CustomSwitch
             className="rule-input-enable-checkbox__custom-checkbox"
             checked={current_rule.enabled}
@@ -148,7 +164,13 @@ const PartyHealingRule = ({ rule, className }) => {
             options={grouped_icon_options}
             allItemsData={actionBarItemsData}
             onChange={(selectedOptionValue) => {
-              dispatch(updateRule({ id: current_rule.id, field: 'actionItem', value: selectedOptionValue }))
+              dispatch(
+                updateRule({
+                  id: current_rule.id,
+                  field: 'actionItem',
+                  value: selectedOptionValue,
+                }),
+              );
             }}
           />
           <CustomSelect
@@ -175,7 +197,12 @@ const PartyHealingRule = ({ rule, className }) => {
             title="Wait for Attack Cooldown before executing"
           />
 
-          <button type="button" className="button-expand" onClick={handle_toggle_expand} $is_expanded={is_expanded}>
+          <button
+            type="button"
+            className="button-expand"
+            onClick={handle_toggle_expand}
+            $is_expanded={is_expanded}
+          >
             {is_expanded ? '▲' : '▼'}
           </button>
 
@@ -187,13 +214,12 @@ const PartyHealingRule = ({ rule, className }) => {
           >
             ×
           </button>
-
         </div>
         {is_expanded && (
-          <div className='row2'>
-            <div className='input-group'>
-              <label className='label-text'>Friend HP Trigger</label>
-              <div className='input-row'>
+          <div className="row2">
+            <div className="input-group">
+              <label className="label-text">Friend HP Trigger</label>
+              <div className="input-row">
                 <CustomSelect
                   id="friendHpTriggerCondition"
                   value={rule_friend_hp_trigger_condition}
@@ -215,8 +241,8 @@ const PartyHealingRule = ({ rule, className }) => {
               </div>
             </div>
 
-            <div className='input-group'>
-              <label className='label-text' >Priority</label>
+            <div className="input-group">
+              <label className="label-text">Priority</label>
               <input
                 type="number"
                 min="-999"
@@ -232,13 +258,11 @@ const PartyHealingRule = ({ rule, className }) => {
             <CharacterStatusConditions
               ruleId={rule.id}
               onStatusConditionChange={handle_status_condition_change}
-              className='conditions'
+              className="conditions"
             />
           </div>
         )}
-
-
-      </PartyHealingRuleWrapper >
+      </PartyHealingRuleWrapper>
     </>
   );
 };

@@ -3,7 +3,7 @@ import { Heart, Zap } from 'react-feather';
 import StatBar from '../StatBar/StatBar.jsx';
 import { StyledDiv } from './StatBars.styled.js';
 
-export function StatBars(props) {
+export const StatBars = (props) => {
   return (
     <StyledDiv tooltip="Current healt and mana levels, if showing ?? please select/refresh tibia window with ctrl+w while tibia is focused">
       <div className="health-bar">
@@ -17,4 +17,4 @@ export function StatBars(props) {
       </div>
     </StyledDiv>
   );
-}
+};

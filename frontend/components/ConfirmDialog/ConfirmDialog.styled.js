@@ -13,7 +13,8 @@ export const StyledDiv = styled.div`
   backdrop-filter: blur(8px); /* Subtle blur */
   background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent overlay */
 
-  > div { /* Main dialog container */
+  > div {
+    /* Main dialog container */
     position: relative;
     width: 400px; /* Adjusted width */
     height: auto; /* Auto height based on content */
@@ -26,7 +27,6 @@ export const StyledDiv = styled.div`
     display: flex;
     flex-direction: column;
     gap: 20px; /* Space between title and content */
-
 
     > .title-text {
       position: static; /* Removed absolute positioning */
@@ -45,7 +45,8 @@ export const StyledDiv = styled.div`
       letter-spacing: 0;
     }
 
-    > div { /* Content wrapper */
+    > div {
+      /* Content wrapper */
       width: 100%;
       height: auto; /* Auto height */
       background: transparent;
@@ -56,43 +57,44 @@ export const StyledDiv = styled.div`
       gap: 15px; /* Space between content sections */
 
       > .inner-border-wrapper {
-         /* Remove this wrapper or repurpose if needed. Keeping minimal changes for now. */
-         /* If removed, adjust padding/margins on content-wrapper directly */
-         background: transparent;
-         padding: 0; /* Remove padding */
-         border: none; /* Remove borders */
-         width: 100%;
-         height: auto;
-         > .content-wrapper {
-           display: flex;
-           flex-direction: column;
-           gap: 15px; /* Space between top and bottom content */
+        /* Remove this wrapper or repurpose if needed. Keeping minimal changes for now. */
+        /* If removed, adjust padding/margins on content-wrapper directly */
+        background: transparent;
+        padding: 0; /* Remove padding */
+        border: none; /* Remove borders */
+        width: 100%;
+        height: auto;
+        > .content-wrapper {
+          display: flex;
+          flex-direction: column;
+          gap: 15px; /* Space between top and bottom content */
 
-           > .top-content {
-             height: auto; /* Auto height */
-             border-bottom: none; /* Remove border */
-             > p {
-               font-size: 14px; /* Increased font size */
-               color: #cccccc; /* Lighter color */
-               text-align: center; /* Center text */
-               margin: 0; /* Remove default margin */
-             }
-           }
-           > .bot-content {
-             display: flex;
-             width: 100%;
-             border-top: none; /* Remove border */
-             justify-content: center; /* Center buttons */
-             > div { /* Button container */
-               padding-top: 0; /* Remove padding */
-               display: flex;
-               flex-direction: row;
-               gap: 10px; /* Increased gap */
-               height: auto; /* Auto height */
-               margin: 0 auto; /* Center the button container */
-             }
-           }
-         }
+          > .top-content {
+            height: auto; /* Auto height */
+            border-bottom: none; /* Remove border */
+            > p {
+              font-size: 14px; /* Increased font size */
+              color: #cccccc; /* Lighter color */
+              text-align: center; /* Center text */
+              margin: 0; /* Remove default margin */
+            }
+          }
+          > .bot-content {
+            display: flex;
+            width: 100%;
+            border-top: none; /* Remove border */
+            justify-content: center; /* Center buttons */
+            > div {
+              /* Button container */
+              padding-top: 0; /* Remove padding */
+              display: flex;
+              flex-direction: row;
+              gap: 10px; /* Increased gap */
+              height: auto; /* Auto height */
+              margin: 0 auto; /* Center the button container */
+            }
+          }
+        }
       }
     }
   }
@@ -114,7 +116,6 @@ export const StyledDiv = styled.div`
     align-items: center;
     min-width: 80px; /* Adjusted min-width */
     text-align: center;
-
 
     &:hover {
       background: rgba(255, 255, 255, 0.2); /* Lighter on hover */

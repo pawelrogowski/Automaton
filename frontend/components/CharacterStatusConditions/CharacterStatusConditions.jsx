@@ -1,6 +1,9 @@
 import React from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { removeCondition, updateCondition } from '../../redux/slices/ruleSlice.js';
+import {
+  removeCondition,
+  updateCondition,
+} from '../../redux/slices/ruleSlice.js';
 import {
   StyledList,
   StyledListItem,
@@ -46,11 +49,14 @@ const characterStatusImages = {
   rooted,
 };
 
-const CharacterStatusConditions = ({ ruleId, onStatusConditionChange, className }) => {
+const CharacterStatusConditions = ({
+  ruleId,
+  onStatusConditionChange,
+  className,
+}) => {
   const dispatch = useDispatch();
   const statusConditions = useSelector(
-    (state) =>
-      state.rules.rules.find((r) => r.id === ruleId)?.conditions || [],
+    (state) => state.rules.rules.find((r) => r.id === ruleId)?.conditions || [],
   );
 
   const handleClick = (status) => {
@@ -69,7 +75,9 @@ const CharacterStatusConditions = ({ ruleId, onStatusConditionChange, className 
       newValue = true;
     }
 
-    dispatch(updateCondition({ id: ruleId, condition: status, value: newValue }));
+    dispatch(
+      updateCondition({ id: ruleId, condition: status, value: newValue }),
+    );
 
     onStatusConditionChange(status, newValue);
   };
@@ -80,9 +88,16 @@ const CharacterStatusConditions = ({ ruleId, onStatusConditionChange, className 
         const condition = statusConditions.find((c) => c.name === status);
         const checked = condition ? condition.value : null;
         return (
-          <StyledListItem key={status} checked={checked} onMouseDown={() => handleClick(status)}>
+          <StyledListItem
+            key={status}
+            checked={checked}
+            onMouseDown={() => handleClick(status)}
+          >
             <StyledImageContainer>
-              <StyledCheckboxImage src={characterStatusImages[status]} alt={status} />
+              <StyledCheckboxImage
+                src={characterStatusImages[status]}
+                alt={status}
+              />
             </StyledImageContainer>
           </StyledListItem>
         );

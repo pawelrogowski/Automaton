@@ -26,7 +26,7 @@ export const TibiaCheckbox = styled.div`
     height: 100%;
     background: transparent;
     border-radius: 10px;
-    border: 1px solid rgba( 255, 255, 255, 0.18 );
+    border: 1px solid rgba(255, 255, 255, 0.18);
     cursor: pointer;
     position: relative;
     background-size: auto;
@@ -35,7 +35,6 @@ export const TibiaCheckbox = styled.div`
   }
 
   .custom-checkbox:checked + .custom-checkbox-label {
-
     ${({ checkedIconSrc }) =>
       checkedIconSrc &&
       `

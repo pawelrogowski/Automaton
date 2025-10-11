@@ -9,7 +9,7 @@ const StyledDiv = styled.div`
     outline: 2px solid rgba(255, 255, 255, 0.6) !important;
   }
   * {
-  border-top: none !important;
+    border-top: none !important;
   }
   summary {
     cursor: pointer;
@@ -188,42 +188,44 @@ const StyledDiv = styled.div`
 
   /* Health % Inputs: Total width should match default .header-item_5 (94px) */
   .input-percent-select {
-     /* Example: 46px (original?) */
-     width: 46px;
-     /* ... existing styles: border-right: none, etc. */
-     border-top-right-radius: 0;
-     border-bottom-right-radius: 0;
-     border-right: none;
-     text-align: center;
-     padding: 0 2px;
+    /* Example: 46px (original?) */
+    width: 46px;
+    /* ... existing styles: border-right: none, etc. */
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+    text-align: center;
+    padding: 0 2px;
   }
   .input-percent {
-     /* Example: 48px (original?) */
-     width: 48px; /* 46 + 48 = 94px */
-     /* ... existing styles: border-left: none, etc. */
-     border-top-left-radius: 0;
-     border-bottom-left-radius: 0;
-     border-left: none;
-     text-align: center;
-     padding: 0 2px;
+    /* Example: 48px (original?) */
+    width: 48px; /* 46 + 48 = 94px */
+    /* ... existing styles: border-left: none, etc. */
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: none;
+    text-align: center;
+    padding: 0 2px;
   }
 
   /* Mana % / Monster# Inputs: Total width should match default .header-item_6 (94px) */
-  .input-mana-percent-select { /* Use specific class if needed, or reuse .input-percent-select */
-      width: 23px; /* Example: Split 94px / 4 elements = ~23.5px */
-      border-top-right-radius: 0;
-      border-bottom-right-radius: 0;
-      border-right: none;
-      text-align: center;
-      padding: 0 1px;
+  .input-mana-percent-select {
+    /* Use specific class if needed, or reuse .input-percent-select */
+    width: 23px; /* Example: Split 94px / 4 elements = ~23.5px */
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+    text-align: center;
+    padding: 0 1px;
   }
-   .input-mana-percent { /* Use specific class if needed, or reuse .input-percent */
-      width: 24px;
-      border-top-left-radius: 0;
-      border-bottom-left-radius: 0;
-      border-left: none;
-       text-align: center;
-       padding: 0 1px;
+  .input-mana-percent {
+    /* Use specific class if needed, or reuse .input-percent */
+    width: 24px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: none;
+    text-align: center;
+    padding: 0 1px;
   }
 
   .
@@ -235,12 +237,13 @@ const StyledDiv = styled.div`
   }
   .input-delay {
     width: 85px; /* Matches default .header-item_8 */
-     /* appearance: none; -webkit-appearance: none; -moz-appearance: none; */ /* Remove if not needed */
+    /* appearance: none; -webkit-appearance: none; -moz-appearance: none; */ /* Remove if not needed */
   }
 
   /* Ensure buttons are pushed right */
-  .input-delay { /* Target the last input before buttons */
-      /* margin-left: auto; */ /* This might be needed if placeholder isn't used/working */
+  .input-delay {
+    /* Target the last input before buttons */
+    /* margin-left: auto; */ /* This might be needed if placeholder isn't used/working */
   }
 
   .rule-button {
@@ -255,8 +258,6 @@ const StyledDiv = styled.div`
     // ... existing styles ...
     margin-left: auto; /* Push buttons right for default view */
   }
-
-
 `;
 
 export default StyledDiv;

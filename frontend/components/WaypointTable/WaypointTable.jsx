@@ -283,7 +283,7 @@ const LuaScriptCell = React.memo(
   ({ value, row: { original }, onEditAction }) => {
     const isScriptType = original.type === 'Script';
     const isEditable = isScriptType;
-    
+
     return (
       <div
         onDoubleClick={() => isEditable && onEditAction(original)}
@@ -293,7 +293,11 @@ const LuaScriptCell = React.memo(
           cursor: isEditable ? 'pointer' : 'default',
           opacity: isEditable ? 1 : 0.5,
         }}
-        title={isEditable ? 'Double-click to edit script' : 'Only available for Script type waypoints'}
+        title={
+          isEditable
+            ? 'Double-click to edit script'
+            : 'Only available for Script type waypoints'
+        }
       >
         {value && isScriptType ? (
           <pre
@@ -308,7 +312,9 @@ const LuaScriptCell = React.memo(
             {value}
           </pre>
         ) : isScriptType ? (
-          <span style={{ color: '#888', fontStyle: 'italic' }}>Double-click to add script...</span>
+          <span style={{ color: '#888', fontStyle: 'italic' }}>
+            Double-click to add script...
+          </span>
         ) : (
           <span style={{ color: '#666', fontStyle: 'italic' }}>N/A</span>
         )}

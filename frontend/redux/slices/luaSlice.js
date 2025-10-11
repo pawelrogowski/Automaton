@@ -144,7 +144,7 @@ const luaSlice = createSlice({
       const { id, updates } = action.payload;
 
       if (updates.name) {
-        const nameExists = 
+        const nameExists =
           state.persistentScripts.some(
             (script) => script.name === updates.name && script.id !== id,
           ) ||
@@ -270,7 +270,9 @@ const luaSlice = createSlice({
         if (!Array.isArray(script.log)) script.log = [];
         script.log.push(`[Status] Script ${status} by API call`);
       } else {
-        console.warn(`[luaSlice] setScriptEnabledByName: Script with name "${name}" not found.`);
+        console.warn(
+          `[luaSlice] setScriptEnabledByName: Script with name "${name}" not found.`,
+        );
       }
       // Don't increment version here - the enabled state change itself is enough
       // state.version = (state.version || 0) + 1;

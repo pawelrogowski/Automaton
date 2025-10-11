@@ -42,25 +42,25 @@ const targetingSlice = createSlice({
     setStickiness: (state, action) => {
       const value = parseInt(action.payload, 10);
       if (!isNaN(value)) {
-      state.stickiness = Math.max(0, Math.min(10, value));
-    }
-  },
-  setEntities: (state, action) => {
-    const { creatures, duration } = action.payload;
-    // Ensure every creature object has the isReachable flag.
-    // This makes the state shape consistent and prevents errors if the
-    // creatureMonitor ever fails to provide the flag.
-    state.creatures = (creatures || []).map((creature) => ({
-      ...creature,
-      isReachable: creature.isReachable || false,
-    }));
-    if (duration) {
-      state.creatureUpdateMs = duration;
-    }
-    state.version = (state.version || 0) + 1;
-  },
-  // --- START: MODIFICATION ---
-  setTarget: (state, action) => {
+        state.stickiness = Math.max(0, Math.min(10, value));
+      }
+    },
+    setEntities: (state, action) => {
+      const { creatures, duration } = action.payload;
+      // Ensure every creature object has the isReachable flag.
+      // This makes the state shape consistent and prevents errors if the
+      // creatureMonitor ever fails to provide the flag.
+      state.creatures = (creatures || []).map((creature) => ({
+        ...creature,
+        isReachable: creature.isReachable || false,
+      }));
+      if (duration) {
+        state.creatureUpdateMs = duration;
+      }
+      state.version = (state.version || 0) + 1;
+    },
+    // --- START: MODIFICATION ---
+    setTarget: (state, action) => {
       const newTarget = action.payload;
       if (newTarget) {
         // When a target is set, create a new object that includes all of its original

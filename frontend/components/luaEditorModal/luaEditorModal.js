@@ -37,7 +37,9 @@ const ModalContent = styled.div`
 
 const ModalHeader = styled.div`
   padding: 12px 16px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    sans-serif;
   font-size: 16px;
   font-weight: 600;
   border-bottom: 1px solid rgb(53, 53, 53);
@@ -60,7 +62,9 @@ const ModalFooter = styled.div`
   gap: 12px;
 
   button {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', sans-serif;
     font-size: 13px;
     background-color: rgba(255, 255, 255, 0.05);
     color: #fafafa;
@@ -96,7 +100,9 @@ const ModalFooter = styled.div`
 `;
 
 const HeaderButton = styled.button`
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    sans-serif;
   font-size: 13px;
   background-color: rgba(255, 255, 255, 0.05);
   color: #fafafa;
@@ -183,7 +189,10 @@ const LuaEditorModal = ({ isOpen, initialValue, onClose, onSave }) => {
         <ModalHeader>
           <span>Edit Waypoint Script (Lua)</span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <HeaderButton onClick={handleImport} title="Import script from file">
+            <HeaderButton
+              onClick={handleImport}
+              title="Import script from file"
+            >
               <Upload size={14} /> Import
             </HeaderButton>
             <HeaderButton onClick={handleExport} title="Export script to file">

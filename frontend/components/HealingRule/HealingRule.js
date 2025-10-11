@@ -4,7 +4,11 @@ import { useSelector, useDispatch } from 'react-redux';
 import keyboardKeys from '../../constants/keyboardKeys.js';
 import CharacterStatusConditions from '../CharacterStatusConditions/CharacterStatusConditions.jsx';
 
-import { removeRule, updateCondition, updateRule } from '../../redux/slices/ruleSlice.js';
+import {
+  removeRule,
+  updateCondition,
+  updateRule,
+} from '../../redux/slices/ruleSlice.js';
 import StyledDiv from './HealingRule.styled.js';
 import CustomCheckbox from '../CustomCheckbox/CustomCheckbox.js';
 import ListInput from '../ListInput/ListInput.js';
@@ -46,7 +50,10 @@ const HealingRule = ({ rule, className }) => {
 
   const handleFieldChange = useCallback(
     (field) => (event) => {
-      const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+      const value =
+        event.target.type === 'checkbox'
+          ? event.target.checked
+          : event.target.value;
       dispatch(updateRule({ id: currentRule.id, field, value }));
     },
     [dispatch, currentRule.id],

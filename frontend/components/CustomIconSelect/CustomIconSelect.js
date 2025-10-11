@@ -7,7 +7,7 @@ import {
   OptionItem,
   CategoryHeader,
   SearchInputWrapper,
-  SearchInput
+  SearchInput,
 } from './CustomIconSelect.styled.js';
 
 import fallbackIconImport from '../../assets/actionBarItems/Tile_Highlight_Effect.gif'; // Assuming this is the fallback icon
@@ -488,10 +488,10 @@ const iconMap = {
   Intense_Wound_Cleansing: Intense_Wound_CleansingIcon,
   Invisible: InvisibleIcon,
   'Kooldown-Aid': KooldownAidIcon,
-  'Koshei\'s_Ancient_Amulet': Kosheis_Ancient_AmuletIcon,
+  "Koshei's_Ancient_Amulet": Kosheis_Ancient_AmuletIcon,
   Lesser_Ethereal_Spear: Lesser_Ethereal_SpearIcon,
   Lesser_Front_Sweep: Lesser_Front_SweepIcon,
-  'Leviathan\'s_Amulet': Leviathans_AmuletIcon,
+  "Leviathan's_Amulet": Leviathans_AmuletIcon,
   Levitate: LevitateIcon,
   Life_Ring: Life_RingIcon,
   Light: LightIcon,
@@ -623,10 +623,11 @@ const iconMap = {
 // Helper function now uses the map defined above
 const getIconSrc = (itemValue, allItemsData, fallbackIconVar) => {
   const itemData = allItemsData?.[itemValue];
-  const iconVariable = itemData?.iconName ? iconMap[itemData.iconName] : fallbackIconVar;
+  const iconVariable = itemData?.iconName
+    ? iconMap[itemData.iconName]
+    : fallbackIconVar;
   return iconVariable || fallbackIconVar; // Ensure fallback if lookup returns undefined
 };
-
 
 const CustomIconSelect = ({
   id = 'custom-select',
@@ -691,13 +692,16 @@ const CustomIconSelect = ({
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
 
     // Use Object.values safely
-    Object.values(options).forEach(items => {
+    Object.values(options).forEach((items) => {
       // Ensure items is an array
       if (Array.isArray(items)) {
-        items.forEach(item => {
+        items.forEach((item) => {
           // Ensure item and item.label are valid before accessing
           const label = typeof item?.label === 'string' ? item.label : '';
-          if (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm)) {
+          if (
+            !searchTerm ||
+            label.toLowerCase().includes(lowerCaseSearchTerm)
+          ) {
             // Only push valid items
             if (item && typeof item.value !== 'undefined') {
               flatList.push({ ...item, label }); // Ensure label is the potentially corrected one
@@ -716,11 +720,15 @@ const CustomIconSelect = ({
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
     const filtered = {};
     Object.entries(options).forEach(([category, items]) => {
-      if (Array.isArray(items)) { // Check if items is an array
-        const matchingItems = items.filter(item => {
+      if (Array.isArray(items)) {
+        // Check if items is an array
+        const matchingItems = items.filter((item) => {
           const label = typeof item?.label === 'string' ? item.label : '';
           // Ensure item is valid before checking label
-          return item && (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm));
+          return (
+            item &&
+            (!searchTerm || label.toLowerCase().includes(lowerCaseSearchTerm))
+          );
         });
         if (matchingItems.length > 0) {
           filtered[category] = matchingItems;
@@ -731,11 +739,15 @@ const CustomIconSelect = ({
   };
 
   const renderedOptions = getRenderedOptions();
-  const noResults = Object.keys(renderedOptions).length === 0 && searchTerm !== '';
+  const noResults =
+    Object.keys(renderedOptions).length === 0 && searchTerm !== '';
   // --- End Filtering ---
 
   const handleOptionClick = (optionValue) => {
-    console.log('[CustomIconSelect] handleOptionClick called with:', optionValue);
+    console.log(
+      '[CustomIconSelect] handleOptionClick called with:',
+      optionValue,
+    );
     onChange(optionValue);
     setIsOpen(false);
     setSearchTerm('');
@@ -744,7 +756,8 @@ const CustomIconSelect = ({
   const toggleDropdown = () => {
     const nextIsOpen = !isOpen;
     setIsOpen(nextIsOpen);
-    if (!nextIsOpen) { // If closing
+    if (!nextIsOpen) {
+      // If closing
       setSearchTerm('');
       setActiveIndex(-1);
     }
@@ -761,11 +774,17 @@ const CustomIconSelect = ({
     // let the browser handle it normally (typing a space).
     if (event.target === searchInputRef.current && event.key === ' ') {
       // Do nothing here, allowing the default action.
-    } else if (isOpen) { // Process other keys only if the dropdown is open
+    } else if (isOpen) {
+      // Process other keys only if the dropdown is open
       // Use the safe flattenedOptions length
       const count = flattenedOptions.length;
       // Prevent errors if count is 0
-      if (count === 0 && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter')) {
+      if (
+        count === 0 &&
+        (event.key === 'ArrowDown' ||
+          event.key === 'ArrowUp' ||
+          event.key === 'Enter')
+      ) {
         event.preventDefault();
         return;
       }
@@ -784,7 +803,11 @@ const CustomIconSelect = ({
         case 'Enter':
           event.preventDefault();
           // Ensure activeIndex is valid and flattenedOptions[activeIndex] exists
-          if (activeIndex >= 0 && activeIndex < count && flattenedOptions[activeIndex]) {
+          if (
+            activeIndex >= 0 &&
+            activeIndex < count &&
+            flattenedOptions[activeIndex]
+          ) {
             handleOptionClick(flattenedOptions[activeIndex].value);
           } else if (activeIndex === -1 && count > 0 && flattenedOptions[0]) {
             // Ensure first option exists
@@ -833,7 +856,9 @@ const CustomIconSelect = ({
         aria-expanded={isOpen}
         id={id ? `${id}-trigger` : undefined}
       >
-        {selectedIconSrc && <img src={selectedIconSrc} alt="" className="trigger-icon" />}
+        {selectedIconSrc && (
+          <img src={selectedIconSrc} alt="" className="trigger-icon" />
+        )}
         <span className="trigger-label">{selectedItemName}</span>
       </SelectTrigger>
 
@@ -853,50 +878,76 @@ const CustomIconSelect = ({
               value={searchTerm}
               onChange={handleSearchChange}
               onClick={(e) => e.stopPropagation()}
-              aria-activedescendant={activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
+              aria-activedescendant={
+                activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined
+              }
             />
           </SearchInputWrapper>
 
           {noResults ? (
-            <OptionItem as="div" className="no-results">No results found</OptionItem>
+            <OptionItem as="div" className="no-results">
+              No results found
+            </OptionItem>
           ) : (
             (() => {
               let flatIndex = -1;
               // Ensure renderedOptions is an object before trying to map
-              return typeof renderedOptions === 'object' && renderedOptions !== null ? Object.entries(renderedOptions).map(([category, items]) => (
-                <React.Fragment key={category}>
-                  <CategoryHeader as="div">{category.charAt(0).toUpperCase() + category.slice(1)}</CategoryHeader>
-                  {/* Ensure items is an array */}
-                  {Array.isArray(items) ? items.map((item) => {
-                    // Ensure item is valid before trying to render
-                    if (!item || typeof item.value === 'undefined') return null;
+              return typeof renderedOptions === 'object' &&
+                renderedOptions !== null
+                ? Object.entries(renderedOptions).map(([category, items]) => (
+                    <React.Fragment key={category}>
+                      <CategoryHeader as="div">
+                        {category.charAt(0).toUpperCase() + category.slice(1)}
+                      </CategoryHeader>
+                      {/* Ensure items is an array */}
+                      {Array.isArray(items)
+                        ? items.map((item) => {
+                            // Ensure item is valid before trying to render
+                            if (!item || typeof item.value === 'undefined')
+                              return null;
 
-                    flatIndex = flattenedOptions.findIndex(flatItem => flatItem?.value === item.value);
-                    // Ensure flatIndex is found
-                    if (flatIndex === -1) return null;
+                            flatIndex = flattenedOptions.findIndex(
+                              (flatItem) => flatItem?.value === item.value,
+                            );
+                            // Ensure flatIndex is found
+                            if (flatIndex === -1) return null;
 
-                    const isActive = flatIndex === activeIndex;
-                    const itemIconSrc = getIconSrc(item.value, allItemsData, fallbackIconImport); // Use helper
+                            const isActive = flatIndex === activeIndex;
+                            const itemIconSrc = getIconSrc(
+                              item.value,
+                              allItemsData,
+                              fallbackIconImport,
+                            ); // Use helper
 
-                    return (
-                      <OptionItem
-                        key={item.value}
-                        ref={(el) => isActive && assignActiveRef(el, flatIndex)}
-                        className={isActive ? 'active' : ''}
-                        onClick={() => handleOptionClick(item.value)}
-                        role="option"
-                        aria-selected={item.value === value} // Mark current selection
-                        id={`${id}-option-${flatIndex}`} // Use safe id
-                      >
-                        {/* Use itemIconSrc */}
-                        {itemIconSrc && <img src={itemIconSrc} alt="" />}
-                        {/* Ensure label is a string */}
-                        <span>{typeof item.label === 'string' ? item.label : ''}</span>
-                      </OptionItem>
-                    );
-                  }) : null}
-                </React.Fragment>
-              )) : null; // Return null if renderedOptions is not an object
+                            return (
+                              <OptionItem
+                                key={item.value}
+                                ref={(el) =>
+                                  isActive && assignActiveRef(el, flatIndex)
+                                }
+                                className={isActive ? 'active' : ''}
+                                onClick={() => handleOptionClick(item.value)}
+                                role="option"
+                                aria-selected={item.value === value} // Mark current selection
+                                id={`${id}-option-${flatIndex}`} // Use safe id
+                              >
+                                {/* Use itemIconSrc */}
+                                {itemIconSrc && (
+                                  <img src={itemIconSrc} alt="" />
+                                )}
+                                {/* Ensure label is a string */}
+                                <span>
+                                  {typeof item.label === 'string'
+                                    ? item.label
+                                    : ''}
+                                </span>
+                              </OptionItem>
+                            );
+                          })
+                        : null}
+                    </React.Fragment>
+                  ))
+                : null; // Return null if renderedOptions is not an object
             })()
           )}
         </OptionsList>
@@ -918,8 +969,8 @@ CustomIconSelect.propTypes = {
       PropTypes.shape({
         value: PropTypes.string.isRequired,
         label: PropTypes.string,
-      })
-    )
+      }),
+    ),
   ),
   allItemsData: PropTypes.object.isRequired, // Receives data with iconName strings
   onChange: PropTypes.func.isRequired,

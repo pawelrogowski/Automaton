@@ -26,8 +26,8 @@ const ScriptEditor = ({ scriptData }) => {
 
   // Handle changes in the name input
   const handleNameChange = (event) => {
-      setScriptName(event.target.value);
-  }
+    setScriptName(event.target.value);
+  };
 
   // Function to save the script
   const handleSaveScript = () => {
@@ -38,34 +38,41 @@ const ScriptEditor = ({ scriptData }) => {
       updates: {
         code: scriptCode,
         name: scriptName, // Also send name updates
-      }
+      },
     });
-      // Optional: Provide user feedback (e.g., a saved message)
+    // Optional: Provide user feedback (e.g., a saved message)
   };
 
   return (
-    <div className="script-editor-container"> {/* Add a class for styling */}
+    <div className="script-editor-container">
+      {' '}
+      {/* Add a class for styling */}
       <h2>
-          <input
-              type="text"
-              value={scriptName}
-              onChange={handleNameChange}
-              className="script-name-input" // Add a class for styling
-          />
+        <input
+          type="text"
+          value={scriptName}
+          onChange={handleNameChange}
+          className="script-name-input" // Add a class for styling
+        />
       </h2>
-      <div className="editor-area"> {/* Wrapper for editor */}
-          {/* Placeholder for code editor - using textarea for now */}
-          <textarea
-              value={scriptCode}
-              onChange={handleCodeChange}
-              rows="20" // Adjust size as needed
-              cols="80" // Adjust size as needed
-              className="script-code-editor" // Add a class for styling
-          ></textarea>
+      <div className="editor-area">
+        {' '}
+        {/* Wrapper for editor */}
+        {/* Placeholder for code editor - using textarea for now */}
+        <textarea
+          value={scriptCode}
+          onChange={handleCodeChange}
+          rows="20" // Adjust size as needed
+          cols="80" // Adjust size as needed
+          className="script-code-editor" // Add a class for styling
+        ></textarea>
       </div>
-      <button onClick={handleSaveScript} className="save-button">Save Script</button> {/* Add a class for styling */}
+      <button onClick={handleSaveScript} className="save-button">
+        Save Script
+      </button>{' '}
+      {/* Add a class for styling */}
       {/* Display other relevant script data as needed */}
-       <p>Script ID: {scriptData.id}</p>
+      <p>Script ID: {scriptData.id}</p>
     </div>
   );
 };

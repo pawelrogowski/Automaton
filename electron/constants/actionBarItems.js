@@ -1473,7 +1473,7 @@ const actionBarItems = {
       [56, 55, 54],
     ],
   },
-    exoriIco: {
+  exoriIco: {
     name: 'Exori Ico',
     iconName: 'BrutalStrike',
     categories: ['attack'],

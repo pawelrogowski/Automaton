@@ -18,7 +18,9 @@ import HighWrapper from '../HighWrapper/HighWrapper.js';
 const HealFriendControls = () => {
   const dispatch = useDispatch();
   const healFriendRule = useSelector((state) =>
-    state.rules.presets[state.rules.activePresetIndex].find((rule) => rule.id === 'healFriend'),
+    state.rules.presets[state.rules.activePresetIndex].find(
+      (rule) => rule.id === 'healFriend',
+    ),
   );
 
   const handleHealFriendToggle = () => {
@@ -58,15 +60,27 @@ const HealFriendControls = () => {
     <HealFriend>
       <HighWrapper className="heal-friend-wrapper" title="Heal Friend">
         <div className="heal-friend-header">
-          <CustomCheckbox checked={healFriendRule.enabled} onChange={handleHealFriendToggle} size={18} />
+          <CustomCheckbox
+            checked={healFriendRule.enabled}
+            onChange={handleHealFriendToggle}
+            size={18}
+          />
           <h5 className="">Enabled</h5>
         </div>
         <div className="heal-friend-header">
-          <CustomCheckbox checked={healFriendRule.useRune} onChange={handleUseRuneToggle} size={18} />
+          <CustomCheckbox
+            checked={healFriendRule.useRune}
+            onChange={handleUseRuneToggle}
+            size={18}
+          />
           <h5 className="">use UH</h5>
         </div>
         <div className="heal-friend-header">
-          <CustomCheckbox checked={healFriendRule.requireAttackCooldown} onChange={handleAttackCdToggle} size={18} />
+          <CustomCheckbox
+            checked={healFriendRule.requireAttackCooldown}
+            onChange={handleAttackCdToggle}
+            size={18}
+          />
           <h5 className="">AttackCD</h5>
         </div>
         <div className="">

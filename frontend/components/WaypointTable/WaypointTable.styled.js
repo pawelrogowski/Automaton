@@ -115,7 +115,9 @@ export const StyledWaypointTable = styled.div`
     border: 1px solid transparent; /* Start with a transparent border */
     border-radius: 0;
     outline: none;
-    transition: border-color 0.2s ease-in-out, background-color 0.2s ease-in-out;
+    transition:
+      border-color 0.2s ease-in-out,
+      background-color 0.2s ease-in-out;
 
     &:focus {
       background-color: rgb(45, 45, 45);

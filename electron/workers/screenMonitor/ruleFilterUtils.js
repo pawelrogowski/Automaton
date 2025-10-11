@@ -5,12 +5,14 @@ import { OPTIONS } from './constants.js';
 let lastRuleExecutionTimes = {};
 let lastCategoriesExecutionTimes = {};
 
-export const filterEnabledRules = (rules) => rules.filter((rule) => rule.enabled);
+export const filterEnabledRules = (rules) =>
+  rules.filter((rule) => rule.enabled);
 
 export const filterRulesNotOnDelay = (rules) =>
   rules.filter(
     (rule) =>
-      Date.now() - (lastRuleExecutionTimes[rule.id] || 0) >= (rule.delay || 0) &&
+      Date.now() - (lastRuleExecutionTimes[rule.id] || 0) >=
+        (rule.delay || 0) &&
       Date.now() -
         Math.max(
           ...rules
@@ -50,7 +52,10 @@ export const filterRulesByConditions = (rules, directGameState) =>
 
 export const getAllValidRules = (rules, directGameState) => {
   const enabledRules = filterEnabledRules(rules);
-  const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(enabledRules, directGameState);
+  const rulesWithoutActiveCooldowns = filterRulesByActiveCooldowns(
+    enabledRules,
+    directGameState,
+  );
   const rulesNotOnDelay = filterRulesNotOnDelay(rulesWithoutActiveCooldowns);
   return filterRulesByConditions(rulesNotOnDelay, directGameState).sort(
     (a, b) => b.priority - a.priority,

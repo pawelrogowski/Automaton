@@ -12,20 +12,20 @@ import {
 
 /**
  * Unified SAB State Manager
- * 
+ *
  * ARCHITECTURE:
  * - Polled reads: Workers explicitly read when needed in their main loops (~20 Hz)
  * - No callbacks/watchers: Keeps control flow explicit and debuggable
  * - Version checking: Prevents torn reads with optimistic concurrency control
  * - Manual caching: Workers cache reads in workerState for iteration consistency
- * 
+ *
  * USAGE:
  *   // Read once at iteration start
  *   const creatures = sabInterface.get('creatures').data;
- *   
+ *
  *   // Use throughout iteration
  *   if (creatures.length > 0) { ... }
- * 
+ *
  * For urgent inter-worker communication, use Control Channel instead.
  */
 export class SABState {
@@ -33,7 +33,7 @@ export class SABState {
     // Create or use existing SharedArrayBuffer
     this.sab = existingSAB || new SharedArrayBuffer(TOTAL_SAB_SIZE * 4); // *4 for bytes
     this.array = new Int32Array(this.sab);
-    
+
     // Initialize all properties with version = 0
     if (!existingSAB) {
       this._initializeVersions();
@@ -47,9 +47,9 @@ export class SABState {
   _initializeVersions() {
     for (const [name, info] of Object.entries(LAYOUT)) {
       if (name === 'totalSize') continue;
-      
+
       const { schema, offset } = info;
-      
+
       // Set version field to 0
       if (schema.type === 'struct' || schema.type === 'config') {
         // Version is last field
@@ -73,7 +73,7 @@ export class SABState {
    */
   getVersion(propertyName) {
     const { schema, offset } = getPropertyInfo(propertyName);
-    
+
     if (schema.type === 'struct' || schema.type === 'config') {
       const versionOffset = offset + schema.size - 1;
       return Atomics.load(this.array, versionOffset);
@@ -83,7 +83,7 @@ export class SABState {
       const versionOffset = offset + schema.headerSize - 1;
       return Atomics.load(this.array, versionOffset);
     }
-    
+
     return 0;
   }
 
@@ -94,12 +94,12 @@ export class SABState {
    */
   get(propertyName) {
     const { schema, offset } = getPropertyInfo(propertyName);
-    
+
     // Read version before data
     const versionBefore = this.getVersion(propertyName);
-    
+
     let data;
-    
+
     if (schema.type === 'struct' || schema.type === 'config') {
       data = this._readStruct(schema, offset);
     } else if (schema.type === 'array') {
@@ -110,16 +110,16 @@ export class SABState {
       // Control channel uses special read method
       return null; // Use controlChannel API instead
     }
-    
+
     // Read version after data
     const versionAfter = this.getVersion(propertyName);
-    
+
     // Check consistency
     if (versionBefore !== versionAfter) {
       // Data changed during read, retry
       return this.get(propertyName);
     }
-    
+
     return { data, version: versionAfter };
   }
 
@@ -130,7 +130,7 @@ export class SABState {
    */
   set(propertyName, value) {
     const { schema, offset } = getPropertyInfo(propertyName);
-    
+
     if (schema.type === 'struct' || schema.type === 'config') {
       this._writeStruct(schema, offset, value);
     } else if (schema.type === 'array') {
@@ -138,7 +138,7 @@ export class SABState {
     } else if (schema.type === 'path') {
       this._writePath(schema, offset, value);
     }
-    
+
     // Increment version atomically
     this._incrementVersion(propertyName);
   }
@@ -152,7 +152,7 @@ export class SABState {
     // Write all properties
     for (const [propertyName, value] of Object.entries(updates)) {
       const { schema, offset } = getPropertyInfo(propertyName);
-      
+
       if (schema.type === 'struct' || schema.type === 'config') {
         this._writeStruct(schema, offset, value);
       } else if (schema.type === 'array') {
@@ -161,12 +161,12 @@ export class SABState {
         this._writePath(schema, offset, value);
       }
     }
-    
+
     // Increment all versions atomically
     for (const propertyName of Object.keys(updates)) {
       this._incrementVersion(propertyName);
     }
-    
+
     return true;
   }
 
@@ -178,43 +178,45 @@ export class SABState {
   getMany(propertyNames) {
     const maxRetries = 5;
     let attempt = 0;
-    
+
     while (attempt < maxRetries) {
       const snapshot = {};
       const versionsBefore = {};
       const versionsAfter = {};
-      
+
       // Read all versions before
       for (const name of propertyNames) {
         versionsBefore[name] = this.getVersion(name);
       }
-      
+
       // Read all data
       for (const name of propertyNames) {
         const result = this.get(name);
         snapshot[name] = result;
       }
-      
+
       // Read all versions after
       for (const name of propertyNames) {
         versionsAfter[name] = this.getVersion(name);
       }
-      
+
       // Check if all versions are consistent
       const versionsMatch = propertyNames.every(
-        name => versionsBefore[name] === versionsAfter[name]
+        (name) => versionsBefore[name] === versionsAfter[name],
       );
-      
+
       if (versionsMatch) {
         return { ...snapshot, versionsMatch: true };
       }
-      
+
       attempt++;
     }
-    
+
     // Failed to get consistent snapshot after retries
-    console.warn(`[SABState] Failed to get consistent snapshot after ${maxRetries} attempts`);
-    
+    console.warn(
+      `[SABState] Failed to get consistent snapshot after ${maxRetries} attempts`,
+    );
+
     // Return latest read with versionsMatch = false
     const snapshot = {};
     for (const name of propertyNames) {
@@ -240,13 +242,13 @@ export class SABState {
   _readStruct(schema, baseOffset) {
     const result = {};
     let currentOffset = baseOffset;
-    
+
     for (const [fieldName, fieldType] of Object.entries(schema.fields)) {
       if (fieldName === 'version') {
         // Version read separately
         continue;
       }
-      
+
       if (typeof fieldType === 'string') {
         // Simple type
         if (fieldType === FIELD_TYPES.INT32) {
@@ -255,11 +257,14 @@ export class SABState {
         }
       } else if (fieldType.type === FIELD_TYPES.STRING) {
         // String field
-        result[fieldName] = this._readString(currentOffset, fieldType.maxLength);
+        result[fieldName] = this._readString(
+          currentOffset,
+          fieldType.maxLength,
+        );
         currentOffset += fieldType.maxLength;
       }
     }
-    
+
     return result;
   }
 
@@ -269,13 +274,13 @@ export class SABState {
    */
   _writeStruct(schema, baseOffset, value) {
     let currentOffset = baseOffset;
-    
+
     for (const [fieldName, fieldType] of Object.entries(schema.fields)) {
       if (fieldName === 'version') {
         // Version written separately
         continue;
       }
-      
+
       if (typeof fieldType === 'string') {
         // Simple type
         if (fieldType === FIELD_TYPES.INT32) {
@@ -285,7 +290,11 @@ export class SABState {
         }
       } else if (fieldType.type === FIELD_TYPES.STRING) {
         // String field
-        this._writeString(currentOffset, value[fieldName] || '', fieldType.maxLength);
+        this._writeString(
+          currentOffset,
+          value[fieldName] || '',
+          fieldType.maxLength,
+        );
         currentOffset += fieldType.maxLength;
       }
     }
@@ -298,13 +307,13 @@ export class SABState {
   _readArray(schema, baseOffset) {
     const count = Atomics.load(this.array, baseOffset);
     const result = [];
-    
+
     let itemOffset = baseOffset + schema.headerSize;
-    
+
     for (let i = 0; i < count; i++) {
       const item = {};
       let currentOffset = itemOffset;
-      
+
       for (const [fieldName, fieldType] of Object.entries(schema.itemFields)) {
         if (typeof fieldType === 'string') {
           if (fieldType === FIELD_TYPES.INT32) {
@@ -312,15 +321,18 @@ export class SABState {
             currentOffset++;
           }
         } else if (fieldType.type === FIELD_TYPES.STRING) {
-          item[fieldName] = this._readString(currentOffset, fieldType.maxLength);
+          item[fieldName] = this._readString(
+            currentOffset,
+            fieldType.maxLength,
+          );
           currentOffset += fieldType.maxLength;
         }
       }
-      
+
       result.push(item);
       itemOffset += schema.itemSize;
     }
-    
+
     return result;
   }
 
@@ -331,13 +343,13 @@ export class SABState {
   _writeArray(schema, baseOffset, items) {
     const count = Math.min(items.length, schema.maxCount);
     Atomics.store(this.array, baseOffset, count);
-    
+
     let itemOffset = baseOffset + schema.headerSize;
-    
+
     for (let i = 0; i < count; i++) {
       const item = items[i];
       let currentOffset = itemOffset;
-      
+
       for (const [fieldName, fieldType] of Object.entries(schema.itemFields)) {
         if (typeof fieldType === 'string') {
           if (fieldType === FIELD_TYPES.INT32) {
@@ -345,11 +357,15 @@ export class SABState {
             currentOffset++;
           }
         } else if (fieldType.type === FIELD_TYPES.STRING) {
-          this._writeString(currentOffset, item[fieldName] || '', fieldType.maxLength);
+          this._writeString(
+            currentOffset,
+            item[fieldName] || '',
+            fieldType.maxLength,
+          );
           currentOffset += fieldType.maxLength;
         }
       }
-      
+
       itemOffset += schema.itemSize;
     }
   }
@@ -361,20 +377,20 @@ export class SABState {
   _readPath(schema, baseOffset) {
     const header = {};
     let currentOffset = baseOffset;
-    
+
     // Read header
     for (const [fieldName, fieldType] of Object.entries(schema.headerFields)) {
       if (fieldName === 'version') continue;
-      
+
       header[fieldName] = Atomics.load(this.array, currentOffset);
       currentOffset++;
     }
-    
+
     // Read waypoints
     const waypoints = [];
     const length = header.length || 0;
     const safeLength = Math.min(length, schema.maxWaypoints);
-    
+
     let wpOffset = baseOffset + schema.headerSize;
     for (let i = 0; i < safeLength; i++) {
       waypoints.push({
@@ -384,7 +400,7 @@ export class SABState {
       });
       wpOffset += schema.waypointSize;
     }
-    
+
     return { ...header, waypoints };
   }
 
@@ -394,19 +410,19 @@ export class SABState {
    */
   _writePath(schema, baseOffset, value) {
     let currentOffset = baseOffset;
-    
+
     // Write header
     for (const [fieldName, fieldType] of Object.entries(schema.headerFields)) {
       if (fieldName === 'version') continue;
-      
+
       Atomics.store(this.array, currentOffset, value[fieldName] ?? 0);
       currentOffset++;
     }
-    
+
     // Write waypoints
     const waypoints = value.waypoints || [];
     const length = Math.min(waypoints.length, schema.maxWaypoints);
-    
+
     let wpOffset = baseOffset + schema.headerSize;
     for (let i = 0; i < length; i++) {
       const wp = waypoints[i];
@@ -448,7 +464,7 @@ export class SABState {
    */
   _incrementVersion(propertyName) {
     const { schema, offset } = getPropertyInfo(propertyName);
-    
+
     if (schema.type === 'struct' || schema.type === 'config') {
       const versionOffset = offset + schema.size - 1;
       Atomics.add(this.array, versionOffset, 1);

@@ -21,20 +21,20 @@ export {
 
 /**
  * Create a worker-side SAB state interface
- * 
+ *
  * Simple polling-based API:
  * - get(prop): Read a single property
  * - set(prop, val): Write a single property
  * - getMany(props): Read multiple properties with consistency guarantee
  * - setMany(updates): Write multiple properties atomically
- * 
+ *
  * @param {SharedArrayBuffer} sab - The unified SAB from workerManager
  * @param {number} workerId - WORKER_IDS constant (unused, kept for compatibility)
  * @returns {Object} Worker interface with SAB methods
  */
 export const createWorkerInterface = (sab, workerId) => {
   const state = new SABState(sab);
-  
+
   return {
     get: (prop) => state.get(prop),
     set: (prop, val) => state.set(prop, val),

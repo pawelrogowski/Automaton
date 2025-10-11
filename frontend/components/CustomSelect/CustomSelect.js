@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { SelectContainer, StyledDisplay, Dropdown, OptionItem } from './CustomSelect.styled.js';
+import {
+  SelectContainer,
+  StyledDisplay,
+  Dropdown,
+  OptionItem,
+} from './CustomSelect.styled.js';
 
 const CustomSelect = ({ value, options, onChange, className, id }) => {
   const [is_open, set_is_open] = useState(false);
@@ -20,7 +25,10 @@ const CustomSelect = ({ value, options, onChange, className, id }) => {
 
   useEffect(() => {
     const handle_click_outside = (event) => {
-      if (container_ref.current && !container_ref.current.contains(event.target)) {
+      if (
+        container_ref.current &&
+        !container_ref.current.contains(event.target)
+      ) {
         set_is_open(false);
       }
     };
@@ -31,7 +39,8 @@ const CustomSelect = ({ value, options, onChange, className, id }) => {
     };
   }, [container_ref]);
 
-  const selected_option_label = options.find(option => option.value === value)?.label || value;
+  const selected_option_label =
+    options.find((option) => option.value === value)?.label || value;
 
   return (
     <SelectContainer className={className} ref={container_ref} id={id}>
@@ -59,7 +68,8 @@ CustomSelect.propTypes = {
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   options: PropTypes.arrayOf(
     PropTypes.shape({
-      value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+      value: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+        .isRequired,
       label: PropTypes.string.isRequired,
     }),
   ).isRequired,

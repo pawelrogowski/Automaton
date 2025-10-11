@@ -37,7 +37,7 @@ export const ManaSyncRuleWrapper = styled.div`
   }
 
   .action-item-select {
-     width: 162px;
+    width: 162px;
   }
 
   .percent-input {
@@ -47,7 +47,6 @@ export const ManaSyncRuleWrapper = styled.div`
   .priority-input {
     width: 80px;
   }
-
 
   .row1 {
     width: 100%;
@@ -76,7 +75,7 @@ export const ManaSyncRuleWrapper = styled.div`
     display: flex;
     flex-direction: column;
     gap: 3px;
-    align-items:center;
+    align-items: center;
     justify-content: center;
   }
 
@@ -85,8 +84,10 @@ export const ManaSyncRuleWrapper = styled.div`
     flex-direction: row;
     gap: 4px;
     .h38 {
+      height: 38px;
+      > div {
         height: 38px;
-        > div { height: 38px; }
+      }
     }
   }
 
