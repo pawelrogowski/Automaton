@@ -525,31 +525,16 @@ async function performOperation() {
     if (
       targetingEnabled &&
       !isLootingInProgress &&
-      lastBattleListEntries.length > 0
+      lastBattleListEntries.length > battleListEntries.length
     ) {
-      const disappearedEntries = lastBattleListEntries.filter(
-        (lastEntry) =>
-          !battleListEntries.some((currentEntry) =>
-            isBattleListMatch(lastEntry.name, currentEntry.name),
-          ),
+      // Battle list count decreased - something died, check if it's in targeting list
+      const hadTargetable = lastBattleListEntries.some((entry) =>
+        targetingList.some((rule) => isBattleListMatch(rule.name, entry.name)),
       );
-
-      if (disappearedEntries.length > 0) {
-        // For each disappeared entry, trigger looting if it matches targeting list
-        for (const disappearedEntry of disappearedEntries) {
-          const shouldLootThis = disappearedEntry && targetingList.some((targetingRule) =>
-            isBattleListMatch(targetingRule.name, disappearedEntry.name),
-          );
-          if (shouldLootThis) {
-            try {
-              // performImmediateLooting guards with isLootingInProgress internally
-              await performImmediateLooting();
-            } catch (err) {
-              // Defensive: log and continue
-              console.error('[CreatureMonitor] Error during performImmediateLooting for disappeared entry:', err);
-            }
-          }
-        }
+      
+      if (hadTargetable) {
+        console.log(`[CreatureMonitor] Battle list decreased from ${lastBattleListEntries.length} to ${battleListEntries.length}, triggering loot.`);
+        await performImmediateLooting();
       }
     }
 

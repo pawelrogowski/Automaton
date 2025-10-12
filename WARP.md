@@ -173,12 +173,13 @@ All input actions go through `inputOrchestrator` with priority levels:
 ```javascript
 Priority (lower = higher priority):
 0: userRule      (manual healing/mana rules)
-1: looting       (picking up items)
-2: script        (Lua scripts) ← CRITICAL: Must be 'script', not 'luaScript'
-3: targeting     (attacking creatures)
-4: movement      (cavebot waypoint walking)
+1: movement      (cavebot waypoint walking)
+2: looting       (picking up items)
+3: script        (Lua scripts) ← CRITICAL: Must be 'script', not 'luaScript'
+4: targeting     (attacking creatures)
 5: hotkey        (spell/item usage)
-100: mouseNoise  (randomized mouse movements)
+10: default      (fallback priority)
+100: mouseNoise  (randomized mouse movements - not in PRIORITY_MAP)
 ```
 
 **Mouse noise pauses** for priorities 0-5 to prevent interference with critical actions.

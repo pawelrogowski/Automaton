@@ -11,9 +11,9 @@ import {
   PATH_STATUS_ERROR,
   PATH_STATUS_NO_VALID_START_OR_END,
   PATH_STATUS_BLOCKED_BY_CREATURE,
-} from '../sharedConstants.js';
+  CONTROL_COMMANDS,
+} from '../sabState/schema.js';
 import { deepHash } from '../../utils/deepHash.js';
-import { CONTROL_COMMANDS } from '../sabState/schema.js';
 
 let lastWrittenPathSignature = '';
 let sabInterface = null;

@@ -1,10 +1,5 @@
 // electron/workers/movementUtils/confirmationHelpers.js
 
-import {
-  PLAYER_POS_UPDATE_COUNTER_INDEX,
-  PATH_UPDATE_COUNTER_INDEX,
-} from '../sharedConstants.js';
-
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**

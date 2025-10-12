@@ -242,8 +242,8 @@ async function handleToolAction(
     return false;
   }
 
-  // Use the standardized animation delay for these tools
-  if (useType === 'shovel' || useType === 'rope') {
+  // Use the standardized animation delay only for shovel
+  if (useType === 'shovel') {
     await delay(config.animationArrivalTimeoutMs);
   }
 

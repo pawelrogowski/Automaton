@@ -2,7 +2,7 @@
 
 import { postStoreUpdate } from './communication.js';
 import { awaitStateChange } from './asyncUtils.js';
-import { PATH_STATUS_IDLE } from '../../sharedConstants.js';
+import { PATH_STATUS_IDLE } from '../../sabState/schema.js';
 
 /**
  * Finds the current waypoint object from the global state.

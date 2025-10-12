@@ -23,7 +23,7 @@ import {
   PATH_STATUS_ERROR,
   PATH_STATUS_NO_VALID_START_OR_END,
   PATH_STATUS_IDLE,
-} from '../sharedConstants.js';
+} from '../sabState/schema.js';
 
 export function createFsm(workerState, config) {
   const logger = workerState.logger;

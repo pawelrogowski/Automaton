@@ -12,7 +12,7 @@ import {
 } from './targeting/targetingLogic.js';
 import {
   PATH_STATUS_IDLE,
-} from './sharedConstants.js';
+} from './sabState/schema.js';
 
 const logger = createLogger({ info: false, error: true, debug: false });
 
@@ -34,7 +34,7 @@ const FSM_STATE = {
 const config = {
   mainLoopIntervalMs: 5,
   unreachableTimeoutMs: 400,
-  acquireTimeoutMs: 500, // Time to wait for verification before retrying an action
+  acquireTimeoutMs: 250, // Global rate limit: minimum time between ANY targeting clicks
   acquisitionGraceTimeMs: 400,
 };
 
@@ -58,7 +58,7 @@ const targetingState = {
   pathfindingTarget: null, // The creature we WANT to target
   currentTarget: null, // The creature we HAVE targeted
   unreachableSince: 0,
-  verificationStarted: 0, // Timestamp for VERIFY_ACQUISITION state
+  lastTargetingClickTime: 0, // Timestamp of last targeting click (for global rate limiting)
   lastDispatchedDynamicTargetId: null,
   lastAcquireAttempt: {
     targetName: '',
@@ -150,7 +150,7 @@ function transitionTo(newState, reason = '') {
       targetingState.unreachableSince = 0;
       break;
     case FSM_STATE.VERIFY_ACQUISITION:
-      targetingState.verificationStarted = performance.now();
+      // No need to set timestamp here - it's already set in PERFORM_ACQUISITION
       break;
   }
 }
@@ -258,7 +258,16 @@ function handlePrepareAcquisitionState() {
 }
 
 function handlePerformAcquisitionState() {
+  const now = performance.now();
   const { pathfindingTarget } = targetingState;
+
+  // Enforce global rate limit: prevent clicking more than once per acquireTimeoutMs
+  const timeSinceLastClick = now - targetingState.lastTargetingClickTime;
+  if (timeSinceLastClick < config.acquireTimeoutMs) {
+    // Still within rate limit window - wait before attempting
+    logger('debug', `[ACQUIRE] Rate limited: ${timeSinceLastClick.toFixed(0)}ms since last click (need ${config.acquireTimeoutMs}ms)`);
+    return;
+  }
 
   const result = acquireTarget(
     getBattleListFromSAB,
@@ -274,6 +283,7 @@ function handlePerformAcquisitionState() {
   if (result.success) {
     targetingState.lastAcquireAttempt.targetInstanceId = pathfindingTarget.instanceId;
     targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
+    targetingState.lastTargetingClickTime = now; // Record click time for rate limiting
     logger('debug', `[ACQUIRE] Performed ${result.method} click.`);
     transitionTo(FSM_STATE.VERIFY_ACQUISITION, 'Action performed');
   } else {
@@ -310,9 +320,10 @@ function handleVerifyAcquisitionState() {
     return;
   }
 
-  // If NO_TARGET or OTHER_TARGET, wait for timeout
-  if (now > targetingState.verificationStarted + config.acquireTimeoutMs) {
-    logger('warn', `[ACQUIRE] Timeout waiting for ${targetName}. Retrying action.`);
+  // If NO_TARGET or OTHER_TARGET, wait for timeout (using lastTargetingClickTime as reference)
+  const timeSinceClick = now - targetingState.lastTargetingClickTime;
+  if (timeSinceClick >= config.acquireTimeoutMs) {
+    logger('warn', `[ACQUIRE] Timeout waiting for ${targetName} (${timeSinceClick.toFixed(0)}ms). Retrying action.`);
     transitionTo(FSM_STATE.PREPARE_ACQUISITION, 'Verification timeout');
   }
 }

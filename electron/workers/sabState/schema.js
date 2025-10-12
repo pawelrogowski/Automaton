@@ -409,6 +409,28 @@ export const CONTROL_PRIORITIES = {
   LOW: 2, // Stats updates
 };
 
+// Pathfinder status codes (used in pathData.status, cavebotPathData.status, targetingPathData.status)
+export const PATH_STATUS = {
+  IDLE: 0,
+  PATH_FOUND: 1,
+  WAYPOINT_REACHED: 2,
+  NO_PATH_FOUND: 3,
+  DIFFERENT_FLOOR: 4,
+  ERROR: 5,
+  NO_VALID_START_OR_END: 6,
+  BLOCKED_BY_CREATURE: 7,
+};
+
+// Legacy named exports for backward compatibility (to be removed)
+export const PATH_STATUS_IDLE = PATH_STATUS.IDLE;
+export const PATH_STATUS_PATH_FOUND = PATH_STATUS.PATH_FOUND;
+export const PATH_STATUS_WAYPOINT_REACHED = PATH_STATUS.WAYPOINT_REACHED;
+export const PATH_STATUS_NO_PATH_FOUND = PATH_STATUS.NO_PATH_FOUND;
+export const PATH_STATUS_DIFFERENT_FLOOR = PATH_STATUS.DIFFERENT_FLOOR;
+export const PATH_STATUS_ERROR = PATH_STATUS.ERROR;
+export const PATH_STATUS_NO_VALID_START_OR_END = PATH_STATUS.NO_VALID_START_OR_END;
+export const PATH_STATUS_BLOCKED_BY_CREATURE = PATH_STATUS.BLOCKED_BY_CREATURE;
+
 // Control state enum (for cavebotConfig.controlState)
 export const CONTROL_STATES = {
   CAVEBOT: 0,

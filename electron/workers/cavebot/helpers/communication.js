@@ -1,7 +1,7 @@
 // /home/feiron/Dokumenty/Automaton/electron/workers/cavebot/helpers/communication.js
 
 import { parentPort } from 'worker_threads';
-import { PATH_STATUS_IDLE } from '../../sharedConstants.js';
+import { PATH_STATUS_IDLE } from '../../sabState/schema.js';
 
 export const postStoreUpdate = (type, payload) =>
   parentPort.postMessage({ storeUpdate: true, type, payload });
