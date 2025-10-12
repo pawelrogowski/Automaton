@@ -3,7 +3,7 @@ import keypress from 'keypress-native';
 import mouseController from 'mouse-controller';
 import { createLogger } from '../utils/logger.js';
 
-const log = createLogger({ info: true, error: true, debug: false });
+const log = createLogger({ info: false, error: true, debug: false });
 const PRIORITY_MAP = {
   userRule: 0,
   movement: 1,

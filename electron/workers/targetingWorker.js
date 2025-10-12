@@ -14,7 +14,7 @@ import {
   PATH_STATUS_IDLE,
 } from './sharedConstants.js';
 
-const logger = createLogger({ info: true, error: true, debug: true });
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // Track last target for change detection
 let lastLoggedTarget = null;
@@ -32,11 +32,10 @@ const FSM_STATE = {
 
 // --- Configuration ---
 const config = {
-  mainLoopIntervalMs: 50,
+  mainLoopIntervalMs: 5,
   unreachableTimeoutMs: 400,
   acquireTimeoutMs: 500, // Time to wait for verification before retrying an action
-  acquisitionGraceTimeMs: 300,
-  maxAcquisitionCycles: 5,
+  acquisitionGraceTimeMs: 400,
 };
 
 // --- Worker State (data from other sources) ---
@@ -62,10 +61,8 @@ const targetingState = {
   verificationStarted: 0, // Timestamp for VERIFY_ACQUISITION state
   lastDispatchedDynamicTargetId: null,
   lastAcquireAttempt: {
-    battleListIndex: -1,
     targetName: '',
     targetInstanceId: null,
-    cycleCount: 0,
   },
 };
 
@@ -257,18 +254,6 @@ function handlePrepareAcquisitionState() {
     return; // Wait for it to become reachable again
   }
 
-  if (targetingState.lastAcquireAttempt.targetInstanceId !== updatedTarget.instanceId) {
-    logger('debug', `[ACQUIRE] New goal: ${updatedTarget.name} (ID: ${updatedTarget.instanceId}). Resetting cycle.`);
-    targetingState.lastAcquireAttempt.battleListIndex = -1;
-    targetingState.lastAcquireAttempt.cycleCount = 0;
-  }
-
-  if (targetingState.lastAcquireAttempt.cycleCount >= config.maxAcquisitionCycles) {
-    logger('warn', `[ACQUIRE] Max cycles for ${updatedTarget.name}. Reselecting.`);
-    transitionTo(FSM_STATE.SELECTING, 'Max acquisition cycles reached');
-    return;
-  }
-
   transitionTo(FSM_STATE.PERFORM_ACQUISITION, 'Checks passed');
 }
 
@@ -279,7 +264,7 @@ function handlePerformAcquisitionState() {
     getBattleListFromSAB,
     parentPort,
     pathfindingTarget.name,
-    targetingState.lastAcquireAttempt.battleListIndex,
+    -1, // lastClickedIndex is no longer used for cycling
     workerState.globalState,
     getCreaturesFromSAB,
     () => workerState.playerMinimapPosition,
@@ -287,11 +272,9 @@ function handlePerformAcquisitionState() {
   );
 
   if (result.success) {
-    targetingState.lastAcquireAttempt.cycleCount++;
-    targetingState.lastAcquireAttempt.battleListIndex = result.clickedIndex;
     targetingState.lastAcquireAttempt.targetInstanceId = pathfindingTarget.instanceId;
     targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
-    logger('debug', `[ACQUIRE] Cycle ${targetingState.lastAcquireAttempt.cycleCount}: Performed ${result.method} click.`);
+    logger('debug', `[ACQUIRE] Performed ${result.method} click.`);
     transitionTo(FSM_STATE.VERIFY_ACQUISITION, 'Action performed');
   } else {
     transitionTo(FSM_STATE.SELECTING, `Acquire action failed: ${result.reason}`);
@@ -312,8 +295,18 @@ function handleVerifyAcquisitionState() {
   }
 
   if (verification.status === 'WRONG_INSTANCE') {
-    logger('debug', `[ACQUIRE] Wrong instance targeted (got ${verification.target.instanceId}), cycling...`);
-    transitionTo(FSM_STATE.PREPARE_ACQUISITION, 'Wrong instance');
+    const newTarget = getCreaturesFromSAB().find(c => c.instanceId === verification.target.instanceId);
+    if (newTarget && newTarget.isReachable) {
+      logger('info', `[ACQUIRE] Wrong instance, but same name. Sticking with new target ${newTarget.name} (ID: ${newTarget.instanceId})`);
+      targetingState.currentTarget = newTarget;
+      targetingState.pathfindingTarget = newTarget;
+      updateDynamicTarget(parentPort, newTarget, workerState.globalState.targeting.targetingList);
+      transitionTo(FSM_STATE.ENGAGING, 'Sticking with new instance');
+    } else {
+      // The wrong instance we hit is not reachable, so it's a failure.
+      logger('warn', `[ACQUIRE] Hit wrong instance (${verification.target.instanceId}), but it's unreachable. Retrying.`);
+      transitionTo(FSM_STATE.PREPARE_ACQUISITION, 'Wrong instance was unreachable');
+    }
     return;
   }
 
@@ -433,7 +426,8 @@ async function handleEngagingState() {
       targetingState.unreachableSince = 0;
       return;
     }
-  } else {
+  }
+  else {
     if (targetingState.unreachableSince > 0) {
       logger('debug', 
         `[ENGAGING] Target ${updatedTarget.name} became reachable again - resetting timer`

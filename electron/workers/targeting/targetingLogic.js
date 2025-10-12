@@ -14,7 +14,6 @@ import {
 
 const GAMEWORLD_CONFIG = {
   ENABLED: true,
-  STATIONARY_THRESHOLD_MS: 300,
 };
 
 // ====================================================================
@@ -68,345 +67,136 @@ export function findRuleForCreatureName(creatureName, targetingList) {
 }
 
 /**
- * Selects the best target from a list of creatures based on targeting rules.
- * This function is "pure" - it doesn't consider the current state, only the best possible choice right now.
- * 
- * Special case: If a rule with name "Others" or "others" exists, it will match any creature
- * that doesn't have an explicit rule defined. This acts as a catch-all fallback.
- * 
- * @param {Function} getCreatures - Function that returns array of creatures
- * @param {Array} targetingList - List of targeting rules
- * @param {object|null} currentTarget - Currently targeted creature (for hysteresis)
+ * Selects the best target from a list of creatures based on a deterministic, priority-based ruleset.
+ * @param {Function} getCreatures - Function that returns array of creatures.
+ * @param {Array} targetingList - List of targeting rules.
+ * @param {object|null} currentTarget - Currently targeted creature for stickiness logic.
  * @returns {object|null} The best creature object or null if no valid target is found.
  */
 export function selectBestTarget(getCreatures, targetingList, currentTarget = null) {
-  const creatures = getCreatures();
-  if (!targetingList?.length || !creatures?.length) {
+  const allCreatures = getCreatures();
+  if (!targetingList?.length || !allCreatures?.length) {
     return null;
   }
 
-  // Get explicit creature names (excluding "Others" wildcard)
-  const explicitNames = new Set(
-    targetingList
-      .filter((r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others')
-      .map((r) => r.name)
-  );
+  const getRule = (creature) => findRuleForCreatureName(creature.name, targetingList);
 
-  // Find the "Others" rule if it exists
-  const othersRule = targetingList.find(
-    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
-  );
-
-  const findRuleForCreature = (creature) => {
-    if (!creature || !creature.name) {
-      return null;
-    }
-    
-    // First try to find an explicit rule
-    const explicitRule = targetingList.find(
-      (r) => r.action === 'Attack' && r.name === creature.name
-    );
-    
-    if (explicitRule) {
-      return explicitRule;
-    }
-    
-    // If no explicit rule and "Others" exists, use it as fallback
-    if (othersRule && !explicitNames.has(creature.name)) {
-      return { ...othersRule, isWildcard: true, originalName: creature.name };
-    }
-    
-    return null;
-  };
-
-  // FIX: Find creatures that are blocking high-priority targets
-  const blockingBoosts = new Map(); // instanceId -> boost amount
-  
-  for (const creature of creatures) {
-    if (creature.isBlockingPath) {
-      // Find what this creature is blocking
-      const blockedCreatures = creatures.filter(c => 
-        !c.isReachable && 
-        c.instanceId !== creature.instanceId
-      );
-      
-      for (const blocked of blockedCreatures) {
-        const blockedRule = findRuleForCreature(blocked);
-        if (blockedRule && blockedRule.onlyIfTrapped) {
-          // This creature is blocking a trapped target
-          // Boost blocker's priority to match blocked creature
-          const currentBoost = blockingBoosts.get(creature.instanceId) || 0;
-          const newBoost = Math.max(currentBoost, blockedRule.priority);
-          blockingBoosts.set(creature.instanceId, newBoost);
-        }
-      }
-    }
-  }
-
-  const validCandidates = creatures
-    .map((creature) => {
-      const rule = findRuleForCreature(creature);
-      
-      if (!rule || !creature.isReachable) {
-        return null;
-      }
-      
-      // FIX: Skip creatures with uncertain positions
-      if (creature.positionUncertain) {
-        return null;
-      }
-      
-      if (rule.onlyIfTrapped && !creature.isBlockingPath) {
-        return null;
-      }
-
-      // FIX: Apply blocking boost for priority-based blocker targeting
-      let effectivePriority = rule.priority;
-      const boost = blockingBoosts.get(creature.instanceId);
-      if (boost !== undefined) {
-        effectivePriority = Math.max(effectivePriority, boost);
-      }
-
-      // Lower score is better.
-      let score = -effectivePriority * 1000; // Higher priority = much lower score.
-      score += creature.distance; // Closer is better.
-      if (creature.isAdjacent) {
-        score -= 500; // Strongly prefer adjacent creatures.
-      }
-
-      return { creature, rule, score, effectivePriority };
-    })
-    .filter(Boolean);
+  const validCandidates = allCreatures.filter(c => {
+    const rule = getRule(c);
+    return c.isReachable && !c.positionUncertain && rule && rule.action === 'Attack';
+  });
 
   if (validCandidates.length === 0) {
     return null;
   }
 
-  validCandidates.sort((a, b) => a.score - b.score);
-  const bestCandidate = validCandidates[0];
-  
-  // FIX: Enhanced hysteresis with distance bands
+  const pickBest = (candidates) => {
+    if (!candidates || candidates.length === 0) {
+      return null;
+    }
+    const adjacent = candidates.filter(c => c.isAdjacent);
+    if (adjacent.length > 0) {
+      return adjacent.sort((a, b) => a.distance - b.distance)[0];
+    }
+    return candidates.sort((a, b) => a.distance - b.distance)[0];
+  };
+
+  // Rule 1: Handle existing target (Stickiness)
   if (currentTarget && currentTarget.instanceId) {
-    const currentCandidate = validCandidates.find(
-      (c) => c.creature.instanceId === currentTarget.instanceId
-    );
-    
-    if (currentCandidate) {
-      const currentScore = currentCandidate.score;
-      const bestScore = bestCandidate.score;
-      
-      // Calculate adaptive threshold
-      let threshold = 10;
-      
-      // Increase threshold if current target is close (prevent jitter)
-      if (currentCandidate.creature.distance < 3) {
-        threshold += 20; // Stronger preference for nearby creatures
-      }
-      
-      // Reduce threshold if current target is far (allow switching)
-      if (currentCandidate.creature.distance > 5) {
-        threshold -= 5;
-      }
-      
-      // Increase threshold if creatures have same priority
-      if (currentCandidate.effectivePriority === bestCandidate.effectivePriority) {
-        threshold += 15; // Strong preference to keep current if same priority
-      }
-      
-      const scoreDifference = currentScore - bestScore;
-      
-      // Only switch if the best candidate is significantly better (lower score)
-      if (scoreDifference < threshold) {
-        // Current target is still good enough, keep it
-        return currentTarget;
+    const currentTargetStillValid = validCandidates.find(c => c.instanceId === currentTarget.instanceId);
+
+    if (currentTargetStillValid) {
+      const currentRule = getRule(currentTargetStillValid);
+      if (!currentRule) { // Should be impossible due to filter, but as a safeguard
+        // Fall through to pick a new target
+      } else {
+        const higherPriorityCandidates = validCandidates.filter(c => {
+          const newRule = getRule(c);
+          return newRule && newRule.priority > currentRule.priority;
+        });
+
+        if (higherPriorityCandidates.length > 0) {
+          // A better priority target exists, we MUST switch.
+          return pickBest(higherPriorityCandidates);
+        } else {
+          // No higher priority target exists, so we MUST stick to the current one.
+          return currentTargetStillValid;
+        }
       }
     }
+    // If we are here, it means the current target is no longer valid (unreachable, died, etc.)
+    // so we fall through to pick a new one from scratch.
   }
-  
-  return bestCandidate.creature;
+
+  // Rule 2: Pick a new target from all valid candidates
+  let highestPriority = -Infinity;
+  for (const candidate of validCandidates) {
+    const rule = getRule(candidate);
+    if (rule && rule.priority > highestPriority) {
+      highestPriority = rule.priority;
+    }
+  }
+
+  const topPriorityCandidates = validCandidates.filter(c => {
+    const rule = getRule(c);
+    return rule && rule.priority === highestPriority;
+  });
+
+  return pickBest(topPriorityCandidates);
 }
 
 /**
- * Clicks the next available entry in the battle list for a given creature name,
- * or uses the Tab key if the target is the first entry (and nothing is targeted) or next after the current target.
- * @returns {{success: boolean, reason?: string, clickedIndex?: number, method?: string}}
+ * Acquires a target by exclusively clicking on the creature in the game world.
+ * @returns {{success: boolean, reason?: string, method?: string}}
  */
 export function acquireTarget(
-  getBattleList,
+  getBattleList, // No longer used, but kept for API compatibility
   parentPort,
-  targetName,
-  lastClickedIndex,
+  targetName, // No longer used, but kept for API compatibility
+  lastClickedIndex, // No longer used
   globalState = null,
   getCreatures = null,
   getPlayerPosition = null,
   targetInstanceId = null
 ) {
-  const battleList = getBattleList() || [];
-  if (battleList.length === 0) {
-    return { success: false, reason: 'battlelist_empty' };
-  }
-
-  // Find the desired target and current target indices
-  const desiredTargetEntry = battleList.find((entry) => {
-    if (entry.name === targetName) return true;
-    if (entry.name.endsWith('...')) {
-      const truncatedPart = entry.name.slice(0, -3);
-      return targetName.startsWith(truncatedPart);
-    }
-    return false;
-  });
+  const creatures =  getCreatures();
   
-  if (!desiredTargetEntry) {
-    return { success: false, reason: 'not_in_battlelist' };
-  }
-
-  const desiredTargetIndex = battleList.indexOf(desiredTargetEntry);
-  const currentTargetIndex = battleList.findIndex(entry => entry.isTarget);
-
-  // Get creatures for game world click logic (optional)
-  const creatures = getCreatures ? getCreatures() : [];
   const targetCreature = targetInstanceId 
-    ? creatures.find(c => c.instanceId === targetInstanceId && c.isReachable)
-    : creatures.find(c => c.name === targetName && c.isReachable);
-  
-  if (targetCreature && GAMEWORLD_CONFIG.ENABLED) {
-    if (targetCreature.hp !== 'Obstructed') {
-      const adjacentStationaryDur = targetCreature.adjacentStationaryDuration ?? 0;
-      const isAdjacent = targetCreature.isAdjacent ?? false;
-      
-      if (isAdjacent && adjacentStationaryDur >= GAMEWORLD_CONFIG.STATIONARY_THRESHOLD_MS) {
-        const regions = globalState?.regionCoordinates?.regions;
-        const playerPos = getPlayerPosition ? getPlayerPosition() : null;
-        
-        if (regions?.gameWorld && regions?.tileSize && playerPos && targetCreature.gameCoords) {
-          const clickCoords = getAbsoluteGameWorldClickCoordinates(
-            targetCreature.gameCoords.x,
-            targetCreature.gameCoords.y,
-            playerPos,
-            regions.gameWorld,
-            regions.tileSize,
-            'center'
-          );
-          
-          if (clickCoords) {
-            const offsetX = Math.floor(Math.random() * 11) - 5;
-            const offsetY = Math.floor(Math.random() * 11) - 5;
-            
-            clickCoords.x += offsetX;
-            clickCoords.y += offsetY;
-            
-            parentPort.postMessage({
-              type: 'inputAction',
-              payload: {
-                type: 'targeting',
-                action: {
-                  module: 'mouseController',
-                  method: 'leftClick',
-                  args: [clickCoords.x, clickCoords.y],
-                },
-              },
-            });
-            
-            return {
-              success: true, 
-              clickedIndex: desiredTargetIndex, 
-              method: 'gameworld'
-            };
-          }
-        }
-      }
-    }
+    ? creatures.find(c => c.instanceId === targetInstanceId)
+    : null;
+
+  if (!targetCreature) {
+    return { success: false, reason: 'target_instance_not_found' };
   }
 
-  // --- Determine the targeting method ---
-  let method = null; // 'tab', 'grave', or 'mouse'
-  
-  const canUseTab = desiredTargetIndex === currentTargetIndex + 1;
-  const canUseGrave = currentTargetIndex !== -1 && desiredTargetIndex === currentTargetIndex - 1;
-  
-  // FIX: When cycling (lastClickedIndex >= 0), prefer mouse over Tab/Grave
-  const isCycling = lastClickedIndex >= 0;
-  
-  // 15% chance to force mouse click even when Tab/Grave would work
-  const forceMouseClick = Math.random() < 0.15;
-  
-  if (canUseTab && !forceMouseClick && !isCycling) {
-    method = 'tab';
-  } else if (canUseGrave && !forceMouseClick && !isCycling) {
-    method = 'grave';
-  } else {
-    method = 'mouse';
+  if (!targetCreature.isReachable) {
+    return { success: false, reason: 'target_not_reachable' };
   }
 
-  // --- KEYBOARD METHOD (Tab or Grave) ---
-  if (method === 'tab' || method === 'grave') {
-    const key = method === 'tab' ? 'tab' : 'grave';
-    
+  
+  
+  if (targetCreature.absoluteX !== 0 && targetCreature.absoluteY !== 0) {
     parentPort.postMessage({
       type: 'inputAction',
       payload: {
         type: 'targeting',
         action: {
-          module: 'keypress',
-          method: 'sendKey',
-          args: [key, null],
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [targetCreature.absoluteX, targetCreature.absoluteY],
         },
       },
     });
     
-    return { success: true, clickedIndex: desiredTargetIndex, method };
+    return {
+      success: true, 
+      method: 'gameworld'
+    };
   }
 
-  // --- MOUSE CLICK METHOD ---
-  const potentialEntries = battleList
-    .map((entry, index) => ({ ...entry, index }))
-    .filter((entry) => {
-      if (entry.name === targetName) return true;
-      if (entry.name.endsWith('...')) {
-        const truncatedPart = entry.name.slice(0, -3);
-        return targetName.startsWith(truncatedPart);
-      }
-      return false;
-    });
-
-  if (potentialEntries.length === 0) {
-    return { success: false, reason: 'not_in_battlelist' };
-  }
-
-  // Cycle through battle list entries
-  let targetEntry = potentialEntries.find(
-    (entry) => entry.index > lastClickedIndex
-  );
-
-  if (!targetEntry) {
-    targetEntry = potentialEntries[0];
-  }
-
-  // Add randomization to battle list click coordinates
-  const verticalOffset = Math.floor(Math.random() * 7) - 3; // -3 to +3
-  const horizontalOffset = Math.floor(Math.random() * 61) - 30; // -30 to +30
-  
-  const clickX = targetEntry.x + horizontalOffset;
-  const clickY = targetEntry.y + verticalOffset;
-  
-  parentPort.postMessage({
-    type: 'inputAction',
-    payload: {
-      type: 'targeting',
-      action: {
-        module: 'mouseController',
-        method: 'leftClick',
-        args: [clickX, clickY],
-      },
-    },
-  });
-
-  return { success: true, clickedIndex: targetEntry.index, method: 'mouse' };
+  return { success: false, reason: 'gameworld_click_not_possible' };
 }
 
-/**
- * Updates the pathfinding goal for the cavebot module.
- */
 export function updateDynamicTarget(parentPort, pathfindingTarget, targetingList) {
   if (!pathfindingTarget) {
     parentPort.postMessage({
