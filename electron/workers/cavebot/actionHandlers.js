@@ -176,23 +176,129 @@ export async function handleStandAction(workerState, config, targetWaypoint) {
     `[handleStandAction] Executing for waypoint index ${waypointIndex + 1}.`,
   );
   const initialPos = { ...workerState.playerMinimapPosition };
+  const initialZ = initialPos.z;
 
-  // Safety check: Don't attempt action if there's no valid path and we're not on the waypoint
-  if (
-    initialPos.x !== targetWaypoint.x ||
-    initialPos.y !== targetWaypoint.y ||
-    initialPos.z !== targetWaypoint.z
-  ) {
-    if (!workerState.path || workerState.path.length === 0) {
+  // Check if we're already on the waypoint
+  const isOnWaypoint =
+    initialPos.x === targetWaypoint.x &&
+    initialPos.y === targetWaypoint.y &&
+    initialPos.z === targetWaypoint.z;
+
+  if (!isOnWaypoint) {
+    // Calculate if we're adjacent (Chebyshev distance <= 1)
+    const isAdjacent =
+      Math.max(
+        Math.abs(initialPos.x - targetWaypoint.x),
+        Math.abs(initialPos.y - targetWaypoint.y),
+      ) <= 1 && initialPos.z === targetWaypoint.z;
+
+    if (isAdjacent) {
+      // We're adjacent, perform a single step to the waypoint
+      workerState.logger(
+        'debug',
+        '[handleStandAction] Adjacent to waypoint. Performing single step to waypoint tile.',
+      );
+      const dirKey = getDirectionKey(initialPos, targetWaypoint);
+      if (!dirKey) {
+        workerState.logger(
+          'warn',
+          '[handleStandAction] Could not determine direction key for adjacent step.',
+        );
+        return false;
+      }
+
+      const isDiagonal = ['q', 'e', 'z', 'c'].includes(dirKey);
+      const timeout = isDiagonal ? 400 : config.moveConfirmTimeoutMs;
+
+      workerState.logger(
+        'debug',
+        `[handleStandAction] Using ${isDiagonal ? 'diagonal' : 'cardinal'} move with ${timeout}ms timeout.`,
+      );
+
+      keyPress(dirKey, { type: 'movement' });
+
+      // Wait with early exit on position or z-level change
+      // Stand tiles (holes, stairs, teleports) are special - you can't stand on them.
+      // The game instantly teleports you to another z-level when you walk on them.
+      // Z-level changes reset walking cooldowns, so we can move immediately after.
+      const startTime = Date.now();
+      while (Date.now() - startTime < timeout) {
+        await delay(config.stateChangePollIntervalMs || 20);
+        
+        const currentPos = workerState.playerMinimapPosition;
+        if (!currentPos) continue;
+
+        // Check if z-level changed - Stand tile activated, action complete!
+        // No cooldown after z-level change, so we can proceed immediately.
+        if (currentPos.z !== initialZ) {
+          workerState.logger(
+            'debug',
+            `[handleStandAction] Z-level changed after ${Date.now() - startTime}ms. Stand complete, can move immediately.`,
+          );
+          return true;
+        }
+
+        // Check if position changed (but z-level didn't)
+        const positionChanged =
+          currentPos.x !== initialPos.x ||
+          currentPos.y !== initialPos.y;
+
+        if (positionChanged) {
+          workerState.logger(
+            'debug',
+            `[handleStandAction] Position changed after ${Date.now() - startTime}ms.`,
+          );
+          break;
+        }
+      }
+
+      // Check current position after timeout/break
+      const currentPos = { ...workerState.playerMinimapPosition };
+      
+      // Double-check for z-level change
+      if (currentPos.z !== initialZ) {
+        workerState.logger(
+          'debug',
+          '[handleStandAction] Z-level changed. Stand complete, can move immediately.',
+        );
+        return true;
+      }
+
+      // Fallback: Check if standing on waypoint coordinates (shouldn't happen with real Stand tiles)
+      // Real Stand tiles can't be stood on - they always trigger z-level change.
+      // This fallback prevents getting stuck if Stand waypoint is placed on a normal tile.
+      const nowOnWaypoint =
+        currentPos.x === targetWaypoint.x &&
+        currentPos.y === targetWaypoint.y &&
+        currentPos.z === targetWaypoint.z;
+
+      if (nowOnWaypoint) {
+        workerState.logger(
+          'warn',
+          '[handleStandAction] On waypoint coords but no z-change. Non-special tile? Skipping to avoid stuck.',
+        );
+        return true;
+      }
+
+      // Failed to reach waypoint
       workerState.logger(
         'warn',
-        `[handleStandAction] No valid path to waypoint and not on waypoint. Aborting action.`,
+        '[handleStandAction] Failed to reach waypoint tile.',
+      );
+      return false;
+    } else {
+      // Not adjacent and not on waypoint - should not happen in normal flow
+      workerState.logger(
+        'warn',
+        '[handleStandAction] Not on waypoint and not adjacent. Aborting action.',
       );
       return false;
     }
   }
 
-  const dirKey = getDirectionKey(initialPos, targetWaypoint);
+  // Now we're standing on the waypoint, perform the Stand action
+  const currentPos = { ...workerState.playerMinimapPosition };
+  const dirKey = getDirectionKey(currentPos, targetWaypoint);
   if (!dirKey) {
     workerState.logger(
       'warn',
@@ -209,7 +315,7 @@ export async function handleStandAction(workerState, config, targetWaypoint) {
     const { finalPos } = await awaitStandConfirmation(
       workerState,
       config,
-      initialPos,
+      currentPos,
       config.defaultAwaitStateChangeTimeoutMs,
     );
 

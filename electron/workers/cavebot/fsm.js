@@ -124,6 +124,14 @@ export function createFsm(workerState, config) {
           );
           switch (targetWaypoint.type) {
             case 'Stand':
+              // Stand waypoints are just for z-level changes via walking
+              // If we're already on the Stand tile, just skip to next waypoint
+              logger(
+                'debug',
+                `[FSM] Already on Stand waypoint index ${waypointIndex + 1}. Skipping.`,
+              );
+              await advanceToNextWaypoint(workerState, config);
+              return 'IDLE';
             case 'Ladder':
             case 'Rope':
             case 'Shovel':
@@ -154,6 +162,7 @@ export function createFsm(workerState, config) {
               // Adjacency check for special actions
               const isAdjacent = context.chebyshevDist <= 1;
               const isActionType = [
+                'Stand',
                 'Ladder',
                 'Rope',
                 'Shovel',
