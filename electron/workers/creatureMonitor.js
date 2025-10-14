@@ -599,6 +599,38 @@ async function performOperation() {
     );
     lastHealthScanTime = now;
     
+    // Filter out player's own health bar to prevent false creature detection
+    const playerHealthBarsToRemove = [];
+    for (const hb of healthBars) {
+      const creatureScreenX = hb.x;
+      const creatureScreenY = hb.y + 14 + tileSize.height / 2;
+      const gameCoords = getGameCoordinatesFromScreen(
+        creatureScreenX,
+        creatureScreenY,
+        currentPlayerMinimapPosition,
+        gameWorld,
+        tileSize,
+      );
+      
+      if (gameCoords) {
+        const roundedX = Math.round(gameCoords.x);
+        const roundedY = Math.round(gameCoords.y);
+        const roundedZ = gameCoords.z;
+        
+        // Check if this health bar is at the player's exact position
+        if (roundedX === currentPlayerMinimapPosition.x && 
+            roundedY === currentPlayerMinimapPosition.y && 
+            roundedZ === currentPlayerMinimapPosition.z) {
+          playerHealthBarsToRemove.push(hb);
+        }
+      }
+    }
+    
+    // Remove player health bars from the list
+    if (playerHealthBarsToRemove.length > 0) {
+      healthBars = healthBars.filter(hb => !playerHealthBarsToRemove.includes(hb));
+    }
+    
     let newActiveCreatures = new Map();
     const matchedHealthBars = new Set();
 

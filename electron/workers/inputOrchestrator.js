@@ -5,15 +5,15 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger({ info: false, error: true, debug: false });
 const PRIORITY_MAP = {
-  userRule: 0,
-  movement: 1,
-  looting: 2,
-  script: 3,
-  targeting: 4,
-  hotkey: 5,
-  default: 10,
+  userRule: { priority: 0, defer: false },
+  targeting: { priority: 1, defer: false },
+  looting: { priority: 2, defer: false },
+  script: { priority: 3, defer: true },
+  movement: { priority: 4, defer: true },
+  hotkey: { priority: 5, defer: true },
+  default: { priority: 10, defer: true },
 };
-const THROTTLE_MS = 75;
+const THROTTLE_MS = 50;
 const MAX_DEFERRALS = 4;
 
 let globalState = null;
@@ -24,6 +24,7 @@ function applyStarvationPrevention(items) {
   const highestPriority = Math.min(...items.map((i) => i.priority));
   items.forEach((item) => {
     if (
+      item.canDefer &&
       item.priority > highestPriority &&
       item.priority !== -1 &&
       ++item.deferralCount >= MAX_DEFERRALS
@@ -123,9 +124,11 @@ parentPort.on('message', (msg) => {
       inputType = 'mouse';
     }
 
+    const priorityConfig = PRIORITY_MAP[payload.type] || PRIORITY_MAP.default;
     const item = {
       action: payload.action,
-      priority: PRIORITY_MAP[payload.type] || PRIORITY_MAP.default,
+      priority: priorityConfig.priority,
+      canDefer: priorityConfig.defer,
       type: payload.type,
       deferralCount: 0,
       actionId: payload.actionId,

@@ -167,16 +167,18 @@ void HealthBarWorker(WorkerData data) {
                 if (mask & (1 << j)) {
                     uint32_t current_x = x + j;
 
-                    if (!ValidateRightBorder(data, current_x, y)) continue;
-                    if (!ValidateTopBorder(data, current_x, y)) continue;
-                    if (!ValidateBottomBorder(data, current_x, y)) continue;
-
+                    // Check interior color FIRST to quickly reject false positives on black backgrounds
                     const uint8_t* innerPixelPtr = row1 + (current_x + 1) * 4;
                     uint32_t innerColor = (static_cast<uint32_t>(innerPixelPtr[2]) << 16) |
                                           (static_cast<uint32_t>(innerPixelPtr[1]) << 8) |
                                           innerPixelPtr[0];
 
                     if (!IsKnownBarColor(innerColor)) continue;
+
+                    // Now validate full borders (more expensive checks)
+                    if (!ValidateRightBorder(data, current_x, y)) continue;
+                    if (!ValidateTopBorder(data, current_x, y)) continue;
+                    if (!ValidateBottomBorder(data, current_x, y)) continue;
 
                     int centerX = static_cast<int>(current_x + 15);
                     int centerY = static_cast<int>(y + 2);
@@ -193,16 +195,18 @@ void HealthBarWorker(WorkerData data) {
             if (!IsBlack(row2 + x * 4)) continue;
             if (!IsBlack(row3 + x * 4)) continue;
 
-            if (!ValidateRightBorder(data, x, y)) continue;
-            if (!ValidateTopBorder(data, x, y)) continue;
-            if (!ValidateBottomBorder(data, x, y)) continue;
-
+            // Check interior color FIRST to quickly reject false positives on black backgrounds
             const uint8_t* innerPixelPtr = row1 + (x + 1) * 4;
             uint32_t innerColor = (static_cast<uint32_t>(innerPixelPtr[2]) << 16) |
                                   (static_cast<uint32_t>(innerPixelPtr[1]) << 8) |
                                   innerPixelPtr[0];
 
             if (!IsKnownBarColor(innerColor)) continue;
+
+            // Now validate full borders (more expensive checks)
+            if (!ValidateRightBorder(data, x, y)) continue;
+            if (!ValidateTopBorder(data, x, y)) continue;
+            if (!ValidateBottomBorder(data, x, y)) continue;
 
             int centerX = static_cast<int>(x + 15);
             int centerY = static_cast<int>(y + 2);

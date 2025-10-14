@@ -32,9 +32,9 @@ const FSM_STATE = {
 
 // --- Configuration ---
 const config = {
-  mainLoopIntervalMs: 5,
+  mainLoopIntervalMs: 50,
   unreachableTimeoutMs: 400,
-  acquireTimeoutMs: 250, // Global rate limit: minimum time between ANY targeting clicks
+  acquireTimeoutMs: 355, // Global rate limit: minimum time between ANY targeting clicks
   acquisitionGraceTimeMs: 400,
 };
 

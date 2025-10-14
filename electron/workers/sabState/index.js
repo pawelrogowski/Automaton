@@ -25,6 +25,7 @@ export {
  * Simple polling-based API:
  * - get(prop): Read a single property
  * - set(prop, val): Write a single property
+ * - getVersion(prop): Read only the version counter (lightweight)
  * - getMany(props): Read multiple properties with consistency guarantee
  * - setMany(updates): Write multiple properties atomically
  *
@@ -38,6 +39,7 @@ export const createWorkerInterface = (sab, workerId) => {
   return {
     get: (prop) => state.get(prop),
     set: (prop, val) => state.set(prop, val),
+    getVersion: (prop) => state.getVersion(prop),
     getMany: (props) => state.getMany(props),
     setMany: (updates) => state.setMany(updates),
   };
