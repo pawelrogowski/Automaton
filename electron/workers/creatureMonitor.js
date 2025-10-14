@@ -742,9 +742,15 @@ async function performOperation() {
       }
 
       const blCounts = new Map();
-      for (const name of canonicalNames) {
-        const count = battleListEntries.filter(e => isBattleListMatch(name, e.name)).length;
-        if (count > 0) blCounts.set(name, count);
+      // OPTIMIZED: compute counts once by iterating battle list entries and matching against canonical names
+      for (const entry of battleListEntries) {
+        const entryName = entry.name;
+        for (const name of canonicalNames) {
+          if (isBattleListMatch(name, entryName)) {
+            blCounts.set(name, (blCounts.get(name) || 0) + 1);
+            break; // entry matched a canonical name, no need to check the rest
+          }
+        }
       }
 
       for (const [id, oldCreature] of activeCreatures.entries()) {
@@ -784,7 +790,30 @@ async function performOperation() {
         minY: currentPlayerMinimapPosition.y - 5,
         maxY: currentPlayerMinimapPosition.y + 5,
       };
-      const reachableSig = `${currentPlayerMinimapPosition.x},${currentPlayerMinimapPosition.y},${currentPlayerMinimapPosition.z}|${screenBounds.minX},${screenBounds.maxX},${screenBounds.minY},${screenBounds.maxY}|${allCreaturePositions.map((p) => (p ? `${p.x},${p.y},${p.z}` : '0,0,0')).join(';')}`;
+      // OPTIMIZED: numeric hash signature to avoid per-frame string allocs
+      let reachableSig = 0;
+      // mix in player pos
+      reachableSig = ((reachableSig * 31) ^ (currentPlayerMinimapPosition.x | 0)) | 0;
+      reachableSig = ((reachableSig * 31) ^ (currentPlayerMinimapPosition.y | 0)) | 0;
+      reachableSig = ((reachableSig * 31) ^ (currentPlayerMinimapPosition.z | 0)) | 0;
+      // mix in screen bounds
+      reachableSig = ((reachableSig * 31) ^ (screenBounds.minX | 0)) | 0;
+      reachableSig = ((reachableSig * 31) ^ (screenBounds.maxX | 0)) | 0;
+      reachableSig = ((reachableSig * 31) ^ (screenBounds.minY | 0)) | 0;
+      reachableSig = ((reachableSig * 31) ^ (screenBounds.maxY | 0)) | 0;
+      // mix in creature positions
+      for (let i = 0; i < allCreaturePositions.length; i++) {
+        const p = allCreaturePositions[i];
+        if (p) {
+          reachableSig = ((reachableSig * 31) ^ (p.x | 0)) | 0;
+          reachableSig = ((reachableSig * 31) ^ (p.y | 0)) | 0;
+          reachableSig = ((reachableSig * 31) ^ (p.z | 0)) | 0;
+        } else {
+          reachableSig = ((reachableSig * 31) ^ 0) | 0;
+        }
+      }
+      // ensure unsigned 32-bit for map/cache keys if needed
+      reachableSig >>>= 0;
       let reachableTiles = null;
       if (reachableSig === lastReachableSig && lastReachableTiles) {
         reachableTiles = lastReachableTiles;

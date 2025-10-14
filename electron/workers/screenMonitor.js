@@ -52,6 +52,9 @@ let lastCalculatedState = {
   monsterNum: 0,
 };
 
+// Track last sent payload to avoid redundant Redux updates
+let lastSentPayload = null;
+
 // Per-region last scan timestamps for fallback scanning to detect disappearances
 const lastScanTs = {
   healthBar: 0,
@@ -593,7 +596,8 @@ async function processGameState() {
     lastCalculatedState.monsterNum = currentState.battleList?.entriesCount || 0;
     lastCalculatedState.isWalking = calculateWalkingState();
 
-    reusableGameStateUpdate.payload = {
+    // Build new payload
+    const newPayload = {
       hppc: lastCalculatedState.hppc,
       mppc: lastCalculatedState.mppc,
       monsterNum: lastCalculatedState.monsterNum,
@@ -606,7 +610,27 @@ async function processGameState() {
       activeActionItems: lastCalculatedState.activeActionItems,
       equippedItems: lastCalculatedState.equippedItems,
     };
-    parentPort.postMessage(reusableGameStateUpdate);
+
+    // Only send update if payload actually changed (deep comparison)
+    const payloadChanged = !lastSentPayload || (
+      newPayload.hppc !== lastSentPayload.hppc ||
+      newPayload.mppc !== lastSentPayload.mppc ||
+      newPayload.monsterNum !== lastSentPayload.monsterNum ||
+      newPayload.healingCd !== lastSentPayload.healingCd ||
+      newPayload.supportCd !== lastSentPayload.supportCd ||
+      newPayload.attackCd !== lastSentPayload.attackCd ||
+      newPayload.isWalking !== lastSentPayload.isWalking ||
+      JSON.stringify(newPayload.characterStatus) !== JSON.stringify(lastSentPayload.characterStatus) ||
+      JSON.stringify(newPayload.partyMembers) !== JSON.stringify(lastSentPayload.partyMembers) ||
+      JSON.stringify(newPayload.activeActionItems) !== JSON.stringify(lastSentPayload.activeActionItems) ||
+      JSON.stringify(newPayload.equippedItems) !== JSON.stringify(lastSentPayload.equippedItems)
+    );
+
+    if (payloadChanged || !hasScannedInitially) {
+      reusableGameStateUpdate.payload = newPayload;
+      parentPort.postMessage(reusableGameStateUpdate);
+      lastSentPayload = newPayload;
+    }
 
     hasScannedInitially = true;
 
@@ -676,6 +700,8 @@ parentPort.on('message', (message) => {
       // Reset checksums when regions change to force fresh calculation
       lastBarChecksums.healthBar = null;
       lastBarChecksums.manaBar = null;
+      // Reset last sent payload to force update on next scan
+      lastSentPayload = null;
     } else if (typeof message === 'object' && !message.type) {
       currentState = message;
       if (!isInitialized) initializeWorker();

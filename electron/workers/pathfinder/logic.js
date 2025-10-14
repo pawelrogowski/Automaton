@@ -84,6 +84,10 @@ export function runPathfindingLogic(context) {
     const dynamicTargetSAB = dynamicTargetResult?.data;
     const isTargetingMode = dynamicTargetSAB?.valid === 1;
 
+    // OPTIMIZATION: Read targetWaypoint ONCE at function start to avoid duplicate reads
+    const targetWaypointResult = sabInterface.get('targetWaypoint');
+    const targetWaypointSAB = targetWaypointResult?.data;
+
     // Reconstruct dynamicTarget object from SAB if valid
     let dynamicTarget = null;
     if (isTargetingMode) {
@@ -282,10 +286,7 @@ export function runPathfindingLogic(context) {
           }
         }
       } else if (targetIdentifier) {
-        // Read target waypoint from SAB (high-performance struct)
-        const targetWaypointResult = sabInterface.get('targetWaypoint');
-        const targetWaypointSAB = targetWaypointResult?.data;
-
+        // Use the cached targetWaypointSAB read from function start
         if (targetWaypointSAB && targetWaypointSAB.valid === 1) {
           result = pathfinderInstance.findPathSync(
             playerPos,
@@ -367,10 +368,7 @@ export function runPathfindingLogic(context) {
     if (isTargetingMode && dynamicTarget && dynamicTarget.targetCreaturePos) {
       pathTargetCoords = dynamicTarget.targetCreaturePos;
     } else {
-      // Read target waypoint from SAB
-      const targetWaypointResult = sabInterface.get('targetWaypoint');
-      const targetWaypointSAB = targetWaypointResult?.data;
-
+      // Use the cached targetWaypointSAB read above (avoid duplicate SAB reads)
       if (targetWaypointSAB && targetWaypointSAB.valid === 1) {
         pathTargetCoords = {
           x: targetWaypointSAB.x,
