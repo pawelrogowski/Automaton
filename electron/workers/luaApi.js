@@ -390,6 +390,7 @@ export const createLuaApi = async (context) => {
       { name: 'connectionFailedModal' },
       { name: 'warningModal' },
       { name: 'notLoggedInAnymoreModal' },
+      { name: 'loginServicePhpErrorModal' },
     ];
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {

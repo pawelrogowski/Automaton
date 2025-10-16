@@ -185,6 +185,7 @@ export function acquireTarget(
           method: 'leftClick',
           args: [targetCreature.absoluteX, targetCreature.absoluteY],
         },
+        ttl: 55, // Time-to-live: discard if not executed within 55ms
       },
     });
     

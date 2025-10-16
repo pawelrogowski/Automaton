@@ -1266,6 +1266,36 @@ const regionDefinitions = {
       },
     },
   },
+  loginServicePhpErrorModal: {
+    type: 'single',
+    direction: 'vertical',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [73,73,73],
+      [192,192,192],
+      [192,192,192],
+      [76,76,76],
+      [68,68,68],
+      [192,192,192],
+      [192,192,192],
+      [69,70,70],
+      [75,75,75],
+    ],
+    width: 1,
+    height: 1,
+    searchArea: {
+      type: 'center',
+    },
+    children: {
+      ok: {
+        type: 'fixed',
+        x: -15,
+        y: 38,
+        width: 1,
+        height: 1,
+      },
+    },
+  },
   warningModal: {
     type: 'single',
     direction: 'horizontal',

@@ -102,13 +102,6 @@ export class CavebotLuaExecutor {
         postInputAction: (action) => this.postInputAction(action),
       });
 
-      // NEW: Listen for completion messages from the input orchestrator
-      parentPort.on('message', (message) => {
-        if (message.type === 'inputActionCompleted') {
-          this.handleInputActionCompleted(message.payload);
-        }
-      });
-
       this.asyncFunctionNames = newNames;
 
       // Wrap navigation functions to track events

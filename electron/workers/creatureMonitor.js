@@ -663,7 +663,23 @@ async function performOperation() {
     // --- CORRECTED TWO-STAGE LOGIC ---
 
     // STAGE 1: Track existing creatures by finding the closest health bar
+    // CRITICAL: Only match creatures that are STILL in the battle list to prevent
+    // matching dead creature's instanceId to a different creature's health bar
+    const currentBattleListNames = battleListEntries.map(e => e.name);
+    
     for (const [id, oldCreature] of activeCreatures.entries()) {
+      // Skip matching if this creature is no longer in battle list (died)
+      if (oldCreature.name) {
+        const stillInBattleList = currentBattleListNames.some(blName => 
+          isBattleListMatch(oldCreature.name, blName)
+        );
+        
+        if (!stillInBattleList) {
+          // Creature died, don't try to match its health bar to another creature
+          continue;
+        }
+      }
+      
       let bestMatchHb = null;
       let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
 
@@ -680,7 +696,7 @@ async function performOperation() {
         const detection = {
           absoluteCoords: { x: bestMatchHb.x, y: bestMatchHb.y },
           healthBarY: bestMatchHb.y,
-          name: oldCreature.name, // CRITICAL: Keep the existing, trusted name
+          name: oldCreature.name, // Keep the existing, trusted name (validated above)
           hp: bestMatchHb.healthTag,
         };
         const updated = updateCreatureState(
@@ -720,7 +736,7 @@ async function performOperation() {
     }
 
     // STAGE 3: Cleanup and state finalization
-    const currentBattleListNames = battleListEntries.map(e => e.name);
+    // Note: currentBattleListNames already computed in STAGE 1
     
     for (const [id, creature] of newActiveCreatures.entries()) {
       if (creature.name) {
@@ -851,7 +867,18 @@ async function performOperation() {
     let gameWorldTarget = null;
     const allObstructed = detectedEntities.length > 0 && detectedEntities.every((e) => e.hp === 'Obstructed');
 
-    if (!allObstructed && (playerPositionChanged || creaturesChanged)) {
+    // Check if dirty rects intersect game world (target box appearing/disappearing creates dirty rects)
+    const gameWorldChanged = dirtyRects.some((r) => rectsIntersect(r, gameWorld));
+
+    // Always run target detection when targeting is enabled to catch target box immediately after clicks
+    const shouldDetectTarget = !allObstructed && (
+      playerPositionChanged || 
+      creaturesChanged || 
+      gameWorldChanged ||
+      targetingEnabled  // Run every frame when targeting active
+    );
+
+    if (shouldDetectTarget) {
       const targetRect = await findTarget.findTarget(sharedBufferView, gameWorld);
       if (targetRect) {
         const screenX = targetRect.x + targetRect.width / 2;

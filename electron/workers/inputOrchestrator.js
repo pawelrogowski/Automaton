@@ -35,8 +35,13 @@ function applyStarvationPrevention(items) {
 }
 
 async function processQueue() {
-  if (queue.processing || !queue.items.length || !globalState?.global?.display)
+  if (queue.processing || !queue.items.length) return;
+  
+  // If we don't have state yet, try again soon
+  if (!globalState?.global?.display) {
+    setTimeout(() => processQueue(), 100);
     return;
+  }
 
   const now = Date.now();
   if (now - queue.lastTime < THROTTLE_MS) {
@@ -48,6 +53,20 @@ async function processQueue() {
   applyStarvationPrevention(queue.items);
   queue.items.sort((a, b) => a.priority - b.priority);
   const item = queue.items.shift();
+
+  // Check TTL (time-to-live) - discard action if it expired
+  if (item.ttl !== undefined && item.queuedAt !== undefined) {
+    const timeInQueue = Date.now() - item.queuedAt;
+    if (timeInQueue > item.ttl) {
+      log(
+        'info',
+        `[INPUT] Discarded stale action (TTL expired) | Source: ${item.type} | Time in queue: ${timeInQueue}ms | TTL: ${item.ttl}ms`,
+      );
+      queue.processing = false;
+      if (queue.items.length) processQueue();
+      return;
+    }
+  }
 
   try {
     const { action, actionId, inputType, type: inputSource } = item;
@@ -95,13 +114,20 @@ async function processQueue() {
     }
 
     queue.lastTime = Date.now();
-    if (actionId)
+    if (actionId !== undefined)
       parentPort.postMessage({
         type: 'inputActionCompleted',
         payload: { actionId, success: true },
       });
   } catch (error) {
     log('error', `[${inputType || 'input'}] Error:`, error);
+    // CRITICAL: Send failure message so promise doesn't hang
+    if (item.actionId !== undefined) {
+      parentPort.postMessage({
+        type: 'inputActionCompleted',
+        payload: { actionId: item.actionId, success: false, error: error.message },
+      });
+    }
   } finally {
     queue.processing = false;
     if (queue.items.length) processQueue();
@@ -133,6 +159,8 @@ parentPort.on('message', (msg) => {
       deferralCount: 0,
       actionId: payload.actionId,
       inputType,
+      ttl: payload.ttl, // Optional time-to-live in milliseconds
+      queuedAt: Date.now(), // Timestamp when action entered queue
     };
 
     queue.items.push(item);

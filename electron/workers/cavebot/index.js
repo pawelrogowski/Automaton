@@ -586,6 +586,11 @@ parentPort.on('message', (message) => {
       if (workerData.sharedLuaGlobals) {
         workerData.sharedLuaGlobals[key] = value;
       }
+    } else if (message.type === 'inputActionCompleted') {
+      // Forward inputActionCompleted messages to the Lua executor
+      if (workerState.luaExecutor) {
+        workerState.luaExecutor.handleInputActionCompleted(message.payload);
+      }
     } else if (typeof message === 'object' && !message.type) {
       workerState.globalState = message;
       if (!workerState.isInitialized) {
