@@ -465,44 +465,12 @@ async function performOperation() {
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
     const isPlayerInAnimationFreeze = now < playerAnimationFreezeEndTime;
 
-    let battleListEntries = lastBattleListEntries;
-    let playerNames = lastPlayerNames;
-    let npcNames = lastNpcNames;
-
     const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
     frameUpdateManager.accumulatedDirtyRects.length = 0;
 
-    let forceBattleListOcr = false;
-    if (now - lastBattleListOcrTime > 500) {
-      forceBattleListOcr = true;
-    }
-
-    if (dirtyRects.length > 0 || forceBattleListOcr) {
-      if (
-        regions.battleList &&
-        (dirtyRects.some((r) => rectsIntersect(r, regions.battleList)) ||
-          forceBattleListOcr)
-      ) {
-        battleListEntries = await processBattleListOcr(
-          sharedBufferView,
-          regions,
-        );
-        lastBattleListOcrTime = now;
-      }
-      if (
-        regions.playerList &&
-        dirtyRects.some((r) => rectsIntersect(r, regions.playerList))
-      ) {
-        playerNames = await processPlayerList(sharedBufferView, regions);
-      }
-      if (
-        regions.npcList &&
-        dirtyRects.some((r) => rectsIntersect(r, regions.npcList))
-      ) {
-        npcNames = await processNpcList(sharedBufferView, regions);
-      }
-    }
-
+    // ========================================================================
+    // PHASE 1: Read targeting configuration from SAB
+    // ========================================================================
     let targetingEnabled = false;
     let targetingList = [];
     if (sabInterface) {
@@ -522,12 +490,56 @@ async function performOperation() {
       } catch (err) {}
     }
 
+    // ========================================================================
+    // PHASE 2: Perform OCR on battle list
+    // ========================================================================
+    let battleListEntries = lastBattleListEntries;
+    let forceBattleListOcr = false;
+    if (now - lastBattleListOcrTime > 500) {
+      forceBattleListOcr = true;
+    }
+
+    if (dirtyRects.length > 0 || forceBattleListOcr) {
+      if (
+        regions.battleList &&
+        (dirtyRects.some((r) => rectsIntersect(r, regions.battleList)) ||
+          forceBattleListOcr)
+      ) {
+        battleListEntries = await processBattleListOcr(
+          sharedBufferView,
+          regions,
+        );
+        lastBattleListOcrTime = now;
+      }
+    }
+
+    // ========================================================================
+    // PHASE 3: Perform OCR on player/NPC lists
+    // ========================================================================
+    let playerNames = lastPlayerNames;
+    let npcNames = lastNpcNames;
+    
+    if (dirtyRects.length > 0) {
+      if (
+        regions.playerList &&
+        dirtyRects.some((r) => rectsIntersect(r, regions.playerList))
+      ) {
+        playerNames = await processPlayerList(sharedBufferView, regions);
+      }
+      if (
+        regions.npcList &&
+        dirtyRects.some((r) => rectsIntersect(r, regions.npcList))
+      ) {
+        npcNames = await processNpcList(sharedBufferView, regions);
+      }
+    }
+
+    // Auto-looting logic when creatures die
     if (
       targetingEnabled &&
       !isLootingInProgress &&
       lastBattleListEntries.length > battleListEntries.length
     ) {
-      // Battle list count decreased - something died, check if it's in targeting list
       const hadTargetable = lastBattleListEntries.some((entry) =>
         targetingList.some((rule) => isBattleListMatch(rule.name, entry.name)),
       );
@@ -541,6 +553,30 @@ async function performOperation() {
     lastBattleListEntries = battleListEntries;
     lastPlayerNames = playerNames;
     lastNpcNames = npcNames;
+
+    // Track which battle list entry is targeted (index), additive only
+    let battleListTargetIndex = -1;
+    if (battleListRegion && (dirtyRects.length > 0 && dirtyRects.some(r => rectsIntersect(r, battleListRegion)))) {
+      const targetColors = [[255, 0, 0], [255, 128, 128]];
+      const sequences = {};
+      for (let i = 0; i < targetColors.length; i++) {
+        sequences[`target_bar_${i}`] = { sequence: new Array(5).fill(targetColors[i]), direction: 'vertical' };
+      }
+      try {
+        const result = await findSequences.findSequencesNative(sharedBufferView, sequences, battleListRegion);
+        let markerY = null;
+        for (const key in result) { if (result[key]) { markerY = result[key].y; break; } }
+        if (markerY !== null) {
+          let minDistance = Infinity;
+          for (let i = 0; i < battleListEntries.length; i++) {
+            const entry = battleListEntries[i];
+            const distance = Math.abs(entry.y - markerY);
+            if (distance < minDistance) { minDistance = distance; battleListTargetIndex = i; }
+          }
+          if (minDistance >= 20) battleListTargetIndex = -1;
+        }
+      } catch (e) {}
+    }
 
     let lootingRequired = false;
     if (sabInterface) {
@@ -586,14 +622,16 @@ async function performOperation() {
       return;
     }
 
+    // ========================================================================
+    // PHASE 4: Detect health bars and perform gameWorld nameplate OCR
+    // ========================================================================
     const constrainedGameWorld = {
       ...gameWorld,
       y: gameWorld.y + 14,
       height: Math.max(0, gameWorld.height - 28),
     };
 
-    let healthBars = [];
-    healthBars = await findHealthBars.findHealthBars(
+    let healthBars = await findHealthBars.findHealthBars(
       sharedBufferView,
       constrainedGameWorld,
     );
@@ -617,7 +655,6 @@ async function performOperation() {
         const roundedY = Math.round(gameCoords.y);
         const roundedZ = gameCoords.z;
         
-        // Check if this health bar is at the player's exact position
         if (roundedX === currentPlayerMinimapPosition.x && 
             roundedY === currentPlayerMinimapPosition.y && 
             roundedZ === currentPlayerMinimapPosition.z) {
@@ -626,14 +663,11 @@ async function performOperation() {
       }
     }
     
-    // Remove player health bars from the list
     if (playerHealthBarsToRemove.length > 0) {
       healthBars = healthBars.filter(hb => !playerHealthBarsToRemove.includes(hb));
     }
-    
-    let newActiveCreatures = new Map();
-    const matchedHealthBars = new Set();
 
+    // Prepare canonical names from targeting list and battle list
     const explicitTargetNames = targetingList
       .filter((rule) => rule.name.toLowerCase() !== 'others')
       .map((rule) => rule.name);
@@ -647,6 +681,7 @@ async function performOperation() {
       ]),
     ];
 
+    // Helper function for nameplate OCR
     const getRawOcrForHealthBar = (hb) => {
       const ocrRegion = getNameplateRegion(hb, gameWorld, tileSize);
       if (!ocrRegion) return null;
@@ -660,22 +695,23 @@ async function performOperation() {
       return results.length > 0 ? results[0].text.trim().replace(/([a-z])([A-Z])/g, '$1 $2') : null;
     };
 
-    // --- CORRECTED TWO-STAGE LOGIC ---
-
-    // STAGE 1: Track existing creatures by finding the closest health bar
-    // CRITICAL: Only match creatures that are STILL in the battle list to prevent
-    // matching dead creature's instanceId to a different creature's health bar
+    // ========================================================================
+    // PHASE 5: Match creatures - Track existing and identify new
+    // ========================================================================
+    let newActiveCreatures = new Map();
+    const matchedHealthBars = new Set();
     const currentBattleListNames = battleListEntries.map(e => e.name);
     
+    // STAGE 1: Track existing creatures by finding closest health bar
+    // Only match creatures that are still in battle list to prevent
+    // matching dead creature's instanceId to different creature's health bar
     for (const [id, oldCreature] of activeCreatures.entries()) {
-      // Skip matching if this creature is no longer in battle list (died)
       if (oldCreature.name) {
         const stillInBattleList = currentBattleListNames.some(blName => 
           isBattleListMatch(oldCreature.name, blName)
         );
         
         if (!stillInBattleList) {
-          // Creature died, don't try to match its health bar to another creature
           continue;
         }
       }
@@ -717,7 +753,9 @@ async function performOperation() {
       }
     }
 
-    // STAGE 2: Identify genuinely new creatures from unmatched health bars
+    // STAGE 2: Identify new creatures from unmatched health bars
+    // For each unmatched health bar, perform nameplate OCR and match against
+    // battle list entries to identify new creatures
     const unmatchedHealthBars = healthBars.filter(hb => !matchedHealthBars.has(hb));
     if (unmatchedHealthBars.length > 0 && battleListEntries.length > 0) {
       await identifyAndAssignNewCreatures({
@@ -736,7 +774,7 @@ async function performOperation() {
     }
 
     // STAGE 3: Cleanup and state finalization
-    // Note: currentBattleListNames already computed in STAGE 1
+    // Remove creatures no longer in battle list and handle position-uncertain creatures
     
     for (const [id, creature] of newActiveCreatures.entries()) {
       if (creature.name) {
@@ -870,13 +908,8 @@ async function performOperation() {
     // Check if dirty rects intersect game world (target box appearing/disappearing creates dirty rects)
     const gameWorldChanged = dirtyRects.some((r) => rectsIntersect(r, gameWorld));
 
-    // Always run target detection when targeting is enabled to catch target box immediately after clicks
-    const shouldDetectTarget = !allObstructed && (
-      playerPositionChanged || 
-      creaturesChanged || 
-      gameWorldChanged ||
-      targetingEnabled  // Run every frame when targeting active
-    );
+    // Rescan target only when there are dirty rects intersecting gameWorld
+    const shouldDetectTarget = !allObstructed && gameWorldChanged;
 
     if (shouldDetectTarget) {
       const targetRect = await findTarget.findTarget(sharedBufferView, gameWorld);
@@ -891,73 +924,62 @@ async function performOperation() {
           tileSize,
         );
         if (targetGameCoordsRaw) {
-          let closestCreature = null;
-          let minDistance = Infinity;
-          for (const entity of detectedEntities) {
-            if (entity.gameCoords) {
-              const distance = calculateDistance(targetGameCoordsRaw, entity.gameCoords);
-              if (distance < minDistance && distance < 1.0) {
-                minDistance = distance;
-                closestCreature = entity;
+          // Snap to nearest tile and match by exact tile coords (1 creature per tile)
+          const targetTile = {
+            x: Math.round(targetGameCoordsRaw.x),
+            y: Math.round(targetGameCoordsRaw.y),
+            z: targetGameCoordsRaw.z ?? ((isPlayerInAnimationFreeze ? lastStablePlayerMinimapPosition : currentPlayerMinimapPosition).z),
+          };
+
+          // Try exact tile match first
+          let matched = detectedEntities.find((e) =>
+            e.gameCoords &&
+            e.gameCoords.x === targetTile.x &&
+            e.gameCoords.y === targetTile.y &&
+            e.gameCoords.z === targetTile.z
+          );
+
+          // Fallback: choose closest within 1 tile if exact match fails
+          if (!matched) {
+            let closestCreature = null;
+            let minDistance = Infinity;
+            for (const entity of detectedEntities) {
+              if (entity.gameCoords) {
+                const distance = calculateDistance(targetTile, entity.gameCoords);
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  closestCreature = entity;
+                }
               }
             }
+            if (minDistance <= 1.0) matched = closestCreature;
           }
-          if (closestCreature) {
+
+          if (matched) {
             gameWorldTarget = {
-              instanceId: closestCreature.instanceId,
-              name: closestCreature.name,
-              hp: closestCreature.hp,
-              distance: parseFloat(closestCreature.distance.toFixed(1)),
-              gameCoordinates: closestCreature.gameCoords,
-              isReachable: closestCreature.isReachable,
+              instanceId: matched.instanceId,
+              name: matched.name,
+              hp: matched.hp,
+              distance: parseFloat(matched.distance.toFixed(1)),
+              gameCoordinates: matched.gameCoords,
+              isReachable: matched.isReachable,
             };
           }
         }
       }
     }
 
-    let battleListTargetEntry = null;
-    if (battleListRegion) {
-      const targetColors = [[255, 0, 0], [255, 128, 128]];
-      const sequences = {};
-      for (let i = 0; i < targetColors.length; i++) {
-        sequences[`target_bar_${i}`] = { sequence: new Array(5).fill(targetColors[i]), direction: 'vertical' };
-      }
-      const result = await findSequences.findSequencesNative(sharedBufferView, sequences, battleListRegion);
-      let markerY = null;
-      for (const key in result) { if (result[key]) { markerY = result[key].y; break; } }
-
-      if (markerY !== null) {
-        let closestEntry = null;
-        let minDistance = Infinity;
-        for (const entry of battleListEntries) {
-          const distance = Math.abs(entry.y - markerY);
-          if (distance < minDistance) { minDistance = distance; closestEntry = entry; }
-        }
-        if (closestEntry && minDistance < 20) {
-          battleListTargetEntry = closestEntry;
-        }
-      }
-    }
-
+    // Battle list target box is not used anymore; gameWorld target is authoritative
     let unifiedTarget = null;
-    if (gameWorldTarget) {
-      unifiedTarget = gameWorldTarget;
-    } else if (battleListTargetEntry) {
-      const match = detectedEntities.find(c => isBattleListMatch(c.name, battleListTargetEntry.name));
-      if (match) {
-        unifiedTarget = {
-          instanceId: match.instanceId,
-          name: match.name,
-          hp: match.hp,
-          distance: parseFloat(match.distance.toFixed(1)),
-          gameCoordinates: match.gameCoords,
-          isReachable: match.isReachable,
-        };
-      }
+    if (shouldDetectTarget) {
+      // After a rescan, adopt detected target (or clear if none)
+      unifiedTarget = gameWorldTarget || null;
+    } else {
+      // No rescan this frame: persist previous target
+      unifiedTarget = lastSentTarget;
     }
 
-    if (unifiedTarget && !detectedEntities.some(c => c.instanceId === unifiedTarget.instanceId)) {
+    if (shouldDetectTarget && unifiedTarget && !detectedEntities.some(c => c.instanceId === unifiedTarget.instanceId)) {
       unifiedTarget = null;
     }
 
@@ -996,11 +1018,11 @@ async function performOperation() {
           name: c.name,
         }));
 
-        const sabBattleList = battleListEntries.slice(0, 50).map(b => ({
+        const sabBattleList = battleListEntries.slice(0, 50).map((b, i) => ({
           name: b.name,
           x: b.x,
           y: b.y,
-          isTarget: (battleListTargetEntry && b === battleListTargetEntry) ? 1 : 0
+          isTarget: (typeof battleListTargetIndex === 'number' && i === battleListTargetIndex) ? 1 : 0,
         }));
 
         sabInterface.setMany({
@@ -1035,6 +1057,15 @@ async function performOperation() {
       lastPostedResults.set('uiValues/setNpcs', npcsString);
       batchUpdates.push({ type: 'uiValues/setNpcs', payload: npcNames });
       if (npcNames.length > 0) batchUpdates.push({ type: 'uiValues/updateLastSeenNpcMs', payload: undefined });
+    }
+
+    // Push battle list target index to Redux if it changed
+    if (typeof battleListTargetIndex === 'number') {
+      const idxStr = JSON.stringify(battleListTargetIndex);
+      if (idxStr !== lastPostedResults.get('battleList/setTargetIndex')) {
+        lastPostedResults.set('battleList/setTargetIndex', idxStr);
+        batchUpdates.push({ type: 'battleList/setTargetIndex', payload: battleListTargetIndex });
+      }
     }
 
     if (batchUpdates.length > 0) {
