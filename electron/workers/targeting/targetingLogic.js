@@ -83,7 +83,7 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
 
   const validCandidates = allCreatures.filter(c => {
     const rule = getRule(c);
-    return c.isReachable && !c.positionUncertain && rule && rule.action === 'Attack';
+    return c.isReachable && rule && rule.action === 'Attack';
   });
 
   if (validCandidates.length === 0) {
@@ -94,6 +94,12 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
     if (!candidates || candidates.length === 0) {
       return null;
     }
+    
+    // If currentTarget is among candidates, prefer it (stickiness)
+    if (currentTarget && candidates.find(c => c.instanceId === currentTarget.instanceId)) {
+      return candidates.find(c => c.instanceId === currentTarget.instanceId);
+    }
+    
     const adjacent = candidates.filter(c => c.isAdjacent);
     if (adjacent.length > 0) {
       return adjacent.sort((a, b) => a.distance - b.distance)[0];
@@ -278,13 +284,17 @@ export async function manageMovement(
     }
   }
   
-  if (
-    !playerMinimapPosition ||
-    !sabInterface ||
-    !path ||
-    path.length < 2
-  ) {
+  if (!playerMinimapPosition || !sabInterface) {
     return;
+  }
+  
+  if (!path || path.length < 2) {
+    return;
+  }
+  
+  // Validate path is for current target (prevent using path for different creature)
+  if (workerContext.pathInstanceId !== currentTarget.instanceId) {
+    return; // Path is for different creature, wait for new path
   }
 
   // FIX: Validate that path is for current position (prevent stale path usage)

@@ -312,7 +312,8 @@ function updateCreatureState(
 async function identifyAndAssignNewCreatures({
   unmatchedHealthBars,
   newActiveCreatures,
-  battleListEntries,
+  battleListCounts,
+  matchedCounts,
   canonicalNames,
   performOcrForHealthBar,
   currentPlayerMinimapPosition,
@@ -324,21 +325,8 @@ async function identifyAndAssignNewCreatures({
 }) {
   if (unmatchedHealthBars.length === 0) return;
 
-  const battleListCounts = new Map();
-  for (const entry of battleListEntries) {
-    let fullName = canonicalNames.find(cName => isBattleListMatch(cName, entry.name)) || entry.name;
-    if (fullName.endsWith('...')) {
-      fullName = fullName.slice(0, -3);
-    }
-    battleListCounts.set(fullName, (battleListCounts.get(fullName) || 0) + 1);
-  }
-
-  const identifiedCounts = new Map();
-  for (const creature of newActiveCreatures.values()) {
-    if (creature.name) {
-      identifiedCounts.set(creature.name, (identifiedCounts.get(creature.name) || 0) + 1);
-    }
-  }
+  // identifiedCounts is now the same as matchedCounts (creatures already identified in STAGE 1)
+  const identifiedCounts = new Map(matchedCounts);
 
   const neededCreatures = [];
   for (const [name, count] of battleListCounts.entries()) {
@@ -401,6 +389,9 @@ async function identifyAndAssignNewCreatures({
       if (newCreature) {
         newActiveCreatures.set(newId, newCreature);
         usedBars.add(bestBar);
+        // Increment identified count to prevent over-assignment
+        identifiedCounts.set(neededName, (identifiedCounts.get(neededName) || 0) + 1);
+        matchedCounts.set(neededName, (matchedCounts.get(neededName) || 0) + 1);
       }
     }
   }
@@ -495,9 +486,9 @@ async function performOperation() {
     // ========================================================================
     let battleListEntries = lastBattleListEntries;
     let forceBattleListOcr = false;
-    if (now - lastBattleListOcrTime > 500) {
-      forceBattleListOcr = true;
-    }
+    // if (now - lastBattleListOcrTime > 500) {
+    //   forceBattleListOcr = true;
+    // }
 
     if (dirtyRects.length > 0 || forceBattleListOcr) {
       if (
@@ -668,18 +659,13 @@ async function performOperation() {
     }
 
     // Prepare canonical names from targeting list and battle list
+    // NOTE: New creature creation still uses ONLY battleList counts; targetingList
+    // here is for better name normalization/matching (does not create creatures).
     const explicitTargetNames = targetingList
       .filter((rule) => rule.name.toLowerCase() !== 'others')
       .map((rule) => rule.name);
-
     const battleListNames = battleListEntries.map((e) => e.name);
-
-    const canonicalNames = [
-      ...new Set([
-        ...explicitTargetNames,
-        ...battleListNames,
-      ]),
-    ];
+    const canonicalNames = [...new Set([...explicitTargetNames, ...battleListNames])];
 
     // Helper function for nameplate OCR
     const getRawOcrForHealthBar = (hb) => {
@@ -702,16 +688,40 @@ async function performOperation() {
     const matchedHealthBars = new Set();
     const currentBattleListNames = battleListEntries.map(e => e.name);
     
+    // Count how many of each creature name are in battle list
+    const battleListCounts = new Map();
+    for (const entry of battleListEntries) {
+      let fullName = canonicalNames.find(cName => isBattleListMatch(cName, entry.name)) || entry.name;
+      if (fullName.endsWith('...')) {
+        fullName = fullName.slice(0, -3);
+      }
+      battleListCounts.set(fullName, (battleListCounts.get(fullName) || 0) + 1);
+    }
+    
+    // Track how many of each creature name we've already matched in STAGE 1
+    const matchedCounts = new Map();
+    
     // STAGE 1: Track existing creatures by finding closest health bar
-    // Only match creatures that are still in battle list to prevent
-    // matching dead creature's instanceId to different creature's health bar
+    // Only match creatures that are still in battle list AND haven't exceeded the count
+    const shouldVerifyNameplates = healthBars.length > battleListEntries.length;
+    
     for (const [id, oldCreature] of activeCreatures.entries()) {
       if (oldCreature.name) {
+        // Check if this creature name is in battle list
         const stillInBattleList = currentBattleListNames.some(blName => 
           isBattleListMatch(oldCreature.name, blName)
         );
         
         if (!stillInBattleList) {
+          continue;
+        }
+        
+        // Check if we've already matched enough creatures with this name
+        const battleListCount = battleListCounts.get(oldCreature.name) || 0;
+        const alreadyMatched = matchedCounts.get(oldCreature.name) || 0;
+        
+        if (alreadyMatched >= battleListCount) {
+          // We've already matched enough creatures with this name, skip this one
           continue;
         }
       }
@@ -729,6 +739,18 @@ async function performOperation() {
       }
 
       if (bestMatchHb) {
+        // If more health bars than battle list entries, verify nameplate matches
+        if (shouldVerifyNameplates && oldCreature.name) {
+          const rawOcr = getRawOcrForHealthBar(bestMatchHb);
+          if (rawOcr) {
+            const similarity = getSimilarityScore(rawOcr, oldCreature.name);
+            if (similarity < 0.5) {
+              // Nameplate doesn't match expected name - likely wrong creature, skip
+              continue;
+            }
+          }
+        }
+        
         const detection = {
           absoluteCoords: { x: bestMatchHb.x, y: bestMatchHb.y },
           healthBarY: bestMatchHb.y,
@@ -746,9 +768,12 @@ async function performOperation() {
           isPlayerInAnimationFreeze,
         );
         if (updated) {
-          if (updated.positionUncertain) delete updated.positionUncertain;
           newActiveCreatures.set(id, updated);
           matchedHealthBars.add(bestMatchHb);
+          // Increment matched count for this creature name
+          if (updated.name) {
+            matchedCounts.set(updated.name, (matchedCounts.get(updated.name) || 0) + 1);
+          }
         }
       }
     }
@@ -761,7 +786,8 @@ async function performOperation() {
       await identifyAndAssignNewCreatures({
         unmatchedHealthBars,
         newActiveCreatures,
-        battleListEntries,
+        battleListCounts,
+        matchedCounts,
         canonicalNames,
         performOcrForHealthBar: async (hb) => getRawOcrForHealthBar(hb),
         currentPlayerMinimapPosition,
@@ -789,47 +815,27 @@ async function performOperation() {
       }
     }
 
+    // Count mismatch detection: if battle list has more creatures than we detected,
+    // force full rescan on next frame (don't keep stale positionUncertain creatures)
     if (battleListEntries.length > 0) {
       const detectedCounts = new Map();
       for (const c of newActiveCreatures.values()) {
         detectedCounts.set(c.name, (detectedCounts.get(c.name) || 0) + 1);
       }
 
-      const blCounts = new Map();
-      // OPTIMIZED: compute counts once by iterating battle list entries and matching against canonical names
-      for (const entry of battleListEntries) {
-        const entryName = entry.name;
-        for (const name of canonicalNames) {
-          if (isBattleListMatch(name, entryName)) {
-            blCounts.set(name, (blCounts.get(name) || 0) + 1);
-            break; // entry matched a canonical name, no need to check the rest
-          }
+      let hasCountMismatch = false;
+      for (const [name, blCount] of battleListCounts.entries()) {
+        const detectedCount = detectedCounts.get(name) || 0;
+        if (blCount > detectedCount) {
+          hasCountMismatch = true;
+          console.log(
+            `[CreatureMonitor] Count mismatch: ${name} - battle list: ${blCount}, detected: ${detectedCount}. Will rescan on next frame.`,
+          );
+          break;
         }
       }
 
-      for (const [id, oldCreature] of activeCreatures.entries()) {
-        if (!newActiveCreatures.has(id) && oldCreature.name) {
-          const blCount = blCounts.get(oldCreature.name) || 0;
-          const detectedCount = detectedCounts.get(oldCreature.name) || 0;
-
-          if (blCount > detectedCount) {
-            if (!oldCreature.positionUncertain) {
-              oldCreature.positionUncertainSince = now;
-            }
-            oldCreature.lastSeen = now;
-            oldCreature.positionUncertain = true;
-            detectedCounts.set(oldCreature.name, detectedCount + 1);
-
-            if (now - (oldCreature.positionUncertainSince || now) < 2000) {
-              newActiveCreatures.set(id, oldCreature);
-            } else {
-              console.log(
-                `[CreatureMonitor] Creature disappeared (uncertain timeout): ${oldCreature.name} (instanceId: ${id})`,
-              );
-            }
-          }
-        }
-      }
+      // No need to keep unmatched creatures - they'll be re-detected on next frame
     }
 
     activeCreatures = newActiveCreatures;
@@ -882,9 +888,7 @@ async function performOperation() {
       }
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
-        const isReachable = entity.positionUncertain
-          ? false
-          : typeof reachableTiles[coordsKey] !== 'undefined';
+        const isReachable = typeof reachableTiles[coordsKey] !== 'undefined';
         
         let isAdjacent = false;
         if (entity.gameCoords) {
@@ -974,6 +978,21 @@ async function performOperation() {
     if (shouldDetectTarget) {
       // After a rescan, adopt detected target (or clear if none)
       unifiedTarget = gameWorldTarget || null;
+
+      // Sticky rule: do not switch between same-name creatures unless previous becomes unreachable
+      if (
+        gameWorldTarget &&
+        lastSentTarget &&
+        gameWorldTarget.instanceId !== lastSentTarget.instanceId &&
+        gameWorldTarget.name &&
+        lastSentTarget.name &&
+        isBattleListMatch(gameWorldTarget.name, lastSentTarget.name)
+      ) {
+        const prevEntity = detectedEntities.find(c => c.instanceId === lastSentTarget.instanceId);
+        if (prevEntity && prevEntity.isReachable) {
+          unifiedTarget = lastSentTarget; // keep previous target
+        }
+      }
     } else {
       // No rescan this frame: persist previous target
       unifiedTarget = lastSentTarget;

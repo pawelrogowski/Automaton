@@ -1,4 +1,4 @@
-export const TARGET_FPS = 20;
+export const TARGET_FPS = 10;
 
 // --- SharedArrayBuffer (SAB) Indices ---
 export const FRAME_COUNTER_INDEX = 0;

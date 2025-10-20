@@ -10,6 +10,7 @@ import {
   manageMovement,
   findRuleForCreatureName,
 } from './targeting/targetingLogic.js';
+import { isBattleListMatch } from '../utils/nameMatcher.js';
 import {
   PATH_STATUS_IDLE,
 } from './sabState/schema.js';
@@ -60,12 +61,16 @@ const targetingState = {
   unreachableSince: 0,
   lastTargetingClickTime: 0, // Timestamp of last targeting click (for global rate limiting)
   lastDispatchedDynamicTargetId: null,
+  acquisitionStartTime: 0, // When we first started trying to acquire current pathfindingTarget
   lastAcquireAttempt: {
     targetName: '',
     targetInstanceId: null,
   },
+  stuckTargetTracking: {
+    adjacentSince: 0,
+    lastHp: null,
+  },
 };
-
 // Initialize unified SAB interface
 let sabInterface = null;
 if (workerData.unifiedSAB) {
@@ -193,11 +198,33 @@ function handleIdleState() {
 }
 
 function handleSelectingState() {
-  const bestTarget = selectBestTarget(
-    getCreaturesFromSAB,
+  // Prefer reachable targets: if any reachable creatures exist, select among them
+  const allCreatures = getCreaturesFromSAB();
+  const reachableCreatures = allCreatures.filter(c => c.isReachable);
+  const provider = () => (reachableCreatures.length > 0 ? reachableCreatures : allCreatures);
+
+  // 1) Compute rules-based best target (where we want to go)
+  let bestTarget = selectBestTarget(
+    provider,
     workerState.globalState.targeting.targetingList,
     null
   );
+
+  // 2) If we already have an in-game target with the same name that's still reachable,
+  //    prefer that exact instance to avoid swapping between same-named creatures.
+  //    UNLESS we were actively trying to acquire a different instance (prevents deadlock).
+  const sabTarget = getCurrentTargetFromSAB();
+  if (bestTarget && sabTarget && 
+      (!targetingState.pathfindingTarget || 
+       targetingState.pathfindingTarget.instanceId === bestTarget.instanceId)) {
+    const sabEntity = allCreatures.find(c => c.instanceId === sabTarget.instanceId);
+    if (
+      sabEntity && sabEntity.isReachable &&
+      isBattleListMatch(sabEntity.name, bestTarget.name)
+    ) {
+      bestTarget = sabEntity; // stick to current instance
+    }
+  }
 
   if (bestTarget) {
     targetingState.pathfindingTarget = bestTarget;
@@ -233,12 +260,20 @@ function handlePrepareAcquisitionState() {
     return;
   }
 
+  // Guard: if in-game target is a different creature (not just different instance), re-evaluate
+  const currentSABTarget = getCurrentTargetFromSAB();
+  if (currentSABTarget && currentSABTarget.instanceId !== 0 && 
+      !isBattleListMatch(currentSABTarget.name, pathfindingTarget.name)) {
+    transitionTo(FSM_STATE.SELECTING, `In-game target mismatch: ${currentSABTarget.name} vs ${pathfindingTarget.name}`);
+    return;
+  }
+
   const updatedTarget = getCreaturesFromSAB().find(c => c.instanceId === pathfindingTarget.instanceId);
   if (!updatedTarget) {
     transitionTo(FSM_STATE.SELECTING, 'Target disappeared');
     return;
   }
-  targetingState.pathfindingTarget = updatedTarget;
+  targetingState.pathfindingTarget = updatedTarget; // Refresh with latest creature data
 
   if (!updatedTarget.isReachable) {
     if (!targetingState.unreachableSince) {
@@ -427,12 +462,46 @@ async function handleEngagingState() {
     targetingState.currentTarget.gameCoords.z !== updatedTarget.gameCoords.z;
   
   targetingState.currentTarget = updatedTarget;
+  targetingState.pathfindingTarget = updatedTarget; // Keep pathfindingTarget in sync for movement
   
   if (positionChanged) {
     const rule = findRuleForCreatureName(updatedTarget.name, targetingList);
     if (rule && rule.stance !== 'Stand') {
       updateDynamicTarget(parentPort, updatedTarget, targetingList);
     }
+  }
+
+  // Track stuck target (adjacent but not attacking)
+  if (updatedTarget.isAdjacent) {
+    if (targetingState.stuckTargetTracking.adjacentSince === 0) {
+      targetingState.stuckTargetTracking.adjacentSince = now;
+      targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
+    } else if (updatedTarget.hp === targetingState.stuckTargetTracking.lastHp) {
+      const stuckDuration = now - targetingState.stuckTargetTracking.adjacentSince;
+      if (stuckDuration > 3500) {
+        logger('info', `[STUCK TARGET] Target ${updatedTarget.name} (ID ${updatedTarget.instanceId}) adjacent for ${stuckDuration}ms with no HP change. Pressing Escape.`);
+        parentPort.postMessage({
+          type: 'inputAction',
+          payload: {
+            type: 'targeting',
+            action: { module: 'keypress', method: 'sendKey', args: ['Escape'] },
+          },
+        });
+        // Force re-selection after escape
+        targetingState.stuckTargetTracking.adjacentSince = 0;
+        targetingState.stuckTargetTracking.lastHp = null;
+        transitionTo(FSM_STATE.SELECTING, 'Stuck target recovery');
+        return;
+      }
+    } else {
+      // HP changed, reset tracking
+      targetingState.stuckTargetTracking.adjacentSince = now;
+      targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
+    }
+  } else {
+    // Not adjacent, reset tracking
+    targetingState.stuckTargetTracking.adjacentSince = 0;
+    targetingState.stuckTargetTracking.lastHp = null;
   }
 
   if (!updatedTarget.isReachable) {
@@ -450,20 +519,8 @@ async function handleEngagingState() {
   else {
     targetingState.unreachableSince = 0;
   }
-
-  const movementContext = {
-    targetingList: globalState.targeting.targetingList,
-  };
   
-  await manageMovement(
-    { 
-      ...workerState, 
-      parentPort, 
-      sabInterface,
-    },
-    movementContext,
-    targetingState.currentTarget
-  );
+  // Movement is now handled globally after FSM switch statement
 }
 
 // --- Main Loop ---
@@ -602,6 +659,23 @@ async function performTargeting() {
     case FSM_STATE.ENGAGING:
       if (controlState === 'TARGETING') await handleEngagingState();
       break;
+  }
+
+  // Movement: use pathfindingTarget in all states (not just ENGAGING)
+  if (controlState === 'TARGETING' && targetingState.pathfindingTarget) {
+    const movementContext = {
+      targetingList: globalState.targeting.targetingList,
+    };
+    
+    await manageMovement(
+      { 
+        ...workerState, 
+        parentPort, 
+        sabInterface,
+      },
+      movementContext,
+      targetingState.pathfindingTarget
+    );
   }
 
   const hasValidTarget =
