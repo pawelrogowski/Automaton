@@ -57,6 +57,9 @@ const STICKY_SNAP_THRESHOLD_TILES = 0.5;
 const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
 const CREATURE_GRACE_PERIOD_MS = 150; // Grace period for temporary disappearances
+// How long to blacklist a tile's healthbar after we decide it's an unmatched creature.
+// During this time the tile will be ignored for detections to avoid mis-assignment.
+const UNMATCHED_BLACKLIST_MS = 500;
 
 // Name matching threshold — lowered to be tolerant to OCR noise
 const NAME_MATCH_THRESHOLD = 0.3;
@@ -84,6 +87,12 @@ let lastReachableTiles = null;
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
 let lastHealthScanTime = 0;
+
+// Blacklist for tiles with healthbars we explicitly choose to ignore.
+// This prevents those tiles from generating creatures and avoids matching
+// their healthbar pixels to other creatures for a short time.
+let blacklistedTiles = new Set();
+let blacklistedUntil = new Map();
 
 // Debug logging helper
 let lastDebugLogPayload = '';
@@ -182,6 +191,28 @@ async function processBattleListOcr(buffer, regions) {
     });
     return [];
   }
+
+  // Helper to sanitize OCR'd battle list names:
+  // - convert unicode ellipsis to dots
+  // - trim trailing dots / ellipsis
+  // - split camelCase like "MuglexClan" -> "Muglex Clan"
+  // - remove non-letter characters but keep spaces
+  const sanitizeBattleListName = (raw) => {
+    if (!raw) return '';
+    let s = String(raw).trim();
+    // Normalize unicode ellipsis character to three dots
+    s = s.replace(/\u2026/g, '...');
+    // Remove trailing sequences of dots (including "...")
+    s = s.replace(/\.{1,}$/g, '').trim();
+    // Break camelCase (e.g. "MuglexClan" -> "Muglex Clan")
+    s = s.replace(/([a-z])([A-Z])/g, '$1 $2');
+    // Remove any remaining characters that are not letters or spaces
+    s = s.replace(/[^a-zA-Z\s]/g, '');
+    // Collapse multiple spaces
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  };
+
   try {
     const ocrResults =
       recognizeText(
@@ -195,8 +226,9 @@ async function processBattleListOcr(buffer, regions) {
       .map((result) => {
         const trimmedName = (result.text || '').trim();
         const fixedName = trimmedName.replace(/([a-z])([A-Z])/g, '$1 $2');
+        const sanitized = sanitizeBattleListName(fixedName);
         return {
-          name: fixedName,
+          name: sanitized,
           x: result.click.x,
           y: result.click.y,
         };
@@ -445,6 +477,59 @@ async function performOperation() {
           regions,
         );
         lastBattleListOcrTime = now;
+
+        // Post-process battle list entries:
+        // 1) Ensure names are sanitized (remove trailing '...' or unicode ellipsis and non-letters).
+        // 2) Prefer mapping each battle list entry to a targeting-list canonical name (if any).
+        try {
+          const explicitTargetNames = (targetingList || [])
+            .filter(
+              (rule) =>
+                rule && rule.name && rule.name.toLowerCase() !== 'others',
+            )
+            .map((r) => r.name);
+
+          battleListEntries = (battleListEntries || []).map((entry) => {
+            if (!entry || !entry.name) return entry;
+            let name = String(entry.name || '').trim();
+            // Normalize unicode ellipsis and remove trailing dots/ellipsis
+            name = name
+              .replace(/\u2026/g, '...')
+              .replace(/\.{1,}$/g, '')
+              .trim();
+            if (name.endsWith('...')) name = name.slice(0, -3).trim();
+            // Collapse multiple spaces
+            name = name.replace(/\s+/g, ' ').trim();
+
+            // If there are explicit target names, try to match the sanitized battle
+            // list entry to one of them. Prefer exact/isBattleListMatch, then fuzzy.
+            let matched = null;
+            if (explicitTargetNames.length > 0) {
+              // direct/truncated match
+              for (const tname of explicitTargetNames) {
+                if (
+                  isBattleListMatch(tname, name) ||
+                  isBattleListMatch(name, tname)
+                ) {
+                  matched = tname;
+                  break;
+                }
+              }
+              // fuzzy fallback using findBestNameMatch
+              if (!matched) {
+                const fuzzy = findBestNameMatch(name, explicitTargetNames);
+                if (fuzzy) matched = fuzzy;
+              }
+            }
+
+            return {
+              ...entry,
+              name: matched || name,
+            };
+          });
+        } catch (e) {
+          // If anything goes wrong here, keep original OCR results (sanitized by processBattleListOcr)
+        }
       }
     }
 
@@ -683,8 +768,28 @@ async function performOperation() {
       ? lastStablePlayerMinimapPosition
       : currentPlayerMinimapPosition;
 
-    // Build detections list
-    const detections = healthBars.map((hb) => {
+    // Expire any stale blacklisted tile entries
+    for (const [k, until] of Array.from(blacklistedUntil.entries())) {
+      if (until <= now) {
+        blacklistedUntil.delete(k);
+        blacklistedTiles.delete(k);
+      }
+    }
+
+    // Build detections list but filter out healthbars that:
+    // - are on a blacklisted tile, or
+    // - have an OCR name that cannot be matched to an explicit targeting name
+    //
+    // Also: if we encounter a healthbar whose OCR name cannot be matched to
+    // the explicit targeting list, we blacklist its tile for a short period
+    // (UNMATCHED_BLACKLIST_MS) so that the same healthbar pixels won't be
+    // accidentally matched to other creatures immediately afterwards.
+    //
+    // NOTE: `explicitTargetNames` is prepared earlier in the function (to avoid
+    // redeclaration). Reuse that value here.
+
+    const detections = [];
+    for (const hb of healthBars) {
       const creatureScreenX = hb.x;
       const creatureScreenY = hb.y + 14 + tileSize.height / 2;
       const gameCoords = getGameCoordinatesFromScreen(
@@ -694,9 +799,52 @@ async function performOperation() {
         gameWorld,
         tileSize,
       );
+
+      if (!gameCoords) continue;
+
+      // Tile key used for blacklisting (prevents re-using this tile for other creatures)
+      const tileKey = `${Math.round(gameCoords.x)},${Math.round(gameCoords.y)},${gameCoords.z}`;
+
+      // Skip if this tile is currently blacklisted
+      if (blacklistedTiles.has(tileKey)) continue;
+
       const ocrName = getRawOcrForHealthBar(hb);
-      return { hb, ocrName, gameCoords };
-    });
+
+      // If explicit targeting names exist, require the detection to match one of them.
+      // If it doesn't match, blacklist the tile for a short time and skip it.
+      if (explicitTargetNames.length > 0) {
+        let matchedToTarget = false;
+
+        if (ocrName && ocrName.length > 0) {
+          // direct/truncated check
+          for (const tname of explicitTargetNames) {
+            if (
+              isBattleListMatch(tname, ocrName) ||
+              isBattleListMatch(ocrName, tname)
+            ) {
+              matchedToTarget = true;
+              break;
+            }
+          }
+
+          // fuzzy fallback using findBestNameMatch
+          if (!matchedToTarget) {
+            const fuzzy = findBestNameMatch(ocrName, explicitTargetNames);
+            if (fuzzy) matchedToTarget = true;
+          }
+        }
+
+        // If no match to the explicit targeting list, blacklist and skip this healthbar.
+        if (!matchedToTarget) {
+          blacklistedTiles.add(tileKey);
+          blacklistedUntil.set(tileKey, now + UNMATCHED_BLACKLIST_MS);
+          continue;
+        }
+      }
+
+      // Keep this detection since it passed blacklisting / matching checks
+      detections.push({ hb, ocrName, gameCoords });
+    }
 
     // Scoring function — corrected argument order for similarity
     const calculateMatchScore = (creature, detection) => {
@@ -797,6 +945,11 @@ async function performOperation() {
 
     // Use canonicalNames (both targeting + battle list) for best-match attempts
     const canonicalTargetNames = canonicalNames;
+    // Allowed canonical names for reporting: explicit targeting names + battle list names.
+    // We will only report creatures whose names are present in one of these sets.
+    const allowedCanonicalNames = [
+      ...new Set([...explicitTargetNames, ...battleListNames]),
+    ];
 
     for (const detection of unmatchedDetections) {
       if (
@@ -890,6 +1043,41 @@ async function performOperation() {
     activeCreatures = newActiveCreatures;
 
     let detectedEntities = Array.from(activeCreatures.values());
+
+    // Enforce reporting policy:
+    // Only report creatures that match an entry in the battle list or the explicit targeting list.
+    // This ensures every reported creature is visible/known (reduces false positives).
+    detectedEntities = detectedEntities.filter((c) => {
+      if (!c || !c.name) return false;
+
+      // 1) Check against battleList names (handle truncated/trusted matching)
+      for (const blName of battleListNames) {
+        if (!blName) continue;
+        if (
+          isBattleListMatch(c.name, blName) ||
+          isBattleListMatch(blName, c.name)
+        ) {
+          return true;
+        }
+      }
+
+      // 2) Check against explicit targeting names
+      for (const tName of explicitTargetNames) {
+        if (!tName) continue;
+        if (
+          isBattleListMatch(c.name, tName) ||
+          isBattleListMatch(tName, c.name)
+        ) {
+          return true;
+        }
+        // fuzzy check as a last resort
+        const fuzzy = findBestNameMatch(c.name, [tName], NAME_MATCH_THRESHOLD);
+        if (fuzzy) return true;
+      }
+
+      // Not present in battle list nor targeting list -> exclude from reporting
+      return false;
+    });
 
     if (detectedEntities.length > 0) {
       const allCreaturePositions = detectedEntities.map((c) => c.gameCoords);

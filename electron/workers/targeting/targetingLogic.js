@@ -1,8 +1,6 @@
 // targeting/targetingLogic.js
 
-import {
-  getAbsoluteGameWorldClickCoordinates,
-} from '../../utils/gameWorldClickTranslator.js';
+import { getAbsoluteGameWorldClickCoordinates } from '../../utils/gameWorldClickTranslator.js';
 import {
   awaitWalkConfirmation,
   getDirectionKey,
@@ -34,35 +32,37 @@ const movementTracking = {
  */
 export function findRuleForCreatureName(creatureName, targetingList) {
   if (!creatureName || !targetingList?.length) return null;
-  
+
   // First try to find an explicit rule
   const explicitRule = targetingList.find(
-    (r) => r.action === 'Attack' && r.name === creatureName
+    (r) => r.action === 'Attack' && r.name === creatureName,
   );
-  
+
   if (explicitRule) {
     return explicitRule;
   }
-  
+
   // Check if "Others" wildcard rule exists
   const othersRule = targetingList.find(
-    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others'
+    (r) => r.action === 'Attack' && r.name.toLowerCase() === 'others',
   );
-  
+
   if (othersRule) {
     // Get all explicit creature names
     const explicitNames = new Set(
       targetingList
-        .filter((r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others')
-        .map((r) => r.name)
+        .filter(
+          (r) => r.action === 'Attack' && r.name.toLowerCase() !== 'others',
+        )
+        .map((r) => r.name),
     );
-    
+
     // If this creature has no explicit rule, use "Others"
     if (!explicitNames.has(creatureName)) {
       return othersRule;
     }
   }
-  
+
   return null;
 }
 
@@ -73,15 +73,20 @@ export function findRuleForCreatureName(creatureName, targetingList) {
  * @param {object|null} currentTarget - Currently targeted creature for stickiness logic.
  * @returns {object|null} The best creature object or null if no valid target is found.
  */
-export function selectBestTarget(getCreatures, targetingList, currentTarget = null) {
+export function selectBestTarget(
+  getCreatures,
+  targetingList,
+  currentTarget = null,
+) {
   const allCreatures = getCreatures();
   if (!targetingList?.length || !allCreatures?.length) {
     return null;
   }
 
-  const getRule = (creature) => findRuleForCreatureName(creature.name, targetingList);
+  const getRule = (creature) =>
+    findRuleForCreatureName(creature.name, targetingList);
 
-  const validCandidates = allCreatures.filter(c => {
+  const validCandidates = allCreatures.filter((c) => {
     const rule = getRule(c);
     return c.isReachable && rule && rule.action === 'Attack';
   });
@@ -94,7 +99,7 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
     if (!candidates || candidates.length === 0) {
       return null;
     }
-    const adjacent = candidates.filter(c => c.isAdjacent);
+    const adjacent = candidates.filter((c) => c.isAdjacent);
     if (adjacent.length > 0) {
       return adjacent.sort((a, b) => a.distance - b.distance)[0];
     }
@@ -103,12 +108,14 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
 
   // Rule 1: Handle existing target (Stickiness)
   if (currentTarget && currentTarget.instanceId) {
-    const currentTargetStillValid = validCandidates.find(c => c.instanceId === currentTarget.instanceId);
+    const currentTargetStillValid = validCandidates.find(
+      (c) => c.instanceId === currentTarget.instanceId,
+    );
 
     if (currentTargetStillValid) {
       const currentRule = getRule(currentTargetStillValid);
       if (currentRule) {
-        const higherPriorityCandidates = validCandidates.filter(c => {
+        const higherPriorityCandidates = validCandidates.filter((c) => {
           const newRule = getRule(c);
           return newRule && newRule.priority > currentRule.priority;
         });
@@ -117,15 +124,21 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
           return pickBest(higherPriorityCandidates);
         }
 
-        const samePriorityCandidates = validCandidates.filter(c => {
+        const samePriorityCandidates = validCandidates.filter((c) => {
           const newRule = getRule(c);
           return newRule && newRule.priority === currentRule.priority;
         });
 
         const bestOfSamePriority = pickBest(samePriorityCandidates);
 
-        if (bestOfSamePriority && bestOfSamePriority.instanceId !== currentTargetStillValid.instanceId) {
-          if (currentTargetStillValid.distance > 2 || !currentTargetStillValid.isReachable) {
+        if (
+          bestOfSamePriority &&
+          bestOfSamePriority.instanceId !== currentTargetStillValid.instanceId
+        ) {
+          if (
+            currentTargetStillValid.distance > 2 ||
+            !currentTargetStillValid.isReachable
+          ) {
             return bestOfSamePriority;
           }
         }
@@ -143,7 +156,7 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
     }
   }
 
-  const topPriorityCandidates = validCandidates.filter(c => {
+  const topPriorityCandidates = validCandidates.filter((c) => {
     const rule = getRule(c);
     return rule && rule.priority === highestPriority;
   });
@@ -163,12 +176,12 @@ export function acquireTarget(
   globalState = null,
   getCreatures = null,
   getPlayerPosition = null,
-  targetInstanceId = null
+  targetInstanceId = null,
 ) {
-  const creatures =  getCreatures();
-  
-  const targetCreature = targetInstanceId 
-    ? creatures.find(c => c.instanceId === targetInstanceId)
+  const creatures = getCreatures();
+
+  const targetCreature = targetInstanceId
+    ? creatures.find((c) => c.instanceId === targetInstanceId)
     : null;
 
   if (!targetCreature) {
@@ -179,8 +192,35 @@ export function acquireTarget(
     return { success: false, reason: 'target_not_reachable' };
   }
 
-  
-  
+  // If the battle list contains exactly one creature, prefer using the Tab key
+  // to cycle/target instead of performing a mouse click. This is useful for
+  // situations where clicking is unreliable or unnecessary when only one
+  // battle-list entry exists.
+  try {
+    const bl = typeof getBattleList === 'function' ? getBattleList() : [];
+    const blLen = Array.isArray(bl) ? bl.length : 0;
+    if (blLen === 1) {
+      parentPort.postMessage({
+        type: 'inputAction',
+        payload: {
+          type: 'targeting',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: ['Tab'],
+          },
+          ttl: 55, // keep TTL for parity with click action
+        },
+      });
+      return {
+        success: true,
+        method: 'tab',
+      };
+    }
+  } catch (e) {
+    // If battle-list read fails for any reason, fall back to existing behavior
+  }
+
   if (targetCreature.absoluteX !== 0 && targetCreature.absoluteY !== 0) {
     parentPort.postMessage({
       type: 'inputAction',
@@ -194,17 +234,21 @@ export function acquireTarget(
         ttl: 55, // Time-to-live: discard if not executed within 55ms
       },
     });
-    
+
     return {
-      success: true, 
-      method: 'gameworld'
+      success: true,
+      method: 'gameworld',
     };
   }
 
   return { success: false, reason: 'gameworld_click_not_possible' };
 }
 
-export function updateDynamicTarget(parentPort, pathfindingTarget, targetingList) {
+export function updateDynamicTarget(
+  parentPort,
+  pathfindingTarget,
+  targetingList,
+) {
   if (!pathfindingTarget) {
     parentPort.postMessage({
       storeUpdate: true,
@@ -237,26 +281,26 @@ export function updateDynamicTarget(parentPort, pathfindingTarget, targetingList
 export async function manageMovement(
   workerContext,
   targetingContext,
-  currentTarget
+  currentTarget,
 ) {
-  const {
-    path,
-    playerMinimapPosition,
-    parentPort,
-    sabInterface,
-  } = workerContext;
+  const { path, playerMinimapPosition, parentPort, sabInterface } =
+    workerContext;
   const { targetingList } = targetingContext;
 
   if (!currentTarget) {
     return;
   }
-  
+
   // Check if looting is required from unified SAB
   if (sabInterface) {
     try {
       const lootingResult = sabInterface.get('looting');
-      if (lootingResult && lootingResult.data && lootingResult.data.required === 1) {
-        return;  // Skip movement while looting
+      if (
+        lootingResult &&
+        lootingResult.data &&
+        lootingResult.data.required === 1
+      ) {
+        return; // Skip movement while looting
       }
     } catch (err) {
       // Continue with movement if looting check fails
@@ -264,13 +308,13 @@ export async function manageMovement(
   }
 
   const rule = findRuleForCreatureName(currentTarget.name, targetingList);
-  
+
   if (!rule || rule.stance === 'Stand') {
     return;
   }
 
   const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
-  
+
   if (rule.stance === 'Reach') {
     if (currentTarget.isAdjacent) {
       return;
@@ -283,15 +327,15 @@ export async function manageMovement(
       return;
     }
   }
-  
+
   if (!playerMinimapPosition || !sabInterface) {
     return;
   }
-  
+
   if (!path || path.length < 2) {
     return;
   }
-  
+
   // Validate path is for current target (prevent using path for different creature)
   if (workerContext.pathInstanceId !== currentTarget.instanceId) {
     return; // Path is for different creature, wait for new path
@@ -299,11 +343,11 @@ export async function manageMovement(
 
   // FIX: Validate that path is for current position (prevent stale path usage)
   const pathStart = path[0];
-  const isPathStale = 
+  const isPathStale =
     pathStart.x !== playerMinimapPosition.x ||
     pathStart.y !== playerMinimapPosition.y ||
     pathStart.z !== playerMinimapPosition.z;
-  
+
   if (isPathStale) {
     // Path is stale - silently skip movement and wait for new path
     return;
@@ -318,10 +362,10 @@ export async function manageMovement(
 
   const timeout = isDiagonalMovement(dirKey) ? 900 : 400;
   const now = Date.now();
-  
+
   movementTracking.lastMoveTimestamp = now;
   movementTracking.moveCount++;
-  
+
   // Set movement lock BEFORE sending keypress (prevent double-stepping)
   workerContext.isWaitingForMovement = true;
   workerContext.movementWaitUntil = now + timeout;
@@ -338,7 +382,7 @@ export async function manageMovement(
     await awaitWalkConfirmation(
       workerContext,
       { stateChangePollIntervalMs: 5 },
-      timeout
+      timeout,
     );
     // Movement confirmed - clear lock
     workerContext.isWaitingForMovement = false;
