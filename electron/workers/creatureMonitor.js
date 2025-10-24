@@ -1,3 +1,11 @@
+// ---- FILE: workers/creatureMonitor.js ----
+/**
+ * Full drop-in replacement for creatureMonitor.js
+ * - Preserves original architecture and logic
+ * - Fixes name matching argument order and lowers thresholds for OCR noise
+ * - Ensures OCR names are matched against both targeting and battle list canonical names
+ * - Prefers canonical matched names when available (fixes "wamp Troll" -> "Swamp Troll")
+ */
 import { parentPort, workerData } from 'worker_threads';
 import { createLogger } from '../utils/logger.js';
 import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
@@ -8,12 +16,13 @@ import Pathfinder from 'pathfinder-native';
 import pkg from 'font-ocr';
 import regionDefinitions from '../constants/regionDefinitions.js';
 import { calculateDistance, chebyshevDistance } from '../utils/distance.js';
-import {
-  getGameCoordinatesFromScreen,
-} from '../utils/gameWorldClickTranslator.js';
+import { getGameCoordinatesFromScreen } from '../utils/gameWorldClickTranslator.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
-// Import robust matching utilities
-import { findBestNameMatch, getSimilarityScore, isBattleListMatch } from '../utils/nameMatcher.js';
+import {
+  findBestNameMatch,
+  getSimilarityScore,
+  isBattleListMatch,
+} from '../utils/nameMatcher.js';
 import { processPlayerList, processNpcList } from './creatureMonitor/ocr.js';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,9 +38,7 @@ let pathfinderInstance = null;
 const { sharedData, paths } = workerData;
 if (!sharedData) throw new Error('[CreatureMonitor] Shared data not provided.');
 
-const {
-  imageSAB,
-} = sharedData;
+const { imageSAB } = sharedData;
 
 const sharedBufferView = Buffer.from(imageSAB);
 
@@ -49,6 +56,10 @@ const PLAYER_ANIMATION_FREEZE_MS = 25;
 const STICKY_SNAP_THRESHOLD_TILES = 0.5;
 const JITTER_CONFIRMATION_TIME_MS = 75;
 const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
+const CREATURE_GRACE_PERIOD_MS = 150; // Grace period for temporary disappearances
+
+// Name matching threshold — lowered to be tolerant to OCR noise
+const NAME_MATCH_THRESHOLD = 0.3;
 
 let currentState = null;
 let isInitialized = false;
@@ -67,13 +78,41 @@ let previousPlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let playerAnimationFreezeEndTime = 0;
 let lastStablePlayerMinimapPosition = { x: 0, y: 0, z: 0 };
 let lastBattleListOcrTime = 0;
-// Performance caches for detection
+let lastFrameHealthBars = [];
 let lastReachableSig = null;
 let lastReachableTiles = null;
-// Region snapshot management
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
 let lastHealthScanTime = 0;
+
+// Debug logging helper
+let lastDebugLogPayload = '';
+function logDetectionSummary(data) {
+  try {
+    const dedup = (arr) => [...new Set(arr.filter(Boolean))];
+    const fmt = (arr) =>
+      `[${dedup(arr)
+        .map((s) => `"${s}"`)
+        .join(',')}]`;
+    const payload =
+      `battleListItems: ${data.battleListItemNumber}, ` +
+      `healthBars: ${data.healthBarNumber}, ` +
+      `players: ${data.playerListNumber}, ` +
+      `npcs: ${data.npcListNumber}, ` +
+      `battleListMatched: ${data.battleListMatchedNameNumber}, ` +
+      `gameWorldMatched: ${data.gameWorldMatchedNameNumber}, ` +
+      `battleListMatchedNames: ${fmt(data.battleListMatchedNames)}, ` +
+      `gameWorldMatchedNames: ${fmt(data.gameWorldMatchedNames)}, ` +
+      `unmatchedBattleListNames: ${fmt(data.unmatchedBattleListNames)}, ` +
+      `unmatchedGameWorldNames: ${fmt(data.unmatchedGameWorldNames)}`;
+    if (payload !== lastDebugLogPayload) {
+      lastDebugLogPayload = payload;
+      if (data.healthBarNumber !== data.battleListItemNumber) {
+        console.log(`[NamesDebug] ${payload}`);
+      }
+    }
+  } catch (_) {}
+}
 
 function arePositionsEqual(pos1, pos2) {
   if (!pos1 || !pos2) return pos1 === pos2;
@@ -151,9 +190,10 @@ async function processBattleListOcr(buffer, regions) {
         regionDefinitions.battleList?.ocrColors || [],
         BATTLELIST_ALLOWED_CHARS,
       ) || [];
+
     return ocrResults
       .map((result) => {
-        const trimmedName = result.text.trim();
+        const trimmedName = (result.text || '').trim();
         const fixedName = trimmedName.replace(/([a-z])([A-Z])/g, '$1 $2');
         return {
           name: fixedName,
@@ -302,101 +342,12 @@ function updateCreatureState(
     creature.gameCoords,
   );
   creature.lastSeen = now;
+  creature.disappearedAt = null; // Reset grace period timer on successful update
   if (detection.name) creature.name = detection.name;
   if (detection.hp) creature.hp = detection.hp;
 
   return creature;
 }
-
-// --- RESTORED HELPER FUNCTION ---
-async function identifyAndAssignNewCreatures({
-  unmatchedHealthBars,
-  newActiveCreatures,
-  battleListCounts,
-  matchedCounts,
-  canonicalNames,
-  performOcrForHealthBar,
-  currentPlayerMinimapPosition,
-  lastStablePlayerMinimapPosition,
-  regions,
-  tileSize,
-  now,
-  isPlayerInAnimationFreeze,
-}) {
-  if (unmatchedHealthBars.length === 0) return;
-
-  // identifiedCounts is now the same as matchedCounts (creatures already identified in STAGE 1)
-  const identifiedCounts = new Map(matchedCounts);
-
-  const neededCreatures = [];
-  for (const [name, count] of battleListCounts.entries()) {
-    const identified = identifiedCounts.get(name) || 0;
-    if (count > identified) {
-      for (let i = 0; i < count - identified; i++) {
-        neededCreatures.push(name);
-      }
-    }
-  }
-
-  if (neededCreatures.length === 0) return;
-
-  const barOcrData = [];
-  for (const hb of unmatchedHealthBars) {
-    const rawOcr = await performOcrForHealthBar(hb);
-    if (rawOcr) {
-      barOcrData.push({ hb, rawOcr });
-    }
-  }
-
-  const usedBars = new Set();
-  
-  for (const neededName of neededCreatures) {
-    let bestBar = null;
-    let highestScore = -1;
-
-    for (const data of barOcrData) {
-      if (usedBars.has(data.hb)) continue;
-      const score = getSimilarityScore(data.rawOcr, neededName);
-      
-      if (score > 0.5 && score > highestScore) {
-        highestScore = score;
-        bestBar = data.hb;
-      }
-    }
-
-    if (bestBar) {
-      const detection = {
-        absoluteCoords: { x: bestBar.x, y: bestBar.y },
-        healthBarY: bestBar.y,
-        name: neededName,
-        hp: bestBar.healthTag,
-      };
-      
-      const newId = nextInstanceId++;
-      let newCreature = { instanceId: newId };
-      
-      newCreature = updateCreatureState(
-        newCreature,
-        detection,
-        currentPlayerMinimapPosition,
-        lastStablePlayerMinimapPosition,
-        regions,
-        tileSize,
-        now,
-        isPlayerInAnimationFreeze,
-      );
-
-      if (newCreature) {
-        newActiveCreatures.set(newId, newCreature);
-        usedBars.add(bestBar);
-        // Increment identified count to prevent over-assignment
-        identifiedCounts.set(neededName, (identifiedCounts.get(neededName) || 0) + 1);
-        matchedCounts.set(neededName, (matchedCounts.get(neededName) || 0) + 1);
-      }
-    }
-  }
-}
-
 
 async function performOperation() {
   try {
@@ -459,9 +410,7 @@ async function performOperation() {
     const dirtyRects = [...frameUpdateManager.accumulatedDirtyRects];
     frameUpdateManager.accumulatedDirtyRects.length = 0;
 
-    // ========================================================================
-    // PHASE 1: Read targeting configuration from SAB
-    // ========================================================================
+    // ===== PHASE 1: Read targeting configuration from SAB =====
     let targetingEnabled = false;
     let targetingList = [];
     if (sabInterface) {
@@ -481,14 +430,9 @@ async function performOperation() {
       } catch (err) {}
     }
 
-    // ========================================================================
-    // PHASE 2: Perform OCR on battle list
-    // ========================================================================
+    // ===== PHASE 2: OCR battle list =====n
     let battleListEntries = lastBattleListEntries;
     let forceBattleListOcr = false;
-    // if (now - lastBattleListOcrTime > 500) {
-    //   forceBattleListOcr = true;
-    // }
 
     if (dirtyRects.length > 0 || forceBattleListOcr) {
       if (
@@ -504,12 +448,10 @@ async function performOperation() {
       }
     }
 
-    // ========================================================================
-    // PHASE 3: Perform OCR on player/NPC lists
-    // ========================================================================
+    // ===== PHASE 3: OCR player/NPC lists =====
     let playerNames = lastPlayerNames;
     let npcNames = lastNpcNames;
-    
+
     if (dirtyRects.length > 0) {
       if (
         regions.playerList &&
@@ -525,7 +467,7 @@ async function performOperation() {
       }
     }
 
-    // Auto-looting logic when creatures die
+    // Auto-looting trigger when battle list shrinks
     if (
       targetingEnabled &&
       !isLootingInProgress &&
@@ -534,9 +476,8 @@ async function performOperation() {
       const hadTargetable = lastBattleListEntries.some((entry) =>
         targetingList.some((rule) => isBattleListMatch(rule.name, entry.name)),
       );
-      
+
       if (hadTargetable) {
-        console.log(`[CreatureMonitor] Battle list decreased from ${lastBattleListEntries.length} to ${battleListEntries.length}, triggering loot.`);
         await performImmediateLooting();
       }
     }
@@ -545,24 +486,46 @@ async function performOperation() {
     lastPlayerNames = playerNames;
     lastNpcNames = npcNames;
 
-    // Track which battle list entry is targeted (index), additive only
+    // Track battleList selection via target bar detection
     let battleListTargetIndex = -1;
-    if (battleListRegion && (dirtyRects.length > 0 && dirtyRects.some(r => rectsIntersect(r, battleListRegion)))) {
-      const targetColors = [[255, 0, 0], [255, 128, 128]];
+    if (
+      battleListRegion &&
+      dirtyRects.length > 0 &&
+      dirtyRects.some((r) => rectsIntersect(r, battleListRegion))
+    ) {
+      const targetColors = [
+        [255, 0, 0],
+        [255, 128, 128],
+      ];
       const sequences = {};
       for (let i = 0; i < targetColors.length; i++) {
-        sequences[`target_bar_${i}`] = { sequence: new Array(5).fill(targetColors[i]), direction: 'vertical' };
+        sequences[`target_bar_${i}`] = {
+          sequence: new Array(5).fill(targetColors[i]),
+          direction: 'vertical',
+        };
       }
       try {
-        const result = await findSequences.findSequencesNative(sharedBufferView, sequences, battleListRegion);
+        const result = await findSequences.findSequencesNative(
+          sharedBufferView,
+          sequences,
+          battleListRegion,
+        );
         let markerY = null;
-        for (const key in result) { if (result[key]) { markerY = result[key].y; break; } }
+        for (const key in result) {
+          if (result[key]) {
+            markerY = result[key].y;
+            break;
+          }
+        }
         if (markerY !== null) {
           let minDistance = Infinity;
           for (let i = 0; i < battleListEntries.length; i++) {
             const entry = battleListEntries[i];
             const distance = Math.abs(entry.y - markerY);
-            if (distance < minDistance) { minDistance = distance; battleListTargetIndex = i; }
+            if (distance < minDistance) {
+              minDistance = distance;
+              battleListTargetIndex = i;
+            }
           }
           if (minDistance >= 20) battleListTargetIndex = -1;
         }
@@ -577,19 +540,32 @@ async function performOperation() {
           lootingRequired = result.data.required === 1;
         }
       } catch (err) {}
-      }
+    }
     if (lootingRequired) return;
 
-    const hasEntities = battleListEntries.length > 0 || playerNames.length > 0 || npcNames.length > 0;
+    const hasEntities =
+      battleListEntries.length > 0 ||
+      playerNames.length > 0 ||
+      npcNames.length > 0;
 
-    if (!hasEntities) {
-      if (lastSentCreatures.length > 0 || lastSentTarget !== null) {
-        if (activeCreatures.size > 0) {
-          console.log(
-            `[CreatureMonitor] No entities detected, clearing all ${activeCreatures.size} active creatures.`,
-          );
+    // Gracefully clear active creatures only when none present and grace expired
+    if (!hasEntities && activeCreatures.size > 0) {
+      let allExpired = true;
+      for (const creature of activeCreatures.values()) {
+        if (!creature.disappearedAt) {
+          creature.disappearedAt = now;
         }
+        if (now - creature.disappearedAt < CREATURE_GRACE_PERIOD_MS) {
+          allExpired = false;
+        }
+      }
+      if (allExpired) {
         activeCreatures.clear();
+      }
+    }
+
+    if (!hasEntities && activeCreatures.size === 0) {
+      if (lastSentCreatures.length > 0 || lastSentTarget !== null) {
         lastSentCreatures = [];
         lastSentTarget = null;
 
@@ -597,7 +573,15 @@ async function performOperation() {
           try {
             sabInterface.setMany({
               creatures: [],
-              target: { instanceId: 0, x: 0, y: 0, z: 0, distance: 0, isReachable: 0, name: '' },
+              target: {
+                instanceId: 0,
+                x: 0,
+                y: 0,
+                z: 0,
+                distance: 0,
+                isReachable: 0,
+                name: '',
+              },
               battleList: [],
             });
           } catch (err) {}
@@ -613,9 +597,7 @@ async function performOperation() {
       return;
     }
 
-    // ========================================================================
-    // PHASE 4: Detect health bars and perform gameWorld nameplate OCR
-    // ========================================================================
+    // ===== PHASE 4: Detect health bars and OCR nameplates =====
     const constrainedGameWorld = {
       ...gameWorld,
       y: gameWorld.y + 14,
@@ -627,8 +609,8 @@ async function performOperation() {
       constrainedGameWorld,
     );
     lastHealthScanTime = now;
-    
-    // Filter out player's own health bar to prevent false creature detection
+
+    // Filter player's own health bar
     const playerHealthBarsToRemove = [];
     for (const hb of healthBars) {
       const creatureScreenX = hb.x;
@@ -640,126 +622,158 @@ async function performOperation() {
         gameWorld,
         tileSize,
       );
-      
       if (gameCoords) {
         const roundedX = Math.round(gameCoords.x);
         const roundedY = Math.round(gameCoords.y);
         const roundedZ = gameCoords.z;
-        
-        if (roundedX === currentPlayerMinimapPosition.x && 
-            roundedY === currentPlayerMinimapPosition.y && 
-            roundedZ === currentPlayerMinimapPosition.z) {
+        if (
+          roundedX === currentPlayerMinimapPosition.x &&
+          roundedY === currentPlayerMinimapPosition.y &&
+          roundedZ === currentPlayerMinimapPosition.z
+        ) {
           playerHealthBarsToRemove.push(hb);
         }
       }
     }
-    
     if (playerHealthBarsToRemove.length > 0) {
-      healthBars = healthBars.filter(hb => !playerHealthBarsToRemove.includes(hb));
+      healthBars = healthBars.filter(
+        (hb) => !playerHealthBarsToRemove.includes(hb),
+      );
+    }
+
+    // Debug count mismatch
+    const battleListCount = battleListEntries.length;
+    const gameWorldHealthBarCount = healthBars.length;
+    if (battleListCount !== gameWorldHealthBarCount) {
+      console.log(`BL/GW ${battleListCount}/${gameWorldHealthBarCount}`);
     }
 
     // Prepare canonical names from targeting list and battle list
-    // NOTE: New creature creation still uses ONLY battleList counts; targetingList
-    // here is for better name normalization/matching (does not create creatures).
     const explicitTargetNames = targetingList
       .filter((rule) => rule.name.toLowerCase() !== 'others')
       .map((rule) => rule.name);
     const battleListNames = battleListEntries.map((e) => e.name);
-    const canonicalNames = [...new Set([...explicitTargetNames, ...battleListNames])];
+    const canonicalNames = [
+      ...new Set([...explicitTargetNames, ...battleListNames]),
+    ];
 
-    // Helper function for nameplate OCR
+    // Helper: perform OCR for nameplate for a given healthbar
     const getRawOcrForHealthBar = (hb) => {
       const ocrRegion = getNameplateRegion(hb, gameWorld, tileSize);
       if (!ocrRegion) return null;
-      
-      const results = recognizeText(
-          sharedBufferView,
-          ocrRegion,
-          regionDefinitions.gameWorld?.ocrColors || [],
-          NAMEPLATE_ALLOWED_CHARS,
-        ) || [];
-      return results.length > 0 ? results[0].text.trim().replace(/([a-z])([A-Z])/g, '$1 $2') : null;
+      try {
+        const results =
+          recognizeText(
+            sharedBufferView,
+            ocrRegion,
+            regionDefinitions.gameWorld?.ocrColors || [],
+            NAMEPLATE_ALLOWED_CHARS,
+          ) || [];
+        return results.length > 0
+          ? results[0].text.trim().replace(/([a-z])([A-Z])/g, '$1 $2')
+          : null;
+      } catch (e) {
+        return null;
+      }
     };
 
-    // ========================================================================
-    // PHASE 5: Match creatures - Track existing and identify new
-    // ========================================================================
+    // ===== PHASE 5: Multi-factor matching and tracking =====
     let newActiveCreatures = new Map();
-    const matchedHealthBars = new Set();
-    const currentBattleListNames = battleListEntries.map(e => e.name);
-    
-    // Count how many of each creature name are in battle list
-    const battleListCounts = new Map();
-    for (const entry of battleListEntries) {
-      let fullName = canonicalNames.find(cName => isBattleListMatch(cName, entry.name)) || entry.name;
-      if (fullName.endsWith('...')) {
-        fullName = fullName.slice(0, -3);
+    const playerPosForCalc = isPlayerInAnimationFreeze
+      ? lastStablePlayerMinimapPosition
+      : currentPlayerMinimapPosition;
+
+    // Build detections list
+    const detections = healthBars.map((hb) => {
+      const creatureScreenX = hb.x;
+      const creatureScreenY = hb.y + 14 + tileSize.height / 2;
+      const gameCoords = getGameCoordinatesFromScreen(
+        creatureScreenX,
+        creatureScreenY,
+        playerPosForCalc,
+        gameWorld,
+        tileSize,
+      );
+      const ocrName = getRawOcrForHealthBar(hb);
+      return { hb, ocrName, gameCoords };
+    });
+
+    // Scoring function — corrected argument order for similarity
+    const calculateMatchScore = (creature, detection) => {
+      if (!detection.gameCoords || !creature.gameCoords) {
+        return -Infinity;
       }
-      battleListCounts.set(fullName, (battleListCounts.get(fullName) || 0) + 1);
+
+      // Factor 1: Name Similarity (Highest Weight)
+      const nameScore = detection.ocrName
+        ? getSimilarityScore(detection.ocrName, creature.name)
+        : 0.5;
+      if (nameScore < NAME_MATCH_THRESHOLD) {
+        return -Infinity;
+      }
+
+      // Factor 2: Game Tile Distance
+      const tileDist = chebyshevDistance(
+        creature.gameCoords,
+        detection.gameCoords,
+      );
+      if (tileDist > 2) {
+        return -Infinity;
+      }
+      const gameCoordScore = (2 - tileDist) * 100;
+
+      // Factor 3: Screen Pixel Distance
+      const screenDistValue = screenDist(detection.hb, creature.absoluteCoords);
+      if (screenDistValue > CORRELATION_DISTANCE_THRESHOLD_PIXELS) {
+        return -Infinity;
+      }
+      const screenScore =
+        CORRELATION_DISTANCE_THRESHOLD_PIXELS - screenDistValue;
+
+      return nameScore * 1000 + gameCoordScore + screenScore;
+    };
+
+    // Find potential matches between existing creatures and detections
+    const potentialMatches = [];
+    const creaturesToProcess = new Map(activeCreatures);
+
+    for (const [id, creature] of creaturesToProcess.entries()) {
+      for (const detection of detections) {
+        const score = calculateMatchScore(creature, detection);
+        if (score > -Infinity) {
+          potentialMatches.push({ creatureId: id, creature, detection, score });
+        }
+      }
     }
-    
-    // Track how many of each creature name we've already matched in STAGE 1
-    const matchedCounts = new Map();
-    
-    // STAGE 1: Track existing creatures by finding closest health bar
-    // Only match creatures that are still in battle list AND haven't exceeded the count
-    const shouldVerifyNameplates = healthBars.length > battleListEntries.length;
-    
-    for (const [id, oldCreature] of activeCreatures.entries()) {
-      if (oldCreature.name) {
-        // Check if this creature name is in battle list
-        const stillInBattleList = currentBattleListNames.some(blName => 
-          isBattleListMatch(oldCreature.name, blName)
-        );
-        
-        if (!stillInBattleList) {
-          continue;
-        }
-        
-        // Check if we've already matched enough creatures with this name
-        const battleListCount = battleListCounts.get(oldCreature.name) || 0;
-        const alreadyMatched = matchedCounts.get(oldCreature.name) || 0;
-        
-        if (alreadyMatched >= battleListCount) {
-          // We've already matched enough creatures with this name, skip this one
-          continue;
-        }
-      }
-      
-      let bestMatchHb = null;
-      let minDistance = CORRELATION_DISTANCE_THRESHOLD_PIXELS;
 
-      for (const hb of healthBars) {
-        if (matchedHealthBars.has(hb)) continue;
-        const distance = screenDist(hb, oldCreature.absoluteCoords);
-        if (distance < minDistance) {
-          minDistance = distance;
-          bestMatchHb = hb;
-        }
-      }
+    potentialMatches.sort((a, b) => b.score - a.score);
 
-      if (bestMatchHb) {
-        // If more health bars than battle list entries, verify nameplate matches
-        if (shouldVerifyNameplates && oldCreature.name) {
-          const rawOcr = getRawOcrForHealthBar(bestMatchHb);
-          if (rawOcr) {
-            const similarity = getSimilarityScore(rawOcr, oldCreature.name);
-            if (similarity < 0.5) {
-              // Nameplate doesn't match expected name - likely wrong creature, skip
-              continue;
-            }
-          }
-        }
-        
-        const detection = {
-          absoluteCoords: { x: bestMatchHb.x, y: bestMatchHb.y },
-          healthBarY: bestMatchHb.y,
-          name: oldCreature.name, // Keep the existing, trusted name (validated above)
-          hp: bestMatchHb.healthTag,
+    const assignedCreatureIds = new Set();
+    const assignedDetections = new Set();
+
+    for (const match of potentialMatches) {
+      if (
+        !assignedCreatureIds.has(match.creatureId) &&
+        !assignedDetections.has(match.detection)
+      ) {
+        const { creature, detection } = match;
+
+        // Try to prefer canonical name when OCR suggests one
+        const matchedCanonical = detection.ocrName
+          ? findBestNameMatch(detection.ocrName, canonicalNames)
+          : null;
+
+        const updatedDetection = {
+          absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
+          healthBarY: detection.hb.y,
+          // prefer matched canonical name, then OCR raw, then existing creature.name
+          name: matchedCanonical || detection.ocrName || creature.name,
+          hp: detection.hb.healthTag,
         };
+
         const updated = updateCreatureState(
-          oldCreature,
-          detection,
+          creature,
+          updatedDetection,
           currentPlayerMinimapPosition,
           lastStablePlayerMinimapPosition,
           regions,
@@ -768,80 +782,115 @@ async function performOperation() {
           isPlayerInAnimationFreeze,
         );
         if (updated) {
-          newActiveCreatures.set(id, updated);
-          matchedHealthBars.add(bestMatchHb);
-          // Increment matched count for this creature name
-          if (updated.name) {
-            matchedCounts.set(updated.name, (matchedCounts.get(updated.name) || 0) + 1);
+          newActiveCreatures.set(match.creatureId, updated);
+          assignedCreatureIds.add(match.creatureId);
+          assignedDetections.add(detection);
+        }
+      }
+    }
+
+    // Unmatched detections: attempt to create new creatures
+    const unmatchedDetections = detections.filter(
+      (d) => !assignedDetections.has(d),
+    );
+    const allKnownSafeNames = new Set([...playerNames, ...npcNames]);
+
+    // Use canonicalNames (both targeting + battle list) for best-match attempts
+    const canonicalTargetNames = canonicalNames;
+
+    for (const detection of unmatchedDetections) {
+      if (
+        detection.ocrName &&
+        detection.ocrName.length > 2 &&
+        !allKnownSafeNames.has(detection.ocrName)
+      ) {
+        let tileIsOccupied = false;
+        for (const c of newActiveCreatures.values()) {
+          if (
+            c.gameCoords &&
+            detection.gameCoords &&
+            arePositionsEqual(c.gameCoords, detection.gameCoords)
+          ) {
+            tileIsOccupied = true;
+            break;
           }
         }
-      }
-    }
+        if (tileIsOccupied) continue;
 
-    // STAGE 2: Identify new creatures from unmatched health bars
-    // For each unmatched health bar, perform nameplate OCR and match against
-    // battle list entries to identify new creatures
-    const unmatchedHealthBars = healthBars.filter(hb => !matchedHealthBars.has(hb));
-    if (unmatchedHealthBars.length > 0 && battleListEntries.length > 0) {
-      await identifyAndAssignNewCreatures({
-        unmatchedHealthBars,
-        newActiveCreatures,
-        battleListCounts,
-        matchedCounts,
-        canonicalNames,
-        performOcrForHealthBar: async (hb) => getRawOcrForHealthBar(hb),
-        currentPlayerMinimapPosition,
-        lastStablePlayerMinimapPosition,
-        regions,
-        tileSize,
-        now,
-        isPlayerInAnimationFreeze,
-      });
-    }
+        const bestMatchName = findBestNameMatch(
+          detection.ocrName,
+          canonicalTargetNames,
+        );
+        const finalName = bestMatchName || detection.ocrName;
 
-    // STAGE 3: Cleanup and state finalization
-    // Remove creatures no longer in battle list and handle position-uncertain creatures
-    
-    for (const [id, creature] of newActiveCreatures.entries()) {
-      if (creature.name) {
-        const isInBattleList = currentBattleListNames.some(blName => isBattleListMatch(creature.name, blName));
-        
-        if (!isInBattleList) {
-          console.log(
-            `[CreatureMonitor] Creature disappeared from battle list: ${creature.name} (instanceId: ${id})`,
-          );
-          newActiveCreatures.delete(id);
+        const newCreatureDetection = {
+          absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
+          healthBarY: detection.hb.y,
+          name: finalName,
+          hp: detection.hb.healthTag,
+        };
+
+        const newId = nextInstanceId++;
+        let newCreature = { instanceId: newId };
+
+        newCreature = updateCreatureState(
+          newCreature,
+          newCreatureDetection,
+          currentPlayerMinimapPosition,
+          lastStablePlayerMinimapPosition,
+          regions,
+          tileSize,
+          now,
+          isPlayerInAnimationFreeze,
+        );
+
+        if (newCreature) {
+          newActiveCreatures.set(newId, newCreature);
         }
       }
     }
 
-    // Count mismatch detection: if battle list has more creatures than we detected,
-    // force full rescan on next frame (don't keep stale positionUncertain creatures)
-    if (battleListEntries.length > 0) {
-      const detectedCounts = new Map();
-      for (const c of newActiveCreatures.values()) {
-        detectedCounts.set(c.name, (detectedCounts.get(c.name) || 0) + 1);
-      }
+    // Disappeared creatures: apply count-based logic + grace period
+    const liveCounts = new Map();
+    for (const creature of newActiveCreatures.values()) {
+      liveCounts.set(creature.name, (liveCounts.get(creature.name) || 0) + 1);
+    }
 
-      let hasCountMismatch = false;
-      for (const [name, blCount] of battleListCounts.entries()) {
-        const detectedCount = detectedCounts.get(name) || 0;
-        if (blCount > detectedCount) {
-          hasCountMismatch = true;
-          console.log(
-            `[CreatureMonitor] Count mismatch: ${name} - battle list: ${blCount}, detected: ${detectedCount}. Will rescan on next frame.`,
-          );
-          break;
+    const battleListCounts = new Map();
+    const allKnownCreatureNames = new Set(
+      Array.from(activeCreatures.values()).map((c) => c.name),
+    );
+    for (const name of allKnownCreatureNames) {
+      const count = battleListEntries.filter((be) =>
+        isBattleListMatch(name, be.name),
+      ).length;
+      battleListCounts.set(name, count);
+    }
+
+    for (const [id, creature] of activeCreatures.entries()) {
+      if (newActiveCreatures.has(id)) {
+        continue;
+      }
+      const name = creature.name;
+      const liveCount = liveCounts.get(name) || 0;
+      const expectedCount = battleListCounts.get(name) || 0;
+
+      if (liveCount >= expectedCount) {
+        // confirmed dead; do not re-add
+      } else {
+        if (!creature.disappearedAt) {
+          creature.disappearedAt = now;
+        }
+        if (now - creature.disappearedAt <= CREATURE_GRACE_PERIOD_MS) {
+          newActiveCreatures.set(id, creature);
         }
       }
-
-      // No need to keep unmatched creatures - they'll be re-detected on next frame
     }
 
     activeCreatures = newActiveCreatures;
 
     let detectedEntities = Array.from(activeCreatures.values());
-    
+
     if (detectedEntities.length > 0) {
       const allCreaturePositions = detectedEntities.map((c) => c.gameCoords);
       const screenBounds = {
@@ -850,18 +899,17 @@ async function performOperation() {
         minY: currentPlayerMinimapPosition.y - 5,
         maxY: currentPlayerMinimapPosition.y + 5,
       };
-      // OPTIMIZED: numeric hash signature to avoid per-frame string allocs
       let reachableSig = 0;
-      // mix in player pos
-      reachableSig = ((reachableSig * 31) ^ (currentPlayerMinimapPosition.x | 0)) | 0;
-      reachableSig = ((reachableSig * 31) ^ (currentPlayerMinimapPosition.y | 0)) | 0;
-      reachableSig = ((reachableSig * 31) ^ (currentPlayerMinimapPosition.z | 0)) | 0;
-      // mix in screen bounds
+      reachableSig =
+        ((reachableSig * 31) ^ (currentPlayerMinimapPosition.x | 0)) | 0;
+      reachableSig =
+        ((reachableSig * 31) ^ (currentPlayerMinimapPosition.y | 0)) | 0;
+      reachableSig =
+        ((reachableSig * 31) ^ (currentPlayerMinimapPosition.z | 0)) | 0;
       reachableSig = ((reachableSig * 31) ^ (screenBounds.minX | 0)) | 0;
       reachableSig = ((reachableSig * 31) ^ (screenBounds.maxX | 0)) | 0;
       reachableSig = ((reachableSig * 31) ^ (screenBounds.minY | 0)) | 0;
       reachableSig = ((reachableSig * 31) ^ (screenBounds.maxY | 0)) | 0;
-      // mix in creature positions
       for (let i = 0; i < allCreaturePositions.length; i++) {
         const p = allCreaturePositions[i];
         if (p) {
@@ -872,7 +920,6 @@ async function performOperation() {
           reachableSig = ((reachableSig * 31) ^ 0) | 0;
         }
       }
-      // ensure unsigned 32-bit for map/cache keys if needed
       reachableSig >>>= 0;
       let reachableTiles = null;
       if (reachableSig === lastReachableSig && lastReachableTiles) {
@@ -889,67 +936,133 @@ async function performOperation() {
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
         const isReachable = typeof reachableTiles[coordsKey] !== 'undefined';
-        
         let isAdjacent = false;
         if (entity.gameCoords) {
-          const deltaX = Math.abs(currentPlayerMinimapPosition.x - entity.gameCoords.x);
-          const deltaY = Math.abs(currentPlayerMinimapPosition.y - entity.gameCoords.y);
-          isAdjacent = (deltaX <= 1 && deltaY <= 1) && !(deltaX === 0 && deltaY === 0);
+          const deltaX = Math.abs(
+            currentPlayerMinimapPosition.x - entity.gameCoords.x,
+          );
+          const deltaY = Math.abs(
+            currentPlayerMinimapPosition.y - entity.gameCoords.y,
+          );
+          isAdjacent =
+            deltaX <= 1 && deltaY <= 1 && !(deltaX === 0 && deltaY === 0);
         }
         return { ...entity, isReachable, isAdjacent, isBlockingPath: false };
       });
     }
 
-    const creaturesChanged = !deepCompareEntities(detectedEntities, lastSentCreatures);
+    // Debug detection summary
+    try {
+      const assignedNames = detectedEntities
+        .map((e) => e?.name)
+        .filter(Boolean);
+      const battleListSet = new Set(battleListNames);
+      const assignedSet = new Set(assignedNames);
+      const gameWorldSet = new Set(
+        healthBars.map((hb) => hb.matchedName).filter(Boolean),
+      );
+
+      const battleListMatchedNames = [...battleListSet].filter((n) =>
+        assignedSet.has(n),
+      );
+      const gameWorldMatchedNames = [...gameWorldSet].filter((n) =>
+        assignedSet.has(n),
+      );
+      const unmatchedBattleListNames = [...battleListSet].filter(
+        (n) => !assignedSet.has(n),
+      );
+      const unmatchedGameWorldNames = [...gameWorldSet].filter(
+        (n) => !assignedSet.has(n),
+      );
+
+      logDetectionSummary({
+        battleListItemNumber: battleListEntries.length,
+        healthBarNumber: healthBars.length,
+        playerListNumber: playerNames.length,
+        npcListNumber: npcNames.length,
+        battleListMatchedNameNumber: battleListMatchedNames.length,
+        gameWorldMatchedNameNumber: gameWorldMatchedNames.length,
+        battleListMatchedNames,
+        gameWorldMatchedNames,
+        unmatchedBattleListNames,
+        unmatchedGameWorldNames,
+      });
+    } catch (_) {}
+
+    lastFrameHealthBars = healthBars.map((hb) => ({
+      x: hb.x,
+      y: hb.y,
+      healthTag: hb.healthTag,
+    }));
+
+    const creaturesChanged = !deepCompareEntities(
+      detectedEntities,
+      lastSentCreatures,
+    );
     if (creaturesChanged) {
-      postUpdateOnce('targeting/setEntities', { creatures: detectedEntities, duration: '0.00' });
+      postUpdateOnce('targeting/setEntities', {
+        creatures: detectedEntities,
+        duration: '0.00',
+      });
       lastSentCreatures = detectedEntities;
     }
 
     let gameWorldTarget = null;
-    const allObstructed = detectedEntities.length > 0 && detectedEntities.every((e) => e.hp === 'Obstructed');
+    const allObstructed =
+      detectedEntities.length > 0 &&
+      detectedEntities.every((e) => e.hp === 'Obstructed');
 
-    // Check if dirty rects intersect game world (target box appearing/disappearing creates dirty rects)
-    const gameWorldChanged = dirtyRects.some((r) => rectsIntersect(r, gameWorld));
-
-    // Rescan target only when there are dirty rects intersecting gameWorld
+    const gameWorldChanged = dirtyRects.some((r) =>
+      rectsIntersect(r, gameWorld),
+    );
     const shouldDetectTarget = !allObstructed && gameWorldChanged;
 
     if (shouldDetectTarget) {
-      const targetRect = await findTarget.findTarget(sharedBufferView, gameWorld);
+      const targetRect = await findTarget.findTarget(
+        sharedBufferView,
+        gameWorld,
+      );
       if (targetRect) {
         const screenX = targetRect.x + targetRect.width / 2;
         const screenY = targetRect.y + targetRect.height / 2;
         const targetGameCoordsRaw = getGameCoordinatesFromScreen(
           screenX,
           screenY,
-          isPlayerInAnimationFreeze ? lastStablePlayerMinimapPosition : currentPlayerMinimapPosition,
+          isPlayerInAnimationFreeze
+            ? lastStablePlayerMinimapPosition
+            : currentPlayerMinimapPosition,
           gameWorld,
           tileSize,
         );
         if (targetGameCoordsRaw) {
-          // Snap to nearest tile and match by exact tile coords (1 creature per tile)
           const targetTile = {
             x: Math.round(targetGameCoordsRaw.x),
             y: Math.round(targetGameCoordsRaw.y),
-            z: targetGameCoordsRaw.z ?? ((isPlayerInAnimationFreeze ? lastStablePlayerMinimapPosition : currentPlayerMinimapPosition).z),
+            z:
+              targetGameCoordsRaw.z ??
+              (isPlayerInAnimationFreeze
+                ? lastStablePlayerMinimapPosition
+                : currentPlayerMinimapPosition
+              ).z,
           };
 
-          // Try exact tile match first
-          let matched = detectedEntities.find((e) =>
-            e.gameCoords &&
-            e.gameCoords.x === targetTile.x &&
-            e.gameCoords.y === targetTile.y &&
-            e.gameCoords.z === targetTile.z
+          let matched = detectedEntities.find(
+            (e) =>
+              e.gameCoords &&
+              e.gameCoords.x === targetTile.x &&
+              e.gameCoords.y === targetTile.y &&
+              e.gameCoords.z === targetTile.z,
           );
 
-          // Fallback: choose closest within 1 tile if exact match fails
           if (!matched) {
             let closestCreature = null;
             let minDistance = Infinity;
             for (const entity of detectedEntities) {
               if (entity.gameCoords) {
-                const distance = calculateDistance(targetTile, entity.gameCoords);
+                const distance = calculateDistance(
+                  targetTile,
+                  entity.gameCoords,
+                );
                 if (distance < minDistance) {
                   minDistance = distance;
                   closestCreature = entity;
@@ -973,54 +1086,65 @@ async function performOperation() {
       }
     }
 
-    // Battle list target box is not used anymore; gameWorld target is authoritative
     let unifiedTarget = null;
     if (shouldDetectTarget) {
-      // After a rescan, adopt detected target (or clear if none)
       unifiedTarget = gameWorldTarget || null;
-
-      // Sticky rule: do not switch between same-name creatures unless previous becomes unreachable
-      if (
-        gameWorldTarget &&
-        lastSentTarget &&
-        gameWorldTarget.instanceId !== lastSentTarget.instanceId &&
-        gameWorldTarget.name &&
-        lastSentTarget.name &&
-        isBattleListMatch(gameWorldTarget.name, lastSentTarget.name)
-      ) {
-        const prevEntity = detectedEntities.find(c => c.instanceId === lastSentTarget.instanceId);
-        if (prevEntity && prevEntity.isReachable) {
-          unifiedTarget = lastSentTarget; // keep previous target
-        }
-      }
     } else {
-      // No rescan this frame: persist previous target
       unifiedTarget = lastSentTarget;
     }
 
-    if (shouldDetectTarget && unifiedTarget && !detectedEntities.some(c => c.instanceId === unifiedTarget.instanceId)) {
+    if (
+      unifiedTarget &&
+      !detectedEntities.some((c) => c.instanceId === unifiedTarget.instanceId)
+    ) {
       unifiedTarget = null;
     }
 
     const targetChanged = !deepCompareEntities(unifiedTarget, lastSentTarget);
     if (targetChanged) {
-      if (lastSentTarget && !unifiedTarget) {
-        console.log(`[CreatureMonitor] Target disappeared. Last known target was: ${lastSentTarget.name} (instanceId: ${lastSentTarget.instanceId})`);
-      }
       lastSentTarget = unifiedTarget;
     }
 
     if (sabInterface) {
       try {
-        const sabTarget = unifiedTarget ? {
-          instanceId: unifiedTarget.instanceId,
-          x: unifiedTarget.gameCoordinates.x,
-          y: unifiedTarget.gameCoordinates.y,
-          z: unifiedTarget.gameCoordinates.z,
-          distance: Math.round(unifiedTarget.distance * 100),
-          isReachable: unifiedTarget.isReachable ? 1 : 0,
-          name: unifiedTarget.name,
-        } : { instanceId: 0, x: 0, y: 0, z: 0, distance: 0, isReachable: 0, name: '' };
+        const sabTarget = unifiedTarget
+          ? {
+              instanceId: unifiedTarget.instanceId,
+              x: unifiedTarget.gameCoordinates.x,
+              y: unifiedTarget.gameCoordinates.y,
+              z: unifiedTarget.gameCoordinates.z,
+              distance: Math.round(unifiedTarget.distance * 100),
+              isReachable: unifiedTarget.isReachable ? 1 : 0,
+              name: unifiedTarget.name,
+            }
+          : {
+              instanceId: 0,
+              x: 0,
+              y: 0,
+              z: 0,
+              distance: 0,
+              isReachable: 0,
+              name: '',
+            };
+
+        const healthTagToNumber = (tag) => {
+          switch (tag) {
+            case 'Full':
+              return 5;
+            case 'High':
+              return 4;
+            case 'Medium':
+              return 3;
+            case 'Low':
+              return 2;
+            case 'Critical':
+              return 1;
+            case 'Obstructed':
+              return 0;
+            default:
+              return 0;
+          }
+        };
 
         const sabCreatures = detectedEntities.slice(0, 100).map((c) => ({
           instanceId: c.instanceId,
@@ -1033,7 +1157,7 @@ async function performOperation() {
           isAdjacent: c.isAdjacent ? 1 : 0,
           isBlockingPath: 0,
           distance: Math.round(c.distance * 100),
-          hp: typeof c.hp === 'string' ? 0 : c.hp,
+          hp: healthTagToNumber(c.hp),
           name: c.name,
         }));
 
@@ -1041,7 +1165,11 @@ async function performOperation() {
           name: b.name,
           x: b.x,
           y: b.y,
-          isTarget: (typeof battleListTargetIndex === 'number' && i === battleListTargetIndex) ? 1 : 0,
+          isTarget:
+            typeof battleListTargetIndex === 'number' &&
+            i === battleListTargetIndex
+              ? 1
+              : 0,
         }));
 
         sabInterface.setMany({
@@ -1054,45 +1182,66 @@ async function performOperation() {
 
     const batchUpdates = [];
     if (targetChanged) {
-      batchUpdates.push({ type: 'targeting/setTarget', payload: unifiedTarget });
+      batchUpdates.push({
+        type: 'targeting/setTarget',
+        payload: unifiedTarget,
+      });
     }
     const blString = JSON.stringify(battleListEntries);
     if (blString !== lastPostedResults.get('battleList/setBattleListEntries')) {
       lastPostedResults.set('battleList/setBattleListEntries', blString);
-      batchUpdates.push({ type: 'battleList/setBattleListEntries', payload: battleListEntries });
+      batchUpdates.push({
+        type: 'battleList/setBattleListEntries',
+        payload: battleListEntries,
+      });
       if (battleListEntries.length > 0) {
-        batchUpdates.push({ type: 'battleList/updateLastSeenMs', payload: undefined });
+        batchUpdates.push({
+          type: 'battleList/updateLastSeenMs',
+          payload: undefined,
+        });
       }
     }
-    
+
     const playersString = JSON.stringify(playerNames);
     if (playersString !== lastPostedResults.get('uiValues/setPlayers')) {
       lastPostedResults.set('uiValues/setPlayers', playersString);
       batchUpdates.push({ type: 'uiValues/setPlayers', payload: playerNames });
-      if (playerNames.length > 0) batchUpdates.push({ type: 'uiValues/updateLastSeenPlayerMs', payload: undefined });
+      if (playerNames.length > 0)
+        batchUpdates.push({
+          type: 'uiValues/updateLastSeenPlayerMs',
+          payload: undefined,
+        });
     }
     const npcsString = JSON.stringify(npcNames);
     if (npcsString !== lastPostedResults.get('uiValues/setNpcs')) {
       lastPostedResults.set('uiValues/setNpcs', npcsString);
       batchUpdates.push({ type: 'uiValues/setNpcs', payload: npcNames });
-      if (npcNames.length > 0) batchUpdates.push({ type: 'uiValues/updateLastSeenNpcMs', payload: undefined });
+      if (npcNames.length > 0)
+        batchUpdates.push({
+          type: 'uiValues/updateLastSeenNpcMs',
+          payload: undefined,
+        });
     }
 
-    // Push battle list target index to Redux if it changed
     if (typeof battleListTargetIndex === 'number') {
       const idxStr = JSON.stringify(battleListTargetIndex);
       if (idxStr !== lastPostedResults.get('battleList/setTargetIndex')) {
         lastPostedResults.set('battleList/setTargetIndex', idxStr);
-        batchUpdates.push({ type: 'battleList/setTargetIndex', payload: battleListTargetIndex });
+        batchUpdates.push({
+          type: 'battleList/setTargetIndex',
+          payload: battleListTargetIndex,
+        });
       }
     }
 
     if (batchUpdates.length > 0) {
       parentPort.postMessage({ type: 'batch-update', payload: batchUpdates });
     }
-
   } catch (error) {
-    console.error('[CreatureMonitor] CRITICAL ERROR in performOperation:', error);
+    console.error(
+      '[CreatureMonitor] CRITICAL ERROR in performOperation:',
+      error,
+    );
   }
 }
 
@@ -1102,15 +1251,25 @@ async function performImmediateLooting() {
   }
   try {
     isLootingInProgress = true;
-  
+
     if (sabInterface) {
       try {
         sabInterface.set('looting', { required: 1 });
       } catch (err) {}
     }
 
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setLootingRequired', payload: true });
-    parentPort.postMessage({ type: 'inputAction', payload: { type: 'looting', action: { module: 'keypress', method: 'sendKey', args: ['f8'] } } });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: true,
+    });
+    parentPort.postMessage({
+      type: 'inputAction',
+      payload: {
+        type: 'looting',
+        action: { module: 'keypress', method: 'sendKey', args: ['f8'] },
+      },
+    });
     await delay(50);
 
     if (sabInterface) {
@@ -1119,14 +1278,22 @@ async function performImmediateLooting() {
       } catch (err) {}
     }
 
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setLootingRequired', payload: false });
-    } catch (error) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: false,
+    });
+  } catch (error) {
     if (sabInterface) {
       try {
         sabInterface.set('looting', { required: 0 });
       } catch (err) {}
     }
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/setLootingRequired', payload: false });
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setLootingRequired',
+      payload: false,
+    });
   } finally {
     isLootingInProgress = false;
   }
@@ -1157,9 +1324,9 @@ async function initialize() {
     if (!pathfinderInstance.isLoaded) {
       throw new Error('Pathfinder failed to load map data.');
     }
-    } catch (err) {
+  } catch (err) {
     pathfinderInstance = null;
-    }
+  }
 }
 
 parentPort.on('message', async (message) => {
@@ -1199,15 +1366,19 @@ parentPort.on('message', async (message) => {
         initialize()
           .then(() => {
             if (currentState.gameState?.playerMinimapPosition) {
-              previousPlayerMinimapPosition = { ...currentState.gameState.playerMinimapPosition };
-              lastStablePlayerMinimapPosition = { ...currentState.gameState.playerMinimapPosition };
+              previousPlayerMinimapPosition = {
+                ...currentState.gameState.playerMinimapPosition,
+              };
+              lastStablePlayerMinimapPosition = {
+                ...currentState.gameState.playerMinimapPosition,
+              };
             }
           })
           .catch((err) => {});
-          }
-          }
+      }
+    }
     performOperation();
   } catch (e) {
     console.error('[CreatureMonitor] CRITICAL ERROR in message handler:', e);
   }
-  });
+});

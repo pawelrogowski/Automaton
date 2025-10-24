@@ -15,7 +15,7 @@ const TargetingContainer = styled.div`
 `;
 
 const MainColumn = styled.div`
-  flex: 0 0 60%;
+  flex: 0 0 50%;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -23,7 +23,7 @@ const MainColumn = styled.div`
 `;
 
 const SideColumn = styled.div`
-  flex: 0 0 40%;
+  flex: 0 0 50%;
   display: flex;
   flex-direction: column;
   gap: 10px;

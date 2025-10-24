@@ -67,6 +67,7 @@ const targetingState = {
     targetInstanceId: null,
   },
   stuckTargetTracking: {
+    instanceId: null,
     adjacentSince: 0,
     lastHp: null,
   },
@@ -150,6 +151,9 @@ function transitionTo(newState, reason = '') {
     case FSM_STATE.SELECTING:
       targetingState.pathfindingTarget = null;
       targetingState.currentTarget = null;
+      targetingState.stuckTargetTracking.adjacentSince = 0;
+      targetingState.stuckTargetTracking.lastHp = null;
+      targetingState.stuckTargetTracking.instanceId = null;
       break;
     case FSM_STATE.PREPARE_ACQUISITION:
       targetingState.unreachableSince = 0;
@@ -260,30 +264,12 @@ function handlePrepareAcquisitionState() {
     return;
   }
 
-  // Guard: if in-game target is a different creature (not just different instance), re-evaluate
-  const currentSABTarget = getCurrentTargetFromSAB();
-  if (currentSABTarget && currentSABTarget.instanceId !== 0 && 
-      !isBattleListMatch(currentSABTarget.name, pathfindingTarget.name)) {
-    transitionTo(FSM_STATE.SELECTING, `In-game target mismatch: ${currentSABTarget.name} vs ${pathfindingTarget.name}`);
-    return;
-  }
-
   const updatedTarget = getCreaturesFromSAB().find(c => c.instanceId === pathfindingTarget.instanceId);
   if (!updatedTarget) {
     transitionTo(FSM_STATE.SELECTING, 'Target disappeared');
     return;
   }
   targetingState.pathfindingTarget = updatedTarget; // Refresh with latest creature data
-
-  if (!updatedTarget.isReachable) {
-    if (!targetingState.unreachableSince) {
-      targetingState.unreachableSince = now;
-    } else if (now - targetingState.unreachableSince > config.acquisitionGraceTimeMs) {
-      transitionTo(FSM_STATE.SELECTING, `Target unreachable for > ${config.acquisitionGraceTimeMs}ms`);
-      return;
-    }
-    return; // Wait for it to become reachable again
-  }
 
   transitionTo(FSM_STATE.PERFORM_ACQUISITION, 'Checks passed');
 }
@@ -371,6 +357,8 @@ function handleVerifyAcquisitionState() {
   if (verification.status === 'SUCCESS') {
     logger('info', `[ACQUIRE] Successfully acquired ${targetName} (ID: ${targetInstanceId})`);
     targetingState.currentTarget = verification.target;
+    targetingState.stuckTargetTracking.adjacentSince = 0;
+    targetingState.stuckTargetTracking.lastHp = null;
     transitionTo(FSM_STATE.ENGAGING, 'Acquired correct instance');
     return;
   }
@@ -473,33 +461,46 @@ async function handleEngagingState() {
 
   // Track stuck target (adjacent but not attacking)
   if (updatedTarget.isAdjacent) {
-    if (targetingState.stuckTargetTracking.adjacentSince === 0) {
-      targetingState.stuckTargetTracking.adjacentSince = now;
-      targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
-    } else if (updatedTarget.hp === targetingState.stuckTargetTracking.lastHp) {
-      const stuckDuration = now - targetingState.stuckTargetTracking.adjacentSince;
-      if (stuckDuration > 3500) {
-        logger('info', `[STUCK TARGET] Target ${updatedTarget.name} (ID ${updatedTarget.instanceId}) adjacent for ${stuckDuration}ms with no HP change. Pressing Escape.`);
-        parentPort.postMessage({
-          type: 'inputAction',
-          payload: {
-            type: 'targeting',
-            action: { module: 'keypress', method: 'sendKey', args: ['Escape'] },
-          },
-        });
-        // Force re-selection after escape
-        targetingState.stuckTargetTracking.adjacentSince = 0;
-        targetingState.stuckTargetTracking.lastHp = null;
-        transitionTo(FSM_STATE.SELECTING, 'Stuck target recovery');
-        return;
+    // HP value of 0 from the monitor means "Obstructed". Do not run stuck logic if obstructed.
+    if (updatedTarget.hp > 0) {
+      if (targetingState.stuckTargetTracking.instanceId !== updatedTarget.instanceId || targetingState.stuckTargetTracking.lastHp === null) {
+        // Start tracking this creature if it's new or we weren't tracking its HP before (e.g. it was obstructed).
+        targetingState.stuckTargetTracking.instanceId = updatedTarget.instanceId;
+        targetingState.stuckTargetTracking.adjacentSince = now;
+        targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
+      } else if (updatedTarget.hp === targetingState.stuckTargetTracking.lastHp) {
+        // HP tag is unchanged, continue timer.
+        const stuckDuration = now - targetingState.stuckTargetTracking.adjacentSince;
+        if (stuckDuration > 3500) {
+          logger('info', `[STUCK TARGET] Target ${updatedTarget.name} (ID ${updatedTarget.instanceId}) adjacent for ${stuckDuration}ms with no HP change. Pressing Escape.`);
+          parentPort.postMessage({
+            type: 'inputAction',
+            payload: {
+              type: 'targeting',
+              action: { module: 'keypress', method: 'sendKey', args: ['Escape'] },
+            },
+          });
+          // Force re-selection after escape.
+          targetingState.stuckTargetTracking.instanceId = null;
+          targetingState.stuckTargetTracking.adjacentSince = 0;
+          targetingState.stuckTargetTracking.lastHp = null;
+          transitionTo(FSM_STATE.SELECTING, 'Stuck target recovery');
+          return;
+        }
+      } else {
+        // HP tag changed, reset the timer.
+        targetingState.stuckTargetTracking.adjacentSince = now;
+        targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
       }
     } else {
-      // HP changed, reset tracking
-      targetingState.stuckTargetTracking.adjacentSince = now;
-      targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
+      // HP is obstructed (0). Reset the timer to be safe, but don't start a new one.
+      // This prevents 'escape' from being pressed just because a creature is behind a tree.
+      targetingState.stuckTargetTracking.adjacentSince = 0;
+      targetingState.stuckTargetTracking.lastHp = null;
     }
   } else {
-    // Not adjacent, reset tracking
+    // Not adjacent, reset tracking completely.
+    targetingState.stuckTargetTracking.instanceId = null;
     targetingState.stuckTargetTracking.adjacentSince = 0;
     targetingState.stuckTargetTracking.lastHp = null;
   }

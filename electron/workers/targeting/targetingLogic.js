@@ -94,12 +94,6 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
     if (!candidates || candidates.length === 0) {
       return null;
     }
-    
-    // If currentTarget is among candidates, prefer it (stickiness)
-    if (currentTarget && candidates.find(c => c.instanceId === currentTarget.instanceId)) {
-      return candidates.find(c => c.instanceId === currentTarget.instanceId);
-    }
-    
     const adjacent = candidates.filter(c => c.isAdjacent);
     if (adjacent.length > 0) {
       return adjacent.sort((a, b) => a.distance - b.distance)[0];
@@ -113,25 +107,31 @@ export function selectBestTarget(getCreatures, targetingList, currentTarget = nu
 
     if (currentTargetStillValid) {
       const currentRule = getRule(currentTargetStillValid);
-      if (!currentRule) { // Should be impossible due to filter, but as a safeguard
-        // Fall through to pick a new target
-      } else {
+      if (currentRule) {
         const higherPriorityCandidates = validCandidates.filter(c => {
           const newRule = getRule(c);
           return newRule && newRule.priority > currentRule.priority;
         });
 
         if (higherPriorityCandidates.length > 0) {
-          // A better priority target exists, we MUST switch.
           return pickBest(higherPriorityCandidates);
-        } else {
-          // No higher priority target exists, so we MUST stick to the current one.
-          return currentTargetStillValid;
+        }
+
+        const samePriorityCandidates = validCandidates.filter(c => {
+          const newRule = getRule(c);
+          return newRule && newRule.priority === currentRule.priority;
+        });
+
+        const bestOfSamePriority = pickBest(samePriorityCandidates);
+
+        if (bestOfSamePriority && bestOfSamePriority.instanceId !== currentTargetStillValid.instanceId) {
+          if (currentTargetStillValid.distance > 2 || !currentTargetStillValid.isReachable) {
+            return bestOfSamePriority;
+          }
         }
       }
+      return currentTargetStillValid;
     }
-    // If we are here, it means the current target is no longer valid (unreachable, died, etc.)
-    // so we fall through to pick a new one from scratch.
   }
 
   // Rule 2: Pick a new target from all valid candidates
