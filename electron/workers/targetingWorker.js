@@ -142,6 +142,19 @@ const getBattleListFromSAB = () => {
   return [];
 };
 
+// Returns { list: Array, version: number }
+const getBattleListSnapshot = () => {
+  try {
+    const result = sabInterface.get('battleList');
+    if (result && result.data && Array.isArray(result.data)) {
+      return { list: result.data, version: result.version ?? 0 };
+    }
+  } catch (err) {
+    // Silent
+  }
+  return { list: [], version: 0 };
+};
+
 const isLootingRequired = () => {
   try {
     const result = sabInterface.get('looting');
@@ -167,6 +180,8 @@ function transitionTo(newState) {
       targetingState.stuckTargetTracking.lastHp = null;
       targetingState.stuckTargetTracking.instanceId = null;
       targetingState.pendingClick = null;
+      // Clear ALL candidate states to prevent stale pointers across target changes
+      targetingState.candidateStateByName = Object.create(null);
       break;
     case FSM_STATE.PREPARE_ACQUISITION:
       targetingState.unreachableSince = 0;
@@ -187,6 +202,7 @@ function getCandidateState(name) {
     targetingState.candidateStateByName[key] = {
       pointer: null,
       blacklist: new Set(),
+      blacklistY: new Set(), // approximate row Ys to avoid re-clicking same visual row after BL shifts
       lastReset: Date.now(),
     };
   }
@@ -198,15 +214,19 @@ function resetCandidateState(name) {
   targetingState.candidateStateByName[key] = {
     pointer: null,
     blacklist: new Set(),
+    blacklistY: new Set(),
     lastReset: Date.now(),
   };
 }
 
-function recordFailedCandidate(name, blIndex) {
+function recordFailedCandidate(name, blIndex, blY) {
   const st = getCandidateState(name);
   if (typeof blIndex === 'number') {
     st.blacklist.add(blIndex);
     st.pointer = blIndex; // advance from here next time
+  }
+  if (typeof blY === 'number') {
+    try { st.blacklistY.add(Math.round(blY)); } catch (_) {}
   }
 }
 
@@ -258,6 +278,9 @@ function handleIdleState() {
 }
 
 function handleSelectingState() {
+  // Clear any stale pendingClick from prior acquisition attempts
+  targetingState.pendingClick = null;
+  
   const allCreatures = getCreaturesFromSAB();
   const reachableCreatures = allCreatures.filter((c) => c.isReachable);
   const provider = () =>
@@ -336,29 +359,6 @@ function handleSelectingState() {
       targetingState.lastDispatchedDynamicTargetId = null;
     }
     targetingState.pathfindingTarget = null;
-    if (sabInterface) {
-      try {
-        sabInterface.set('targetingPathData', {
-          waypoints: [],
-          length: 0,
-          status: 0,
-          chebyshevDistance: 0,
-          startX: 0,
-          startY: 0,
-          startZ: 0,
-          targetX: 0,
-          targetY: 0,
-          targetZ: 0,
-          blockingCreatureX: 0,
-          blockingCreatureY: 0,
-          blockingCreatureZ: 0,
-          wptId: 0,
-          instanceId: 0,
-        });
-      } catch (err) {
-        // Silent
-      }
-    }
     transitionTo(FSM_STATE.IDLE);
   }
 }
@@ -420,8 +420,11 @@ async function handlePerformAcquisitionState() {
     return;
   }
 
-  let battleList = getBattleListFromSAB();
+  const { list: battleList, version: blVersion } = getBattleListSnapshot();
   if (!Array.isArray(battleList) || battleList.length === 0) {
+    // Clear all candidate states when BL is empty to prevent stale pointers
+    targetingState.candidateStateByName = Object.create(null);
+    targetingState.pendingClick = null;
     transitionTo(FSM_STATE.SELECTING);
     return;
   }
@@ -448,27 +451,47 @@ async function handlePerformAcquisitionState() {
   // Apply per-name blacklist and rotation pointer
   const nameKey = pathfindingTarget.name;
   const nameState = getCandidateState(nameKey);
-  let matchingIndices = matchingIndicesRaw.filter((i) => !nameState.blacklist.has(i));
+  const isIndexYBlacklisted = (idx) => {
+    const e = battleList[idx];
+    if (!e || typeof e.y !== 'number' || !nameState.blacklistY || nameState.blacklistY.size === 0) return false;
+    for (const vy of nameState.blacklistY) {
+      if (Math.abs(vy - e.y) <= 2) return true;
+    }
+    return false;
+  };
+  let matchingIndices = matchingIndicesRaw.filter(
+    (i) => !nameState.blacklist.has(i) && !isIndexYBlacklisted(i),
+  );
   if (matchingIndices.length === 0) {
-    // If everything is blacklisted, reset and try all
-    resetCandidateState(nameKey);
-    matchingIndices = matchingIndicesRaw.slice();
+    // All candidates for this name are exhausted/blacklisted — do not retry same rows now.
+    // Avoids re-clicking the same unreachable battle-list entry.
+    transitionTo(FSM_STATE.SELECTING);
+    return;
   }
 
   // Determine current selected BL index
   let currentIndex = -1;
+  let hasActualSelection = false;
   for (let i = 0; i < battleList.length; i++) {
     if (
       battleList[i] &&
       (battleList[i].isTarget === 1 || battleList[i].isTarget === true)
     ) {
       currentIndex = i;
+      hasActualSelection = true;
       break;
     }
   }
   if (currentIndex === -1) currentIndex = 0;
 
-  // Choose a starting candidate: prefer pointer progression, else nearest to current selection
+  // Clear stale pointer if out of bounds or not in current matching set
+  if (typeof nameState.pointer === 'number') {
+    if (nameState.pointer >= listLen || !matchingIndices.includes(nameState.pointer)) {
+      nameState.pointer = null;
+    }
+  }
+
+  // Choose a starting candidate: prefer pointer progression, else topmost among matches
   let bestIdx;
   if (
     typeof nameState.pointer === 'number' &&
@@ -477,7 +500,14 @@ async function handlePerformAcquisitionState() {
     const pos = matchingIndices.indexOf(nameState.pointer);
     bestIdx = matchingIndices[(pos + 1) % matchingIndices.length];
   } else {
-    bestIdx = chooseNearestMatchingIndex(currentIndex, matchingIndices, listLen);
+    // After BL shrinks or on first encounter, pick topmost to maintain order
+    bestIdx = Math.min(...matchingIndices);
+  }
+
+  // Validate bestIdx is in bounds and entry exists
+  if (typeof bestIdx !== 'number' || bestIdx < 0 || bestIdx >= listLen) {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
   }
 
   const entry = battleList[bestIdx];
@@ -511,11 +541,12 @@ async function handlePerformAcquisitionState() {
     lastTriedCandidateIndex: undefined,
     lastClickedIndex: undefined,
     lastClickedY: undefined,
+    blVersion: blVersion,
   };
 
   // If current selection already matches requested name but SAB target is absent or unreachable,
   // cycle to next matching candidate and click it to search for a reachable instance.
-  if (currentIndex !== -1 && targetingState.pendingClick.candidates.includes(currentIndex)) {
+  if (hasActualSelection && targetingState.pendingClick.candidates.includes(currentIndex)) {
     const sabNow = getCurrentTargetFromSAB();
     const desiredName = pathfindingTarget.name;
     const sabMatchesDesired =
@@ -541,7 +572,10 @@ async function handlePerformAcquisitionState() {
       // Try to click the next different candidate (skip already-selected rows)
       if (clickNextAvailableCandidate(targetingState.pendingClick, battleList, pathfindingTarget.name)) {
         const idx = targetingState.pendingClick.candidates[targetingState.pendingClick.currentCandidateIdx];
-        targetingState.pendingClick.lastTriedCandidateIndex = idx;
+        // Validate idx is in bounds before recording
+        if (typeof idx === 'number' && idx >= 0 && idx < battleList.length) {
+          targetingState.pendingClick.lastTriedCandidateIndex = idx;
+        }
       }
       return;
     }
@@ -549,26 +583,34 @@ async function handlePerformAcquisitionState() {
     // If throttled, fall through to clicking the computed entry below
   }
 
-  parentPort.postMessage({
-    type: 'inputAction',
-    payload: {
-      type: 'targeting',
-      action: {
-        module: 'mouseController',
-        method: 'leftClick',
-        args: [entry.x, entry.y],
-      },
-      ttl: 55,
-    },
-  });
-  if (targetingState.pendingClick) {
-    targetingState.pendingClick.lastClickedIndex = bestIdx;
-    targetingState.pendingClick.lastClickedY = entry && typeof entry.y === 'number' ? entry.y : undefined;
-  }
-  // Initialize rotation pointer from first click for this name
-  try { advancePointer(pathfindingTarget.name, bestIdx); } catch (_) {}
+  // Attempt click via safe helper that avoids clicking the currently selected row
+  const didClickPrimary = attemptClickCandidate(bestIdx, battleList);
 
-  targetingState.lastTargetingClickTime = performance.now();
+  if (!didClickPrimary && targetingState.pendingClick) {
+    // Try next distinct candidate (skip same index/Y) to avoid toggle loops
+    targetingState.pendingClick.currentCandidateIdx =
+      (targetingState.pendingClick.currentCandidateIdx + 1) %
+      targetingState.pendingClick.candidates.length;
+    clickNextAvailableCandidate(
+      targetingState.pendingClick,
+      battleList,
+      pathfindingTarget.name,
+    );
+  }
+
+  // Bookkeeping after a click (either primary or via next-available)
+  if (targetingState.pendingClick) {
+    const idx = didClickPrimary
+      ? bestIdx
+      : targetingState.pendingClick.lastClickedIndex;
+    if (typeof idx === 'number' && idx >= 0 && idx < battleList.length) {
+      const e2 = battleList[idx];
+      targetingState.pendingClick.lastClickedY =
+        e2 && typeof e2.y === 'number' ? e2.y : undefined;
+      try { advancePointer(pathfindingTarget.name, idx); } catch (_) {}
+    }
+  }
+
   targetingState.lastAcquireAttempt.targetInstanceId =
     pathfindingTarget.instanceId;
   targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
@@ -581,6 +623,7 @@ async function handlePerformAcquisitionState() {
 
 function attemptClickCandidate(candidateIdx, battleList) {
   if (!battleList || !Array.isArray(battleList)) return false;
+  if (typeof candidateIdx !== 'number' || candidateIdx < 0 || candidateIdx >= battleList.length) return false;
   const entry = battleList[candidateIdx];
   if (!entry || typeof entry.x !== 'number' || typeof entry.y !== 'number')
     return false;
@@ -620,17 +663,27 @@ function attemptClickCandidate(candidateIdx, battleList) {
 function blElemYEquals(entry, y) {
   if (!entry || typeof y !== 'number') return false;
   if (typeof entry.y !== 'number') return false;
-  return Math.abs(entry.y - y) <= 2;
+  // Treat the same visual row as equal even if the BL shifted up/down by one slot (≈22px)
+  const dy = Math.abs(entry.y - y);
+  const ROW_PITCH = 22;
+  return dy <= 2 || Math.abs(entry.y - (y - ROW_PITCH)) <= 2 || Math.abs(entry.y - (y + ROW_PITCH)) <= 2;
 }
 
 function pickNextDistinctCandidateIndex(pending, battleList) {
   if (!pending || !Array.isArray(pending.candidates) || pending.candidates.length === 0) {
     return pending?.currentCandidateIdx ?? 0;
   }
+  if (!battleList || !Array.isArray(battleList)) return pending.currentCandidateIdx ?? 0;
+  
   let idx = pending.currentCandidateIdx ?? 0;
   let safety = pending.candidates.length;
   while (safety-- > 0) {
     const candIdx = pending.candidates[idx];
+    // Skip out-of-bounds candidates entirely
+    if (typeof candIdx !== 'number' || candIdx < 0 || candIdx >= battleList.length) {
+      idx = (idx + 1) % pending.candidates.length;
+      continue;
+    }
     const sameIndex = typeof pending.lastClickedIndex === 'number' && pending.lastClickedIndex === candIdx;
     const sameY = typeof pending.lastClickedY === 'number' && blElemYEquals(battleList[candIdx], pending.lastClickedY);
     if (!sameIndex && !sameY) break;
@@ -641,10 +694,34 @@ function pickNextDistinctCandidateIndex(pending, battleList) {
 
 function clickNextAvailableCandidate(pending, battleList, requestedName) {
   if (!pending || !Array.isArray(pending.candidates) || pending.candidates.length === 0) return false;
+  if (!battleList || !Array.isArray(battleList)) return false;
   let attempts = pending.candidates.length;
   while (attempts-- > 0) {
     pending.currentCandidateIdx = pickNextDistinctCandidateIndex(pending, battleList);
     const candidateIndex = pending.candidates[pending.currentCandidateIdx];
+    
+    // Skip if candidate index is out of bounds for current battleList
+    if (typeof candidateIndex !== 'number' || candidateIndex < 0 || candidateIndex >= battleList.length) {
+      pending.currentCandidateIdx = (pending.currentCandidateIdx + 1) % pending.candidates.length;
+      continue;
+    }
+
+    // Skip candidates whose Y matches blacklistedYs for this name
+    const nameState = requestedName ? getCandidateState(requestedName) : null;
+    const entry = battleList[candidateIndex];
+    if (
+      nameState && entry && typeof entry.y === 'number' && nameState.blacklistY && nameState.blacklistY.size > 0
+    ) {
+      let yIsBlacklisted = false;
+      for (const vy of nameState.blacklistY) {
+        if (Math.abs(vy - entry.y) <= 2) { yIsBlacklisted = true; break; }
+      }
+      if (yIsBlacklisted) {
+        pending.currentCandidateIdx = (pending.currentCandidateIdx + 1) % pending.candidates.length;
+        continue;
+      }
+    }
+
     const clicked = attemptClickCandidate(candidateIndex, battleList);
     if (clicked) {
       // Update rotation state and bookkeeping
@@ -716,7 +793,44 @@ function handleVerifyAcquisitionState() {
 
   // Prefer SAB target if reachable; otherwise allow BL+Creatures reachable fallback
   try {
-    const bl = getBattleListFromSAB();
+    const blSnap = getBattleListSnapshot();
+    const bl = blSnap.list;
+
+    // If battle list changed since we started, recompute candidate indices safely
+    if (pending && typeof pending.blVersion === 'number' && blSnap.version !== pending.blVersion) {
+      const nameState = getCandidateState(pending.requestedName);
+      // Rebuild candidates for current BL
+      const rebuilt = [];
+      for (let i = 0; i < bl.length; i++) {
+        const be = bl[i];
+        if (!be || !be.name) continue;
+        if (
+          isBattleListMatch(pending.requestedName, be.name) ||
+          isBattleListMatch(be.name, pending.requestedName)
+        ) {
+          // Exclude blacklisted indices and rows with blacklisted Y
+          let skip = false;
+          if (nameState.blacklist && nameState.blacklist.has(i)) skip = true;
+          if (!skip && nameState.blacklistY && nameState.blacklistY.size) {
+            for (const vy of nameState.blacklistY) {
+              if (typeof be.y === 'number' && Math.abs(vy - be.y) <= 2) { skip = true; break; }
+            }
+          }
+          if (!skip) rebuilt.push(i);
+        }
+      }
+      if (rebuilt.length === 0) {
+        // Nothing to try anymore for this name; fall back to SELECTING
+        targetingState.pendingClick = null;
+        transitionTo(FSM_STATE.SELECTING);
+        return;
+      }
+      pending.candidates = rebuilt;
+      pending.currentCandidateIdx = 0;
+      pending.blVersion = blSnap.version;
+      // Do not reset lastClickedY; we still want to avoid re-clicking the same row visually
+    }
+
     if (Array.isArray(bl) && bl.length > 0) {
       let selectedIdx = -1;
       for (let i = 0; i < bl.length; i++) {
@@ -792,7 +906,13 @@ function handleVerifyAcquisitionState() {
     } else {
       // Mark last tried candidate as failed/unreachable for this name
       if (typeof pending.lastTriedCandidateIndex === 'number') {
-        recordFailedCandidate(pending.requestedName, pending.lastTriedCandidateIndex);
+        const blSnap2 = getBattleListSnapshot();
+        const bl2 = blSnap2.list;
+        const idx = pending.lastTriedCandidateIndex;
+        if (idx >= 0 && idx < bl2.length) {
+          const y = bl2[idx] ? bl2[idx].y : undefined;
+          recordFailedCandidate(pending.requestedName, idx, y);
+        }
       }
       // Advance to next candidate immediately and attempt acquisition
       pending.currentCandidateIdx =
@@ -874,10 +994,13 @@ function handleVerifyAcquisitionState() {
         // Reject alternative: try next candidate when allowed
         // Mark last tried candidate as suboptimal for this name
         if (typeof pending.lastTriedCandidateIndex === 'number') {
-          recordFailedCandidate(
-            pending.requestedName,
-            pending.lastTriedCandidateIndex,
-          );
+          const blSnap3 = getBattleListSnapshot();
+          const bl3 = blSnap3.list;
+          const idx = pending.lastTriedCandidateIndex;
+          if (idx >= 0 && idx < bl3.length) {
+            const y = bl3[idx] ? bl3[idx].y : undefined;
+            recordFailedCandidate(pending.requestedName, idx, y);
+          }
         }
         pending.currentCandidateIdx =
           (pending.currentCandidateIdx + 1) % pending.candidates.length;
@@ -896,10 +1019,13 @@ function handleVerifyAcquisitionState() {
     } else {
       // Wrong instance unreachable: try next candidate and remember failure
       if (typeof pending.lastTriedCandidateIndex === 'number') {
-        recordFailedCandidate(
-          pending.requestedName,
-          pending.lastTriedCandidateIndex,
-        );
+        const blSnapX = getBattleListSnapshot();
+        const blX = blSnapX.list;
+        const idx = pending.lastTriedCandidateIndex;
+        if (idx >= 0 && idx < blX.length) {
+          const y = blX[idx] ? blX[idx].y : undefined;
+          recordFailedCandidate(pending.requestedName, idx, y);
+        }
       }
       pending.currentCandidateIdx =
         (pending.currentCandidateIdx + 1) % pending.candidates.length;
@@ -931,10 +1057,13 @@ function handleVerifyAcquisitionState() {
     if (!sabNow || !sabMatchesDesired || !sabReachable) {
       // Record failure for last tried, then advance
       if (typeof pending.lastTriedCandidateIndex === 'number') {
-        recordFailedCandidate(
-          pending.requestedName,
-          pending.lastTriedCandidateIndex,
-        );
+        const blSnapNow = getBattleListSnapshot();
+        const blNow = blSnapNow.list;
+        const idx = pending.lastTriedCandidateIndex;
+        if (idx >= 0 && idx < blNow.length) {
+          const y = blNow[idx] ? blNow[idx].y : undefined;
+          recordFailedCandidate(pending.requestedName, idx, y);
+        }
       }
       pending.currentCandidateIdx =
         (pending.currentCandidateIdx + 1) % pending.candidates.length;
@@ -955,10 +1084,6 @@ function handleVerifyAcquisitionState() {
   }
 
   if (now >= pending.deadline) {
-    // Verification window elapsed -> retry next candidate (no attempt limit)
-    if (typeof pending.lastTriedCandidateIndex === 'number') {
-      recordFailedCandidate(pending.requestedName, pending.lastTriedCandidateIndex);
-    }
     pending.currentCandidateIdx =
       (pending.currentCandidateIdx + 1) % pending.candidates.length;
     pending.startedAt = now;
@@ -1097,14 +1222,15 @@ async function handleEngagingState() {
             break;
           }
         }
-        if (
-          selectedIdx !== -1 &&
-          bl[selectedIdx] &&
-          (isBattleListMatch(bl[selectedIdx].name, updatedTarget.name) ||
-            isBattleListMatch(updatedTarget.name, bl[selectedIdx].name))
-        ) {
-          recordFailedCandidate(updatedTarget.name, selectedIdx);
-        }
+          if (
+            selectedIdx !== -1 &&
+            bl[selectedIdx] &&
+            (isBattleListMatch(bl[selectedIdx].name, updatedTarget.name) ||
+              isBattleListMatch(updatedTarget.name, bl[selectedIdx].name))
+          ) {
+            const y = typeof bl[selectedIdx].y === 'number' ? bl[selectedIdx].y : undefined;
+            recordFailedCandidate(updatedTarget.name, selectedIdx, y);
+          }
       }
     } catch (_) {}
 
@@ -1436,30 +1562,6 @@ async function performTargeting() {
       payload: null,
     });
 
-    // Clear targeting path data in SAB so pathfinder/cavebot see no active target path
-    if (sabInterface) {
-      try {
-        sabInterface.set('targetingPathData', {
-          waypoints: [],
-          length: 0,
-          status: 0,
-          chebyshevDistance: 0,
-          startX: 0,
-          startY: 0,
-          startZ: 0,
-          targetX: 0,
-          targetY: 0,
-          targetZ: 0,
-          blockingCreatureX: 0,
-          blockingCreatureY: 0,
-          blockingCreatureZ: 0,
-          wptId: 0,
-          instanceId: 0,
-        });
-      } catch (e) {
-        // Silent on SAB write failure — best-effort only
-      }
-    }
 
     // Inform cavebot to take control back
     parentPort.postMessage({

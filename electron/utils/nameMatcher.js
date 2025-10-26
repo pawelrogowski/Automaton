@@ -5,6 +5,7 @@
  *
  * Key points:
  * - Default matching threshold lowered to 0.3 for OCR tolerance.
+ * - Prevents single-character fuzzy matches and penalizes very short OCR tokens.
  * - getSimilarityScore parameter order is (ocrName, canonicalName).
  * - Fixed bug: no reassignment of consts in levenshteinDistance.
  */
@@ -128,6 +129,9 @@ export function getSimilarityScore(ocrName, canonicalName) {
 
   if (cleanOcr.length === 0 || cleanCanon.length === 0) return 0;
 
+  // Disallow fuzzy matches for single-character OCR tokens
+  if (cleanOcr.length <= 1) return 0;
+
   // Cleaned exact
   if (cleanOcr === cleanCanon) return 0.99;
 
@@ -136,18 +140,27 @@ export function getSimilarityScore(ocrName, canonicalName) {
     return 0.95;
   }
 
-  // Longest Common Substring ratio
+  // Longest Common Substring coverage/overlap
   const lcsLen = longestCommonSubstring(cleanOcr, cleanCanon);
-  const minLen = Math.min(cleanOcr.length, cleanCanon.length);
-  const lcsRatio = minLen > 0 ? lcsLen / minLen : 0;
+  const oLen = cleanOcr.length;
+  const cLen = cleanCanon.length;
+  const lcsCoverageCanon = cLen > 0 ? lcsLen / cLen : 0; // how much of canonical is covered
+  const lcsOverlap = Math.min(oLen, cLen) > 0 ? lcsLen / Math.min(oLen, cLen) : 0; // pure overlap
+  // Emphasize coverage of canonical to penalize trivially short OCR strings
+  const lcsRatio = lcsCoverageCanon * 0.8 + lcsOverlap * 0.2;
 
   // Levenshtein-based ratio
   const dist = levenshteinDistance(cleanOcr, cleanCanon);
-  const maxLen = Math.max(cleanOcr.length, cleanCanon.length);
+  const maxLen = Math.max(oLen, cLen);
   const levRatio = maxLen > 0 ? 1 - dist / maxLen : 0;
 
   // Weighted combination: favor Levenshtein for scattered errors, LCS helps with partial overlap
-  const score = levRatio * 0.7 + lcsRatio * 0.3;
+  let score = levRatio * 0.7 + lcsRatio * 0.3;
+
+  // Penalize very short OCR tokens (prevents matching "i" -> "Scorpion")
+  if (oLen <= 2) score *= 0.2;
+  else if (oLen === 3) score *= 0.6;
+  else if (oLen === 4) score *= 0.85;
 
   return Math.max(0, Math.min(1, score));
 }
