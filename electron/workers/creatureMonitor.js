@@ -25,6 +25,8 @@ import {
 } from '../utils/nameMatcher.js';
 import { processPlayerList, processNpcList } from './creatureMonitor/ocr.js';
 
+const logger = createLogger({ info: false, error: true, debug: false });
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { recognizeText } = pkg;
 
@@ -369,6 +371,18 @@ function updateCreatureState(
     y: finalGameCoords.y,
     z: finalGameCoords.z,
   };
+  // Generate stable instanceKey for sync
+  const normalizedName = (detection.name || creature.name || '')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+  creature.instanceKey = normalizedName
+    ? `${creature.gameCoords.x}-${creature.gameCoords.y}-${creature.gameCoords.z}-${normalizedName}`
+    : creature.instanceId.toString();
+  logger(
+    'debug',
+    `[CREATURE] Assigned key ${creature.instanceKey} for ${creature.name || 'unknown'}`,
+  );
   creature.distance = chebyshevDistance(
     currentPlayerMinimapPosition,
     creature.gameCoords,
@@ -427,6 +441,29 @@ async function performOperation() {
       }
     }
 
+    // NEW: Fetch red-box (targeted creature) position from SAB for priority matching
+    let redBoxPosition = null;
+    let previousTargetInstanceId = null;
+    if (sabInterface) {
+      try {
+        const targetResult = sabInterface.get('currentTarget');
+        if (
+          targetResult &&
+          targetResult.data &&
+          targetResult.data.screenX &&
+          targetResult.data.screenY
+        ) {
+          redBoxPosition = {
+            x: targetResult.data.screenX,
+            y: targetResult.data.screenY,
+          };
+          previousTargetInstanceId = targetResult.data.instanceId || null; // Assume SAB provides instanceId if available
+        }
+      } catch (err) {
+        // Silently fail if no target data
+      }
+    }
+
     const playerPositionChanged = !arePositionsEqual(
       currentPlayerMinimapPosition,
       previousPlayerMinimapPosition,
@@ -460,6 +497,24 @@ async function performOperation() {
           targetingList = targetingListResult.data;
         }
       } catch (err) {}
+    }
+
+    // ENHANCED: Fetch red-box details for forced ID preservation (after dirtyRects)
+    let redBoxInfo = null;
+    if (sabInterface) {
+      try {
+        const targetSAB = sabInterface.get('currentTarget');
+        if (targetSAB && targetSAB.data) {
+          redBoxInfo = {
+            instanceKey:
+              targetSAB.data.instanceKey || lastSentTarget?.instanceKey || null,
+            screenPos: { x: targetSAB.data.screenX, y: targetSAB.data.screenY },
+            name: lastSentTarget?.name || '',
+          };
+        }
+      } catch (err) {
+        logger('warn', `[CREATURE] Red-box fetch failed: ${err.message}`);
+      }
     }
 
     // ===== PHASE 2: OCR battle list =====n
@@ -498,6 +553,7 @@ async function performOperation() {
               .replace(/\.{1,}$/g, '')
               .trim();
             if (name.endsWith('...')) name = name.slice(0, -3).trim();
+
             // Collapse multiple spaces
             name = name.replace(/\s+/g, ' ').trim();
 
@@ -788,6 +844,7 @@ async function performOperation() {
     // NOTE: `explicitTargetNames` is prepared earlier in the function (to avoid
     // redeclaration). Reuse that value here.
 
+    // Track detections; include special handling for the current target tile
     const detections = [];
     for (const hb of healthBars) {
       const creatureScreenX = hb.x;
@@ -805,14 +862,26 @@ async function performOperation() {
       // Tile key used for blacklisting (prevents re-using this tile for other creatures)
       const tileKey = `${Math.round(gameCoords.x)},${Math.round(gameCoords.y)},${gameCoords.z}`;
 
-      // Skip if this tile is currently blacklisted
-      if (blacklistedTiles.has(tileKey)) continue;
+      // Determine current target tile key (if any) for special handling
+      const isTargetTile =
+        lastSentTarget &&
+        lastSentTarget.gameCoordinates &&
+        tileKey ===
+          `${lastSentTarget.gameCoordinates.x},${lastSentTarget.gameCoordinates.y},${lastSentTarget.gameCoordinates.z}`;
 
-      const ocrName = getRawOcrForHealthBar(hb);
+      // Skip if this tile is currently blacklisted (but never skip target tile)
+      if (!isTargetTile && blacklistedTiles.has(tileKey)) continue;
 
-      // If explicit targeting names exist, require the detection to match one of them.
-      // If it doesn't match, blacklist the tile for a short time and skip it.
-      if (explicitTargetNames.length > 0) {
+      let ocrName = getRawOcrForHealthBar(hb);
+
+      // For the current target tile, allow missing/weak OCR and prefer the last known canonical name
+      if (isTargetTile && (!ocrName || ocrName.length === 0)) {
+        ocrName = lastSentTarget?.name || '';
+      }
+
+      // If explicit targeting names exist, require the detection to match one of them,
+      // except for the current target tile which we keep even if OCR is noisy.
+      if (!isTargetTile && explicitTargetNames.length > 0) {
         let matchedToTarget = false;
 
         if (ocrName && ocrName.length > 0) {
@@ -842,8 +911,13 @@ async function performOperation() {
         }
       }
 
-      // Keep this detection since it passed blacklisting / matching checks
-      detections.push({ hb, ocrName, gameCoords });
+      // Keep this detection since it passed checks (always keep for target tile)
+      detections.push({
+        hb,
+        ocrName,
+        gameCoords,
+        isTargetTile: !!isTargetTile,
+      });
     }
 
     // Scoring function — corrected argument order for similarity
@@ -853,10 +927,24 @@ async function performOperation() {
       }
 
       // Factor 1: Name Similarity (Highest Weight)
-      const nameScore = detection.ocrName
-        ? getSimilarityScore(detection.ocrName, creature.name)
-        : 0.5;
-      if (nameScore < NAME_MATCH_THRESHOLD) {
+      // Allow OCR to be missing for the current target or its tile; otherwise require OCR.
+      const isCurrentTargetCreature =
+        !!lastSentTarget && creature.instanceId === lastSentTarget.instanceId;
+      const isTargetTile = !!detection.isTargetTile;
+
+      let nameScore = 0;
+      if (detection.ocrName && detection.ocrName.length > 0) {
+        nameScore = getSimilarityScore(detection.ocrName, creature.name);
+      } else if (isCurrentTargetCreature || isTargetTile) {
+        // Treat as minimally acceptable if this is the current target or on the target tile
+        nameScore = NAME_MATCH_THRESHOLD;
+      } else {
+        return -Infinity; // Isolate other bars without OCR
+      }
+      if (
+        nameScore < NAME_MATCH_THRESHOLD &&
+        !(isCurrentTargetCreature || isTargetTile)
+      ) {
         return -Infinity;
       }
 
@@ -952,11 +1040,16 @@ async function performOperation() {
     ];
 
     for (const detection of unmatchedDetections) {
-      if (
-        detection.ocrName &&
-        detection.ocrName.length > 2 &&
-        !allKnownSafeNames.has(detection.ocrName)
-      ) {
+      // Only consider detections that aren't known safe names (players/npcs)
+      if (!allKnownSafeNames.has(detection.ocrName || '')) {
+        // Construct a tile key for blacklisting and occupancy checks
+        if (!detection.gameCoords) continue;
+        const tileKey = `${Math.round(detection.gameCoords.x)},${Math.round(detection.gameCoords.y)},${detection.gameCoords.z}`;
+
+        // Skip if this tile is currently blacklisted
+        if (blacklistedTiles.has(tileKey)) continue;
+
+        // If tile already used by a newly-created creature, skip
         let tileIsOccupied = false;
         for (const c of newActiveCreatures.values()) {
           if (
@@ -970,11 +1063,49 @@ async function performOperation() {
         }
         if (tileIsOccupied) continue;
 
-        const bestMatchName = findBestNameMatch(
-          detection.ocrName,
-          canonicalTargetNames,
+        // Attempt to match OCR name to known canonical targeting/battlelist names
+        const bestMatchName = detection.ocrName
+          ? findBestNameMatch(detection.ocrName, canonicalTargetNames)
+          : null;
+
+        // Decide whether this detection is allowed to become a reported creature.
+        // Allowed only if:
+        //  - it matched one of the canonical target names (bestMatchName), OR
+        //  - its raw OCR name is explicitly present in the allowed canonical names.
+        const detectionCanonical = (
+          bestMatchName ||
+          detection.ocrName ||
+          ''
+        ).trim();
+        const allowedLower = new Set(
+          allowedCanonicalNames.map((n) => (n || '').toLowerCase()),
         );
-        const finalName = bestMatchName || detection.ocrName;
+        const isAllowed =
+          detectionCanonical &&
+          allowedLower.has(detectionCanonical.toLowerCase());
+
+        // If detection does not match any allowed canonical name:
+        // - for the current target tile, allow it and do not blacklist (use canonical target name later)
+        // - otherwise, blacklist and ignore it completely
+        const isTargetTile =
+          lastSentTarget &&
+          lastSentTarget.gameCoordinates &&
+          tileKey ===
+            `${lastSentTarget.gameCoordinates.x},${lastSentTarget.gameCoordinates.y},${lastSentTarget.gameCoordinates.z}`;
+
+        if (!isAllowed && !isTargetTile) {
+          blacklistedTiles.add(tileKey);
+          blacklistedUntil.set(tileKey, now + UNMATCHED_BLACKLIST_MS);
+          continue;
+        }
+
+        // Otherwise we create a new creature using the matched/allowed canonical name.
+        const finalName = isTargetTile
+          ? lastSentTarget?.name ||
+            bestMatchName ||
+            detection.ocrName ||
+            'Unknown'
+          : bestMatchName || detection.ocrName || 'Unknown';
 
         const newCreatureDetection = {
           absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
@@ -999,6 +1130,10 @@ async function performOperation() {
 
         if (newCreature) {
           newActiveCreatures.set(newId, newCreature);
+          // Keep debug console message but non-critical (won't affect runtime decision)
+          console.debug(
+            `[CREATURE] New ID ${newId} for matched/allowed bar (name='${finalName}', ocr='${detection.ocrName || 'none'}')`,
+          );
         }
       }
     }
@@ -1034,7 +1169,10 @@ async function performOperation() {
         if (!creature.disappearedAt) {
           creature.disappearedAt = now;
         }
-        if (now - creature.disappearedAt <= CREATURE_GRACE_PERIOD_MS) {
+        if (
+          now - creature.disappearedAt <= CREATURE_GRACE_PERIOD_MS &&
+          !assignedCreatureIds.has(id)
+        ) {
           newActiveCreatures.set(id, creature);
         }
       }
@@ -1048,6 +1186,8 @@ async function performOperation() {
     // Only report creatures that match an entry in the battle list or the explicit targeting list.
     // This ensures every reported creature is visible/known (reduces false positives).
     detectedEntities = detectedEntities.filter((c) => {
+      if (lastSentTarget && c && c.instanceId === lastSentTarget.instanceId)
+        return true;
       if (!c || !c.name) return false;
 
       // 1) Check against battleList names (handle truncated/trusted matching)
@@ -1081,6 +1221,14 @@ async function performOperation() {
 
     if (detectedEntities.length > 0) {
       const allCreaturePositions = detectedEntities.map((c) => c.gameCoords);
+      // Ensure current target participates in reachability heuristic/signature
+      if (lastSentTarget && lastSentTarget.gameCoordinates) {
+        const t = lastSentTarget.gameCoordinates;
+        const present = allCreaturePositions.some(
+          (p) => p && p.x === t.x && p.y === t.y && p.z === t.z,
+        );
+        if (!present) allCreaturePositions.push(t);
+      }
       const screenBounds = {
         minX: currentPlayerMinimapPosition.x - 7,
         maxX: currentPlayerMinimapPosition.x + 7,
@@ -1281,7 +1429,9 @@ async function performOperation() {
       unifiedTarget = lastSentTarget;
     }
 
+    // Only invalidate the target when we actually re-evaluated the game world this frame.
     if (
+      shouldDetectTarget &&
       unifiedTarget &&
       !detectedEntities.some((c) => c.instanceId === unifiedTarget.instanceId)
     ) {

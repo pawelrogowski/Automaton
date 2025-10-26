@@ -612,7 +612,8 @@ async function processGameState() {
     };
 
     // Only send update if payload actually changed (deep comparison)
-    const payloadChanged = !lastSentPayload || (
+    const payloadChanged =
+      !lastSentPayload ||
       newPayload.hppc !== lastSentPayload.hppc ||
       newPayload.mppc !== lastSentPayload.mppc ||
       newPayload.monsterNum !== lastSentPayload.monsterNum ||
@@ -620,11 +621,14 @@ async function processGameState() {
       newPayload.supportCd !== lastSentPayload.supportCd ||
       newPayload.attackCd !== lastSentPayload.attackCd ||
       newPayload.isWalking !== lastSentPayload.isWalking ||
-      JSON.stringify(newPayload.characterStatus) !== JSON.stringify(lastSentPayload.characterStatus) ||
-      JSON.stringify(newPayload.partyMembers) !== JSON.stringify(lastSentPayload.partyMembers) ||
-      JSON.stringify(newPayload.activeActionItems) !== JSON.stringify(lastSentPayload.activeActionItems) ||
-      JSON.stringify(newPayload.equippedItems) !== JSON.stringify(lastSentPayload.equippedItems)
-    );
+      JSON.stringify(newPayload.characterStatus) !==
+        JSON.stringify(lastSentPayload.characterStatus) ||
+      JSON.stringify(newPayload.partyMembers) !==
+        JSON.stringify(lastSentPayload.partyMembers) ||
+      JSON.stringify(newPayload.activeActionItems) !==
+        JSON.stringify(lastSentPayload.activeActionItems) ||
+      JSON.stringify(newPayload.equippedItems) !==
+        JSON.stringify(lastSentPayload.equippedItems);
 
     if (payloadChanged || !hasScannedInitially) {
       reusableGameStateUpdate.payload = newPayload;

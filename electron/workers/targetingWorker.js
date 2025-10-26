@@ -1,24 +1,18 @@
 // targetingWorker.js
 import { parentPort, workerData } from 'worker_threads';
-import { createLogger } from '../utils/logger.js';
 import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 import { performance } from 'perf_hooks';
+
 import {
   selectBestTarget,
-  acquireTarget,
   updateDynamicTarget,
+  getEffectiveScore,
   manageMovement,
   findRuleForCreatureName,
 } from './targeting/targetingLogic.js';
 import { isBattleListMatch } from '../utils/nameMatcher.js';
-import {
-  PATH_STATUS_IDLE,
-} from './sabState/schema.js';
+import { PATH_STATUS_IDLE } from './sabState/schema.js';
 
-const logger = createLogger({ info: false, error: true, debug: false });
-
-// Track last target for change detection
-let lastLoggedTarget = null;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // --- FSM States ---
@@ -34,9 +28,13 @@ const FSM_STATE = {
 // --- Configuration ---
 const config = {
   mainLoopIntervalMs: 50,
-  unreachableTimeoutMs: 400,
-  acquireTimeoutMs: 355, // Global rate limit: minimum time between ANY targeting clicks
-  acquisitionGraceTimeMs: 400,
+  unreachableTimeoutMs: 250,
+  // Shorter throttle between battle-list clicks to reduce post-death pauses (was 500ms)
+  clickThrottleMs: 250,
+  // Verification window after click; tuned to be close to throttle (was 500ms)
+  verifyWindowMs: 300,
+  // Anti-stuck: if adjacent to target and HP tag unchanged for this long, reset via Escape
+  antiStuckAdjacentMs: 5000,
 };
 
 // --- Worker State (data from other sources) ---
@@ -59,9 +57,9 @@ const targetingState = {
   pathfindingTarget: null, // The creature we WANT to target
   currentTarget: null, // The creature we HAVE targeted
   unreachableSince: 0,
-  lastTargetingClickTime: 0, // Timestamp of last targeting click (for global rate limiting)
+  lastTargetingClickTime: 0, // Timestamp (perf.now()) of last targeting click
   lastDispatchedDynamicTargetId: null,
-  acquisitionStartTime: 0, // When we first started trying to acquire current pathfindingTarget
+  acquisitionStartTime: 0,
   lastAcquireAttempt: {
     targetName: '',
     targetInstanceId: null,
@@ -71,12 +69,30 @@ const targetingState = {
     adjacentSince: 0,
     lastHp: null,
   },
+  // Tracks per-creature-name candidate rotation and temporary blacklists
+  // candidateStateByName: {
+  //   [name: string]: { pointer: number|null, blacklist: Set<number>, lastReset: number }
+  // }
+  candidateStateByName: Object.create(null),
+  // pendingClick: null | {
+  //   candidates: [indices],
+  //   currentCandidateIdx: number,
+  //   startedAt: number,
+  //   deadline: number,
+  //   requestedName: string,
+  //   requestedInstanceId: number,
+  //   lastTriedCandidateIndex?: number
+  // }
+  pendingClick: null,
 };
+
 // Initialize unified SAB interface
 let sabInterface = null;
 if (workerData.unifiedSAB) {
-  sabInterface = createWorkerInterface(workerData.unifiedSAB, WORKER_IDS.TARGETING);
-  logger('info', '[TargetingWorker] Unified SAB interface initialized');
+  sabInterface = createWorkerInterface(
+    workerData.unifiedSAB,
+    WORKER_IDS.TARGETING,
+  );
 } else {
   throw new Error('[TargetingWorker] Unified SAB interface is required');
 }
@@ -86,14 +102,14 @@ const getCreaturesFromSAB = () => {
   try {
     const result = sabInterface.get('creatures');
     if (result && result.data && Array.isArray(result.data)) {
-      return result.data.map(creature => ({
+      return result.data.map((creature) => ({
         ...creature,
         distance: creature.distance / 100,
-        gameCoords: { x: creature.x, y: creature.y, z: creature.z }
+        gameCoords: { x: creature.x, y: creature.y, z: creature.z },
       }));
     }
   } catch (err) {
-    logger('error', `[TargetingWorker] Failed to read creatures from unified SAB: ${err.message}`);
+    // Silent
   }
   return [];
 };
@@ -109,7 +125,7 @@ const getCurrentTargetFromSAB = () => {
     }
     return null;
   } catch (err) {
-    logger('error', `[TargetingWorker] Failed to read target from unified SAB: ${err.message}`);
+    // Silent
   }
   return null;
 };
@@ -121,7 +137,7 @@ const getBattleListFromSAB = () => {
       return result.data;
     }
   } catch (err) {
-    logger('error', `[TargetingWorker] Failed to read battle list from unified SAB: ${err.message}`);
+    // Silent
   }
   return [];
 };
@@ -133,20 +149,16 @@ const isLootingRequired = () => {
       return result.data.required === 1;
     }
   } catch (err) {
-    logger('error', `[TargetingWorker] Failed to read looting state: ${err.message}`);
+    // Silent
   }
   return false;
 };
 
 // --- State Transition Helper ---
-function transitionTo(newState, reason = '') {
-  if (targetingState.state === newState) {
-    return;
-  }
-  logger('info', `[TRANSITION] ${targetingState.state} → ${newState} (${reason})`);
+function transitionTo(newState) {
+  if (targetingState.state === newState) return;
   targetingState.state = newState;
 
-  // Reset state-specific timers and data on transition
   switch (newState) {
     case FSM_STATE.SELECTING:
       targetingState.pathfindingTarget = null;
@@ -154,17 +166,56 @@ function transitionTo(newState, reason = '') {
       targetingState.stuckTargetTracking.adjacentSince = 0;
       targetingState.stuckTargetTracking.lastHp = null;
       targetingState.stuckTargetTracking.instanceId = null;
+      targetingState.pendingClick = null;
       break;
     case FSM_STATE.PREPARE_ACQUISITION:
       targetingState.unreachableSince = 0;
+      targetingState.pendingClick = null;
       break;
     case FSM_STATE.VERIFY_ACQUISITION:
-      // No need to set timestamp here - it's already set in PERFORM_ACQUISITION
+      // pendingClick created elsewhere
+      break;
+    default:
       break;
   }
 }
 
-// Checks the status of target acquisition synchronously.
+// --- Candidate rotation helpers ---
+function getCandidateState(name) {
+  const key = String(name || '').toLowerCase();
+  if (!targetingState.candidateStateByName[key]) {
+    targetingState.candidateStateByName[key] = {
+      pointer: null,
+      blacklist: new Set(),
+      lastReset: Date.now(),
+    };
+  }
+  return targetingState.candidateStateByName[key];
+}
+
+function resetCandidateState(name) {
+  const key = String(name || '').toLowerCase();
+  targetingState.candidateStateByName[key] = {
+    pointer: null,
+    blacklist: new Set(),
+    lastReset: Date.now(),
+  };
+}
+
+function recordFailedCandidate(name, blIndex) {
+  const st = getCandidateState(name);
+  if (typeof blIndex === 'number') {
+    st.blacklist.add(blIndex);
+    st.pointer = blIndex; // advance from here next time
+  }
+}
+
+function advancePointer(name, blIndex) {
+  const st = getCandidateState(name);
+  if (typeof blIndex === 'number') st.pointer = blIndex;
+}
+
+// Synchronous acquisition status check from SAB `target` struct
 function checkAcquisitionStatus(expectedInstanceId, expectedName) {
   const currentTarget = getCurrentTargetFromSAB();
 
@@ -172,7 +223,7 @@ function checkAcquisitionStatus(expectedInstanceId, expectedName) {
     return { status: 'NO_TARGET' };
   }
 
-  if (currentTarget.instanceId === expectedInstanceId) {
+  if (expectedInstanceId && currentTarget.instanceId === expectedInstanceId) {
     return { status: 'SUCCESS', target: currentTarget };
   }
 
@@ -187,7 +238,12 @@ function checkAcquisitionStatus(expectedInstanceId, expectedName) {
 
 function handleIdleState() {
   if (workerState.globalState?.targeting?.enabled && !isLootingRequired()) {
-    transitionTo(FSM_STATE.SELECTING, 'Targeting enabled');
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setControlState',
+      payload: 'TARGETING',
+    });
+    transitionTo(FSM_STATE.SELECTING);
   } else {
     if (targetingState.lastDispatchedDynamicTargetId !== null) {
       parentPort.postMessage({
@@ -202,45 +258,74 @@ function handleIdleState() {
 }
 
 function handleSelectingState() {
-  // Prefer reachable targets: if any reachable creatures exist, select among them
   const allCreatures = getCreaturesFromSAB();
-  const reachableCreatures = allCreatures.filter(c => c.isReachable);
-  const provider = () => (reachableCreatures.length > 0 ? reachableCreatures : allCreatures);
+  const reachableCreatures = allCreatures.filter((c) => c.isReachable);
+  const provider = () =>
+    reachableCreatures.length > 0 ? reachableCreatures : allCreatures;
 
-  // 1) Compute rules-based best target (where we want to go)
   let bestTarget = selectBestTarget(
     provider,
     workerState.globalState.targeting.targetingList,
-    null
+    null,
   );
 
-  // 2) If we already have an in-game target with the same name that's still reachable,
-  //    prefer that exact instance to avoid swapping between same-named creatures.
-  //    UNLESS we were actively trying to acquire a different instance (prevents deadlock).
   const sabTarget = getCurrentTargetFromSAB();
-  if (bestTarget && sabTarget && 
-      (!targetingState.pathfindingTarget || 
-       targetingState.pathfindingTarget.instanceId === bestTarget.instanceId)) {
-    const sabEntity = allCreatures.find(c => c.instanceId === sabTarget.instanceId);
-    if (
-      sabEntity && sabEntity.isReachable &&
-      isBattleListMatch(sabEntity.name, bestTarget.name)
-    ) {
-      bestTarget = sabEntity; // stick to current instance
+  if (bestTarget && sabTarget) {
+    const sabEntity = allCreatures.find(
+      (c) =>
+        c.isReachable &&
+        (isBattleListMatch(c.name, sabTarget.name) ||
+          isBattleListMatch(sabTarget.name, c.name)),
+    );
+    if (sabEntity && isBattleListMatch(sabEntity.name, bestTarget.name)) {
+      bestTarget = sabEntity;
+    }
+  }
+
+  const currentSABTarget = getCurrentTargetFromSAB();
+  if (currentSABTarget && bestTarget) {
+    const currentEntity = allCreatures.find(
+      (c) => c.instanceId === currentSABTarget.instanceId,
+    );
+    if (currentEntity) {
+      if (!currentEntity.isReachable) {
+        // Do not prefer an unreachable current SAB target
+      } else if (bestTarget && bestTarget.isReachable) {
+        const currentScore = getEffectiveScore(
+          currentEntity,
+          workerState.globalState.targeting.targetingList,
+          true,
+          true,
+        );
+        const bestScore = getEffectiveScore(
+          bestTarget,
+          workerState.globalState.targeting.targetingList,
+          false,
+          bestTarget.isReachable,
+        );
+        if (currentScore >= bestScore) {
+          bestTarget = currentEntity;
+        }
+      } else {
+        // If bestTarget is unreachable while current is reachable, prefer current
+        bestTarget = currentEntity;
+      }
     }
   }
 
   if (bestTarget) {
     targetingState.pathfindingTarget = bestTarget;
-    if (targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId) {
+    if (
+      targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId
+    ) {
       updateDynamicTarget(
         parentPort,
         bestTarget,
-        workerState.globalState.targeting.targetingList
+        workerState.globalState.targeting.targetingList,
       );
       targetingState.lastDispatchedDynamicTargetId = bestTarget.instanceId;
     }
-    transitionTo(FSM_STATE.PREPARE_ACQUISITION, `Found target: ${bestTarget.name}`);
+    transitionTo(FSM_STATE.PREPARE_ACQUISITION);
   } else {
     if (targetingState.lastDispatchedDynamicTargetId !== null) {
       parentPort.postMessage({
@@ -251,144 +336,648 @@ function handleSelectingState() {
       targetingState.lastDispatchedDynamicTargetId = null;
     }
     targetingState.pathfindingTarget = null;
-    transitionTo(FSM_STATE.IDLE, 'No valid targets');
+    if (sabInterface) {
+      try {
+        sabInterface.set('targetingPathData', {
+          waypoints: [],
+          length: 0,
+          status: 0,
+          chebyshevDistance: 0,
+          startX: 0,
+          startY: 0,
+          startZ: 0,
+          targetX: 0,
+          targetY: 0,
+          targetZ: 0,
+          blockingCreatureX: 0,
+          blockingCreatureY: 0,
+          blockingCreatureZ: 0,
+          wptId: 0,
+          instanceId: 0,
+        });
+      } catch (err) {
+        // Silent
+      }
+    }
+    transitionTo(FSM_STATE.IDLE);
   }
 }
 
 function handlePrepareAcquisitionState() {
-  const now = performance.now();
   const { pathfindingTarget } = targetingState;
 
   if (!pathfindingTarget) {
-    transitionTo(FSM_STATE.SELECTING, 'No pathfinding target');
+    transitionTo(FSM_STATE.SELECTING);
     return;
   }
 
-  const updatedTarget = getCreaturesFromSAB().find(c => c.instanceId === pathfindingTarget.instanceId);
+  const updatedTarget = getCreaturesFromSAB().find(
+    (c) => c.instanceId === pathfindingTarget.instanceId,
+  );
   if (!updatedTarget) {
-    transitionTo(FSM_STATE.SELECTING, 'Target disappeared');
+    transitionTo(FSM_STATE.SELECTING);
     return;
   }
-  targetingState.pathfindingTarget = updatedTarget; // Refresh with latest creature data
+  targetingState.pathfindingTarget = updatedTarget;
 
-  transitionTo(FSM_STATE.PERFORM_ACQUISITION, 'Checks passed');
+  transitionTo(FSM_STATE.PERFORM_ACQUISITION);
 }
 
-function handlePerformAcquisitionState() {
-  const now = performance.now();
-  const { pathfindingTarget } = targetingState;
+function chooseNearestMatchingIndex(currentIndex, matches, listLen) {
+  const forwardDist = (from, to) => (to - from + listLen) % listLen;
+  const backDist = (from, to) => (from - to + listLen) % listLen;
 
-  // Enforce global rate limit: prevent clicking more than once per acquireTimeoutMs
-  const timeSinceLastClick = now - targetingState.lastTargetingClickTime;
-  if (timeSinceLastClick < config.acquireTimeoutMs) {
-    return; // Still within rate limit, wait silently
-  }
-
-  // === COMPREHENSIVE SNAPSHOT LOG BEFORE CLICK ===
-  const allCreatures = getCreaturesFromSAB();
-  const battleList = getBattleListFromSAB();
-  const currentSABTarget = getCurrentTargetFromSAB();
-  const targetingList = workerState.globalState.targeting.targetingList;
-  
-  logger('info', '\n========== TARGETING CLICK SNAPSHOT ==========');
-  logger('info', `[CLICK TARGET] ${pathfindingTarget.name} (ID: ${pathfindingTarget.instanceId})`);
-  logger('info', `  Position: (${pathfindingTarget.gameCoords?.x}, ${pathfindingTarget.gameCoords?.y}, ${pathfindingTarget.gameCoords?.z})`);
-  logger('info', `  Screen: (${pathfindingTarget.absoluteX}, ${pathfindingTarget.absoluteY})`);
-  logger('info', `  Distance: ${pathfindingTarget.distance?.toFixed(2)}, Reachable: ${pathfindingTarget.isReachable}`);
-  
-  const targetRule = findRuleForCreatureName(pathfindingTarget.name, targetingList);
-  logger('info', `  Priority: ${targetRule?.priority ?? 'N/A'}, Stance: ${targetRule?.stance ?? 'N/A'}`);
-  
-  logger('info', `[CURRENT SAB TARGET] ${currentSABTarget ? `${currentSABTarget.name} (ID: ${currentSABTarget.instanceId})` : 'NONE'}`);
-  
-  logger('info', '[ALL CREATURES] Total: ' + allCreatures.length);
-  allCreatures.forEach(c => {
-    const rule = findRuleForCreatureName(c.name, targetingList);
-    const marker = c.instanceId === pathfindingTarget.instanceId ? ' <-- CLICKING THIS' : '';
-    logger('info', 
-      `  ${c.name} (ID: ${c.instanceId}) | ` +
-      `Pos: (${c.gameCoords?.x}, ${c.gameCoords?.y}, ${c.gameCoords?.z}) | ` +
-      `Dist: ${c.distance?.toFixed(2)} | ` +
-      `Reach: ${c.isReachable} | ` +
-      `Prio: ${rule?.priority ?? 'N/A'}${marker}`
-    );
-  });
-  
-  logger('info', '[BATTLE LIST] Total: ' + battleList.length);
-  battleList.forEach(b => {
-    logger('info', `  ${b.name}`);
-  });
-  
-  logger('info', '[TARGETING RULES]');
-  targetingList.filter(r => r.action === 'Attack').forEach(r => {
-    logger('info', `  ${r.name} - Priority: ${r.priority}, Stance: ${r.stance}`);
-  });
-  
-  logger('info', '===============================================\n');
-  
-  const result = acquireTarget(
-    getBattleListFromSAB,
-    parentPort,
-    pathfindingTarget.name,
-    -1, // lastClickedIndex is no longer used for cycling
-    workerState.globalState,
-    getCreaturesFromSAB,
-    () => workerState.playerMinimapPosition,
-    pathfindingTarget.instanceId,
+  let bestIdx = matches[0];
+  let bestSteps = Math.min(
+    forwardDist(currentIndex, bestIdx),
+    backDist(currentIndex, bestIdx),
   );
-
-  if (result.success) {
-    targetingState.lastAcquireAttempt.targetInstanceId = pathfindingTarget.instanceId;
-    targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
-    targetingState.lastTargetingClickTime = now; // Record click time for rate limiting
-    transitionTo(FSM_STATE.VERIFY_ACQUISITION, 'Action performed');
-  } else {
-    transitionTo(FSM_STATE.SELECTING, `Acquire action failed: ${result.reason}`);
+  for (let k = 1; k < matches.length; k++) {
+    const idx = matches[k];
+    const steps = Math.min(
+      forwardDist(currentIndex, idx),
+      backDist(currentIndex, idx),
+    );
+    if (steps < bestSteps) {
+      bestIdx = idx;
+      bestSteps = steps;
+    }
   }
+  return bestIdx;
+}
+
+async function handlePerformAcquisitionState() {
+  const now = performance.now();
+
+  // Enforce click throttle
+  if (now - targetingState.lastTargetingClickTime < config.clickThrottleMs) {
+    return;
+  }
+
+  const { pathfindingTarget } = targetingState;
+  if (!pathfindingTarget) {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
+  }
+
+  let battleList = getBattleListFromSAB();
+  if (!Array.isArray(battleList) || battleList.length === 0) {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
+  }
+  const listLen = battleList.length;
+
+  // Build name-matching indices
+  const matchingIndicesRaw = [];
+  for (let i = 0; i < battleList.length; i++) {
+    const be = battleList[i];
+    if (!be || !be.name) continue;
+    if (
+      isBattleListMatch(pathfindingTarget.name, be.name) ||
+      isBattleListMatch(be.name, pathfindingTarget.name)
+    ) {
+      matchingIndicesRaw.push(i);
+    }
+  }
+
+  if (matchingIndicesRaw.length === 0) {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
+  }
+
+  // Apply per-name blacklist and rotation pointer
+  const nameKey = pathfindingTarget.name;
+  const nameState = getCandidateState(nameKey);
+  let matchingIndices = matchingIndicesRaw.filter((i) => !nameState.blacklist.has(i));
+  if (matchingIndices.length === 0) {
+    // If everything is blacklisted, reset and try all
+    resetCandidateState(nameKey);
+    matchingIndices = matchingIndicesRaw.slice();
+  }
+
+  // Determine current selected BL index
+  let currentIndex = -1;
+  for (let i = 0; i < battleList.length; i++) {
+    if (
+      battleList[i] &&
+      (battleList[i].isTarget === 1 || battleList[i].isTarget === true)
+    ) {
+      currentIndex = i;
+      break;
+    }
+  }
+  if (currentIndex === -1) currentIndex = 0;
+
+  // Choose a starting candidate: prefer pointer progression, else nearest to current selection
+  let bestIdx;
+  if (
+    typeof nameState.pointer === 'number' &&
+    matchingIndices.includes(nameState.pointer)
+  ) {
+    const pos = matchingIndices.indexOf(nameState.pointer);
+    bestIdx = matchingIndices[(pos + 1) % matchingIndices.length];
+  } else {
+    bestIdx = chooseNearestMatchingIndex(currentIndex, matchingIndices, listLen);
+  }
+
+  const entry = battleList[bestIdx];
+
+  if (!entry || typeof entry.x !== 'number' || typeof entry.y !== 'number') {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
+  }
+
+  // If SAB already has the desired target AND it's reachable, accept without clicking
+  const sabTargetNow = getCurrentTargetFromSAB();
+  if (
+    sabTargetNow &&
+    sabTargetNow.isReachable &&
+    (sabTargetNow.instanceId === pathfindingTarget.instanceId ||
+      isBattleListMatch(sabTargetNow.name, pathfindingTarget.name) ||
+      isBattleListMatch(pathfindingTarget.name, sabTargetNow.name))
+  ) {
+    acceptAcquiredTarget(sabTargetNow);
+    return;
+  }
+
+  // Create pendingClick with candidate indices; avoid clicking if already selected
+  targetingState.pendingClick = {
+    candidates: matchingIndices.slice(),
+    currentCandidateIdx: matchingIndices.indexOf(bestIdx),
+    startedAt: now,
+    deadline: now + config.verifyWindowMs,
+    requestedName: pathfindingTarget.name,
+    requestedInstanceId: pathfindingTarget.instanceId,
+    lastTriedCandidateIndex: undefined,
+    lastClickedIndex: undefined,
+    lastClickedY: undefined,
+  };
+
+  // If current selection already matches requested name but SAB target is absent or unreachable,
+  // cycle to next matching candidate and click it to search for a reachable instance.
+  if (currentIndex !== -1 && targetingState.pendingClick.candidates.includes(currentIndex)) {
+    const sabNow = getCurrentTargetFromSAB();
+    const desiredName = pathfindingTarget.name;
+    const sabMatchesDesired =
+      sabNow &&
+      (isBattleListMatch(sabNow.name, desiredName) ||
+        isBattleListMatch(desiredName, sabNow.name));
+    const sabReachable = !!(sabNow && sabNow.isReachable);
+
+    // If SAB already indicates correct and reachable target, proceed to verification without clicking
+    if (sabMatchesDesired && sabReachable) {
+      transitionTo(FSM_STATE.VERIFY_ACQUISITION);
+      return;
+    }
+
+    // Otherwise, advance to the next candidate and click (if throttle permits)
+    targetingState.pendingClick.currentCandidateIdx =
+      (targetingState.pendingClick.currentCandidateIdx + 1) %
+      targetingState.pendingClick.candidates.length;
+    targetingState.pendingClick.startedAt = now;
+    targetingState.pendingClick.deadline = now + config.verifyWindowMs;
+
+    if (now - targetingState.lastTargetingClickTime >= config.clickThrottleMs) {
+      // Try to click the next different candidate (skip already-selected rows)
+      if (clickNextAvailableCandidate(targetingState.pendingClick, battleList, pathfindingTarget.name)) {
+        const idx = targetingState.pendingClick.candidates[targetingState.pendingClick.currentCandidateIdx];
+        targetingState.pendingClick.lastTriedCandidateIndex = idx;
+      }
+      return;
+    }
+
+    // If throttled, fall through to clicking the computed entry below
+  }
+
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload: {
+      type: 'targeting',
+      action: {
+        module: 'mouseController',
+        method: 'leftClick',
+        args: [entry.x, entry.y],
+      },
+      ttl: 55,
+    },
+  });
+  if (targetingState.pendingClick) {
+    targetingState.pendingClick.lastClickedIndex = bestIdx;
+    targetingState.pendingClick.lastClickedY = entry && typeof entry.y === 'number' ? entry.y : undefined;
+  }
+  // Initialize rotation pointer from first click for this name
+  try { advancePointer(pathfindingTarget.name, bestIdx); } catch (_) {}
+
+  targetingState.lastTargetingClickTime = performance.now();
+  targetingState.lastAcquireAttempt.targetInstanceId =
+    pathfindingTarget.instanceId;
+  targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
+  if (targetingState.pendingClick) {
+    targetingState.pendingClick.lastTriedCandidateIndex = bestIdx;
+  }
+
+  transitionTo(FSM_STATE.VERIFY_ACQUISITION);
+}
+
+function attemptClickCandidate(candidateIdx, battleList) {
+  if (!battleList || !Array.isArray(battleList)) return false;
+  const entry = battleList[candidateIdx];
+  if (!entry || typeof entry.x !== 'number' || typeof entry.y !== 'number')
+    return false;
+
+  // If this candidate is already the selected battle-list entry, avoid clicking to prevent toggle
+  let currentSelected = -1;
+  for (let i = 0; i < battleList.length; i++) {
+    const be = battleList[i];
+    if (be && (be.isTarget === 1 || be.isTarget === true)) {
+      currentSelected = i;
+      break;
+    }
+  }
+  if (currentSelected === candidateIdx) {
+    return false;
+  }
+
+  parentPort.postMessage({
+    type: 'inputAction',
+    payload: {
+      type: 'targeting',
+      action: {
+        module: 'mouseController',
+        method: 'leftClick',
+        args: [entry.x, entry.y],
+      },
+      ttl: 55,
+    },
+  });
+  targetingState.lastTargetingClickTime = performance.now();
+  if (targetingState.pendingClick) {
+    targetingState.pendingClick.lastTriedCandidateIndex = candidateIdx;
+  }
+  return true;
+}
+
+function blElemYEquals(entry, y) {
+  if (!entry || typeof y !== 'number') return false;
+  if (typeof entry.y !== 'number') return false;
+  return Math.abs(entry.y - y) <= 2;
+}
+
+function pickNextDistinctCandidateIndex(pending, battleList) {
+  if (!pending || !Array.isArray(pending.candidates) || pending.candidates.length === 0) {
+    return pending?.currentCandidateIdx ?? 0;
+  }
+  let idx = pending.currentCandidateIdx ?? 0;
+  let safety = pending.candidates.length;
+  while (safety-- > 0) {
+    const candIdx = pending.candidates[idx];
+    const sameIndex = typeof pending.lastClickedIndex === 'number' && pending.lastClickedIndex === candIdx;
+    const sameY = typeof pending.lastClickedY === 'number' && blElemYEquals(battleList[candIdx], pending.lastClickedY);
+    if (!sameIndex && !sameY) break;
+    idx = (idx + 1) % pending.candidates.length;
+  }
+  return idx;
+}
+
+function clickNextAvailableCandidate(pending, battleList, requestedName) {
+  if (!pending || !Array.isArray(pending.candidates) || pending.candidates.length === 0) return false;
+  let attempts = pending.candidates.length;
+  while (attempts-- > 0) {
+    pending.currentCandidateIdx = pickNextDistinctCandidateIndex(pending, battleList);
+    const candidateIndex = pending.candidates[pending.currentCandidateIdx];
+    const clicked = attemptClickCandidate(candidateIndex, battleList);
+    if (clicked) {
+      // Update rotation state and bookkeeping
+      if (requestedName) advancePointer(requestedName, candidateIndex);
+      pending.lastClickedIndex = candidateIndex;
+      const e = battleList[candidateIndex];
+      pending.lastClickedY = e && typeof e.y === 'number' ? e.y : undefined;
+      return true;
+    }
+    // Couldn't click (likely already selected) -> move to next candidate
+    pending.currentCandidateIdx = (pending.currentCandidateIdx + 1) % pending.candidates.length;
+  }
+  return false;
+}
+
+function acceptAcquiredTarget(targetObj) {
+  const creatures = getCreaturesFromSAB();
+  const matchedCreature =
+    creatures.find((c) => c.instanceId === targetObj.instanceId) || null;
+
+  targetingState.currentTarget = matchedCreature || {
+    instanceId: targetObj.instanceId,
+    name: targetObj.name,
+    gameCoords: { x: targetObj.x, y: targetObj.y, z: targetObj.z },
+    isReachable: !!targetObj.isReachable,
+  };
+
+  targetingState.currentTarget.acquiredAt = Date.now();
+  targetingState.pathfindingTarget = targetingState.currentTarget;
+
+  // Reset candidate rotation for this name on successful acquisition
+  try {
+    if (targetingState.currentTarget?.name) {
+      resetCandidateState(targetingState.currentTarget.name);
+    }
+  } catch (_) {}
+
+  try {
+    updateDynamicTarget(
+      parentPort,
+      targetingState.currentTarget,
+      workerState.globalState.targeting.targetingList,
+    );
+  } catch (e) {
+    // Silent
+  }
+
+  targetingState.pendingClick = null;
+  transitionTo(FSM_STATE.ENGAGING);
 }
 
 function handleVerifyAcquisitionState() {
   const now = performance.now();
-  const { targetInstanceId, targetName } = targetingState.lastAcquireAttempt;
-  const timeSinceClick = now - targetingState.lastTargetingClickTime;
+  const pending = targetingState.pendingClick;
 
-  const verification = checkAcquisitionStatus(targetInstanceId, targetName);
-
-  if (verification.status === 'SUCCESS') {
-    logger('info', `[ACQUIRE] Successfully acquired ${targetName} (ID: ${targetInstanceId})`);
-    targetingState.currentTarget = verification.target;
-    targetingState.stuckTargetTracking.adjacentSince = 0;
-    targetingState.stuckTargetTracking.lastHp = null;
-    transitionTo(FSM_STATE.ENGAGING, 'Acquired correct instance');
+  if (!pending) {
+    const nowTarget = getCurrentTargetFromSAB();
+    if (
+      nowTarget &&
+      nowTarget.instanceId ===
+        targetingState.lastAcquireAttempt.targetInstanceId
+    ) {
+      acceptAcquiredTarget(nowTarget);
+      return;
+    }
+    transitionTo(FSM_STATE.PREPARE_ACQUISITION);
     return;
   }
 
-  if (verification.status === 'WRONG_INSTANCE') {
-    const newTarget = getCreaturesFromSAB().find(c => c.instanceId === verification.target.instanceId);
-    if (newTarget && newTarget.isReachable) {
-      logger('info', `[ACQUIRE] Wrong instance, but same name. Sticking with new target ${newTarget.name} (ID: ${newTarget.instanceId})`);
-      targetingState.currentTarget = newTarget;
-      targetingState.pathfindingTarget = newTarget;
-      updateDynamicTarget(parentPort, newTarget, workerState.globalState.targeting.targetingList);
-      transitionTo(FSM_STATE.ENGAGING, 'Sticking with new instance');
+  // Prefer SAB target if reachable; otherwise allow BL+Creatures reachable fallback
+  try {
+    const bl = getBattleListFromSAB();
+    if (Array.isArray(bl) && bl.length > 0) {
+      let selectedIdx = -1;
+      for (let i = 0; i < bl.length; i++) {
+        const be = bl[i];
+        if (be && (be.isTarget === 1 || be.isTarget === true)) {
+          selectedIdx = i;
+          break;
+        }
+      }
+      if (selectedIdx !== -1) {
+        const selectedEntry = bl[selectedIdx];
+        if (
+          selectedEntry &&
+          (isBattleListMatch(selectedEntry.name, pending.requestedName) ||
+            isBattleListMatch(pending.requestedName, selectedEntry.name))
+        ) {
+          const sabNow = getCurrentTargetFromSAB();
+          const sabMatchesDesired =
+            sabNow &&
+            (isBattleListMatch(sabNow.name, pending.requestedName) ||
+              isBattleListMatch(pending.requestedName, sabNow.name));
+          const sabReachable = !!(sabNow && sabNow.isReachable);
+          if (sabMatchesDesired && sabReachable) {
+            acceptAcquiredTarget(sabNow);
+            resetCandidateState(pending.requestedName);
+            return;
+          }
+          // Fallback: if BL selection matches requested name and a reachable creature with that name exists,
+          // accept it even if SAB target overlay isn't detected yet.
+          try {
+            const creatures = getCreaturesFromSAB();
+            const candidates = creatures
+              .filter((c) =>
+                c &&
+                c.isReachable &&
+                (isBattleListMatch(c.name, pending.requestedName) ||
+                  isBattleListMatch(pending.requestedName, c.name)),
+              )
+              .sort((a, b) => a.distance - b.distance);
+            if (candidates.length > 0) {
+              const best = candidates[0];
+              acceptAcquiredTarget({
+                instanceId: best.instanceId,
+                name: best.name,
+                x: best.x,
+                y: best.y,
+                z: best.z,
+                isReachable: best.isReachable,
+              });
+              resetCandidateState(pending.requestedName);
+              return;
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  const verification = checkAcquisitionStatus(
+    pending.requestedInstanceId,
+    pending.requestedName,
+  );
+
+  if (verification.status === 'SUCCESS') {
+    // Do not accept unreachable acquisitions; cycle to next candidate instead
+    if (verification.target && verification.target.isReachable) {
+      acceptAcquiredTarget(verification.target);
+      // Clear rotation/blacklist for this name on success
+      resetCandidateState(pending.requestedName);
+      return;
     } else {
-      // The wrong instance we hit is not reachable, so it's a failure.
-      logger('warn', `[ACQUIRE] Hit wrong instance (${verification.target.instanceId}), but it's unreachable. Retrying.`);
-      transitionTo(FSM_STATE.PREPARE_ACQUISITION, 'Wrong instance was unreachable');
+      // Mark last tried candidate as failed/unreachable for this name
+      if (typeof pending.lastTriedCandidateIndex === 'number') {
+        recordFailedCandidate(pending.requestedName, pending.lastTriedCandidateIndex);
+      }
+      // Advance to next candidate immediately and attempt acquisition
+      pending.currentCandidateIdx =
+        (pending.currentCandidateIdx + 1) % pending.candidates.length;
+      pending.startedAt = now;
+      pending.deadline = now + config.verifyWindowMs;
+
+      if (
+        now - targetingState.lastTargetingClickTime >=
+        config.clickThrottleMs
+      ) {
+        const battleList = getBattleListFromSAB();
+        clickNextAvailableCandidate(pending, battleList, pending.requestedName);
+      }
+      return;
+    }
+  }
+
+  if (verification.status === 'WRONG_INSTANCE') {
+    const creatures = getCreaturesFromSAB();
+    const newTargetCreature = creatures.find(
+      (c) => c.instanceId === verification.target.instanceId,
+    );
+    const desiredName = pending.requestedName;
+    const targetingList = workerState.globalState.targeting.targetingList;
+
+    if (newTargetCreature && newTargetCreature.isReachable) {
+      const desiredInstanceObj = creatures.find(
+        (c) => c.instanceId === pending.requestedInstanceId,
+      );
+      const desiredReachable = !!(
+        desiredInstanceObj && desiredInstanceObj.isReachable
+      );
+      const desiredScore = getEffectiveScore(
+        { name: desiredName, isReachable: desiredReachable },
+        targetingList,
+        false,
+        desiredReachable,
+      );
+      const newScore = getEffectiveScore(
+        newTargetCreature,
+        targetingList,
+        true,
+        true,
+      );
+
+      // If BL selection is already aligned with the desired name, accept current selection to avoid toggle churn
+      try {
+        const bl = getBattleListFromSAB();
+        if (Array.isArray(bl) && bl.length > 0) {
+          let selectedIdx = -1;
+          for (let i = 0; i < bl.length; i++) {
+            const be = bl[i];
+            if (be && (be.isTarget === 1 || be.isTarget === true)) {
+              selectedIdx = i;
+              break;
+            }
+          }
+          if (
+            selectedIdx !== -1 &&
+            bl[selectedIdx] &&
+            (isBattleListMatch(bl[selectedIdx].name, desiredName) ||
+              isBattleListMatch(desiredName, bl[selectedIdx].name))
+          ) {
+            acceptAcquiredTarget(verification.target);
+            resetCandidateState(pending.requestedName);
+            return;
+          }
+        }
+      } catch (e) {
+        // ignore BL check
+      }
+
+      if (newScore > desiredScore || !desiredReachable) {
+        acceptAcquiredTarget(verification.target);
+        resetCandidateState(pending.requestedName);
+        return;
+      } else {
+        // Reject alternative: try next candidate when allowed
+        // Mark last tried candidate as suboptimal for this name
+        if (typeof pending.lastTriedCandidateIndex === 'number') {
+          recordFailedCandidate(
+            pending.requestedName,
+            pending.lastTriedCandidateIndex,
+          );
+        }
+        pending.currentCandidateIdx =
+          (pending.currentCandidateIdx + 1) % pending.candidates.length;
+        pending.startedAt = now;
+        pending.deadline = now + config.verifyWindowMs;
+
+        if (
+          now - targetingState.lastTargetingClickTime >=
+          config.clickThrottleMs
+        ) {
+          const battleList = getBattleListFromSAB();
+          clickNextAvailableCandidate(pending, battleList, pending.requestedName);
+        }
+        return;
+      }
+    } else {
+      // Wrong instance unreachable: try next candidate and remember failure
+      if (typeof pending.lastTriedCandidateIndex === 'number') {
+        recordFailedCandidate(
+          pending.requestedName,
+          pending.lastTriedCandidateIndex,
+        );
+      }
+      pending.currentCandidateIdx =
+        (pending.currentCandidateIdx + 1) % pending.candidates.length;
+      pending.startedAt = now;
+      pending.deadline = now + config.verifyWindowMs;
+
+      if (
+        now - targetingState.lastTargetingClickTime >=
+        config.clickThrottleMs
+      ) {
+        const battleList = getBattleListFromSAB();
+        clickNextAvailableCandidate(pending, battleList, pending.requestedName);
+      }
+      return;
+    }
+  }
+
+  // NO_TARGET or OTHER_TARGET
+  // If SAB target is missing or unreachable for the requested name, proactively cycle now (no deadline wait)
+  try {
+    const sabNow = getCurrentTargetFromSAB();
+    const desiredName = pending.requestedName;
+    const sabMatchesDesired =
+      sabNow &&
+      (isBattleListMatch(sabNow.name, desiredName) ||
+        isBattleListMatch(desiredName, sabNow.name));
+    const sabReachable = !!(sabNow && sabNow.isReachable);
+
+    if (!sabNow || !sabMatchesDesired || !sabReachable) {
+      // Record failure for last tried, then advance
+      if (typeof pending.lastTriedCandidateIndex === 'number') {
+        recordFailedCandidate(
+          pending.requestedName,
+          pending.lastTriedCandidateIndex,
+        );
+      }
+      pending.currentCandidateIdx =
+        (pending.currentCandidateIdx + 1) % pending.candidates.length;
+      pending.startedAt = now;
+      pending.deadline = now + config.verifyWindowMs;
+
+      if (
+        now - targetingState.lastTargetingClickTime >=
+        config.clickThrottleMs
+      ) {
+        const battleList = getBattleListFromSAB();
+        clickNextAvailableCandidate(pending, battleList, pending.requestedName);
+      }
+      return;
+    }
+  } catch (e) {
+    // If SAB read fails, fall back to deadline-based cycling
+  }
+
+  if (now >= pending.deadline) {
+    // Verification window elapsed -> retry next candidate (no attempt limit)
+    if (typeof pending.lastTriedCandidateIndex === 'number') {
+      recordFailedCandidate(pending.requestedName, pending.lastTriedCandidateIndex);
+    }
+    pending.currentCandidateIdx =
+      (pending.currentCandidateIdx + 1) % pending.candidates.length;
+    pending.startedAt = now;
+    pending.deadline = now + config.verifyWindowMs;
+
+    if (now - targetingState.lastTargetingClickTime >= config.clickThrottleMs) {
+      const battleList = getBattleListFromSAB();
+      clickNextAvailableCandidate(pending, battleList, pending.requestedName);
     }
     return;
   }
 
-  // If NO_TARGET or OTHER_TARGET, wait for timeout (using lastTargetingClickTime as reference)
-  if (timeSinceClick >= config.acquireTimeoutMs) {
-    logger('warn', `[ACQUIRE] Timeout waiting for ${targetName} (${timeSinceClick.toFixed(0)}ms). Retrying action.`);
-    transitionTo(FSM_STATE.PREPARE_ACQUISITION, 'Verification timeout');
-  }
+  // Still within verification window, do nothing
+  return;
 }
 
 async function handleEngagingState() {
   const now = Date.now();
-  
+
   if (workerState.isWaitingForMovement) {
     if (now < workerState.movementWaitUntil) {
       return;
@@ -396,142 +985,255 @@ async function handleEngagingState() {
       workerState.isWaitingForMovement = false;
     }
   }
-  
+
   const creatures = getCreaturesFromSAB();
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;
 
   const actualInGameTarget = getCurrentTargetFromSAB();
-  if (!targetingState.currentTarget || !actualInGameTarget || 
-      actualInGameTarget.instanceId !== targetingState.currentTarget.instanceId) {
-    transitionTo(FSM_STATE.SELECTING, 'Target lost or changed');
+
+  let hasMismatch = false;
+  if (actualInGameTarget && targetingState.currentTarget) {
+    const targetKey =
+      actualInGameTarget.instanceKey || actualInGameTarget.instanceId;
+    const currentKey =
+      targetingState.currentTarget.instanceKey ||
+      targetingState.currentTarget.instanceId;
+    hasMismatch = targetKey !== currentKey;
+  }
+
+  if (!targetingState.currentTarget || !actualInGameTarget || hasMismatch) {
+    transitionTo(FSM_STATE.SELECTING);
     return;
   }
 
-  const bestOverallTarget = selectBestTarget(
+  let bestOverallTarget = selectBestTarget(
     () => creatures,
     targetingList,
-    targetingState.currentTarget
+    targetingState.currentTarget,
+    config.unreachableTimeoutMs,
   );
-  
+  if (!bestOverallTarget) {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
+  }
+
   if (
     bestOverallTarget &&
     bestOverallTarget.instanceId !== targetingState.currentTarget.instanceId
   ) {
-    const currentRule = findRuleForCreatureName(
-      targetingState.currentTarget.name,
-      targetingList
+    const currentEntity = creatures.find(
+      (c) => c.instanceId === targetingState.currentTarget.instanceId,
     );
-    const bestRule = findRuleForCreatureName(
-      bestOverallTarget.name,
-      targetingList
-    );
-
-    targetingState.pathfindingTarget = bestOverallTarget;
-    updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
-    transitionTo(FSM_STATE.PREPARE_ACQUISITION, `Found better target`);
-    return;
-  }
-
-  const updatedTarget = creatures.find(
-    (c) => c.instanceId === targetingState.currentTarget.instanceId
-  );
-
-  if (!updatedTarget) {
-    transitionTo(FSM_STATE.SELECTING, 'Target died or disappeared');
-    return;
-  }
-
-  const positionChanged = 
-    !targetingState.currentTarget.gameCoords ||
-    !updatedTarget.gameCoords ||
-    targetingState.currentTarget.gameCoords.x !== updatedTarget.gameCoords.x ||
-    targetingState.currentTarget.gameCoords.y !== updatedTarget.gameCoords.y ||
-    targetingState.currentTarget.gameCoords.z !== updatedTarget.gameCoords.z;
-  
-  targetingState.currentTarget = updatedTarget;
-  targetingState.pathfindingTarget = updatedTarget; // Keep pathfindingTarget in sync for movement
-  
-  if (positionChanged) {
-    const rule = findRuleForCreatureName(updatedTarget.name, targetingList);
-    if (rule && rule.stance !== 'Stand') {
-      updateDynamicTarget(parentPort, updatedTarget, targetingList);
+    if (currentEntity && currentEntity.isReachable) {
+      const currentScore = getEffectiveScore(
+        currentEntity,
+        targetingList,
+        true,
+        true,
+      );
+      const bestScore = getEffectiveScore(
+        bestOverallTarget,
+        targetingList,
+        false,
+        bestOverallTarget.isReachable,
+      );
+      if (currentScore >= bestScore) {
+        // stick
+      } else {
+        targetingState.pathfindingTarget = bestOverallTarget;
+        updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
+        transitionTo(FSM_STATE.PREPARE_ACQUISITION);
+        return;
+      }
+    } else {
+      targetingState.pathfindingTarget = bestOverallTarget;
+      updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
+      transitionTo(FSM_STATE.PREPARE_ACQUISITION);
+      return;
     }
   }
 
-  // Track stuck target (adjacent but not attacking)
-  if (updatedTarget.isAdjacent) {
-    // HP value of 0 from the monitor means "Obstructed". Do not run stuck logic if obstructed.
-    if (updatedTarget.hp > 0) {
-      if (targetingState.stuckTargetTracking.instanceId !== updatedTarget.instanceId || targetingState.stuckTargetTracking.lastHp === null) {
-        // Start tracking this creature if it's new or we weren't tracking its HP before (e.g. it was obstructed).
-        targetingState.stuckTargetTracking.instanceId = updatedTarget.instanceId;
-        targetingState.stuckTargetTracking.adjacentSince = now;
-        targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
-      } else if (updatedTarget.hp === targetingState.stuckTargetTracking.lastHp) {
-        // HP tag is unchanged, continue timer.
-        const stuckDuration = now - targetingState.stuckTargetTracking.adjacentSince;
-        if (stuckDuration > 3500) {
-          logger('info', `[STUCK TARGET] Target ${updatedTarget.name} (ID ${updatedTarget.instanceId}) adjacent for ${stuckDuration}ms with no HP change. Pressing Escape.`);
+  const updatedTarget = creatures.find(
+    (c) =>
+      c.instanceKey === targetingState.currentTarget.instanceKey ||
+      c.instanceId === targetingState.currentTarget.instanceId,
+  );
+
+  if (!updatedTarget) {
+    transitionTo(FSM_STATE.SELECTING);
+    return;
+  }
+
+  targetingState.currentTarget = updatedTarget;
+  targetingState.currentTarget.instanceKey =
+    updatedTarget.instanceKey || updatedTarget.instanceId;
+  // Do not reset acquiredAt here; keep original acquisition time for reachability grace logic
+  targetingState.pathfindingTarget = updatedTarget;
+
+  // If current target is unreachable but there exists a reachable instance with same name, switch immediately
+  if (!updatedTarget.isReachable) {
+    const sameNameReachables = creatures
+      .filter(
+        (c) =>
+          c &&
+          c.isReachable &&
+          c.instanceId !== updatedTarget.instanceId &&
+          c.name &&
+          (isBattleListMatch(c.name, updatedTarget.name) ||
+            isBattleListMatch(updatedTarget.name, c.name)),
+      )
+      .sort((a, b) => a.distance - b.distance);
+
+    // Mark the currently selected BL row (if any) as failed for this name to force cycling
+    try {
+      const bl = getBattleListFromSAB();
+      if (Array.isArray(bl) && bl.length > 0) {
+        let selectedIdx = -1;
+        for (let i = 0; i < bl.length; i++) {
+          const be = bl[i];
+          if (be && (be.isTarget === 1 || be.isTarget === true)) {
+            selectedIdx = i;
+            break;
+          }
+        }
+        if (
+          selectedIdx !== -1 &&
+          bl[selectedIdx] &&
+          (isBattleListMatch(bl[selectedIdx].name, updatedTarget.name) ||
+            isBattleListMatch(updatedTarget.name, bl[selectedIdx].name))
+        ) {
+          recordFailedCandidate(updatedTarget.name, selectedIdx);
+        }
+      }
+    } catch (_) {}
+
+    if (sameNameReachables.length > 0) {
+      const bestAlt = sameNameReachables[0];
+      targetingState.pathfindingTarget = bestAlt;
+      updateDynamicTarget(parentPort, bestAlt, targetingList);
+      transitionTo(FSM_STATE.PREPARE_ACQUISITION);
+      return;
+    }
+  }
+
+  // Battle list shrink or dead-target heuristics: if BL shrank or SAB lost target, expedite reselection
+  try {
+    const bl = getBattleListFromSAB();
+    const blLen = Array.isArray(bl) ? bl.length : 0;
+    if (typeof targetingState.prevBattleListLength !== 'number') {
+      targetingState.prevBattleListLength = blLen;
+    }
+    const blShrank = blLen < targetingState.prevBattleListLength;
+    targetingState.prevBattleListLength = blLen;
+    if (
+      blShrank &&
+      (!actualInGameTarget || !updatedTarget || !updatedTarget.isReachable)
+    ) {
+      transitionTo(FSM_STATE.SELECTING);
+      return;
+    }
+  } catch (e) {}
+  if (!updatedTarget.isReachable) {
+    // Immediately re-enter acquisition to cycle through battle list matches
+    // until a reachable instance is acquired.
+    // This avoids getting stuck on an unreachable creature when multiple
+    // instances with the same name are present in the battle list.
+    targetingState.unreachableSince = 0;
+    transitionTo(FSM_STATE.PREPARE_ACQUISITION);
+    return;
+  } else {
+    targetingState.unreachableSince = 0;
+  }
+
+  // Anti-stuck: Adjacent for > antiStuckAdjacentMs and HP tag unchanged -> send Escape and reset acquisition
+  try {
+    const nowMs = Date.now();
+    const st = targetingState.stuckTargetTracking;
+    if (updatedTarget.isAdjacent) {
+      if (st.instanceId !== updatedTarget.instanceId) {
+        // New target or changed target: start adjacency window
+        st.instanceId = updatedTarget.instanceId;
+        st.adjacentSince = nowMs;
+        st.lastHp = updatedTarget.hp;
+      } else {
+        // Same target; if adjacency just started, start the timer
+        if (!st.adjacentSince || st.adjacentSince === 0) {
+          st.adjacentSince = nowMs;
+          st.lastHp = updatedTarget.hp;
+        }
+        // Reset window on HP tag change (coarse levels: Full/High/Medium/Low/Critical/Obstructed)
+        if (typeof updatedTarget.hp === 'number' && updatedTarget.hp !== st.lastHp) {
+          st.lastHp = updatedTarget.hp;
+          st.adjacentSince = nowMs;
+        }
+        // Fire anti-stuck if no HP change within the window while adjacent
+        if (
+          st.adjacentSince > 0 &&
+          nowMs - st.adjacentSince >= config.antiStuckAdjacentMs
+        ) {
           parentPort.postMessage({
             type: 'inputAction',
             payload: {
               type: 'targeting',
               action: { module: 'keypress', method: 'sendKey', args: ['Escape'] },
+              ttl: 55,
             },
           });
-          // Force re-selection after escape.
-          targetingState.stuckTargetTracking.instanceId = null;
-          targetingState.stuckTargetTracking.adjacentSince = 0;
-          targetingState.stuckTargetTracking.lastHp = null;
-          transitionTo(FSM_STATE.SELECTING, 'Stuck target recovery');
+
+          // Reset timers and acquisition state
+          targetingState.pendingClick = null;
+          targetingState.pathfindingTarget = null;
+          targetingState.currentTarget = null;
+          targetingState.unreachableSince = 0;
+          targetingState.lastTargetingClickTime = 0;
+          targetingState.acquisitionStartTime = 0;
+          targetingState.lastAcquireAttempt = { targetName: '', targetInstanceId: null };
+          targetingState.stuckTargetTracking = { instanceId: null, adjacentSince: 0, lastHp: null };
+          workerState.isWaitingForMovement = false;
+          workerState.movementWaitUntil = 0;
+
+          // Best-effort: clear targeting path data to ensure fresh pathing
+          if (sabInterface) {
+            try {
+              sabInterface.set('targetingPathData', {
+                waypoints: [],
+                length: 0,
+                status: 0,
+                chebyshevDistance: 0,
+                startX: 0,
+                startY: 0,
+                startZ: 0,
+                targetX: 0,
+                targetY: 0,
+                targetZ: 0,
+                blockingCreatureX: 0,
+                blockingCreatureY: 0,
+                blockingCreatureZ: 0,
+                wptId: 0,
+                instanceId: 0,
+              });
+            } catch (e) {}
+          }
+
+          transitionTo(FSM_STATE.SELECTING);
           return;
         }
-      } else {
-        // HP tag changed, reset the timer.
-        targetingState.stuckTargetTracking.adjacentSince = now;
-        targetingState.stuckTargetTracking.lastHp = updatedTarget.hp;
       }
     } else {
-      // HP is obstructed (0). Reset the timer to be safe, but don't start a new one.
-      // This prevents 'escape' from being pressed just because a creature is behind a tree.
-      targetingState.stuckTargetTracking.adjacentSince = 0;
-      targetingState.stuckTargetTracking.lastHp = null;
+      // Not adjacent -> clear window so it restarts on next adjacency
+      st.instanceId = updatedTarget.instanceId;
+      st.adjacentSince = 0;
+      st.lastHp = updatedTarget.hp;
     }
-  } else {
-    // Not adjacent, reset tracking completely.
-    targetingState.stuckTargetTracking.instanceId = null;
-    targetingState.stuckTargetTracking.adjacentSince = 0;
-    targetingState.stuckTargetTracking.lastHp = null;
-  }
-
-  if (!updatedTarget.isReachable) {
-    if (targetingState.unreachableSince === 0) {
-      targetingState.unreachableSince = now;
-    } else if (now - targetingState.unreachableSince > config.unreachableTimeoutMs) {
-      transitionTo(
-        FSM_STATE.SELECTING,
-        `Target unreachable for > ${config.unreachableTimeoutMs}ms`
-      );
-      targetingState.unreachableSince = 0;
-      return;
-    }
-  }
-  else {
-    targetingState.unreachableSince = 0;
-  }
-  
-  // Movement is now handled globally after FSM switch statement
+  } catch (_) {}
 }
 
 // --- Main Loop ---
 
 function updateSABData() {
-  if (!sabInterface) {
-    logger('error', '[TargetingWorker] Unified SAB interface not available!');
-    return;
-  }
-  
+  if (!sabInterface) return;
+
   try {
     const posResult = sabInterface.get('playerPos');
     if (posResult && posResult.data) {
@@ -540,25 +1242,26 @@ function updateSABData() {
         workerState.playerMinimapPosition = pos;
       }
     }
-    
+
     const pathResult = sabInterface.get('targetingPathData');
     if (pathResult && pathResult.data) {
       const pathData = pathResult.data;
-      
+
       const PATH_STATUS_PATH_FOUND = 1;
       const isTargetingPath = (pathData.instanceId || 0) > 0;
       const newInstanceId = pathData.instanceId || 0;
-      const isNewTarget = newInstanceId !== workerState.pathInstanceId && newInstanceId > 0;
-      const isValidPath = 
-        pathData.status === PATH_STATUS_PATH_FOUND && 
-        pathData.waypoints && 
+      const isNewTarget =
+        newInstanceId !== workerState.pathInstanceId && newInstanceId > 0;
+      const isValidPath =
+        pathData.status === PATH_STATUS_PATH_FOUND &&
+        pathData.waypoints &&
         pathData.waypoints.length >= 2;
-      
+
       if (isNewTarget) {
         workerState.path = [];
         workerState.pathInstanceId = newInstanceId;
       }
-      
+
       if (isTargetingPath && isValidPath) {
         workerState.path = pathData.waypoints;
         workerState.pathfindingStatus = pathData.status;
@@ -567,7 +1270,7 @@ function updateSABData() {
       }
     }
   } catch (err) {
-    logger('error', `[TargetingWorker] SAB read failed: ${err.message}`);
+    // Silent
   }
 }
 
@@ -581,12 +1284,12 @@ async function performTargeting() {
     try {
       sabInterface.set('targetingList', globalState.targeting.targetingList);
     } catch (err) {
-      logger('error', `[TargetingWorker] Failed to write targeting list: ${err.message}`);
+      // Silent
     }
   }
 
   if (!globalState.targeting.enabled || isLootingRequired()) {
-    transitionTo(FSM_STATE.IDLE, 'Targeting disabled or looting');
+    transitionTo(FSM_STATE.IDLE);
   }
 
   const { controlState } = globalState.cavebot;
@@ -612,10 +1315,10 @@ async function performTargeting() {
           instanceId: 0,
         });
       } catch (err) {
-        logger('error', `[TargetingWorker] Failed to clear cavebot path: ${err.message}`);
+        // Silent
       }
     }
-    
+
     parentPort.postMessage({
       storeUpdate: true,
       type: 'cavebot/confirmTargetingControl',
@@ -625,7 +1328,7 @@ async function performTargeting() {
 
   if (controlState === 'TARGETING' && workerState.playerMinimapPosition) {
     const currentPos = workerState.playerMinimapPosition;
-    
+
     if (
       !targetingState.lastDispatchedVisitedTile ||
       targetingState.lastDispatchedVisitedTile.x !== currentPos.x ||
@@ -662,20 +1365,19 @@ async function performTargeting() {
       break;
   }
 
-  // Movement: use pathfindingTarget in all states (not just ENGAGING)
   if (controlState === 'TARGETING' && targetingState.pathfindingTarget) {
     const movementContext = {
       targetingList: globalState.targeting.targetingList,
     };
-    
+
     await manageMovement(
-      { 
-        ...workerState, 
-        parentPort, 
+      {
+        ...workerState,
+        parentPort,
         sabInterface,
       },
       movementContext,
-      targetingState.pathfindingTarget
+      targetingState.pathfindingTarget,
     );
   }
 
@@ -687,26 +1389,95 @@ async function performTargeting() {
 
   const anyValidTargetExists = selectBestTarget(
     getCreaturesFromSAB,
-    globalState.targeting.targetingList
+    globalState.targeting.targetingList,
   );
 
-  if (hasValidTarget && controlState === 'CAVEBOT') {
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/requestTargetingControl' });
+  // Gate targeting control by presence of battle-list candidates that match targetingList (Attack rules)
+  const bl = getBattleListFromSAB();
+  const blHasCandidates =
+    Array.isArray(bl) &&
+    bl.some(
+      (be) =>
+        be &&
+        be.name &&
+        workerState.globalState?.targeting?.targetingList?.some(
+          (rule) =>
+            rule &&
+            rule.action === 'Attack' &&
+            (isBattleListMatch(rule.name, be.name) ||
+              isBattleListMatch(be.name, rule.name)),
+        ),
+    );
+
+  if (hasValidTarget && controlState === 'CAVEBOT' && blHasCandidates) {
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/requestTargetingControl',
+    });
   }
 
-  if (!hasValidTarget && !anyValidTargetExists && controlState === 'TARGETING') {
-    parentPort.postMessage({ storeUpdate: true, type: 'cavebot/releaseTargetingControl' });
+  // If we are in TARGETING control but there are no valid targets remaining,
+  // proactively clear targeting state and return control to cavebot.
+  // Note: use only anyValidTargetExists as the primary indicator — if none exist,
+  // targeting should relinquish control so cavebot can continue its routine.
+  if (
+    controlState === 'TARGETING' &&
+    (!anyValidTargetExists || !blHasCandidates)
+  ) {
+    // Clear any pending click/acquisition state so we don't hold on to targeting locks.
+    targetingState.pendingClick = null;
+    targetingState.pathfindingTarget = null;
+    targetingState.currentTarget = null;
+
+    // Clear any dynamic target stored in redux / cavebot
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/setDynamicTarget',
+      payload: null,
+    });
+
+    // Clear targeting path data in SAB so pathfinder/cavebot see no active target path
+    if (sabInterface) {
+      try {
+        sabInterface.set('targetingPathData', {
+          waypoints: [],
+          length: 0,
+          status: 0,
+          chebyshevDistance: 0,
+          startX: 0,
+          startY: 0,
+          startZ: 0,
+          targetX: 0,
+          targetY: 0,
+          targetZ: 0,
+          blockingCreatureX: 0,
+          blockingCreatureY: 0,
+          blockingCreatureZ: 0,
+          wptId: 0,
+          instanceId: 0,
+        });
+      } catch (e) {
+        // Silent on SAB write failure — best-effort only
+      }
+    }
+
+    // Inform cavebot to take control back
+    parentPort.postMessage({
+      storeUpdate: true,
+      type: 'cavebot/releaseTargetingControl',
+    });
+
+    // Ensure FSM reflects idle/selection state
+    transitionTo(FSM_STATE.IDLE);
   }
 }
 
 async function mainLoop() {
-  logger('info', '[TargetingWorker] Starting FSM-based main loop...');
   while (!workerState.isShuttingDown) {
     const loopStart = performance.now();
     try {
       await performTargeting();
     } catch (error) {
-      logger('error', '[TargetingWorker] Unhandled error in main loop:', error);
       await delay(1000);
     }
     const loopEnd = performance.now();
@@ -716,7 +1487,6 @@ async function mainLoop() {
       await delay(delayTime);
     }
   }
-  logger('info', '[TargetingWorker] Main loop stopped.');
 }
 
 // --- Worker Initialization and Message Handling ---
@@ -734,15 +1504,13 @@ parentPort.on('message', (message) => {
       workerState.globalState = message;
       if (!workerState.isInitialized) {
         workerState.isInitialized = true;
-        logger('info', '[TargetingWorker] Initial state received, starting main loop.');
-        mainLoop().catch((error) => {
-          logger('error', '[TargetingWorker] Fatal error in main loop:', error);
+        mainLoop().catch(() => {
           process.exit(1);
         });
       }
     }
   } catch (error) {
-    logger('error', '[TargetingWorker] Error handling message:', error);
+    // Silent
   }
 });
 
@@ -750,7 +1518,6 @@ function startWorker() {
   if (!workerData) {
     throw new Error('[TargetingWorker] Worker data not provided');
   }
-  logger('info', '[TargetingWorker] Worker initialized, waiting for initial state...');
 }
 
 startWorker();

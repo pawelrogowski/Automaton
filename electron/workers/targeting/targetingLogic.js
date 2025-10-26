@@ -6,6 +6,9 @@ import {
   getDirectionKey,
   isDiagonalMovement,
 } from '../movementUtils/confirmationHelpers.js';
+import { createLogger } from '../../utils/logger.js';
+
+const logger = createLogger({ info: false, error: true, debug: false });
 
 // ==================== GAME WORLD CLICK CONFIG ====================
 // Production-ready configuration based on testing
@@ -73,14 +76,54 @@ export function findRuleForCreatureName(creatureName, targetingList) {
  * @param {object|null} currentTarget - Currently targeted creature for stickiness logic.
  * @returns {object|null} The best creature object or null if no valid target is found.
  */
+export function getEffectiveScore(
+  creature,
+  targetingList,
+  isCurrentTarget = false,
+  isReachable = false,
+) {
+  const rule = findRuleForCreatureName(creature.name, targetingList);
+  if (!rule || rule.action !== 'Attack') return -Infinity;
+  let score = rule.priority;
+  if (isCurrentTarget && isReachable && rule.stickiness !== undefined) {
+    score += rule.stickiness;
+  }
+  return score;
+}
+
 export function selectBestTarget(
   getCreatures,
   targetingList,
   currentTarget = null,
+  graceMs = 750,
 ) {
   const allCreatures = getCreatures();
+  if (!currentTarget || !currentTarget.instanceId) {
+    logger(
+      'info',
+      `[TARGETING] [SELECT_BEST] No currentTarget, new selection.`,
+    );
+  }
   if (!targetingList?.length || !allCreatures?.length) {
     return null;
+  }
+
+  const now = Date.now();
+
+  let effectiveReachableForCurrent = false;
+  let currentTargetStillValid = null;
+  if (currentTarget) {
+    const lookupKey = currentTarget.instanceKey || currentTarget.instanceId;
+    currentTargetStillValid = allCreatures.find(
+      (c) => (c.instanceKey || c.instanceId) === lookupKey,
+    );
+    const isGraceValid = now - (currentTarget.acquiredAt || 0) < graceMs;
+    effectiveReachableForCurrent = currentTargetStillValid
+      ? currentTargetStillValid.isReachable
+      : false;
+    if (!effectiveReachableForCurrent && isGraceValid) {
+      effectiveReachableForCurrent = true;
+    }
   }
 
   const getRule = (creature) =>
@@ -88,8 +131,20 @@ export function selectBestTarget(
 
   const validCandidates = allCreatures.filter((c) => {
     const rule = getRule(c);
-    return c.isReachable && rule && rule.action === 'Attack';
+    const currentLookupKey = currentTarget
+      ? currentTarget.instanceKey || currentTarget.instanceId
+      : null;
+    const cLookupKey = c.instanceKey || c.instanceId;
+    const isReachableForThis =
+      currentLookupKey && cLookupKey === currentLookupKey
+        ? effectiveReachableForCurrent
+        : c.isReachable;
+    return isReachableForThis && rule && rule.action === 'Attack';
   });
+  logger(
+    'info',
+    `[TARGETING] [SELECT_BEST] allCreatures: ${allCreatures.length}, validCandidates: ${validCandidates.length}, current key/ID: ${currentTarget?.instanceKey || currentTarget?.instanceId}`,
+  );
 
   if (validCandidates.length === 0) {
     return null;
@@ -106,62 +161,75 @@ export function selectBestTarget(
     return candidates.sort((a, b) => a.distance - b.distance)[0];
   };
 
-  // Rule 1: Handle existing target (Stickiness)
-  if (currentTarget && currentTarget.instanceId) {
+  // Rule 1: Handle existing target (enhanced stickiness with scores)
+  if (currentTarget) {
+    const lookupKey = currentTarget.instanceKey || currentTarget.instanceId;
     const currentTargetStillValid = validCandidates.find(
-      (c) => c.instanceId === currentTarget.instanceId,
+      (c) => (c.instanceKey || c.instanceId) === lookupKey,
     );
 
     if (currentTargetStillValid) {
-      const currentRule = getRule(currentTargetStillValid);
-      if (currentRule) {
-        const higherPriorityCandidates = validCandidates.filter((c) => {
-          const newRule = getRule(c);
-          return newRule && newRule.priority > currentRule.priority;
-        });
-
-        if (higherPriorityCandidates.length > 0) {
-          return pickBest(higherPriorityCandidates);
-        }
-
-        const samePriorityCandidates = validCandidates.filter((c) => {
-          const newRule = getRule(c);
-          return newRule && newRule.priority === currentRule.priority;
-        });
-
-        const bestOfSamePriority = pickBest(samePriorityCandidates);
-
-        if (
-          bestOfSamePriority &&
-          bestOfSamePriority.instanceId !== currentTargetStillValid.instanceId
-        ) {
-          if (
-            currentTargetStillValid.distance > 2 ||
-            !currentTargetStillValid.isReachable
-          ) {
-            return bestOfSamePriority;
-          }
-        }
+      const currentScore = getEffectiveScore(
+        currentTargetStillValid,
+        targetingList,
+        true,
+        currentTargetStillValid.isReachable,
+      );
+      let bestAltScore = -Infinity;
+      const alternatives = validCandidates.filter(
+        (c) => (c.instanceKey || c.instanceId) !== lookupKey,
+      );
+      for (const alt of alternatives) {
+        bestAltScore = Math.max(
+          bestAltScore,
+          getEffectiveScore(alt, targetingList, false, alt.isReachable),
+        );
       }
-      return currentTargetStillValid;
+      if (currentScore >= bestAltScore) {
+        const currentLookupKey =
+          currentTarget.instanceKey || currentTarget.instanceId;
+        logger(
+          'info',
+          `[TARGETING] [SELECT_BEST] Sticking to key/ID ${currentLookupKey} (score ${currentScore} >= alt ${bestAltScore})`,
+        );
+        return currentTargetStillValid; // Stick: current effective wins/ties
+      } else {
+        // Switch only to strictly higher
+        const higherAlts = alternatives.filter(
+          (c) =>
+            getEffectiveScore(c, targetingList, false, c.isReachable) >
+            currentScore,
+        );
+        if (higherAlts.length > 0) {
+          return pickBest(higherAlts);
+        }
+        // Else, fall through to new target selection
+      }
+    } else {
+      logger(
+        'info',
+        `[TARGETING] [SELECT_BEST] Current key/ID ${currentTarget?.instanceKey || currentTarget?.instanceId} invalid, new selection.`,
+      );
     }
   }
 
-  // Rule 2: Pick a new target from all valid candidates
-  let highestPriority = -Infinity;
+  // Rule 2: New target - group by effective score (no boost since not targeted)
+  let highestScore = -Infinity;
   for (const candidate of validCandidates) {
-    const rule = getRule(candidate);
-    if (rule && rule.priority > highestPriority) {
-      highestPriority = rule.priority;
-    }
+    const score = getEffectiveScore(
+      candidate,
+      targetingList,
+      false,
+      candidate.isReachable,
+    );
+    if (score > highestScore) highestScore = score;
   }
-
-  const topPriorityCandidates = validCandidates.filter((c) => {
-    const rule = getRule(c);
-    return rule && rule.priority === highestPriority;
-  });
-
-  return pickBest(topPriorityCandidates);
+  const topScoreCandidates = validCandidates.filter(
+    (c) =>
+      getEffectiveScore(c, targetingList, false, c.isReachable) ===
+      highestScore,
+  );
+  return pickBest(topScoreCandidates);
 }
 
 /**
@@ -221,27 +289,8 @@ export function acquireTarget(
     // If battle-list read fails for any reason, fall back to existing behavior
   }
 
-  if (targetCreature.absoluteX !== 0 && targetCreature.absoluteY !== 0) {
-    parentPort.postMessage({
-      type: 'inputAction',
-      payload: {
-        type: 'targeting',
-        action: {
-          module: 'mouseController',
-          method: 'leftClick',
-          args: [targetCreature.absoluteX, targetCreature.absoluteY],
-        },
-        ttl: 55, // Time-to-live: discard if not executed within 55ms
-      },
-    });
-
-    return {
-      success: true,
-      method: 'gameworld',
-    };
-  }
-
-  return { success: false, reason: 'gameworld_click_not_possible' };
+  // Always force battle-list targeting - no game-world clicks
+  return { success: false, reason: 'gameworld_disabled' };
 }
 
 export function updateDynamicTarget(
