@@ -373,6 +373,13 @@ const cavebotSlice = createSlice({
       state.nodeRange = action.payload;
       state.version = (state.version || 0) + 1;
     },
+    /**
+     * Utility action to force a version bump without changing any state.
+     * Used to trigger Redux→SAB sync and pathfinder recalculation.
+     */
+    incrementVersion: (state) => {
+      state.version = (state.version || 0) + 1;
+    },
   },
 });
 
@@ -408,6 +415,7 @@ export const {
   clearVisitedTiles, // Export the correctly named action
   setScriptPause,
   setNodeRange,
+  incrementVersion,
 } = cavebotSlice.actions;
 
 export { MAX_WAYPOINTS_PER_SECTION };

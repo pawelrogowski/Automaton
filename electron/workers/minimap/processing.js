@@ -101,6 +101,7 @@ export async function processMinimapData(
             x: newPos.x,
             y: newPos.y,
             z: newPos.z,
+            lastUpdateTimestamp: Date.now(),
           });
         }
 

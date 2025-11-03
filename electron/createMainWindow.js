@@ -120,6 +120,12 @@ const buildAppMenu = () => {
       label: 'File',
       submenu: [
         {
+          label: 'Change Window...',
+          click: showWindowSelector,
+          accelerator: 'CmdOrCtrl+W',
+        },
+        { type: 'separator' },
+        {
           label: 'Show/Hide Main Window',
           type: 'checkbox',
           checked: isMainWindowVisible,
@@ -207,6 +213,11 @@ const closeAppFromTray = () => {
   app.quit();
 };
 
+const showWindowSelector = () => {
+  // Emit event that will be caught by main.js IPC handler
+  ipcMain.emit('show-window-selector');
+};
+
 export const createMainWindow = (selectedWindowId, display, windowName) => {
   mainWindow = new BrowserWindow({
     minWidth: 1200,
@@ -286,10 +297,10 @@ export const createWidgetWindow = () => {
   }
 
   widgetWindow = new BrowserWindow({
-    width: 108,
-    height: 320,
-    x: 100,
-    y: 100,
+    width: 76,
+    height: 304,
+    x: 200,
+    y: 105,
     frame: false,
     show: false,
     resizable: false,

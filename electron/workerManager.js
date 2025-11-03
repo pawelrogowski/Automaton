@@ -52,6 +52,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'cavebot',
     'regionCoordinates',
     'battleList',
+    'workerConfig',
   ],
   regionMonitor: ['global'],
   screenMonitor: [
@@ -70,6 +71,7 @@ const WORKER_STATE_DEPENDENCIES = {
     'ocr',
     'cavebot',
     'targeting',
+    'workerConfig',
   ],
   captureWorker: ['global'],
   pathfinderWorker: ['targeting', 'cavebot', 'gameState'],
@@ -413,6 +415,45 @@ class WorkerManager {
             display: state.global?.display,
           };
         }
+
+        // Sync creatureMonitor worker config
+        if (this.configChanged('workerConfig', state.workerConfig)) {
+          const cmConfig = state.workerConfig?.creatureMonitor;
+          if (cmConfig) {
+            this.sabState.set('creatureMonitorConfig', {
+              PLAYER_ANIMATION_FREEZE_MS:
+                cmConfig.PLAYER_ANIMATION_FREEZE_MS ?? 25,
+              STICKY_SNAP_THRESHOLD_TILES: Math.round(
+                (cmConfig.STICKY_SNAP_THRESHOLD_TILES ?? 0.5) * 100,
+              ),
+              JITTER_CONFIRMATION_TIME_MS:
+                cmConfig.JITTER_CONFIRMATION_TIME_MS ?? 75,
+              CORRELATION_DISTANCE_THRESHOLD_PIXELS:
+                cmConfig.CORRELATION_DISTANCE_THRESHOLD_PIXELS ?? 200,
+              CREATURE_GRACE_PERIOD_MS:
+                cmConfig.CREATURE_GRACE_PERIOD_MS ?? 250,
+              UNMATCHED_BLACKLIST_MS: cmConfig.UNMATCHED_BLACKLIST_MS ?? 500,
+              NAME_MATCH_THRESHOLD: Math.round(
+                (cmConfig.NAME_MATCH_THRESHOLD ?? 0.4) * 100,
+              ),
+            });
+          }
+
+          const twConfig = state.workerConfig?.targetingWorker;
+          if (twConfig) {
+            this.sabState.set('targetingWorkerConfig', {
+              mainLoopIntervalMs: twConfig.mainLoopIntervalMs ?? 50,
+              unreachableTimeoutMs: twConfig.unreachableTimeoutMs ?? 250,
+              clickThrottleMs: twConfig.clickThrottleMs ?? 250,
+              verifyWindowMs: twConfig.verifyWindowMs ?? 300,
+              antiStuckAdjacentMs: twConfig.antiStuckAdjacentMs ?? 5000,
+            });
+          }
+
+          this.previousConfigState.workerConfig = {
+            version: state.workerConfig?.version,
+          };
+        }
       } catch (error) {
         log('error', '[Worker Manager] Error in Redux → SAB sync:', error);
       }
@@ -448,6 +489,8 @@ class WorkerManager {
       );
     } else if (sliceName === 'targeting') {
       return currentSlice?.enabled !== prev.enabled;
+    } else if (sliceName === 'workerConfig') {
+      return currentSlice?.version !== prev.version;
     } else if (sliceName === 'global') {
       return (
         currentSlice?.windowId !== prev.windowId ||

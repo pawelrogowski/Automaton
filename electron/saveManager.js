@@ -67,6 +67,7 @@ const STATE_SCHEMA = {
     }),
     transformOnLoad: (state) => ({ ...state, enabled: false }),
   },
+  workerConfig: {},
 };
 
 const PERSISTED_SLICES = Object.keys(STATE_SCHEMA);

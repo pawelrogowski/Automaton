@@ -433,10 +433,10 @@ export async function manageMovement(
       { stateChangePollIntervalMs: 5 },
       timeout,
     );
-    // Movement confirmed - clear lock
-    workerContext.isWaitingForMovement = false;
   } catch (error) {
-    // Movement failed - clear lock and silently retry on next iteration
+    // Movement failed - silently retry on next iteration
+  } finally {
+    // CRITICAL: Always clear lock, even on unexpected errors
     workerContext.isWaitingForMovement = false;
   }
 }

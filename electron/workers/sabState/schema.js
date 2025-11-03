@@ -31,9 +31,10 @@ export const SCHEMA = {
       x: FIELD_TYPES.INT32,
       y: FIELD_TYPES.INT32,
       z: FIELD_TYPES.INT32,
+      lastUpdateTimestamp: FIELD_TYPES.INT32, // Date.now() when last updated
       version: FIELD_TYPES.INT32,
     },
-    size: 4, // 4 Int32 fields
+    size: 5, // 5 Int32 fields
     description: 'Player minimap position (written by minimapMonitor)',
   },
 
@@ -56,8 +57,8 @@ export const SCHEMA = {
       name: { type: FIELD_TYPES.STRING, maxLength: 32 }, // 32 chars
     },
     itemSize: 43, // 11 ints + 32 chars = 43
-    headerSize: 3, // count + version + update_counter
-    size: 3 + 100 * 43, // header + (maxCount * itemSize)
+    headerSize: 4, // count + version + update_counter + lastUpdateTimestamp
+    size: 4 + 100 * 43, // header + (maxCount * itemSize)
     description: 'Detected creatures (written by creatureMonitor)',
   },
 
@@ -88,9 +89,10 @@ export const SCHEMA = {
       distance: FIELD_TYPES.INT32, // multiplied by 100
       isReachable: FIELD_TYPES.INT32, // bool as int
       name: { type: FIELD_TYPES.STRING, maxLength: 32 },
+      lastUpdateTimestamp: FIELD_TYPES.INT32, // Date.now() when last updated
       version: FIELD_TYPES.INT32,
     },
-    size: 7 + 32, // 7 ints + 32 chars
+    size: 8 + 32, // 8 ints + 32 chars
     description: 'Current target (written by creatureMonitor)',
   },
 
@@ -151,10 +153,11 @@ export const SCHEMA = {
       blockingCreatureZ: FIELD_TYPES.INT32,
       wptId: FIELD_TYPES.INT32, // waypoint ID hash (always used)
       instanceId: FIELD_TYPES.INT32, // always 0 for cavebot
+      lastUpdateTimestamp: FIELD_TYPES.INT32, // Date.now() when last updated
       version: FIELD_TYPES.INT32,
     },
-    headerSize: 15,
-    size: 15 + 1000 * 3, // header + waypoints
+    headerSize: 16,
+    size: 16 + 1000 * 3, // header + waypoints
     description: 'Cavebot pathfinding result (written by pathfinderWorker)',
   },
 
@@ -183,10 +186,11 @@ export const SCHEMA = {
       blockingCreatureZ: FIELD_TYPES.INT32,
       wptId: FIELD_TYPES.INT32, // always 0 for targeting
       instanceId: FIELD_TYPES.INT32, // creature instance ID (always used)
+      lastUpdateTimestamp: FIELD_TYPES.INT32, // Date.now() when last updated
       version: FIELD_TYPES.INT32,
     },
-    headerSize: 15,
-    size: 15 + 1000 * 3, // header + waypoints
+    headerSize: 16,
+    size: 16 + 1000 * 3, // header + waypoints
     description: 'Targeting pathfinding result (written by pathfinderWorker)',
   },
 
@@ -263,6 +267,40 @@ export const SCHEMA = {
     },
     size: 3,
     description: 'Global configuration (written by workerManager from Redux)',
+  },
+
+  creatureMonitorConfig: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'config',
+    fields: {
+      PLAYER_ANIMATION_FREEZE_MS: FIELD_TYPES.INT32,
+      STICKY_SNAP_THRESHOLD_TILES: FIELD_TYPES.INT32, // multiplied by 100
+      JITTER_CONFIRMATION_TIME_MS: FIELD_TYPES.INT32,
+      CORRELATION_DISTANCE_THRESHOLD_PIXELS: FIELD_TYPES.INT32,
+      CREATURE_GRACE_PERIOD_MS: FIELD_TYPES.INT32,
+      UNMATCHED_BLACKLIST_MS: FIELD_TYPES.INT32,
+      NAME_MATCH_THRESHOLD: FIELD_TYPES.INT32, // multiplied by 100
+      version: FIELD_TYPES.INT32,
+    },
+    size: 8,
+    description:
+      'Creature monitor worker configuration (written by workerManager from Redux)',
+  },
+
+  targetingWorkerConfig: {
+    category: PROPERTY_CATEGORIES.CONFIG,
+    type: 'config',
+    fields: {
+      mainLoopIntervalMs: FIELD_TYPES.INT32,
+      unreachableTimeoutMs: FIELD_TYPES.INT32,
+      clickThrottleMs: FIELD_TYPES.INT32,
+      verifyWindowMs: FIELD_TYPES.INT32,
+      antiStuckAdjacentMs: FIELD_TYPES.INT32,
+      version: FIELD_TYPES.INT32,
+    },
+    size: 6,
+    description:
+      'Targeting worker configuration (written by workerManager from Redux)',
   },
 
   // ==================== PATHFINDING DATA ====================

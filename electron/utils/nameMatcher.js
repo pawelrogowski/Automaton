@@ -129,8 +129,8 @@ export function getSimilarityScore(ocrName, canonicalName) {
 
   if (cleanOcr.length === 0 || cleanCanon.length === 0) return 0;
 
-  // Disallow fuzzy matches for single-character OCR tokens
-  if (cleanOcr.length <= 1) return 0;
+  // Disallow fuzzy matches for OCR tokens shorter than 3 characters
+  if (cleanOcr.length < 3) return 0;
 
   // Cleaned exact
   if (cleanOcr === cleanCanon) return 0.99;
@@ -178,6 +178,10 @@ export function findBestNameMatch(
   if (!ocrName || typeof ocrName !== 'string') return null;
   if (!Array.isArray(canonicalNames) || canonicalNames.length === 0)
     return null;
+  
+  // Require at least 3 letters to prevent false matches like "rat" -> "bat"
+  const cleanOcr = cleanName(ocrName);
+  if (cleanOcr.length < 3) return null;
 
   let best = null;
   let bestScore = -1;

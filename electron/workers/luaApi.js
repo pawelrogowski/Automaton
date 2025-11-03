@@ -828,8 +828,6 @@ export const createLuaApi = async (context) => {
         return false;
       }
 
-      const triggersSet = new Set(['hi', 'hello', 'hail king']);
-
       // Special handling: randomize greeting between 'hi' and 'hello'
       const isGreeting = (t) => {
         const n = String(t).trim().toLowerCase();
@@ -837,15 +835,6 @@ export const createLuaApi = async (context) => {
       };
       const resolveGreetingIfNeeded = (t) =>
         isGreeting(t) ? (Math.random() < 0.5 ? 'hi' : 'hello') : String(t);
-
-      // Partition inputs into trigger and other messages preserving original order
-      const triggerMessages = [];
-      const otherMessages = [];
-      for (const text of stringArgs) {
-        const norm = String(text).trim().toLowerCase();
-        if (triggersSet.has(norm)) triggerMessages.push(text);
-        else otherMessages.push(text);
-      }
 
       const getTabsState = () =>
         getState().uiValues?.chatboxTabs || { tabs: {}, activeTab: null };
@@ -861,39 +850,6 @@ export const createLuaApi = async (context) => {
           k.toLowerCase().includes(target.toLowerCase()),
         );
         return contains || null;
-      };
-
-      const clickTabIfAvailable = async (tabName) => {
-        const state = getState();
-        const tabs = state.uiValues?.chatboxTabs?.tabs;
-        const tab = tabs ? tabs[tabName] : null;
-        if (
-          tab &&
-          tab.tabPosition &&
-          typeof tab.tabPosition.x === 'number' &&
-          typeof tab.tabPosition.y === 'number'
-        ) {
-          const randInt = (min, max) =>
-            Math.floor(Math.random() * (max - min + 1)) + min;
-          const baseX = tab.tabPosition.x;
-          const baseY = tab.tabPosition.y;
-          const clickX = baseX + randInt(-70, 70);
-          const clickY = baseY + randInt(-7, 7);
-          await postInputAction({
-            type: 'script',
-            action: {
-              module: 'mouseController',
-              method: 'leftClick',
-              args: [clickX, clickY],
-            },
-          });
-          return true;
-        }
-        logger(
-          'warn',
-          `[Lua/${scriptName}] Cannot focus tab: '${tabName}' not found or missing position`,
-        );
-        return false;
       };
 
       const typeTextOnce = async (text) => {
@@ -915,76 +871,29 @@ export const createLuaApi = async (context) => {
         await context.refreshLuaGlobalState(true);
       }
 
-      // Determine current tab landscape
+      // Check if NPC channel is focused
       let { tabs: tabsMap, activeTab } = getTabsState();
       let npcTabName = findTabByName(tabsMap, 'npc');
 
-      if (npcTabName) {
-        // NPC tab already exists: focus it and type all messages (including triggers) with normal short delays
-        if (activeTab !== npcTabName) {
-          await clickTabIfAvailable(npcTabName);
-          // slight settle
-          await wait(100);
-        }
-        for (let i = 0; i < stringArgs.length; i++) {
-          const msg = resolveGreetingIfNeeded(stringArgs[i]);
-          await typeTextOnce(msg);
-          if (i < stringArgs.length - 1) {
-            await wait(randInt(100, 500));
-          }
-        }
-        return true;
-      }
-
-      // NPC tab not present: focus Local Chat, send trigger messages there
-      const localChatTabName =
-        findTabByName(tabsMap, 'local chat') || findTabByName(tabsMap, 'local');
-      if (localChatTabName && activeTab !== localChatTabName) {
-        await clickTabIfAvailable(localChatTabName);
-        await wait(100);
-      }
-
-      if (triggerMessages.length > 0) {
-        for (let i = 0; i < triggerMessages.length; i++) {
-          const msg = resolveGreetingIfNeeded(triggerMessages[i]);
-          await typeTextOnce(msg);
-          if (i < triggerMessages.length - 1) {
-            await wait(100); // small delay between trigger lines
-          }
-        }
-      } else {
-        logger(
-          'info',
-          `[Lua/${scriptName}] npcTalk: No trigger messages provided (hi/hello/hail king).`,
-        );
-      }
-
-      // Wait 2000-3000ms for NPC tab to appear
-      await wait(randInt(2000, 3000));
-      if (typeof context.refreshLuaGlobalState === 'function') {
-        await context.refreshLuaGlobalState(true);
-      }
-
-      // Re-check for NPC tab
-      ({ tabs: tabsMap, activeTab } = getTabsState());
-      npcTabName = findTabByName(tabsMap, 'npc');
-      if (!npcTabName) {
-        logger(
-          'warn',
-          `[Lua/${scriptName}] npcTalk: NPC tab did not appear after trigger messages.`,
-        );
-        return false;
-      }
-
+      // If NPC channel is not focused, press 'm' to open/focus it
       if (activeTab !== npcTabName) {
-        await clickTabIfAvailable(npcTabName);
-        await wait(100);
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'keypress',
+            method: 'keyPress',
+            args: ['m'],
+          },
+        });
+        // Wait 500-750ms after hotkey
+        await wait(randInt(500, 750));
       }
 
-      // Type remaining messages (non-triggers) with 100-500ms delays between
-      for (let i = 0; i < otherMessages.length; i++) {
-        await typeTextOnce(otherMessages[i]);
-        if (i < otherMessages.length - 1) {
+      // Type all messages with delays between them
+      for (let i = 0; i < stringArgs.length; i++) {
+        const msg = resolveGreetingIfNeeded(stringArgs[i]);
+        await typeTextOnce(msg);
+        if (i < stringArgs.length - 1) {
           await wait(randInt(100, 500));
         }
       }

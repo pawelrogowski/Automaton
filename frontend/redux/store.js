@@ -11,6 +11,7 @@ import ocrSlice from './slices/ocrSlice.js';
 import uiValuesSlice from './slices/uiValuesSlice.js';
 import battleListSlice from './slices/battleListSlice.js';
 import pathfinderSlice from './slices/pathfinderSlice.js';
+import workerConfigSlice from './slices/workerConfigSlice.js';
 
 let actionBatch = [];
 let batchTimeout = null;
@@ -69,6 +70,7 @@ const store = configureStore({
     uiValues: uiValuesSlice.reducer,
     battleList: battleListSlice.reducer,
     pathfinder: pathfinderSlice.reducer,
+    workerConfig: workerConfigSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

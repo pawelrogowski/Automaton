@@ -11,6 +11,7 @@ import ocrSlice from '../frontend/redux/slices/ocrSlice.js';
 import uiValuesSlice from '../frontend/redux/slices/uiValuesSlice.js';
 import battleListSlice from '../frontend/redux/slices/battleListSlice.js';
 import pathfinderSlice from '../frontend/redux/slices/pathfinderSlice.js';
+import workerConfigSlice from '../frontend/redux/slices/workerConfigSlice.js';
 
 const rootReducer = combineReducers({
   global: globalSlice.reducer,
@@ -25,6 +26,7 @@ const rootReducer = combineReducers({
   uiValues: uiValuesSlice.reducer,
   battleList: battleListSlice.reducer,
   pathfinder: pathfinderSlice.reducer,
+  workerConfig: workerConfigSlice.reducer,
 });
 
 const store = configureStore({

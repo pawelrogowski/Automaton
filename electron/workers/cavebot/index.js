@@ -62,6 +62,8 @@ const workerState = {
   // Movement lock to prevent double-stepping
   isWaitingForMovement: false,
   movementWaitUntil: 0,
+  // Timestamp-based freshness check after control handover
+  controlHandoverTimestamp: 0, // Set when targeting returns control to cavebot
   // --- NEW LOGIC END ---
   logger: createLogger({ info: false, error: true, debug: false }),
   parentPort: parentPort,
@@ -88,14 +90,16 @@ function handleControlHandover() {
     workerState.globalState.cavebot;
   let skippedWaypoint = false;
 
-  // Always clear path when gaining control
-  workerState.path = [];
-  workerState.pathfindingStatus = 0;
-  workerState.shouldRequestNewPath = true;
+  // CRITICAL: Use resetInternalState() for proper FSM + path cleanup
+  // This ensures FSM is fully reset after targeting returns control
+  resetInternalState(workerState, fsm);
+  
+  // DON'T clear cavebot path in SAB - let existing valid path be reused!
+  // The pathfinder caches results, and if the path is still valid (same position, same waypoint),
+  // we should use it instead of clearing and waiting for recomputation.
 
   // CRITICAL: Reset map-click controller state to prevent stale coordinate issues
   // Targeting may have moved the character, so old startPos/lastObservedPos are invalid
-  // Add a short cooldown to ensure fresh path is calculated before attempting map-click
   const now = Date.now();
   workerState.mapClick = {
     mode: 'idle',
@@ -104,11 +108,11 @@ function handleControlHandover() {
     targetPos: null,
     lastObservedAt: 0,
     lastObservedPos: null,
-    fallbackUntil: now + 500, // 500ms cooldown to allow fresh path calculation
+    fallbackUntil: 0, // No fixed cooldown - rely on timestamp checks below
   };
   workerState.logger(
     'debug',
-    '[Cavebot] Reset map-click controller with 500ms cooldown after control handover',
+    '[Cavebot] Reset map-click controller after control handover',
   );
 
   // Clear targeting path in SAB to prevent stale path usage
@@ -409,10 +413,18 @@ async function performOperation() {
       return;
     } else {
       // Timeout expired
+      const lockDuration = workerState.movementWaitUntil - (workerState.movementWaitUntil - 2000); // Approximate
       workerState.logger(
         'warn',
         `[Cavebot] Movement timeout expired after ${-remainingWait}ms`,
       );
+      // Watchdog: If lock was held for > 2 seconds, force clear
+      if (-remainingWait > 2000) {
+        workerState.logger(
+          'error',
+          `[Watchdog] Movement lock stuck for ${-remainingWait}ms - force clearing`,
+        );
+      }
       workerState.isWaitingForMovement = false;
     }
   }

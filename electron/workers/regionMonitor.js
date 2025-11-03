@@ -514,15 +514,38 @@ async function mainLoop() {
           // Partial scan path
           const area = unionRect(dirtyRects, PARTIAL_SCAN_MARGIN_PX);
           if (area && area.width > 0 && area.height > 0) {
+            // Check if dirty area overlaps statusBar - if so, expand to cover entire statusBar
+            // This is critical because status icons are small (10x10px) and icon disappearances
+            // need to trigger rescans of ALL icons in the status bar, not just the dirty rect
+            let scanArea = area;
+            if (lastKnownRegions.statusBar) {
+              const statusBarRegion = lastKnownRegions.statusBar;
+              if (rectsIntersect(area, statusBarRegion)) {
+                // Expand scan area to cover entire status bar to detect all icon changes
+                scanArea = {
+                  x: Math.min(area.x, statusBarRegion.x),
+                  y: Math.min(area.y, statusBarRegion.y),
+                  width: Math.max(
+                    area.x + area.width,
+                    statusBarRegion.x + statusBarRegion.width,
+                  ) - Math.min(area.x, statusBarRegion.x),
+                  height: Math.max(
+                    area.y + area.height,
+                    statusBarRegion.y + statusBarRegion.height,
+                  ) - Math.min(area.y, statusBarRegion.y),
+                };
+              }
+            }
+            
             const partial = await performPartialScan(
               sharedBufferView,
               metadata,
-              area,
+              scanArea,
             );
             lastKnownRegions = mergePartialIntoLast(
               lastKnownRegions,
               partial,
-              area,
+              scanArea,
             );
             updatedRegions = lastKnownRegions;
           } else {

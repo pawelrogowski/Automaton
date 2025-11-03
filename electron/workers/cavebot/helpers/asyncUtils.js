@@ -106,3 +106,46 @@ export const awaitStandConfirmation = (
     }, config.stateChangePollIntervalMs);
   });
 };
+
+/**
+ * Wait for creatures data to be updated after a specific timestamp (e.g., after floor change)
+ * @param {Object} workerState - Worker state with sabInterface
+ * @param {number} afterTimestamp - Wait for creatures.lastUpdateTimestamp > this value
+ * @param {number} timeoutMs - Max time to wait
+ * @returns {Promise<boolean>} True if fresh data received, false if timeout
+ */
+export const awaitFreshCreatureData = (
+  workerState,
+  afterTimestamp,
+  timeoutMs = 2000,
+) => {
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+    const intervalId = setInterval(() => {
+      if (workerState.sabInterface) {
+        try {
+          // Access the Int32Array directly to read lastUpdateTimestamp from creatures header
+          // Header layout for creatures array: [count(0), version(1), update_counter(2), lastUpdateTimestamp(3)]
+          const array = workerState.sabInterface.array;
+          // Get creatures offset from LAYOUT (needs import, but for now we'll use a workaround)
+          // Since creatures is one of the first properties, we can calculate its offset
+          // playerPos is at offset 0 with size 5, so creatures starts at offset 5
+          const creaturesOffset = 5; // playerPos.size = 5
+          const lastUpdate = Atomics.load(array, creaturesOffset + 3);
+          if (lastUpdate > afterTimestamp) {
+            clearInterval(intervalId);
+            resolve(true);
+            return;
+          }
+        } catch (err) {
+          // Continue waiting on error
+        }
+      }
+
+      if (Date.now() - startTime > timeoutMs) {
+        clearInterval(intervalId);
+        resolve(false);
+      }
+    }, 20); // Poll every 20ms
+  });
+};

@@ -25,17 +25,30 @@ const FSM_STATE = {
   ENGAGING: 'ENGAGING',
 };
 
-// --- Configuration ---
+// --- Configuration - loaded from SAB (synced from Redux) ---
 const config = {
   mainLoopIntervalMs: 50,
   unreachableTimeoutMs: 250,
-  // Shorter throttle between battle-list clicks to reduce post-death pauses (was 500ms)
   clickThrottleMs: 250,
-  // Verification window after click; tuned to be close to throttle (was 500ms)
   verifyWindowMs: 300,
-  // Anti-stuck: if adjacent to target and HP tag unchanged for this long, reset via Escape
   antiStuckAdjacentMs: 5000,
 };
+
+// Load config from SAB on startup and on config updates
+function loadConfigFromSAB() {
+  try {
+    const result = sabInterface.get('targetingWorkerConfig');
+    if (result && result.data) {
+      config.mainLoopIntervalMs = result.data.mainLoopIntervalMs ?? 50;
+      config.unreachableTimeoutMs = result.data.unreachableTimeoutMs ?? 250;
+      config.clickThrottleMs = result.data.clickThrottleMs ?? 250;
+      config.verifyWindowMs = result.data.verifyWindowMs ?? 300;
+      config.antiStuckAdjacentMs = result.data.antiStuckAdjacentMs ?? 5000;
+    }
+  } catch (err) {
+    // Silent fallback to defaults
+  }
+}
 
 // --- Worker State (data from other sources) ---
 const workerState = {
@@ -69,6 +82,8 @@ const targetingState = {
     adjacentSince: 0,
     lastHp: null,
   },
+  // Control state change cooldown to prevent ping-pong
+  lastControlChangeTime: 0,
   // Tracks per-creature-name candidate rotation and temporary blacklists
   // candidateStateByName: {
   //   [name: string]: { pointer: number|null, blacklist: Set<number>, lastReset: number }
@@ -1107,6 +1122,13 @@ async function handleEngagingState() {
     if (now < workerState.movementWaitUntil) {
       return;
     } else {
+      // Watchdog: If lock was held for > 2 seconds, log error
+      const lockDuration = now - workerState.movementWaitUntil;
+      if (lockDuration > 2000) {
+        console.error(
+          `[Watchdog] Targeting movement lock stuck for ${lockDuration}ms - force clearing`,
+        );
+      }
       workerState.isWaitingForMovement = false;
     }
   }
@@ -1166,12 +1188,18 @@ async function handleEngagingState() {
       if (currentScore >= bestScore) {
         // stick
       } else {
+        console.log(
+          `[TargetSwap] ${currentEntity.name}[${currentEntity.instanceId}] -> ${bestOverallTarget.name}[${bestOverallTarget.instanceId}] - reason: lower priority (current score: ${currentScore}, new score: ${bestScore})`
+        );
         targetingState.pathfindingTarget = bestOverallTarget;
         updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
         transitionTo(FSM_STATE.PREPARE_ACQUISITION);
         return;
       }
     } else {
+      console.log(
+        `[TargetSwap] ${targetingState.currentTarget.name}[${targetingState.currentTarget.instanceId}] -> ${bestOverallTarget.name}[${bestOverallTarget.instanceId}] - reason: old target unreachable`
+      );
       targetingState.pathfindingTarget = bestOverallTarget;
       updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
       transitionTo(FSM_STATE.PREPARE_ACQUISITION);
@@ -1196,51 +1224,71 @@ async function handleEngagingState() {
   // Do not reset acquiredAt here; keep original acquisition time for reachability grace logic
   targetingState.pathfindingTarget = updatedTarget;
 
-  // If current target is unreachable but there exists a reachable instance with same name, switch immediately
+  // If current target is unreachable, track duration before switching
+  // Grace period allows fleeing creatures to become reachable again
+  // without premature retargeting to other creatures
   if (!updatedTarget.isReachable) {
-    const sameNameReachables = creatures
-      .filter(
-        (c) =>
-          c &&
-          c.isReachable &&
-          c.instanceId !== updatedTarget.instanceId &&
-          c.name &&
-          (isBattleListMatch(c.name, updatedTarget.name) ||
-            isBattleListMatch(updatedTarget.name, c.name)),
-      )
-      .sort((a, b) => a.distance - b.distance);
-
-    // Mark the currently selected BL row (if any) as failed for this name to force cycling
-    try {
-      const bl = getBattleListFromSAB();
-      if (Array.isArray(bl) && bl.length > 0) {
-        let selectedIdx = -1;
-        for (let i = 0; i < bl.length; i++) {
-          const be = bl[i];
-          if (be && (be.isTarget === 1 || be.isTarget === true)) {
-            selectedIdx = i;
-            break;
-          }
-        }
-          if (
-            selectedIdx !== -1 &&
-            bl[selectedIdx] &&
-            (isBattleListMatch(bl[selectedIdx].name, updatedTarget.name) ||
-              isBattleListMatch(updatedTarget.name, bl[selectedIdx].name))
-          ) {
-            const y = typeof bl[selectedIdx].y === 'number' ? bl[selectedIdx].y : undefined;
-            recordFailedCandidate(updatedTarget.name, selectedIdx, y);
-          }
-      }
-    } catch (_) {}
-
-    if (sameNameReachables.length > 0) {
-      const bestAlt = sameNameReachables[0];
-      targetingState.pathfindingTarget = bestAlt;
-      updateDynamicTarget(parentPort, bestAlt, targetingList);
-      transitionTo(FSM_STATE.PREPARE_ACQUISITION);
-      return;
+    // Track when unreachability started
+    if (!targetingState.unreachableSince || targetingState.unreachableSince === 0) {
+      targetingState.unreachableSince = now;
     }
+
+    const unreachableDuration = now - targetingState.unreachableSince;
+    const UNREACHABLE_GRACE_MS = 500; // Grace period for fleeing creatures
+
+    // Only consider switching if unreachable for longer than grace period
+    if (unreachableDuration > UNREACHABLE_GRACE_MS) {
+      const sameNameReachables = creatures
+        .filter(
+          (c) =>
+            c &&
+            c.isReachable &&
+            c.instanceId !== updatedTarget.instanceId &&
+            c.name &&
+            (isBattleListMatch(c.name, updatedTarget.name) ||
+              isBattleListMatch(updatedTarget.name, c.name)),
+        )
+        .sort((a, b) => a.distance - b.distance);
+
+      // Mark the currently selected BL row (if any) as failed for this name to force cycling
+      try {
+        const bl = getBattleListFromSAB();
+        if (Array.isArray(bl) && bl.length > 0) {
+          let selectedIdx = -1;
+          for (let i = 0; i < bl.length; i++) {
+            const be = bl[i];
+            if (be && (be.isTarget === 1 || be.isTarget === true)) {
+              selectedIdx = i;
+              break;
+            }
+          }
+            if (
+              selectedIdx !== -1 &&
+              bl[selectedIdx] &&
+              (isBattleListMatch(bl[selectedIdx].name, updatedTarget.name) ||
+                isBattleListMatch(updatedTarget.name, bl[selectedIdx].name))
+            ) {
+              const y = typeof bl[selectedIdx].y === 'number' ? bl[selectedIdx].y : undefined;
+              recordFailedCandidate(updatedTarget.name, selectedIdx, y);
+            }
+        }
+      } catch (_) {}
+
+      if (sameNameReachables.length > 0) {
+        const bestAlt = sameNameReachables[0];
+        console.log(
+          `[TargetSwap] ${updatedTarget.name}[${updatedTarget.instanceId}] -> ${bestAlt.name}[${bestAlt.instanceId}] - reason: old target unreachable, switching to reachable same-name instance`
+        );
+        targetingState.pathfindingTarget = bestAlt;
+        updateDynamicTarget(parentPort, bestAlt, targetingList);
+        transitionTo(FSM_STATE.PREPARE_ACQUISITION);
+        return;
+      }
+    }
+    // Within grace period or no alternatives - stay on current target
+  } else {
+    // Target became reachable again - reset unreachable timer
+    targetingState.unreachableSince = 0;
   }
 
   // Battle list shrink or dead-target heuristics: if BL shrank or SAB lost target, expedite reselection
@@ -1260,97 +1308,117 @@ async function handleEngagingState() {
       return;
     }
   } catch (e) {}
-  if (!updatedTarget.isReachable) {
-    // Immediately re-enter acquisition to cycle through battle list matches
-    // until a reachable instance is acquired.
-    // This avoids getting stuck on an unreachable creature when multiple
-    // instances with the same name are present in the battle list.
-    targetingState.unreachableSince = 0;
-    transitionTo(FSM_STATE.PREPARE_ACQUISITION);
-    return;
-  } else {
-    targetingState.unreachableSince = 0;
-  }
 
-  // Anti-stuck: Adjacent for > antiStuckAdjacentMs and HP tag unchanged -> send Escape and reset acquisition
+  // Anti-stuck: CONTINUOUSLY adjacent AND targeted for > antiStuckAdjacentMs with no HP change -> send Escape
+  // This prevents the game bug where a creature has the red target box but doesn't take damage.
+  // Requirements:
+  // 1. Same instanceId (same creature) for entire duration
+  // 2. Continuously adjacent (no gaps) for entire duration
+  // 3. Continuously targeted (verified by being in ENGAGING state) for entire duration
+  // 4. No HP change detected during entire duration
   try {
     const nowMs = Date.now();
     const st = targetingState.stuckTargetTracking;
+    
+    // CRITICAL: Only track when BOTH adjacent AND in ENGAGING state (which means targeted)
+    // This ensures we only measure time when the creature SHOULD be taking damage
     if (updatedTarget.isAdjacent) {
+      // Check if this is a different creature or first time tracking this creature as adjacent
       if (st.instanceId !== updatedTarget.instanceId) {
-        // New target or changed target: start adjacency window
+        // Different creature: restart tracking from scratch
         st.instanceId = updatedTarget.instanceId;
         st.adjacentSince = nowMs;
         st.lastHp = updatedTarget.hp;
       } else {
-        // Same target; if adjacency just started, start the timer
+        // Same creature that we're already tracking
+        
+        // If we weren't tracking adjacency yet (adjacentSince === 0), start now
+        // This handles the case where the creature was tracked but became non-adjacent and is now adjacent again
         if (!st.adjacentSince || st.adjacentSince === 0) {
           st.adjacentSince = nowMs;
           st.lastHp = updatedTarget.hp;
-        }
-        // Reset window on HP tag change (coarse levels: Full/High/Medium/Low/Critical/Obstructed)
-        if (typeof updatedTarget.hp === 'number' && updatedTarget.hp !== st.lastHp) {
-          st.lastHp = updatedTarget.hp;
-          st.adjacentSince = nowMs;
-        }
-        // Fire anti-stuck if no HP change within the window while adjacent
-        if (
-          st.adjacentSince > 0 &&
-          nowMs - st.adjacentSince >= config.antiStuckAdjacentMs
-        ) {
-          parentPort.postMessage({
-            type: 'inputAction',
-            payload: {
-              type: 'targeting',
-              action: { module: 'keypress', method: 'sendKey', args: ['Escape'] },
-              ttl: 55,
-            },
-          });
-
-          // Reset timers and acquisition state
-          targetingState.pendingClick = null;
-          targetingState.pathfindingTarget = null;
-          targetingState.currentTarget = null;
-          targetingState.unreachableSince = 0;
-          targetingState.lastTargetingClickTime = 0;
-          targetingState.acquisitionStartTime = 0;
-          targetingState.lastAcquireAttempt = { targetName: '', targetInstanceId: null };
-          targetingState.stuckTargetTracking = { instanceId: null, adjacentSince: 0, lastHp: null };
-          workerState.isWaitingForMovement = false;
-          workerState.movementWaitUntil = 0;
-
-          // Best-effort: clear targeting path data to ensure fresh pathing
-          if (sabInterface) {
-            try {
-              sabInterface.set('targetingPathData', {
-                waypoints: [],
-                length: 0,
-                status: 0,
-                chebyshevDistance: 0,
-                startX: 0,
-                startY: 0,
-                startZ: 0,
-                targetX: 0,
-                targetY: 0,
-                targetZ: 0,
-                blockingCreatureX: 0,
-                blockingCreatureY: 0,
-                blockingCreatureZ: 0,
-                wptId: 0,
-                instanceId: 0,
+        } else {
+          // We're tracking - check if HP changed (any change means combat is working)
+          // HP is a string: "Full"/"High"/"Medium"/"Low"/"Critical"/"Obstructed"
+          if (updatedTarget.hp && updatedTarget.hp !== st.lastHp) {
+            // HP changed - combat is working, reset the stuck timer
+            st.lastHp = updatedTarget.hp;
+            st.adjacentSince = nowMs;
+          } else {
+            // HP hasn't changed - check if we've been stuck long enough
+            const adjacentDuration = nowMs - st.adjacentSince;
+            
+            if (adjacentDuration >= config.antiStuckAdjacentMs) {
+              // FIRE ESCAPE: We've been adjacent and targeted for the full duration with no HP change
+              console.log(
+                `[AntiStuck] Pressing Escape - ${updatedTarget.name}[${updatedTarget.instanceId}] was adjacent+targeted for ${adjacentDuration}ms with no HP change (threshold: ${config.antiStuckAdjacentMs}ms)`
+              );
+              
+              parentPort.postMessage({
+                type: 'inputAction',
+                payload: {
+                  type: 'targeting',
+                  action: { module: 'keypress', method: 'sendKey', args: ['Escape'] },
+                  ttl: 55,
+                },
               });
-            } catch (e) {}
-          }
 
-          transitionTo(FSM_STATE.SELECTING);
-          return;
+              // Reset ALL targeting state to force re-acquisition
+              targetingState.pendingClick = null;
+              targetingState.pathfindingTarget = null;
+              targetingState.currentTarget = null;
+              targetingState.unreachableSince = 0;
+              targetingState.lastTargetingClickTime = 0;
+              targetingState.acquisitionStartTime = 0;
+              targetingState.lastAcquireAttempt = { targetName: '', targetInstanceId: null };
+              targetingState.stuckTargetTracking = { instanceId: null, adjacentSince: 0, lastHp: null };
+              workerState.isWaitingForMovement = false;
+              workerState.movementWaitUntil = 0;
+
+              // Clear targeting path data to ensure fresh pathing
+              if (sabInterface) {
+                try {
+                  sabInterface.set('targetingPathData', {
+                    waypoints: [],
+                    length: 0,
+                    status: 0,
+                    chebyshevDistance: 0,
+                    startX: 0,
+                    startY: 0,
+                    startZ: 0,
+                    targetX: 0,
+                    targetY: 0,
+                    targetZ: 0,
+                    blockingCreatureX: 0,
+                    blockingCreatureY: 0,
+                    blockingCreatureZ: 0,
+                    wptId: 0,
+                    instanceId: 0,
+                  });
+                } catch (e) {}
+              }
+
+              transitionTo(FSM_STATE.SELECTING);
+              return;
+            }
+          }
         }
       }
     } else {
-      // Not adjacent -> clear window so it restarts on next adjacency
-      st.instanceId = updatedTarget.instanceId;
-      st.adjacentSince = 0;
-      st.lastHp = updatedTarget.hp;
+      // NOT adjacent: Clear adjacency tracking entirely
+      // This is CRITICAL - if the creature stops being adjacent, we reset the timer
+      // This prevents false positives where creature was far away, then became adjacent
+      if (st.instanceId === updatedTarget.instanceId) {
+        // Same creature but no longer adjacent - clear the adjacency timer
+        // Keep tracking the instanceId so we know it's the same creature
+        st.adjacentSince = 0;
+        st.lastHp = updatedTarget.hp;
+      } else {
+        // Different creature and not adjacent - full reset
+        st.instanceId = updatedTarget.instanceId;
+        st.adjacentSince = 0;
+        st.lastHp = updatedTarget.hp;
+      }
     }
   } catch (_) {}
 }
@@ -1536,10 +1604,15 @@ async function performTargeting() {
     );
 
   if (hasValidTarget && controlState === 'CAVEBOT' && blHasCandidates) {
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/requestTargetingControl',
-    });
+    // Cooldown to prevent rapid control ping-pong (250ms minimum between changes)
+    const now = Date.now();
+    if (now - targetingState.lastControlChangeTime >= 250) {
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/requestTargetingControl',
+      });
+      targetingState.lastControlChangeTime = now;
+    }
   }
 
   // If we are in TARGETING control but there are no valid targets remaining,
@@ -1550,27 +1623,32 @@ async function performTargeting() {
     controlState === 'TARGETING' &&
     (!anyValidTargetExists || !blHasCandidates)
   ) {
-    // Clear any pending click/acquisition state so we don't hold on to targeting locks.
-    targetingState.pendingClick = null;
-    targetingState.pathfindingTarget = null;
-    targetingState.currentTarget = null;
+    // Cooldown to prevent rapid control ping-pong (250ms minimum between changes)
+    const now = Date.now();
+    if (now - targetingState.lastControlChangeTime >= 250) {
+      // Clear any pending click/acquisition state so we don't hold on to targeting locks.
+      targetingState.pendingClick = null;
+      targetingState.pathfindingTarget = null;
+      targetingState.currentTarget = null;
 
-    // Clear any dynamic target stored in redux / cavebot
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/setDynamicTarget',
-      payload: null,
-    });
+      // Clear any dynamic target stored in redux / cavebot
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: null,
+      });
 
+      // Inform cavebot to take control back
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/releaseTargetingControl',
+      });
+      
+      targetingState.lastControlChangeTime = now;
 
-    // Inform cavebot to take control back
-    parentPort.postMessage({
-      storeUpdate: true,
-      type: 'cavebot/releaseTargetingControl',
-    });
-
-    // Ensure FSM reflects idle/selection state
-    transitionTo(FSM_STATE.IDLE);
+      // Ensure FSM reflects idle/selection state
+      transitionTo(FSM_STATE.IDLE);
+    }
   }
 }
 
@@ -1602,10 +1680,15 @@ parentPort.on('message', (message) => {
     } else if (message.type === 'state_diff') {
       if (!workerState.globalState) workerState.globalState = {};
       Object.assign(workerState.globalState, message.payload);
+      // Reload config if workerConfig slice changed
+      if (message.payload.workerConfig) {
+        loadConfigFromSAB();
+      }
     } else if (typeof message === 'object' && !message.type) {
       workerState.globalState = message;
       if (!workerState.isInitialized) {
         workerState.isInitialized = true;
+        loadConfigFromSAB(); // Load config on initialization
         mainLoop().catch(() => {
           process.exit(1);
         });

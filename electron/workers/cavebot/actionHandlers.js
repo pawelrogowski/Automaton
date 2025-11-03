@@ -17,6 +17,7 @@ import {
   awaitWalkConfirmation,
   awaitZLevelChange,
   awaitStandConfirmation,
+  awaitFreshCreatureData,
 } from './helpers/asyncUtils.js';
 import { advanceToNextWaypoint } from './helpers/navigation.js';
 
@@ -70,10 +71,11 @@ async function performWalk(
 
   try {
     await awaitWalkConfirmation(workerState, config, timeout);
-    workerState.isWaitingForMovement = false;
   } catch (error) {
-    workerState.isWaitingForMovement = false;
     throw error;
+  } finally {
+    // CRITICAL: Always clear lock, even on unexpected errors
+    workerState.isWaitingForMovement = false;
   }
 }
 
@@ -391,6 +393,7 @@ async function handleToolAction(
     });
   }
 
+  const floorChangeTime = Date.now();
   const zChanged = await awaitZLevelChange(
     workerState,
     config,
@@ -399,10 +402,19 @@ async function handleToolAction(
   );
 
   if (zChanged) {
-    logger(
-      'debug',
-      `[handleToolAction:${useType}] Z-level change confirmed. Action successful.`,
-    );
+    // Wait for fresh creature data to ensure we don't miss monsters on the new floor
+    const freshData = await awaitFreshCreatureData(workerState, floorChangeTime, 1000);
+    if (!freshData) {
+      logger(
+        'warn',
+        `[handleToolAction:${useType}] Z-level changed but creature data not updated. Proceeding anyway.`,
+      );
+    } else {
+      logger(
+        'debug',
+        `[handleToolAction:${useType}] Z-level change confirmed with fresh creature data.`,
+      );
+    }
     return true;
   }
   logger(
@@ -547,6 +559,7 @@ export async function handleShovelAction(workerState, config, targetCoords) {
     type: 'movement',
   });
 
+  const floorChangeTime = Date.now();
   const zChanged = await awaitZLevelChange(
     workerState,
     config,
@@ -555,10 +568,19 @@ export async function handleShovelAction(workerState, config, targetCoords) {
   );
 
   if (zChanged) {
-    logger(
-      'debug',
-      '[handleShovelAction] Z-level change confirmed. Action successful.',
-    );
+    // Wait for fresh creature data to ensure we don't miss monsters on the new floor
+    const freshData = await awaitFreshCreatureData(workerState, floorChangeTime, 1000);
+    if (!freshData) {
+      logger(
+        'warn',
+        '[handleShovelAction] Z-level changed but creature data not updated. Proceeding anyway.',
+      );
+    } else {
+      logger(
+        'debug',
+        '[handleShovelAction] Z-level change confirmed with fresh creature data.',
+      );
+    }
     return true;
   }
   logger('warn', '[handleShovelAction] Failed to confirm Z-level change.');

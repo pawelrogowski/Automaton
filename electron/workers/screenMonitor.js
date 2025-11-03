@@ -11,6 +11,7 @@ import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 import findSequences from 'find-sequences-native';
 import actionBarItems from '../constants/actionBarItems.js';
 import { rectsIntersect } from '../utils/rectsIntersect.js';
+import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 
 const { sharedData } = workerData;
 const SCAN_INTERVAL_MS = 50;
@@ -19,6 +20,15 @@ if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
 const syncArray = new Int32Array(syncSAB);
 const sharedBufferView = Buffer.from(imageSAB);
+
+// Initialize SAB interface for real-time data access
+let sabInterface = null;
+if (workerData.unifiedSAB) {
+  sabInterface = createWorkerInterface(
+    workerData.unifiedSAB,
+    WORKER_IDS.SCREEN_MONITOR,
+  );
+}
 
 const WIDTH_INDEX = 1;
 const HEIGHT_INDEX = 2;
@@ -448,7 +458,7 @@ async function processGameState() {
       healthBar: 300,
       manaBar: 300,
       cooldownBar: 120,
-      statusBar: 300,
+      statusBar: 150, // Reduced from 300ms for faster status effect detection
       equip: 500,
       hotkeyBar: 250,
     };
@@ -592,8 +602,25 @@ async function processGameState() {
 
     await scanIfNeeded();
 
-    // Correctly calculate monsterNum from the battleList state.
-    lastCalculatedState.monsterNum = currentState.battleList?.entriesCount || 0;
+    // Read monsterNum directly from SAB for zero-latency updates
+    if (sabInterface) {
+      try {
+        const battleListData = sabInterface.get('battleList');
+        lastCalculatedState.monsterNum = battleListData?.data?.length || 0;
+      } catch (error) {
+        console.error(
+          '[ScreenMonitor] Error reading battleList from SAB:',
+          error,
+        );
+        // Fallback to Redux state
+        lastCalculatedState.monsterNum =
+          currentState.battleList?.entriesCount || 0;
+      }
+    } else {
+      // Fallback to Redux state if SAB not available
+      lastCalculatedState.monsterNum =
+        currentState.battleList?.entriesCount || 0;
+    }
     lastCalculatedState.isWalking = calculateWalkingState();
 
     // Build new payload

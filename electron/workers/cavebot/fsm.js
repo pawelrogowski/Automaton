@@ -65,33 +65,23 @@ export function createFsm(workerState, config) {
         const now = Date.now();
         const timeInState = now - (workerState.evaluatingWaypointSince || now);
         if (timeInState > 5000) {
-          // 5 second timeout
+          // 5 second timeout - skip waypoint to prevent infinite loop
           logger(
-            'warn',
-            `[FSM] EVALUATING_WAYPOINT timeout after ${timeInState}ms for waypoint ${waypointIndex + 1}. Forcing path reset.`,
+            'error',
+            `[FSM] EVALUATING_WAYPOINT timeout after ${timeInState}ms for waypoint ${waypointIndex + 1}. Skipping waypoint.`,
           );
-          workerState.shouldRequestNewPath = true;
-          workerState.evaluatingWaypointSince = now; // Reset timer
-          return 'EVALUATING_WAYPOINT';
+          await advanceToNextWaypoint(workerState, config, {
+            skipCurrent: true,
+          });
+          return 'IDLE';
         }
 
-        // 1. Determine the Desired State (Cavebot's Target)
-        const desiredWptIdHash = targetWaypoint.id
-          ? targetWaypoint.id.split('').reduce((a, b) => {
-              a = (a << 5) - a + b.charCodeAt(0);
-              return a & a;
-            }, 0)
-          : 0;
-
-        // 2. Get the Actual State (Pathfinder's Current Work)
-        const pathWptIdHash = workerState.pathWptId;
+        // Get pathfinding status from workerState
         const status = workerState.pathfindingStatus;
-
-        // console.log("pathfindingStatus:",status)
 
         logger(
           'debug',
-          `[FSM] Evaluating Wpt ${waypointIndex + 1}. Desired ID Hash: ${desiredWptIdHash}, Path ID Hash: ${pathWptIdHash}, Status: ${status}`,
+          `[FSM] Evaluating Wpt ${waypointIndex + 1}. Status: ${status}`,
         );
 
         // Immediately skip if this waypoint is known to be unreachable
@@ -142,20 +132,8 @@ export function createFsm(workerState, config) {
           }
         }
 
-        // 3. Compare Desired State vs. Actual State
-        if (desiredWptIdHash !== pathWptIdHash) {
-          // DIAGNOSTIC: Log hash mismatch for debugging
-          if (timeInState > 1000) {
-            // Only log after 1 second to avoid spam
-            logger(
-              'debug',
-              `[FSM] Hash mismatch persisting for ${timeInState}ms: desired=${desiredWptIdHash}, actual=${pathWptIdHash}`,
-            );
-          }
-          return 'EVALUATING_WAYPOINT'; // Stay in this state and wait.
-        }
-
-        // 4. IDs MATCH: Now we can trust the pathfinder's status for this waypoint.
+        // 3. Check pathfinding status - don't compare hashes, just use what pathfinder gives us
+        // The pathfinder writes to cavebotPathData when in cavebot mode, so trust the status
         switch (status) {
           case PATH_STATUS_PATH_FOUND:
             if (workerState.path && workerState.path.length > 1) {

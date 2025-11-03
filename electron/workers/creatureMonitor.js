@@ -58,17 +58,34 @@ if (workerData.unifiedSAB) {
   throw new Error('[CreatureMonitor] Unified SAB interface is required');
 }
 
-const PLAYER_ANIMATION_FREEZE_MS = 25;
-const STICKY_SNAP_THRESHOLD_TILES = 0.5;
-const JITTER_CONFIRMATION_TIME_MS = 75;
-const CORRELATION_DISTANCE_THRESHOLD_PIXELS = 200;
-const CREATURE_GRACE_PERIOD_MS = 150; // Grace period for temporary disappearances
-// How long to blacklist a tile's healthbar after we decide it's an unmatched creature.
-// During this time the tile will be ignored for detections to avoid mis-assignment.
-const UNMATCHED_BLACKLIST_MS = 500;
+// Worker configuration - loaded from SAB (synced from Redux)
+let config = {
+  PLAYER_ANIMATION_FREEZE_MS: 25,
+  STICKY_SNAP_THRESHOLD_TILES: 0.5,
+  JITTER_CONFIRMATION_TIME_MS: 75,
+  CORRELATION_DISTANCE_THRESHOLD_PIXELS: 200,
+  CREATURE_GRACE_PERIOD_MS: 250,
+  UNMATCHED_BLACKLIST_MS: 500,
+  NAME_MATCH_THRESHOLD: 0.4,
+};
 
-// Name matching threshold — lowered to be tolerant to OCR noise
-const NAME_MATCH_THRESHOLD = 0.3;
+// Load config from SAB on startup and on config updates
+function loadConfigFromSAB() {
+  try {
+    const result = sabInterface.get('creatureMonitorConfig');
+    if (result && result.data) {
+      config.PLAYER_ANIMATION_FREEZE_MS = result.data.PLAYER_ANIMATION_FREEZE_MS ?? 25;
+      config.STICKY_SNAP_THRESHOLD_TILES = (result.data.STICKY_SNAP_THRESHOLD_TILES ?? 50) / 100;
+      config.JITTER_CONFIRMATION_TIME_MS = result.data.JITTER_CONFIRMATION_TIME_MS ?? 75;
+      config.CORRELATION_DISTANCE_THRESHOLD_PIXELS = result.data.CORRELATION_DISTANCE_THRESHOLD_PIXELS ?? 200;
+      config.CREATURE_GRACE_PERIOD_MS = result.data.CREATURE_GRACE_PERIOD_MS ?? 250;
+      config.UNMATCHED_BLACKLIST_MS = result.data.UNMATCHED_BLACKLIST_MS ?? 500;
+      config.NAME_MATCH_THRESHOLD = (result.data.NAME_MATCH_THRESHOLD ?? 40) / 100;
+    }
+  } catch (err) {
+    // Silent fallback to defaults
+  }
+}
 
 let currentState = null;
 let isInitialized = false;
@@ -91,8 +108,16 @@ let lastFrameHealthBars = [];
 let lastReachableSig = null;
 let lastReachableTiles = null;
 let regionsStale = false;
+// Track last confirmed reachability status per creature to prevent flickering
+// Map: instanceId -> { isReachable: boolean, confirmedAt: timestamp }
+const reachabilityStableState = new Map();
+const REACHABILITY_DEBOUNCE_MS = 150; // Require 150ms of consistent state before changing
 let lastRequestedRegionsVersion = -1;
 let lastHealthScanTime = 0;
+
+// Track creatures that lost health bar detection for redetection timing
+// Map: instanceId -> { name, lostAt, battleListName, lastSeenAt }
+const missingHealthBarTracking = new Map();
 
 // Blacklist for tiles with healthbars we explicitly choose to ignore.
 // This prevents those tiles from generating creatures and avoids matching
@@ -379,8 +404,8 @@ function updateCreatureState(
       const distX = Math.abs(rawGameCoordsFloat.x - creature.gameCoords.x);
       const distY = Math.abs(rawGameCoordsFloat.y - creature.gameCoords.y);
       if (
-        distX < STICKY_SNAP_THRESHOLD_TILES &&
-        distY < STICKY_SNAP_THRESHOLD_TILES
+        distX < config.STICKY_SNAP_THRESHOLD_TILES &&
+        distY < config.STICKY_SNAP_THRESHOLD_TILES
       ) {
         intermediateX = creature.gameCoords.x;
         intermediateY = creature.gameCoords.y;
@@ -397,7 +422,7 @@ function updateCreatureState(
       if (arePositionsEqual(newCoords, creature.unconfirmedChange.newCoords)) {
         if (
           now - creature.unconfirmedChange.timestamp >
-          JITTER_CONFIRMATION_TIME_MS
+          config.JITTER_CONFIRMATION_TIME_MS
         ) {
           creature.stableCoords = creature.unconfirmedChange.newCoords;
           creature.unconfirmedChange = null;
@@ -522,7 +547,7 @@ async function performOperation() {
     );
 
     if (playerPositionChanged) {
-      playerAnimationFreezeEndTime = now + PLAYER_ANIMATION_FREEZE_MS;
+      playerAnimationFreezeEndTime = now + config.PLAYER_ANIMATION_FREEZE_MS;
       lastStablePlayerMinimapPosition = { ...currentPlayerMinimapPosition };
     }
     previousPlayerMinimapPosition = { ...currentPlayerMinimapPosition };
@@ -748,12 +773,14 @@ async function performOperation() {
         if (!creature.disappearedAt) {
           creature.disappearedAt = now;
         }
-        if (now - creature.disappearedAt < CREATURE_GRACE_PERIOD_MS) {
+        if (now - creature.disappearedAt < config.CREATURE_GRACE_PERIOD_MS) {
           allExpired = false;
         }
       }
       if (allExpired) {
         activeCreatures.clear();
+        // Clear reachability stable state when all creatures are gone
+        reachabilityStableState.clear();
       }
     }
 
@@ -967,7 +994,7 @@ async function performOperation() {
       // Exception: always keep target tile even if match fails
       if (!matchedBattleListName && !isTargetTile) {
         blacklistedTiles.add(tileKey);
-        blacklistedUntil.set(tileKey, now + UNMATCHED_BLACKLIST_MS);
+        blacklistedUntil.set(tileKey, now + config.UNMATCHED_BLACKLIST_MS);
         continue;
       }
 
@@ -994,6 +1021,19 @@ async function performOperation() {
         return -Infinity;
       }
 
+      // Factor 0: Instance Continuity (HIGHEST PRIORITY)
+      // Strongly prefer matching creatures to their previous tile positions
+      // This prevents ID swaps for stationary adjacent creatures with identical names
+      let continuityBonus = 0;
+      if (creature.gameCoords) {
+        const prevTileKey = `${creature.gameCoords.x},${creature.gameCoords.y},${creature.gameCoords.z}`;
+        const detectionTileKey = `${Math.round(detection.gameCoords.x)},${Math.round(detection.gameCoords.y)},${detection.gameCoords.z}`;
+        if (prevTileKey === detectionTileKey) {
+          // Same tile as last frame - massive bonus to maintain ID continuity
+          continuityBonus = 1000000;
+        }
+      }
+
       // Factor 1: Name Similarity (Highest Weight)
       // Allow OCR to be missing for the current target or its tile; otherwise require OCR.
       const isCurrentTargetCreature =
@@ -1005,12 +1045,12 @@ async function performOperation() {
         nameScore = getSimilarityScore(detection.ocrName, creature.name);
       } else if (isCurrentTargetCreature || isTargetTile) {
         // Treat as minimally acceptable if this is the current target or on the target tile
-        nameScore = NAME_MATCH_THRESHOLD;
+        nameScore = config.NAME_MATCH_THRESHOLD;
       } else {
         return -Infinity; // Isolate other bars without OCR
       }
       if (
-        nameScore < NAME_MATCH_THRESHOLD &&
+        nameScore < config.NAME_MATCH_THRESHOLD &&
         !(isCurrentTargetCreature || isTargetTile)
       ) {
         return -Infinity;
@@ -1028,13 +1068,13 @@ async function performOperation() {
 
       // Factor 3: Screen Pixel Distance
       const screenDistValue = screenDist(detection.hb, creature.absoluteCoords);
-      if (screenDistValue > CORRELATION_DISTANCE_THRESHOLD_PIXELS) {
+      if (screenDistValue > config.CORRELATION_DISTANCE_THRESHOLD_PIXELS) {
         return -Infinity;
       }
       const screenScore =
-        CORRELATION_DISTANCE_THRESHOLD_PIXELS - screenDistValue;
+        config.CORRELATION_DISTANCE_THRESHOLD_PIXELS - screenDistValue;
 
-      return nameScore * 1000 + gameCoordScore + screenScore;
+      return continuityBonus + nameScore * 1000 + gameCoordScore + screenScore;
     };
 
     // Find potential matches between existing creatures and detections
@@ -1186,7 +1226,7 @@ async function performOperation() {
           creature.disappearedAt = now;
         }
         if (
-          now - creature.disappearedAt <= CREATURE_GRACE_PERIOD_MS &&
+          now - creature.disappearedAt <= config.CREATURE_GRACE_PERIOD_MS &&
           !assignedCreatureIds.has(id)
         ) {
           newActiveCreatures.set(id, creature);
@@ -1196,7 +1236,99 @@ async function performOperation() {
 
     activeCreatures = newActiveCreatures;
 
+    // ISSUE #1: Remove stale reachability state for creatures that no longer exist
+    // ISSUE #5: Cleanup when creatures disappear (not just on full clear)
+    const currentInstanceIds = new Set(activeCreatures.keys());
+    for (const instanceId of reachabilityStableState.keys()) {
+      if (!currentInstanceIds.has(instanceId)) {
+        reachabilityStableState.delete(instanceId);
+      }
+    }
+
     let detectedEntities = Array.from(activeCreatures.values());
+
+    // DETECTION FAILURE TRACKING: Compare battleList vs detected health bars
+    // This detects when health bar detection fails (creature in BL but no health bar detected)
+    const battleListNames = battleListEntries.map(be => be.name);
+    const detectedCreatureNames = new Set(detectedEntities.map(c => c.name));
+    
+    // Find creatures in battleList but not detected (detection failure)
+    for (const blName of battleListNames) {
+      if (!blName) continue;
+      
+      // Check if this battleList entry has a detected creature
+      const hasDetection = detectedCreatureNames.has(blName) ||
+        Array.from(detectedCreatureNames).some(detName => 
+          isBattleListMatch(blName, detName) || isBattleListMatch(detName, blName)
+        );
+      
+      if (!hasDetection) {
+        // Creature in battleList but no health bar detected
+        // Find if we were tracking this creature before
+        const previousCreature = Array.from(activeCreatures.values()).find(c => 
+          c.name === blName || isBattleListMatch(c.name, blName) || isBattleListMatch(blName, c.name)
+        );
+        
+        if (previousCreature) {
+          const trackingKey = `${blName}-${previousCreature.instanceId}`;
+          
+          if (!missingHealthBarTracking.has(trackingKey)) {
+            // First time missing - log it
+            missingHealthBarTracking.set(trackingKey, {
+              name: blName,
+              instanceId: previousCreature.instanceId,
+              lostAt: now,
+              battleListName: blName,
+              lastSeenAt: previousCreature.lastSeen || now,
+            });
+            console.log(
+              `[DetectionFailure] Lost health bar for "${blName}" [ID:${previousCreature.instanceId}] - in battleList but no health bar detected`
+            );
+          } else {
+            // Update last seen timestamp
+            const tracking = missingHealthBarTracking.get(trackingKey);
+            tracking.lastSeenAt = now;
+          }
+        }
+      }
+    }
+    
+    // Check for redetections (creature was missing, now detected again)
+    for (const creature of detectedEntities) {
+      if (!creature || !creature.name) continue;
+      
+      // Check if this creature was being tracked as missing
+      const trackingKey = `${creature.name}-${creature.instanceId}`;
+      const tracking = missingHealthBarTracking.get(trackingKey);
+      
+      if (tracking) {
+        const missingDuration = now - tracking.lostAt;
+        console.log(
+          `[DetectionRecovery] Redetected "${creature.name}" [ID:${creature.instanceId}] after ${missingDuration}ms - health bar detection recovered`
+        );
+        missingHealthBarTracking.delete(trackingKey);
+      }
+    }
+    
+    // Clean up old tracking entries (creature left battleList or > 5 seconds missing)
+    for (const [key, tracking] of missingHealthBarTracking.entries()) {
+      const stillInBattleList = battleListNames.some(blName => 
+        blName === tracking.battleListName ||
+        isBattleListMatch(blName, tracking.battleListName) ||
+        isBattleListMatch(tracking.battleListName, blName)
+      );
+      
+      const missingTooLong = (now - tracking.lostAt) > 5000;
+      
+      if (!stillInBattleList || missingTooLong) {
+        if (missingTooLong) {
+          console.log(
+            `[DetectionFailure] Gave up tracking "${tracking.name}" [ID:${tracking.instanceId}] - missing for >5s`
+          );
+        }
+        missingHealthBarTracking.delete(key);
+      }
+    }
 
     // Enforce reporting policy:
     // Only report creatures that are in the battle list (validated during detection building)
@@ -1238,43 +1370,76 @@ async function performOperation() {
     });
 
     if (detectedEntities.length > 0) {
-      const allCreaturePositions = detectedEntities.map((c) => c.gameCoords);
-      // Ensure current target participates in reachability heuristic/signature
-      if (lastSentTarget && lastSentTarget.gameCoordinates) {
-        const t = lastSentTarget.gameCoordinates;
-        const present = allCreaturePositions.some(
-          (p) => p && p.x === t.x && p.y === t.y && p.z === t.z,
-        );
-        if (!present) allCreaturePositions.push(t);
-      }
-      const screenBounds = {
+      // ISSUE #7: Pre-filter creatures outside screen bounds (±7 X, ±5 Y from player)
+      // Only creatures on-screen can affect reachability pathfinding
+      const screenBoundsCheck = {
         minX: currentPlayerMinimapPosition.x - 7,
         maxX: currentPlayerMinimapPosition.x + 7,
         minY: currentPlayerMinimapPosition.y - 5,
         maxY: currentPlayerMinimapPosition.y + 5,
       };
-      let reachableSig = 0;
-      reachableSig =
-        ((reachableSig * 31) ^ (currentPlayerMinimapPosition.x | 0)) | 0;
-      reachableSig =
-        ((reachableSig * 31) ^ (currentPlayerMinimapPosition.y | 0)) | 0;
-      reachableSig =
-        ((reachableSig * 31) ^ (currentPlayerMinimapPosition.z | 0)) | 0;
-      reachableSig = ((reachableSig * 31) ^ (screenBounds.minX | 0)) | 0;
-      reachableSig = ((reachableSig * 31) ^ (screenBounds.maxX | 0)) | 0;
-      reachableSig = ((reachableSig * 31) ^ (screenBounds.minY | 0)) | 0;
-      reachableSig = ((reachableSig * 31) ^ (screenBounds.maxY | 0)) | 0;
+      
+      const onScreenEntities = detectedEntities.filter((c) => {
+        if (!c.gameCoords) return false;
+        return (
+          c.gameCoords.x >= screenBoundsCheck.minX &&
+          c.gameCoords.x <= screenBoundsCheck.maxX &&
+          c.gameCoords.y >= screenBoundsCheck.minY &&
+          c.gameCoords.y <= screenBoundsCheck.maxY &&
+          c.gameCoords.z === currentPlayerMinimapPosition.z // ISSUE #12: Ensure same Z-level
+        );
+      });
+      
+      // ISSUE #4: Only use position data (x,y,z) in signature, not full creature objects
+      // This prevents HP changes from causing reachability recalculation
+      const allCreaturePositions = onScreenEntities.map((c) => ({
+        x: c.gameCoords.x,
+        y: c.gameCoords.y,
+        z: c.gameCoords.z,
+      }));
+      
+      // ISSUE #2: Fix target coordinate property name (gameCoords not gameCoordinates)
+      if (lastSentTarget && lastSentTarget.gameCoordinates) {
+        const t = lastSentTarget.gameCoordinates;
+        // Only include if on-screen and same Z-level
+        if (
+          t.x >= screenBoundsCheck.minX &&
+          t.x <= screenBoundsCheck.maxX &&
+          t.y >= screenBoundsCheck.minY &&
+          t.y <= screenBoundsCheck.maxY &&
+          t.z === currentPlayerMinimapPosition.z
+        ) {
+          const present = allCreaturePositions.some(
+            (p) => p && p.x === t.x && p.y === t.y && p.z === t.z,
+          );
+          if (!present) allCreaturePositions.push({ x: t.x, y: t.y, z: t.z });
+        }
+      }
+      
+      // Build signature: include player position, screen bounds, and creature positions
+      // Creature positions ARE needed since they act as dynamic obstacles in pathfinding
+      // The temporal stability system (150ms debounce) prevents flickering during recalculation
+      // ISSUE #9: Use BigInt to prevent integer overflow with many creatures
+      let reachableSig = 0n;
+      reachableSig = ((reachableSig * 31n) ^ BigInt(currentPlayerMinimapPosition.x | 0));
+      reachableSig = ((reachableSig * 31n) ^ BigInt(currentPlayerMinimapPosition.y | 0));
+      reachableSig = ((reachableSig * 31n) ^ BigInt(currentPlayerMinimapPosition.z | 0));
+      reachableSig = ((reachableSig * 31n) ^ BigInt(screenBoundsCheck.minX | 0));
+      reachableSig = ((reachableSig * 31n) ^ BigInt(screenBoundsCheck.maxX | 0));
+      reachableSig = ((reachableSig * 31n) ^ BigInt(screenBoundsCheck.minY | 0));
+      reachableSig = ((reachableSig * 31n) ^ BigInt(screenBoundsCheck.maxY | 0));
+      // Include creature count first for faster invalidation on count changes
+      reachableSig = ((reachableSig * 31n) ^ BigInt(allCreaturePositions.length | 0));
       for (let i = 0; i < allCreaturePositions.length; i++) {
         const p = allCreaturePositions[i];
         if (p) {
-          reachableSig = ((reachableSig * 31) ^ (p.x | 0)) | 0;
-          reachableSig = ((reachableSig * 31) ^ (p.y | 0)) | 0;
-          reachableSig = ((reachableSig * 31) ^ (p.z | 0)) | 0;
+          reachableSig = ((reachableSig * 31n) ^ BigInt(p.x | 0));
+          reachableSig = ((reachableSig * 31n) ^ BigInt(p.y | 0));
+          reachableSig = ((reachableSig * 31n) ^ BigInt(p.z | 0));
         } else {
-          reachableSig = ((reachableSig * 31) ^ 0) | 0;
+          reachableSig = ((reachableSig * 31n) ^ 0n);
         }
       }
-      reachableSig >>>= 0;
       let reachableTiles = null;
       if (reachableSig === lastReachableSig && lastReachableTiles) {
         reachableTiles = lastReachableTiles;
@@ -1282,7 +1447,7 @@ async function performOperation() {
         reachableTiles = pathfinderInstance.getReachableTiles(
           currentPlayerMinimapPosition,
           allCreaturePositions,
-          screenBounds,
+          screenBoundsCheck,
         );
         lastReachableSig = reachableSig;
         lastReachableTiles = reachableTiles;
@@ -1303,7 +1468,37 @@ async function performOperation() {
 
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
-        const isReachable = typeof reachableTiles[coordsKey] !== 'undefined';
+        const newReachable = typeof reachableTiles[coordsKey] !== 'undefined';
+
+        // Apply temporal stability to prevent flickering
+        let isReachable = newReachable;
+        const stableState = reachabilityStableState.get(entity.instanceId);
+        
+        if (stableState) {
+          if (stableState.isReachable === newReachable) {
+            // Status unchanged, keep confirmed value and update timestamp
+            isReachable = stableState.isReachable;
+            stableState.confirmedAt = now;
+          } else {
+            // Status changed - check if enough time has passed to accept the change
+            const timeSinceConfirmed = now - stableState.confirmedAt;
+            if (timeSinceConfirmed >= REACHABILITY_DEBOUNCE_MS) {
+              // Enough time passed with new value, accept the change
+              isReachable = newReachable;
+              stableState.isReachable = newReachable;
+              stableState.confirmedAt = now;
+            } else {
+              // Not enough time, keep old value
+              isReachable = stableState.isReachable;
+            }
+          }
+        } else {
+          // First time seeing this creature, initialize stable state
+          reachabilityStableState.set(entity.instanceId, {
+            isReachable: newReachable,
+            confirmedAt: now,
+          });
+        }
 
         let isAdjacent = false;
         if (entity?.absoluteCoords && tileSize?.width && tileSize?.height) {
@@ -1502,6 +1697,7 @@ async function performOperation() {
               distance: Math.round(unifiedTarget.distance * 100),
               isReachable: unifiedTarget.isReachable ? 1 : 0,
               name: unifiedTarget.name,
+              lastUpdateTimestamp: Date.now(),
             }
           : {
               instanceId: 0,
@@ -1511,6 +1707,7 @@ async function performOperation() {
               distance: 0,
               isReachable: 0,
               name: '',
+              lastUpdateTimestamp: Date.now(),
             };
 
         const healthTagToNumber = (tag) => {
@@ -1558,11 +1755,16 @@ async function performOperation() {
               : 0,
         }));
 
-        sabInterface.setMany({
-          creatures: sabCreatures,
-          battleList: sabBattleList,
-          target: sabTarget,
-        });
+        sabInterface.setMany(
+          {
+            creatures: sabCreatures,
+            battleList: sabBattleList,
+            target: sabTarget,
+          },
+          {
+            creatures: { lastUpdateTimestamp: Date.now() },
+          },
+        );
       } catch (err) {}
     }
 
@@ -1737,9 +1939,14 @@ parentPort.on('message', async (message) => {
       return;
     } else if (message.type === 'state_full_sync') {
       currentState = message.payload;
+      loadConfigFromSAB(); // Reload config on full state sync
     } else if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
       Object.assign(currentState, message.payload);
+      // Reload config if workerConfig slice changed
+      if (message.payload.workerConfig) {
+        loadConfigFromSAB();
+      }
     } else if (message.type === 'regions_snapshot') {
       currentState = currentState || {};
       currentState.regionCoordinates = message.payload;
@@ -1749,6 +1956,7 @@ parentPort.on('message', async (message) => {
       currentState = message;
       if (currentState && !isInitialized) {
         isInitialized = true;
+        loadConfigFromSAB(); // Load config on initialization
         initialize()
           .then(() => {
             if (currentState.gameState?.playerMinimapPosition) {

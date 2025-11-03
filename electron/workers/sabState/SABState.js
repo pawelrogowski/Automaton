@@ -127,14 +127,15 @@ export class SABState {
    * Atomically write a property
    * @param {string} propertyName
    * @param {any} value
+   * @param {Object} options - Additional options (e.g., lastUpdateTimestamp for arrays)
    */
-  set(propertyName, value) {
+  set(propertyName, value, options = {}) {
     const { schema, offset } = getPropertyInfo(propertyName);
 
     if (schema.type === 'struct' || schema.type === 'config') {
       this._writeStruct(schema, offset, value);
     } else if (schema.type === 'array') {
-      this._writeArray(schema, offset, value);
+      this._writeArray(schema, offset, value, options);
     } else if (schema.type === 'path') {
       this._writePath(schema, offset, value);
     }
@@ -146,17 +147,19 @@ export class SABState {
   /**
    * Atomically write multiple properties in a batch
    * @param {Object} updates - { propertyName: value, ... }
+   * @param {Object} options - { propertyName: { lastUpdateTimestamp, ... }, ... }
    * @returns {boolean} Success
    */
-  setMany(updates) {
+  setMany(updates, options = {}) {
     // Write all properties
     for (const [propertyName, value] of Object.entries(updates)) {
       const { schema, offset } = getPropertyInfo(propertyName);
+      const propOptions = options[propertyName] || {};
 
       if (schema.type === 'struct' || schema.type === 'config') {
         this._writeStruct(schema, offset, value);
       } else if (schema.type === 'array') {
-        this._writeArray(schema, offset, value);
+        this._writeArray(schema, offset, value, propOptions);
       } else if (schema.type === 'path') {
         this._writePath(schema, offset, value);
       }
@@ -340,9 +343,15 @@ export class SABState {
    * Write an array to SAB
    * @private
    */
-  _writeArray(schema, baseOffset, items) {
+  _writeArray(schema, baseOffset, items, options = {}) {
     const count = Math.min(items.length, schema.maxCount);
     Atomics.store(this.array, baseOffset, count);
+
+    // For arrays with headerSize > 3, support writing lastUpdateTimestamp at offset 3
+    // Header layout: [count(0), version(1), update_counter(2), lastUpdateTimestamp(3), ...]
+    if (schema.headerSize >= 4 && options.lastUpdateTimestamp !== undefined) {
+      Atomics.store(this.array, baseOffset + 3, options.lastUpdateTimestamp);
+    }
 
     let itemOffset = baseOffset + schema.headerSize;
 

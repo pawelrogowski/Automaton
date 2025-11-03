@@ -1,6 +1,6 @@
 {
-  "name": "mailspring",
-  "version": "1.4.10",
+  "name": "termius-github",
+  "version": "1.4.12",
   "description": "automation tool for Tibia",
   "main": "electron/main.js",
   "type": "module",
@@ -22,8 +22,8 @@
     "combine-scripts": "node scripts/combineScripts.js"
   },
   "build": {
-    "appId": "com.electron.mailspring",
-    "productName": "Mailspring",
+    "appId": "com.electron.termius-github",
+    "productName": "Termius Github",
     "directories": {
       "output": "dist",
       "buildResources": "build"

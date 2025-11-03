@@ -310,6 +310,30 @@ export function runPathfindingLogic(context) {
     }
 
     if (!result) {
+      // CRITICAL: Even with no result, write IDLE status to SAB to unblock cavebot
+      if (sabInterface && isTargetingMode === false) {
+        try {
+          sabInterface.set('cavebotPathData', {
+            waypoints: [],
+            length: 0,
+            status: PATH_STATUS_IDLE,
+            chebyshevDistance: 0,
+            startX: playerPos.x,
+            startY: playerPos.y,
+            startZ: playerPos.z,
+            targetX: 0,
+            targetY: 0,
+            targetZ: 0,
+            blockingCreatureX: 0,
+            blockingCreatureY: 0,
+            blockingCreatureZ: 0,
+            wptId: 0,
+            instanceId: 0,
+          });
+        } catch (err) {
+          logger('error', `Failed to write idle status to SAB: ${err.message}`);
+        }
+      }
       return;
     }
 
@@ -411,6 +435,7 @@ export function runPathfindingLogic(context) {
             blockingCreatureZ: blockingCreatureCoords?.z || 0,
             wptId,
             instanceId,
+            lastUpdateTimestamp: Date.now(),
           };
 
           // Write to legacy pathData (will be removed in future)

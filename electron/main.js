@@ -100,14 +100,33 @@ ipcMain.handle('get-tibia-window-list', async () => {
 });
 
 ipcMain.on('select-tibia-window', (event, windowId, display, windowName) => {
+  const isChangingWindow = !!mainWindow && !mainWindow.isDestroyed();
+  
   if (selectWindow && !selectWindow.isDestroyed()) {
     selectWindow.close();
   }
+  
+  log('info', `[Main] ${isChangingWindow ? 'Changing' : 'Selecting'} window: ${windowName} (ID: ${windowId})`);
+  
   setGlobalState('global/setWindowId', windowId);
   setGlobalState('global/setDisplay', display);
   setGlobalState('global/setWindowName', windowName);
 
-  mainWindow = createMainWindow(windowId, display, windowName);
+  if (!mainWindow) {
+    mainWindow = createMainWindow(windowId, display, windowName);
+  } else {
+    // Window changed - workers will automatically restart on next state update
+    log('info', '[Main] Window changed successfully. Workers will restart automatically.');
+  }
+});
+
+ipcMain.on('show-window-selector', () => {
+  if (!selectWindow || selectWindow.isDestroyed()) {
+    createSelectWindow();
+  } else {
+    selectWindow.show();
+    selectWindow.focus();
+  }
 });
 
 ipcMain.on('exit-app', () => {

@@ -31,6 +31,7 @@ import Cavebot from './Cavebot.js';
 import Targeting from './Targeting.js';
 import tibia from '../assets/tibia.svg';
 import LuaScripts from './LuaScripts.js';
+import Settings from './Settings.js';
 import luaIcon from '../assets/Anatomy_Book.gif';
 import CustomSwitch from '../components/CustomSwitch/CustomSwitch.js';
 
@@ -303,46 +304,7 @@ const Layout = () => {
               <Route path="/luascripts" element={<LuaScripts />} />
               <Route path="/gameState" element={<GameState />} />
               <Route path="/cavebot" element={<Cavebot />} />
-              <Route
-                path="/hotkeys"
-                element={
-                  <ol style={{ color: '#fafafa', fontSize: '13px' }}>
-                    <li>
-                      Alt+W - Select active window and reset workers. Shows
-                      window ID in notification and starts updating hp and mana
-                      values
-                    </li>
-                    <li>
-                      Alt+E - Toggle bot enabled/disabled state. Plays sound and
-                      shows notification
-                    </li>
-                    <li>Alt+V - Toggle main window visibility (show/hide)</li>
-                    <li>Alt+1 - Switch to preset 1</li>
-                    <li>Alt+2 - Switch to preset 2</li>
-                    <li>Alt+3 - Switch to preset 3</li>
-                    <li>Alt+4 - Switch to preset 4</li>
-                    <li>Alt+5 - Switch to preset 5</li>
-                    <li>
-                      Alt+Escape - Toggle all main sections (Healing, Cavebot,
-                      Scripts, Targeting) on/off. Remembers previous states.
-                    </li>
-                    <li>Alt+C - Toggle Cavebot section enabled/disabled.</li>
-                    <li>
-                      Alt+H - Toggle Healing/Rules section enabled/disabled.
-                    </li>
-                    <li>
-                      Alt+S - Toggle Lua Scripts section enabled/disabled.
-                    </li>
-                    <li>Alt+T - Toggle Targeting section enabled/disabled.</li>
-                    <li>
-                      Alt+B - Toggle all main sections (Healing, Cavebot,
-                      Scripts, Targeting) on/off. If sections are in mixed
-                      states, first enables all, then disables all on next
-                      press.
-                    </li>
-                  </ol>
-                }
-              />
+              <Route path="/hotkeys" element={<Settings />} />
             </Routes>
           </div>
         </div>
