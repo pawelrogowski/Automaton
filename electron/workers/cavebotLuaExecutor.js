@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createLuaApi, createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
+import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,10 +32,27 @@ export class CavebotLuaExecutor {
       error: null,
       navigationOccurred: false,
     };
+    this.sabInterface = null;
 
     // NEW: For handling awaitable input actions
     this.pendingInputActions = new Map();
     this.nextActionId = 0;
+
+    // Initialize sabInterface if available
+    if (context.workerData?.unifiedSAB) {
+      try {
+        this.sabInterface = createWorkerInterface(
+          context.workerData.unifiedSAB,
+          WORKER_IDS.CAVEBOT,
+        );
+        this.logger('info', '[CavebotLuaExecutor] SAB interface initialized');
+      } catch (err) {
+        this.logger(
+          'warn',
+          `[CavebotLuaExecutor] Failed to initialize SAB interface: ${err.message}`,
+        );
+      }
+    }
 
     this.logger(
       'info',
@@ -100,6 +118,7 @@ export class CavebotLuaExecutor {
         sharedLuaGlobals: this.context.sharedLuaGlobals,
         lua: this.lua,
         postInputAction: (action) => this.postInputAction(action),
+        sabInterface: this.sabInterface,
       });
 
       this.asyncFunctionNames = newNames;

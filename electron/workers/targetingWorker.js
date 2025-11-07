@@ -305,6 +305,8 @@ function handleSelectingState() {
     provider,
     workerState.globalState.targeting.targetingList,
     null,
+    750,
+    sabInterface,
   );
 
   const sabTarget = getCurrentTargetFromSAB();
@@ -1159,6 +1161,7 @@ async function handleEngagingState() {
     targetingList,
     targetingState.currentTarget,
     config.unreachableTimeoutMs,
+    sabInterface,
   );
   if (!bestOverallTarget) {
     transitionTo(FSM_STATE.SELECTING);
@@ -1188,18 +1191,12 @@ async function handleEngagingState() {
       if (currentScore >= bestScore) {
         // stick
       } else {
-        console.log(
-          `[TargetSwap] ${currentEntity.name}[${currentEntity.instanceId}] -> ${bestOverallTarget.name}[${bestOverallTarget.instanceId}] - reason: lower priority (current score: ${currentScore}, new score: ${bestScore})`
-        );
         targetingState.pathfindingTarget = bestOverallTarget;
         updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
         transitionTo(FSM_STATE.PREPARE_ACQUISITION);
         return;
       }
     } else {
-      console.log(
-        `[TargetSwap] ${targetingState.currentTarget.name}[${targetingState.currentTarget.instanceId}] -> ${bestOverallTarget.name}[${bestOverallTarget.instanceId}] - reason: old target unreachable`
-      );
       targetingState.pathfindingTarget = bestOverallTarget;
       updateDynamicTarget(parentPort, bestOverallTarget, targetingList);
       transitionTo(FSM_STATE.PREPARE_ACQUISITION);
@@ -1276,9 +1273,6 @@ async function handleEngagingState() {
 
       if (sameNameReachables.length > 0) {
         const bestAlt = sameNameReachables[0];
-        console.log(
-          `[TargetSwap] ${updatedTarget.name}[${updatedTarget.instanceId}] -> ${bestAlt.name}[${bestAlt.instanceId}] - reason: old target unreachable, switching to reachable same-name instance`
-        );
         targetingState.pathfindingTarget = bestAlt;
         updateDynamicTarget(parentPort, bestAlt, targetingList);
         transitionTo(FSM_STATE.PREPARE_ACQUISITION);
@@ -1350,10 +1344,6 @@ async function handleEngagingState() {
             
             if (adjacentDuration >= config.antiStuckAdjacentMs) {
               // FIRE ESCAPE: We've been adjacent and targeted for the full duration with no HP change
-              console.log(
-                `[AntiStuck] Pressing Escape - ${updatedTarget.name}[${updatedTarget.instanceId}] was adjacent+targeted for ${adjacentDuration}ms with no HP change (threshold: ${config.antiStuckAdjacentMs}ms)`
-              );
-              
               parentPort.postMessage({
                 type: 'inputAction',
                 payload: {
@@ -1584,26 +1574,112 @@ async function performTargeting() {
   const anyValidTargetExists = selectBestTarget(
     getCreaturesFromSAB,
     globalState.targeting.targetingList,
+    null,
+    750,
+    sabInterface,
   );
 
   // Gate targeting control by presence of battle-list candidates that match targetingList (Attack rules)
   const bl = getBattleListFromSAB();
-  const blHasCandidates =
+  const targetingList = workerState.globalState?.targeting?.targetingList || [];
+  const allCreaturesForCheck = getCreaturesFromSAB();
+  
+  // Check if 'others' rule exists
+  const hasOthersRule = targetingList.some(
+    (rule) => rule && rule.action === 'Attack' && rule.name && rule.name.toLowerCase() === 'others'
+  );
+  
+  // Check if any creature is blocking the path (priority for onlyIfTrapped rules)
+  // Read blocking coords directly from SAB to avoid timing issues with creatureMonitor
+  let blockingCreatureCoords = null;
+  if (sabInterface) {
+    try {
+      const cavebotPathResult = sabInterface.get('cavebotPathData');
+      if (cavebotPathResult && cavebotPathResult.data) {
+        const pathData = cavebotPathResult.data;
+        if (pathData.blockingCreatureX !== 0 || pathData.blockingCreatureY !== 0) {
+          blockingCreatureCoords = {
+            x: pathData.blockingCreatureX,
+            y: pathData.blockingCreatureY,
+            z: pathData.blockingCreatureZ,
+          };
+        }
+      }
+    } catch (err) {
+      // Silent
+    }
+  }
+  
+  // Check if any creature matches the blocking coordinates
+  const hasBlockingCreature = blockingCreatureCoords && allCreaturesForCheck.some((c) => 
+    c.gameCoords &&
+    c.gameCoords.x === blockingCreatureCoords.x &&
+    c.gameCoords.y === blockingCreatureCoords.y &&
+    c.gameCoords.z === blockingCreatureCoords.z
+  );
+  
+  // Get explicit creature names (not 'others')
+  const explicitRuleNames = new Set(
+    targetingList
+      .filter((rule) => rule && rule.action === 'Attack' && rule.name && rule.name.toLowerCase() !== 'others')
+      .map((rule) => rule.name)
+  );
+  
+  let blHasCandidates =
     Array.isArray(bl) &&
     bl.some(
-      (be) =>
-        be &&
-        be.name &&
-        workerState.globalState?.targeting?.targetingList?.some(
+      (be) => {
+        if (!be || !be.name) return false;
+        
+        // Check if matches explicit rule
+        const matchesExplicit = targetingList.some(
           (rule) =>
             rule &&
             rule.action === 'Attack' &&
+            rule.name.toLowerCase() !== 'others' &&
             (isBattleListMatch(rule.name, be.name) ||
-              isBattleListMatch(be.name, rule.name)),
-        ),
+              isBattleListMatch(be.name, rule.name))
+        );
+        
+        if (matchesExplicit) return true;
+        
+        // Check if matches 'others' (has 'others' rule AND doesn't have explicit rule)
+        if (hasOthersRule) {
+          const hasExplicitRule = Array.from(explicitRuleNames).some(
+            (name) => isBattleListMatch(name, be.name) || isBattleListMatch(be.name, name)
+          );
+          if (!hasExplicitRule) {
+            // This battle list entry has no explicit rule, so it matches 'others'
+            return true;
+          }
+        }
+        
+        return false;
+      }
     );
+  
+  // CRITICAL: If a creature is blocking the path and has a matching rule (including onlyIfTrapped),
+  // force blHasCandidates to true so targeting can take control
+  if (hasBlockingCreature && !blHasCandidates) {
+    // Check if blocking creature matches any targeting rule
+    const blockingCreatureMatchesRule = allCreaturesForCheck.some((c) => {
+      if (!c.isBlockingPath) return false;
+      // Check if this creature has a targeting rule (explicit or 'others')
+      const rule = findRuleForCreatureName(c.name, targetingList);
+      return rule && rule.action === 'Attack';
+    });
+    
+    if (blockingCreatureMatchesRule) {
+      // Override - there's a targetable blocking creature
+      // This allows onlyIfTrapped rules to take effect
+      blHasCandidates = true;
+    }
+  }
 
-  if (hasValidTarget && controlState === 'CAVEBOT' && blHasCandidates) {
+  // Request control if there's a blocking creature that can be targeted
+  const shouldRequestControlForBlocker = hasBlockingCreature && blHasCandidates && controlState === 'CAVEBOT';
+  
+  if ((hasValidTarget && controlState === 'CAVEBOT' && blHasCandidates) || shouldRequestControlForBlocker) {
     // Cooldown to prevent rapid control ping-pong (250ms minimum between changes)
     const now = Date.now();
     if (now - targetingState.lastControlChangeTime >= 250) {

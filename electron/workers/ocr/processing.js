@@ -47,13 +47,24 @@ function postUpdateOnce(type, payload) {
 
 // --- GENERIC OCR REGION PROCESSING ---
 
+// Helper to get nested region by path (e.g., "preyModal.children.balance")
+function getNestedRegion(regions, path) {
+  const parts = path.split('.');
+  let current = regions;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object') return null;
+    current = current[part];
+  }
+  return current;
+}
+
 export async function processOcrRegions(buffer, regions, regionKeys) {
   const ocrRawUpdates = {};
   const processingPromises = [];
 
   for (const regionKey of regionKeys) {
     const cfg = OCR_REGION_CONFIGS[regionKey];
-    const region = regions[regionKey];
+    const region = getNestedRegion(regions, regionKey);
     if (!region || !cfg) continue;
 
     const processRegion = async () => {
@@ -67,6 +78,8 @@ export async function processOcrRegions(buffer, regions, regionKeys) {
           rawData =
             recognizeText(buffer, region, colors, cfg.allowedChars) || [];
         }
+
+        // Debug logging for preyModal balance
 
         if (regionKey === 'gameWorld') {
           ocrRawUpdates[regionKey] = rawData;

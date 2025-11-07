@@ -64,6 +64,11 @@ const initialState = {
   npcs: [],
   lastSeenPlayerMs: null,
   lastSeenNpcMs: null,
+  preyBalance: null,
+  marketSellToList: {
+    offers: [],
+    lastUpdate: null,
+  },
   // REMOVED: battleListEntries is no longer part of this slice.
   // Its data now lives exclusively in the battleListSlice.
 };
@@ -104,6 +109,15 @@ const uiValuesSlice = createSlice({
     },
     updateLastSeenNpcMs: (state) => {
       state.lastSeenNpcMs = Date.now();
+    },
+    setPreyBalance: (state, action) => {
+      console.log('[uiValuesSlice] setPreyBalance called with:', action.payload);
+      state.preyBalance = action.payload;
+      state.version = (state.version || 0) + 1;
+    },
+    setMarketSellToList: (state, action) => {
+      state.marketSellToList = { ...action.payload, lastUpdate: Date.now() };
+      state.version = (state.version || 0) + 1;
     },
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;
@@ -149,6 +163,8 @@ export const {
   setNpcs,
   updateLastSeenPlayerMs,
   updateLastSeenNpcMs,
+  setPreyBalance,
+  setMarketSellToList,
   resetUiValues,
   resetRegion,
   setState,
@@ -178,5 +194,6 @@ export const selectOnlineVips = (state) => state.uiValues.vipWidget.online;
 export const selectOfflineVips = (state) => state.uiValues.vipWidget.offline;
 export const selectPlayers = (state) => state.uiValues.players;
 export const selectNpcs = (state) => state.uiValues.npcs;
+export const selectPreyBalance = (state) => state.uiValues.preyBalance;
 
 export default uiValuesSlice;

@@ -10,11 +10,16 @@ import { CooldownManager } from './screenMonitor/CooldownManager.js';
 import { FrameUpdateManager } from '../utils/frameUpdateManager.js';
 import findSequences from 'find-sequences-native';
 import actionBarItems from '../constants/actionBarItems.js';
+import actionBarOcr from '../../nativeModules/actionBarOcr/wrapper.js';
 import { rectsIntersect } from '../utils/rectsIntersect.js';
+
+const isStackableItem = (itemName) => itemName.includes('Potion') || itemName.includes('Rune') || itemName === 'brownMushroom' || itemName === 'insectoidEggs';
+
+console.log('[ScreenMonitor] actionBarOcr loaded:', !!actionBarOcr.recognizeNumber);
 import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 
 const { sharedData } = workerData;
-const SCAN_INTERVAL_MS = 50;
+const SCAN_INTERVAL_MS = 100;
 
 if (!sharedData) throw new Error('[ScreenMonitor] Shared data not provided.');
 const { imageSAB, syncSAB } = sharedData;
@@ -41,6 +46,8 @@ let hasScannedInitially = false;
 // Region snapshot management
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
+// Track online state to detect relog
+let wasOnline = false;
 
 const cooldownManager = new CooldownManager();
 const ruleProcessorInstance = new RuleProcessor(parentPort);
@@ -65,6 +72,10 @@ let lastCalculatedState = {
 // Track last sent payload to avoid redundant Redux updates
 let lastSentPayload = null;
 
+let itemHistory = new Map();
+
+const MAX_COOLDOWN_MS = 6000;
+
 // Per-region last scan timestamps for fallback scanning to detect disappearances
 const lastScanTs = {
   healthBar: 0,
@@ -79,6 +90,7 @@ const lastScanTs = {
 const lastBarChecksums = {
   healthBar: null,
   manaBar: null,
+  hotkeyBar: null,
 };
 
 /**
@@ -325,8 +337,35 @@ async function findActionItemsInHotkeyBar(hotkeyBarRegion, buffer, metadata) {
           y: result.y - (def.offset?.y || 0),
         },
       };
+
+      // Calculate slot position and OCR count for stackable items
+      const slotWidth = 32;  // Item width for bbox and OCR
+      const slotPitch = 36;  // Full spacing: item + 4px margin
+      const relX = result.x - hotkeyBarRegion.x;
+      const slotIndex = Math.floor(relX / slotPitch);
+      const slotX = hotkeyBarRegion.x + slotIndex * slotPitch;
+      const slotY = hotkeyBarRegion.y;
+
+      // Update to slot position for accurate item bounding box
+      foundItems[itemName].x = slotX;
+      foundItems[itemName].y = slotY;
+      foundItems[itemName].width = 32;
+      foundItems[itemName].height = 32;
+      foundItems[itemName].slotIndex = slotIndex;
+
+
+      // OCR for items with counts (potions, runes, food)
+      if (itemName.includes('Potion') || itemName.includes('Rune') || itemName === 'brownMushroom' || itemName === 'insectoidEggs') {
+        const numX = slotX; // left of slot, to scan full width rightward
+        const numY = slotY + 22; // top of bottom 10px, so 6px digits fit within y=22-28
+        const countStr = actionBarOcr.recognizeNumber(buffer, metadata.width, metadata.height, numX, numY, 1);
+        const count = countStr === "-1" ? 0 : parseInt(countStr) || 0;
+        foundItems[itemName].count = count;
+      } else {
+        foundItems[itemName].count = 1;
+      }
+      }
     }
-  }
   return foundItems;
 }
 
@@ -377,13 +416,28 @@ async function processGameState() {
     return;
   }
 
+  // Detect online state transition (relog) - reset scan flags
+  const isOnline = !!regions.onlineMarker;
+  if (isOnline && !wasOnline) {
+    // Just logged in - force fresh scan of all values
+    console.log('[ScreenMonitor] Player logged in, resetting scan state for fresh values');
+    hasScannedInitially = false;
+    lastBarChecksums.healthBar = null;
+    lastBarChecksums.manaBar = null;
+    lastBarChecksums.hotkeyBar = null;
+    lastSentPayload = null;
+    Object.keys(lastScanTs).forEach(key => lastScanTs[key] = 0);
+    itemHistory.clear();
+  }
+  wasOnline = isOnline;
+
   try {
     const now = Date.now();
     // Coalesce dirty rectangles to reduce intersection checks
     const rawDirty = [...frameUpdateManager.accumulatedDirtyRects];
     frameUpdateManager.accumulatedDirtyRects.length = 0;
 
-    const coalesceRects = (rects) => {
+    const coalesceRects = (rects, tolerance = 0) => {
       if (!rects || rects.length <= 1) return rects || [];
       const merged = [];
       const list = rects.slice();
@@ -394,12 +448,12 @@ async function processGameState() {
           changed = false;
           for (let i = list.length - 1; i >= 0; i--) {
             const o = list[i];
-            const ix = !(
-              r.x + r.width < o.x ||
-              o.x + o.width < r.x ||
-              r.y + r.height < o.y ||
-              o.y + o.height < r.y
-            );
+            // Enhanced overlap check with tolerance for adjacent rects
+            const overlapX = Math.max(0, Math.min(r.x + r.width, o.x + o.width) - Math.max(r.x, o.x));
+            const overlapY = Math.max(0, Math.min(r.y + r.height, o.y + o.height) - Math.max(r.y, o.y));
+            const adjacentX = Math.abs((r.x + r.width) - o.x) <= tolerance || Math.abs((o.x + o.width) - r.x) <= tolerance;
+            const adjacentY = Math.abs((r.y + r.height) - o.y) <= tolerance || Math.abs((o.y + o.height) - r.y) <= tolerance;
+            const ix = (overlapX > 0 && overlapY > 0) || (adjacentX && adjacentY);
             if (ix) {
               const nx = Math.min(r.x, o.x);
               const ny = Math.min(r.y, o.y);
@@ -416,20 +470,12 @@ async function processGameState() {
       return merged;
     };
 
-    const dirtyRects = coalesceRects(rawDirty);
+    // Enhanced coalescing: Merge with padding for adjacent rects to catch fragmented changes
+    const dirtyRects = coalesceRects(rawDirty, 2); // Add 2px tolerance for adjacent merges
+
+
     const anyDirty = dirtyRects.length > 0;
 
-    if (!hasScannedInitially && !anyDirty) {
-      lastCalculatedState.isWalking = calculateWalkingState();
-      if (currentState?.rules?.enabled && currentState.gameState) {
-        runRules({
-          ...currentState.gameState,
-          ...lastCalculatedState,
-          rulesEnabled: true,
-        });
-      }
-      return;
-    }
 
     if (Atomics.load(syncArray, IS_RUNNING_INDEX) === 0) return;
 
@@ -450,8 +496,15 @@ async function processGameState() {
     const metadata = { width, height };
     const bufferToUse = sharedBufferView;
 
-    const isDirty = (region) =>
-      !!region && dirtyRects.some((dr) => rectsIntersect(region, dr));
+    const isDirty = (region, padding = 0) => {
+      if (!region || region.width <= 0 || region.height <= 0) return false;
+      const ex = region.x - padding;
+      const ey = region.y - padding;
+      const ew = region.width + 2 * padding;
+      const eh = region.height + 2 * padding;
+      const expanded = { x: ex, y: ey, width: ew, height: eh };
+      return dirtyRects.some((dr) => rectsIntersect(expanded, dr));
+    };
 
     // Fallback thresholds (ms)
     const FALLBACK = {
@@ -460,9 +513,10 @@ async function processGameState() {
       cooldownBar: 120,
       statusBar: 150, // Reduced from 300ms for faster status effect detection
       equip: 500,
-      hotkeyBar: 250,
+      hotkeyBar: 100, // Reduced to 50ms for faster detection of item changes/disappearances
     };
-    const MIN_HOTKEY_INTERVAL_MS = 100;
+    const MIN_HOTKEY_INTERVAL_MS = 100; // Reduced for faster response to changes
+    const HOTKEY_BAR_PADDING = 4; // Pixels to expand intersection check for edge cases
 
     const scanIfNeeded = async () => {
       // Health percentage with robust checksum gating
@@ -582,20 +636,38 @@ async function processGameState() {
         lastScanTs.equip = now;
       }
 
-      // Hotkey bar action items (heaviest)
-      const hkDirty = isDirty(regions.hotkeyBar);
+      // Hotkey bar action items (heaviest) - Enhanced with better accumulation and forced scans
+      const hkDirty = isDirty(regions.hotkeyBar, HOTKEY_BAR_PADDING);
       const hkSince = now - lastScanTs.hotkeyBar;
+   
+      // Force scan more frequently for hotkey bar to catch disappearances reliably
+      // Scan if: dirty intersection, fallback interval, initial scan
       if (
-        (hkDirty && hkSince > MIN_HOTKEY_INTERVAL_MS) ||
+        hkDirty ||
         hkSince > FALLBACK.hotkeyBar ||
         !hasScannedInitially
       ) {
+        let searchArea = regions.hotkeyBar;
         lastCalculatedState.activeActionItems =
           await calculateActiveActionItems(
-            regions.hotkeyBar,
+            searchArea,
             bufferToUse,
             metadata,
           );
+  
+        const scanTime = Date.now();
+        for (const name of Object.keys(actionBarItems)) {
+          const detectedItem = lastCalculatedState.activeActionItems[name];
+          if (detectedItem) {
+            const count = isStackableItem(name) ? (detectedItem.count || 0) : 1;
+            let history = itemHistory.get(name) || [];
+            history.push({timestamp: scanTime, count});
+            // Prune old history (keep last 10 entries, ~500ms at 50ms ticks)
+            if (history.length > 10) history = history.slice(-10);
+            itemHistory.set(name, history);
+          }
+        }
+   
         lastScanTs.hotkeyBar = now;
       }
     };
@@ -621,6 +693,47 @@ async function processGameState() {
       lastCalculatedState.monsterNum =
         currentState.battleList?.entriesCount || 0;
     }
+
+    // Write activeActionItems with counts to SAB for Lua access
+    if (sabInterface && lastCalculatedState.activeActionItems) {
+      try {
+        const actionItemsData = Object.entries(lastCalculatedState.activeActionItems)
+          .map(([name, item]) => ({
+            name,
+            count: item.count || 0,
+          }));
+        sabInterface.set('actionItems', actionItemsData, { lastUpdateTimestamp: now });
+      } catch (error) {
+        console.error('[ScreenMonitor] Error writing actionItems to SAB:', error);
+      }
+    }
+
+    // Always update item cache every frame for time-based filtering (even when skipping scan)
+    const currentTime = Date.now();
+    const allItemsData = {};
+    for (const name of Object.keys(actionBarItems)) {
+      let history = itemHistory.get(name) || [];
+      const recentHistory = history.filter(h => currentTime - h.timestamp < 6000);
+      let effective;
+      const detectedItem = lastCalculatedState.activeActionItems[name];
+      const isHotkeyFresh = currentTime - lastScanTs.hotkeyBar < 500;
+      const isDetected = isHotkeyFresh && !!detectedItem;
+      if (isDetected) {
+        const count = isStackableItem(name) ? (detectedItem.count || 0) : 1;
+        effective = count;
+      } else {
+        if (history.length === 0) {
+          effective = 0;
+        } else if (recentHistory.some(h => h.count > 0)) {
+          const recentPositives = recentHistory.filter(h => h.count > 0);
+          effective = recentPositives[recentPositives.length - 1].count;
+        } else {
+          effective = 0;
+        }
+      }
+      allItemsData[name] = effective;
+    }
+
     lastCalculatedState.isWalking = calculateWalkingState();
 
     // Build new payload
@@ -636,6 +749,7 @@ async function processGameState() {
       isWalking: lastCalculatedState.isWalking,
       activeActionItems: lastCalculatedState.activeActionItems,
       equippedItems: lastCalculatedState.equippedItems,
+      itemCache: allItemsData,
     };
 
     // Only send update if payload actually changed (deep comparison)
@@ -655,7 +769,9 @@ async function processGameState() {
       JSON.stringify(newPayload.activeActionItems) !==
         JSON.stringify(lastSentPayload.activeActionItems) ||
       JSON.stringify(newPayload.equippedItems) !==
-        JSON.stringify(lastSentPayload.equippedItems);
+        JSON.stringify(lastSentPayload.equippedItems) ||
+      JSON.stringify(newPayload.itemCache) !==
+        JSON.stringify(lastSentPayload?.itemCache || {});
 
     if (payloadChanged || !hasScannedInitially) {
       reusableGameStateUpdate.payload = newPayload;
@@ -702,6 +818,19 @@ parentPort.on('message', (message) => {
       return;
     }
 
+    if (message.type === 'window_changed') {
+      // Window has changed - reset initial scan flags to force full scan on first frame
+      console.log('[ScreenMonitor] Window changed, resetting initial scan state');
+      hasScannedInitially = false;
+      lastBarChecksums.healthBar = null;
+      lastBarChecksums.manaBar = null;
+      lastBarChecksums.hotkeyBar = null;
+      lastSentPayload = null;
+      // Reset scan timestamps to force immediate scan
+      Object.keys(lastScanTs).forEach(key => lastScanTs[key] = 0);
+      return;
+    }
+
     if (message.type === 'shutdown') {
       isShuttingDown = true;
     } else if (message.type === 'state_diff') {
@@ -731,6 +860,7 @@ parentPort.on('message', (message) => {
       // Reset checksums when regions change to force fresh calculation
       lastBarChecksums.healthBar = null;
       lastBarChecksums.manaBar = null;
+      lastBarChecksums.hotkeyBar = null;
       // Reset last sent payload to force update on next scan
       lastSentPayload = null;
     } else if (typeof message === 'object' && !message.type) {

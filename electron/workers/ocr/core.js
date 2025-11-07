@@ -62,8 +62,21 @@ function computeRegionChecksum(buffer, screenWidth, region) {
 // Region snapshot management
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
+// Track online state to detect relog
+let wasOnline = false;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Helper to get nested region by path (e.g., "preyModal.children.balance")
+function getNestedRegion(regions, path) {
+  const parts = path.split('.');
+  let current = regions;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object') return null;
+    current = current[part];
+  }
+  return current;
+}
 
 function hashRegionCoordinates(regionCoordinates) {
   if (!regionCoordinates || typeof regionCoordinates !== 'object') {
@@ -100,7 +113,7 @@ async function processPendingRegions() {
     // Update checksums and last processed times for throttled regions we just processed
     const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
     for (const regionKey of regionsToProcessNow) {
-      const region = currentState.regionCoordinates.regions[regionKey];
+      const region = getNestedRegion(currentState.regionCoordinates.regions, regionKey);
       if (region) {
         const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
         lastRegionChecksums.set(regionKey, ck);
@@ -149,6 +162,18 @@ async function performOperation() {
 
     if (Object.keys(regions).length === 0 || width <= 0 || height <= 0) return;
 
+    // Detect online state transition (relog) - reset scan flags
+    const isOnline = !!regions.onlineMarker;
+    if (isOnline && !wasOnline) {
+      // Just logged in - force fresh OCR of all regions
+      console.log('[OcrCore] Player logged in, resetting scan state for fresh OCR');
+      oneTimeInitializedRegions.clear();
+      lastRegionChecksums.clear();
+      lastRegionProcessTimes.clear();
+      pendingThrottledRegions.clear();
+    }
+    wasOnline = isOnline;
+
     lastProcessedFrameCounter = newFrameCounter;
 
     const dirtyRegionCount = Atomics.load(
@@ -175,18 +200,22 @@ async function performOperation() {
     // 2. Handle all other generic OCR regions.
     for (const regionKey in config.OCR_REGION_CONFIGS) {
       if (regionKey === 'gameWorld') continue;
-      const region = regions[regionKey];
-      if (!region) continue;
+      const region = getNestedRegion(regions, regionKey);
+      if (!region) {
+        continue;
+      }
 
       const isDirty = dirtyRects.some((dirtyRect) =>
         rectsIntersect(region, dirtyRect),
       );
       const needsOneTimeInit = !oneTimeInitializedRegions.has(regionKey);
 
+      // Process region if dirty OR if we need one-time init (first frame)
       if (isDirty || needsOneTimeInit) {
         const regionConfig = config.OCR_REGION_CONFIGS[regionKey];
 
         // Fast checksum gating: skip OCR if region checksum unchanged and fallback window not exceeded
+        // BUT always process on first frame (needsOneTimeInit)
         const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
         const ck = computeRegionChecksum(sharedBufferView, screenWidth, region);
         const lastCk = lastRegionChecksums.get(regionKey);
@@ -195,6 +224,7 @@ async function performOperation() {
           now - lastTs < (regionConfig.throttleMs || CHECKSUM_FALLBACK_MS);
         const unchanged = lastCk !== undefined && ck === lastCk;
 
+        // Skip only if: NOT first frame AND checksum unchanged AND within fallback window
         if (!needsOneTimeInit && unchanged && withinFallback) {
           // Skip scheduling OCR for this region this cycle
           continue;
@@ -224,7 +254,7 @@ async function performOperation() {
           // Update checksums and last processed times for the regions we just OCR'd
           const screenWidth = Atomics.load(syncArray, config.WIDTH_INDEX);
           for (const regionKey of immediateGenericRegions) {
-            const region = regions[regionKey];
+            const region = getNestedRegion(regions, regionKey);
             if (!region) continue;
             const ck = computeRegionChecksum(
               sharedBufferView,
@@ -264,7 +294,16 @@ async function mainLoop() {
 
 function handleMessage(message) {
   try {
-    if (message.type === 'state_diff') {
+    if (message.type === 'window_changed') {
+      // Window has changed - reset initial scan flags to force full OCR on first frame
+      console.log('[OcrCore] Window changed, resetting initial scan state');
+      oneTimeInitializedRegions.clear();
+      lastRegionChecksums.clear();
+      lastRegionProcessTimes.clear();
+      pendingThrottledRegions.clear();
+      lastProcessedFrameCounter = -1;
+      return;
+    } else if (message.type === 'state_diff') {
       if (!currentState) currentState = {};
       const payload = message.payload || {};
       if (payload.regionCoordinates) {

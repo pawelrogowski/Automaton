@@ -131,6 +131,18 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().regionCoordinates?.regions?.stashIcon,
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'marketIcon', {
+    get: () => getState().regionCoordinates?.regions?.marketIcon,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'market', {
+    get: () => {
+      const marketModal = getState().regionCoordinates?.regions?.marketModal;
+      // Return false if not detected to avoid Lua bridge errors
+      return marketModal || false;
+    },
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'pk', {
     get: () =>
       getState().regionCoordinates?.regions?.playerList?.children?.whiteSkull,
@@ -238,6 +250,10 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().uiValues?.npcs || [],
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'balance', {
+    get: () => getState().uiValues?.preyBalance || 0,
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'standTime', {
     get: () => {
       const lastMoveTime = getState().gameState?.lastMoveTime;
@@ -302,8 +318,8 @@ export const createStateShortcutObject = (getState, type) => {
  * @returns {{api: object, asyncFunctionNames: string[], stateObject: object, sharedGlobalsProxy: object}}
  */
 export const createLuaApi = async (context) => {
-  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction } =
-    context; // Added postInputAction
+  const { onAsyncStart, onAsyncEnd, sharedLuaGlobals, lua, postInputAction, sabInterface } =
+    context; // Added postInputAction and sabInterface
   const { type, getState, postSystemMessage, logger, id } = context;
   const scriptName = type === 'script' ? `Script ${id}` : 'Cavebot';
   const asyncFunctionNames = [
@@ -327,6 +343,15 @@ export const createLuaApi = async (context) => {
     'useItemOnTile',
     'waitForHealth',
     'waitForMana',
+    'openMarket',
+    'openStash',
+    'selectSellToOffer',
+    'clearMarketInput',
+    'selectMaxAmountSellTo',
+    'acceptSellToOffer',
+    'typeMarketItem',
+    'marketSellTo',
+    'itemCount',
   ];
   const getWindowId = () => getState()?.global?.windowId;
   const getDisplay = () => getState()?.global?.display || ':0';
@@ -470,6 +495,27 @@ export const createLuaApi = async (context) => {
       const state = getState();
       const activeActionItems = state.gameState?.activeActionItems || {};
       return !!activeActionItems[itemName];
+    },
+    itemCount: (itemName) => {
+      if (!itemName || typeof itemName !== 'string') return 0;
+
+      const state = getState();
+      const itemCache = state.gameState?.itemCache || {};
+
+      const cached = itemCache[itemName];
+      return cached !== undefined ? cached : 0;
+    },
+    isItemDetected: (itemName) => {
+      if (!itemName || typeof itemName !== 'string') return false;
+
+      const state = getState();
+      const activeActionItems = state.gameState?.activeActionItems || {};
+      const itemCache = state.gameState?.itemCache || {};
+
+      if (activeActionItems[itemName]) return true;
+
+      const cached = itemCache[itemName];
+      return typeof cached === 'number' && cached > 0;
     },
     isLocation: (range = 0) => {
       const state = getState();
@@ -721,6 +767,15 @@ export const createLuaApi = async (context) => {
           args: [key, modifier],
         },
       }),
+    openPreyDialog: async () =>
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'keypress',
+          method: 'sendKey',
+          args: ['y', 'ctrl'],
+        },
+      }),
     keyPressMultiple: async (key, count = 1, modifier = null, delayMs = 50) => {
       for (let i = 0; i < count; i++) {
         await postInputAction({
@@ -828,30 +883,6 @@ export const createLuaApi = async (context) => {
         return false;
       }
 
-      // Special handling: randomize greeting between 'hi' and 'hello'
-      const isGreeting = (t) => {
-        const n = String(t).trim().toLowerCase();
-        return n === 'hi' || n === 'hello';
-      };
-      const resolveGreetingIfNeeded = (t) =>
-        isGreeting(t) ? (Math.random() < 0.5 ? 'hi' : 'hello') : String(t);
-
-      const getTabsState = () =>
-        getState().uiValues?.chatboxTabs || { tabs: {}, activeTab: null };
-
-      const findTabByName = (tabsObj, target) => {
-        if (!tabsObj) return null;
-        const keys = Object.keys(tabsObj);
-        const exact = keys.find(
-          (k) => k.toLowerCase() === target.toLowerCase(),
-        );
-        if (exact) return exact;
-        const contains = keys.find((k) =>
-          k.toLowerCase().includes(target.toLowerCase()),
-        );
-        return contains || null;
-      };
-
       const typeTextOnce = async (text) => {
         await postInputAction({
           type: 'script',
@@ -866,36 +897,61 @@ export const createLuaApi = async (context) => {
       const randInt = (min, max) =>
         Math.floor(Math.random() * (max - min + 1)) + min;
 
+      const isNpcModalOpen = () => {
+        const regions = getState().regionCoordinates?.regions;
+        return !!(regions?.npcTalkModal);
+      };
+
+      const waitForNpcModal = async (greeting, maxAttempts = 3) => {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          // Say greeting to trigger NPC dialog
+          await typeTextOnce(greeting);
+          
+          // Poll for 2 seconds (10 checks, 200ms apart)
+          for (let i = 0; i < 10; i++) {
+            await wait(200);
+            
+            // Refresh state to get latest region data
+            if (typeof context.refreshLuaGlobalState === 'function') {
+              await context.refreshLuaGlobalState(true);
+            }
+            
+            if (isNpcModalOpen()) {
+              logger(
+                'info',
+                `[Lua/${scriptName}] NPC modal detected on attempt ${attempt}`,
+              );
+              return true;
+            }
+          }
+          
+          logger(
+            'warn',
+            `[Lua/${scriptName}] NPC modal not detected after attempt ${attempt}/${maxAttempts}`,
+          );
+        }
+        
+        // After 3 failed attempts, proceed anyway
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Proceeding with npcTalk despite modal not opening`,
+        );
+        return false;
+      };
+
       // Refresh state before we start
       if (typeof context.refreshLuaGlobalState === 'function') {
         await context.refreshLuaGlobalState(true);
       }
 
-      // Check if NPC channel is focused
-      let { tabs: tabsMap, activeTab } = getTabsState();
-      let npcTabName = findTabByName(tabsMap, 'npc');
-
-      // If NPC channel is not focused, press 'm' to open/focus it
-      if (activeTab !== npcTabName) {
-        await postInputAction({
-          type: 'script',
-          action: {
-            module: 'keypress',
-            method: 'keyPress',
-            args: ['m'],
-          },
-        });
-        // Wait 500-750ms after hotkey
-        await wait(randInt(500, 750));
-      }
-
-      // Type all messages with delays between them
-      for (let i = 0; i < stringArgs.length; i++) {
-        const msg = resolveGreetingIfNeeded(stringArgs[i]);
-        await typeTextOnce(msg);
-        if (i < stringArgs.length - 1) {
-          await wait(randInt(100, 500));
-        }
+      // First message triggers the NPC modal
+      const firstMsg = stringArgs[0];
+      await waitForNpcModal(firstMsg);
+      
+      // Type remaining messages with delays
+      for (let i = 1; i < stringArgs.length; i++) {
+        await wait(randInt(100, 500));
+        await typeTextOnce(stringArgs[i]);
       }
 
       return true;
@@ -1245,6 +1301,30 @@ export const createLuaApi = async (context) => {
           creature.gameCoords.z === z,
       );
     },
+    isEntityOnTile: (x, y, z, range = 0) => {
+      const state = getState();
+      const healthBars = state.targeting?.healthBars || [];
+      const targetX = x;
+      const targetY = y;
+      const targetZ = z;
+    
+      // Check if any health bar is within range
+      for (const hb of healthBars) {
+        if (!hb || hb.x === undefined) continue;
+    
+        // Calculate Chebyshev distance (max of absolute differences)
+        const dx = Math.abs(hb.x - targetX);
+        const dy = Math.abs(hb.y - targetY);
+        const dz = Math.abs(hb.z - targetZ);
+        const distance = Math.max(dx, dy, dz);
+    
+        if (distance <= range) {
+          return true;
+        }
+      }
+    
+      return false;
+    },
     setScripts: (enabled) => {
       context.postStoreUpdate('lua/setenabled', !!enabled);
       logger(
@@ -1457,6 +1537,62 @@ export const createLuaApi = async (context) => {
         'info',
         `[Lua/${scriptName}] Used item '${itemName}' on tile (${x}, ${y}, ${z})`,
       );
+      return true;
+    },
+
+    useActionItem: async (itemName, hotkey = null) => {
+      if (!itemName || typeof itemName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useActionItem: invalid item name`,
+        );
+        return false;
+      }
+
+      const state = getState();
+      const activeActionItems = state.gameState?.activeActionItems || {};
+      const item = activeActionItems[itemName];
+
+      if (!item || item.x === undefined || item.y === undefined || item.width <= 0 || item.height <= 0) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] useActionItem: Item '${itemName}' not found or invalid position`,
+        );
+        return false;
+      }
+
+      if (hotkey && typeof hotkey === 'string') {
+        // Use hotkey press
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'keypress',
+            method: 'sendKey',
+            args: [hotkey],
+          },
+        });
+        logger(
+          'info',
+          `[Lua/${scriptName}] Used action item '${itemName}' via hotkey '${hotkey}'`,
+        );
+      } else {
+        // Mouse click randomly in item area
+        const randX = item.x + Math.floor(Math.random() * item.width);
+        const randY = item.y + Math.floor(Math.random() * item.height);
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [randX, randY],
+          },
+        });
+        logger(
+          'info',
+          `[Lua/${scriptName}] Used action item '${itemName}' via mouse click at (${randX}, ${randY})`,
+        );
+      }
+
       return true;
     },
     waitForHealth: async (percentage, timeout = 5000) => {
@@ -1884,6 +2020,447 @@ export const createLuaApi = async (context) => {
         return false;
       }
     },
+    openMarket: async () => {
+      const state = getState();
+      const marketIcon = state.regionCoordinates?.regions?.marketIcon;
+      
+      if (!marketIcon?.x || !marketIcon?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot open market: market icon not found`,
+        );
+        return false;
+      }
+      
+      // Try up to 3 times
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        // Click the market icon
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [marketIcon.x, marketIcon.y],
+          },
+        });
+        
+        // Poll for market modal (10 checks, 200ms apart = 2000ms total)
+        for (let i = 0; i < 10; i++) {
+          await wait(200);
+          
+          // Refresh state to get latest region data
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          
+          const updatedState = getState();
+          const marketModal = updatedState.regionCoordinates?.regions?.marketModal;
+          
+          if (marketModal?.x !== undefined && marketModal?.y !== undefined) {
+            logger(
+              'info',
+              `[Lua/${scriptName}] Market modal opened successfully on attempt ${attempt}`,
+            );
+            return true;
+          }
+        }
+        
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Market modal not detected after attempt ${attempt}/3`,
+        );
+      }
+      
+      logger(
+        'error',
+        `[Lua/${scriptName}] Failed to open market modal after 3 attempts`,
+      );
+      return false;
+    },
+    openStash: async () => {
+      const state = getState();
+      const stashIcon = state.regionCoordinates?.regions?.stashIcon;
+      
+      if (!stashIcon?.x || !stashIcon?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Cannot open stash: stash icon not found`,
+        );
+        return false;
+      }
+      
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [stashIcon.x, stashIcon.y],
+        },
+      });
+      return true;
+    },
+    selectSellToOffer: async (characterName) => {
+      if (!characterName || typeof characterName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] selectSellToOffer: invalid character name`,
+        );
+        return false;
+      }
+      
+      // Refresh state to get latest OCR data
+      if (typeof context.refreshLuaGlobalState === 'function') {
+        await context.refreshLuaGlobalState(true);
+      }
+      
+      const state = getState();
+      const marketSellToList = state.uiValues?.marketSellToList;
+      
+      if (!marketSellToList?.offers || marketSellToList.offers.length === 0) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] selectSellToOffer: no offers found in sell-to list`,
+        );
+        return false;
+      }
+      
+      const targetName = characterName.toLowerCase();
+      const offer = marketSellToList.offers.find(
+        (o) => o.characterName.toLowerCase().includes(targetName),
+      );
+      
+      if (!offer) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] selectSellToOffer: character '${characterName}' not found in offers`,
+        );
+        return false;
+      }
+      
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [offer.position.x, offer.position.y],
+        },
+      });
+      
+      logger(
+        'info',
+        `[Lua/${scriptName}] Clicked on offer from '${offer.characterName}'`,
+      );
+      return true;
+    },
+    clearMarketInput: async () => {
+      const state = getState();
+      const clearButton =
+        state.regionCoordinates?.regions?.marketModal?.children?.clearInputButton;
+      
+      if (!clearButton?.x || !clearButton?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] clearMarketInput: clear button not found`,
+        );
+        return false;
+      }
+      
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [clearButton.x, clearButton.y],
+        },
+      });
+      return true;
+    },
+    selectMaxAmountSellTo: async () => {
+      const state = getState();
+      const sliderMax =
+        state.regionCoordinates?.regions?.marketModal?.children?.sellToSliderMax;
+      
+      if (!sliderMax?.x || !sliderMax?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] selectMaxAmountSellTo: slider max button not found`,
+        );
+        return false;
+      }
+      
+      // Click 5 times with 100ms delay
+      for (let i = 0; i < 5; i++) {
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [sliderMax.x, sliderMax.y],
+          },
+        });
+        if (i < 4) {
+          await wait(100);
+        }
+      }
+      return true;
+    },
+    acceptSellToOffer: async () => {
+      const state = getState();
+      const acceptButton =
+        state.regionCoordinates?.regions?.marketModal?.children?.sellToAcceptButton;
+      
+      if (!acceptButton?.x || !acceptButton?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] acceptSellToOffer: accept button not found`,
+        );
+        return false;
+      }
+      
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [acceptButton.x, acceptButton.y],
+        },
+      });
+      return true;
+    },
+    typeMarketItem: async (itemName) => {
+      if (!itemName || typeof itemName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] typeMarketItem: invalid item name`,
+        );
+        return false;
+      }
+      
+      const state = getState();
+      const marketModal = state.regionCoordinates?.regions?.marketModal;
+      const clearButton = marketModal?.children?.clearInputButton;
+      const searchInput = marketModal?.children?.searchInput;
+      
+      if (!clearButton?.x || !clearButton?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] typeMarketItem: clear button not found`,
+        );
+        return false;
+      }
+      
+      if (!searchInput?.x || !searchInput?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] typeMarketItem: search input not found`,
+        );
+        return false;
+      }
+      
+      // Click clear button
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [clearButton.x, clearButton.y],
+        },
+      });
+      
+      // Wait 200-500ms
+      await wait(Math.floor(Math.random() * 300) + 200);
+      
+      // Click on search input
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [searchInput.x, searchInput.y],
+        },
+      });
+      
+      // Wait 100ms
+      await wait(100);
+      
+      // Type item name
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'keypress',
+          method: 'typeArray',
+          args: [[itemName], false],
+        },
+      });
+      
+      logger(
+        'info',
+        `[Lua/${scriptName}] Typed item name: '${itemName}'`,
+      );
+      return true;
+    },
+    marketSellTo: async (characterName, itemName) => {
+      if (!characterName || typeof characterName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] marketSellTo: invalid character name`,
+        );
+        return false;
+      }
+      
+      if (!itemName || typeof itemName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] marketSellTo: invalid item name`,
+        );
+        return false;
+      }
+      
+      logger(
+        'info',
+        `[Lua/${scriptName}] Starting marketSellTo: item='${itemName}', character='${characterName}'`,
+      );
+      
+      // Check if market is already open
+      let state = getState();
+      let marketModal = state.regionCoordinates?.regions?.marketModal;
+      
+      if (!marketModal || !marketModal.x || !marketModal.y) {
+        logger(
+          'info',
+          `[Lua/${scriptName}] Market not open, attempting to open...`,
+        );
+        
+        const opened = await baseApi.openMarket();
+        if (!opened) {
+          logger(
+            'error',
+            `[Lua/${scriptName}] Failed to open market`,
+          );
+          return false;
+        }
+        
+        // Refresh state after opening
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        marketModal = state.regionCoordinates?.regions?.marketModal;
+      } else {
+        logger(
+          'info',
+          `[Lua/${scriptName}] Market already open`,
+        );
+      }
+      
+      // Wait for market to be ready
+      await wait(300);
+      
+      // Type item name in search
+      logger(
+        'info',
+        `[Lua/${scriptName}] Typing item name: '${itemName}'`,
+      );
+      const typed = await baseApi.typeMarketItem(itemName);
+      if (!typed) {
+        logger(
+          'error',
+          `[Lua/${scriptName}] Failed to type item name`,
+        );
+        return false;
+      }
+      
+      // Wait for search results to populate
+      await wait(500);
+      
+      // Click on items list to load offers
+      state = getState();
+      marketModal = state.regionCoordinates?.regions?.marketModal;
+      const itemsList = marketModal?.children?.itemsList;
+      
+      if (!itemsList?.x || !itemsList?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] Items list not found`,
+        );
+        return false;
+      }
+      
+      logger(
+        'info',
+        `[Lua/${scriptName}] Clicking on items list`,
+      );
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [itemsList.x, itemsList.y],
+        },
+      });
+      
+      // Wait for sell-to list to populate
+      await wait(800);
+      
+      // Refresh state to get OCR data
+      if (typeof context.refreshLuaGlobalState === 'function') {
+        await context.refreshLuaGlobalState(true);
+      }
+      
+      // Select the offer from the character
+      logger(
+        'info',
+        `[Lua/${scriptName}] Selecting offer from '${characterName}'`,
+      );
+      const selected = await baseApi.selectSellToOffer(characterName);
+      if (!selected) {
+        logger(
+          'error',
+          `[Lua/${scriptName}] Failed to select offer from '${characterName}'`,
+        );
+        return false;
+      }
+      
+      // Wait after selecting offer
+      await wait(300);
+      
+      // Select max amount
+      logger(
+        'info',
+        `[Lua/${scriptName}] Selecting max amount`,
+      );
+      const maxSelected = await baseApi.selectMaxAmountSellTo();
+      if (!maxSelected) {
+        logger(
+          'error',
+          `[Lua/${scriptName}] Failed to select max amount`,
+        );
+        return false;
+      }
+      
+      // Wait before accepting
+      await wait(300);
+      
+      // Accept the offer
+      logger(
+        'info',
+        `[Lua/${scriptName}] Accepting offer`,
+      );
+      const accepted = await baseApi.acceptSellToOffer();
+      if (!accepted) {
+        logger(
+          'error',
+          `[Lua/${scriptName}] Failed to accept offer`,
+        );
+        return false;
+      }
+      
+      logger(
+        'info',
+        `[Lua/${scriptName}] Successfully completed marketSellTo`,
+      );
+      return true;
+    },
   };
   let navigationApi = {};
 
@@ -1922,7 +2499,7 @@ export const createLuaApi = async (context) => {
     }
   };
 
-  const goToSection = (sectionName, label) => {
+  const goToSection = async (sectionName, label) => {
     const state = getState();
     const { waypointSections } = state.cavebot;
     const foundEntry = Object.entries(waypointSections).find(
@@ -1944,6 +2521,7 @@ export const createLuaApi = async (context) => {
               'warn',
               `[Lua/${scriptName}] goToSection: Label '${label}' not found in section '${sectionName}'. Failing gracefully.`,
             );
+            
             return;
           }
         }
@@ -1957,21 +2535,30 @@ export const createLuaApi = async (context) => {
           'warn',
           `[Lua/${scriptName}] goToSection: Section '${sectionName}' has no waypoints.`,
         );
+        
       }
     } else {
       logger(
         'warn',
         `[Lua/${scriptName}] goToSection: Section '${sectionName}' not found.`,
       );
+      
     }
+    
   };
 
   if (type === 'cavebot') {
     navigationApi = {
       skipWaypoint: context.advanceToNextWaypoint,
-      goToLabel: context.goToLabel,
+      goToLabel: async (label) => {
+        await context.goToLabel(label);
+        
+      },
       goToSection,
-      goToWpt: context.goToWpt,
+      goToWpt: async (id) => {
+        await context.goToWpt(id);
+        
+      },
       back: (x) => goBackWaypoints(x),
       backLoc: (x, y) => {
         if (!baseApi.isLocation(x)) {
@@ -2005,7 +2592,7 @@ export const createLuaApi = async (context) => {
         if (waypoints[nextIndex])
           context.postStoreUpdate('cavebot/setwptId', waypoints[nextIndex].id);
       },
-      goToLabel: (label) => {
+      goToLabel: async (label) => {
         const state = getState();
         const { waypointSections, currentSection } = state.cavebot;
         const targetWpt = waypointSections[currentSection]?.waypoints.find(
@@ -2013,16 +2600,21 @@ export const createLuaApi = async (context) => {
         );
         if (targetWpt)
           context.postStoreUpdate('cavebot/setwptId', targetWpt.id);
+        
       },
       goToSection,
-      goToWpt: (index) => {
+      goToWpt: async (index) => {
         const arrayIndex = parseInt(index, 10) - 1;
-        if (isNaN(arrayIndex) || arrayIndex < 0) return;
+        if (isNaN(arrayIndex) || arrayIndex < 0) {
+          
+          return;
+        }
         const state = getState();
         const { waypointSections, currentSection } = state.cavebot;
         const waypoints = waypointSections[currentSection]?.waypoints || [];
         if (arrayIndex < waypoints.length)
           context.postStoreUpdate('cavebot/setwptId', waypoints[arrayIndex].id);
+        
       },
       back: (x) => goBackWaypoints(x),
       backLoc: (x, y) => {

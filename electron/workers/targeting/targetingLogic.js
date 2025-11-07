@@ -34,7 +34,9 @@ const movementTracking = {
  * @returns {object|null} The matching rule or null
  */
 export function findRuleForCreatureName(creatureName, targetingList) {
-  if (!creatureName || !targetingList?.length) return null;
+  if (!creatureName || !targetingList?.length) {
+    return null;
+  }
 
   // First try to find an explicit rule
   const explicitRule = targetingList.find(
@@ -96,6 +98,7 @@ export function selectBestTarget(
   targetingList,
   currentTarget = null,
   graceMs = 750,
+  sabInterface = null,
 ) {
   const allCreatures = getCreatures();
   if (!currentTarget || !currentTarget.instanceId) {
@@ -109,6 +112,26 @@ export function selectBestTarget(
   }
 
   const now = Date.now();
+  
+  // Read blocking creature coords from SAB for onlyIfTrapped checks
+  let blockingCreatureCoords = null;
+  if (sabInterface) {
+    try {
+      const cavebotPathResult = sabInterface.get('cavebotPathData');
+      if (cavebotPathResult && cavebotPathResult.data) {
+        const pathData = cavebotPathResult.data;
+        if (pathData.blockingCreatureX !== 0 || pathData.blockingCreatureY !== 0) {
+          blockingCreatureCoords = {
+            x: pathData.blockingCreatureX,
+            y: pathData.blockingCreatureY,
+            z: pathData.blockingCreatureZ,
+          };
+        }
+      }
+    } catch (err) {
+      // Silent
+    }
+  }
 
   let effectiveReachableForCurrent = false;
   let currentTargetStillValid = null;
@@ -139,6 +162,20 @@ export function selectBestTarget(
       currentLookupKey && cLookupKey === currentLookupKey
         ? effectiveReachableForCurrent
         : c.isReachable;
+    
+    // Check if rule requires creature to be trapping (onlyIfTrapped)
+    if (rule && rule.onlyIfTrapped && c.gameCoords) {
+      // Creature is trapping if coordinates match blocking creature from pathfinder
+      const isTrapping = blockingCreatureCoords &&
+        c.gameCoords.x === blockingCreatureCoords.x &&
+        c.gameCoords.y === blockingCreatureCoords.y &&
+        c.gameCoords.z === blockingCreatureCoords.z;
+      
+      if (!isTrapping) {
+        return false; // Skip this creature - not trapping and rule requires it
+      }
+    }
+    
     return isReachableForThis && rule && rule.action === 'Attack';
   });
   logger(

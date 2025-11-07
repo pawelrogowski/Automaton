@@ -205,7 +205,7 @@ const actionBarItems = {
       [143, 0, 89],
     ],
   },
-  ManaPotion: {
+  manaPotion: {
     name: 'Mana Potion',
     iconName: 'Mana_Potion',
     categories: ['potion'],
@@ -1483,6 +1483,84 @@ const actionBarItems = {
       [238, 221, 167],
       [237, 215, 162],
       [144, 111, 93],
+    ],
+  },
+  rope: {
+    name: 'rope',
+    categories: [],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+[161, 108, 71],
+[81, 54, 36],
+[0, 0, 0],
+[59, 39, 26],
+[122, 82, 53],
+[139, 93, 61],
+
+    ],
+  },
+  shovel: {
+    name: 'shovel',
+    categories: [],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [14, 14, 40],
+      [139, 105, 68],
+      [105, 71, 30],
+      [77, 51, 21],
+      [0, 0, 0],
+    ],
+  },
+  pick: {
+    name: 'pick',
+    categories: [],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [32, 21, 10],
+      [135, 104, 70],
+      [64, 44, 23],
+      [32, 21, 10],
+    ],
+  },
+  machete: {
+    name: 'machete',
+    categories: [],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [52, 54, 55],
+      [162, 168, 174],
+      [187, 194, 200],
+      [37, 38, 39],
+    ],
+  },
+  brownMushroom: {
+    name: 'Brown Mushroom',
+    categories: ["food"],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [118, 88, 50],
+      [100, 70, 44],
+      [25, 22, 13],
+      [2, 2, 1],
+    ],
+  },
+  insectoidEggs: {
+    name: 'Insectoid Eggs',
+    categories: ["food"],
+    direction: 'horizontal',
+    offset: { x: 0, y: 0 },
+    sequence: [
+      [52, 35, 22],
+[72, 51, 33],
+[72, 51, 33],
+[0, 0, 0],
+
+
     ],
   },
 };

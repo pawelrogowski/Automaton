@@ -10,6 +10,7 @@ import { createLuaApi } from './luaApi.js';
 import { createStateShortcutObject } from './luaApi.js';
 import { preprocessLuaScript } from './luaScriptProcessor.js';
 import Pathfinder from 'pathfinder-native';
+import { createWorkerInterface, WORKER_IDS } from './sabState/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +24,7 @@ let asyncFunctionNames = [];
 let keepAliveInterval = null;
 let apiInitialized = false;
 let pathfinderInstance = null;
+let sabInterface = null;
 
 // --- State machine to prevent shutdown during init ---
 let workerState = 'pending'; // 'pending' | 'initializing' | 'running'
@@ -212,6 +214,25 @@ const initializeLuaApi = async () => {
       `[Lua Script Worker ${scriptConfig.id}] initializeLuaApi: Fresh state received.`,
     );
 
+    // Initialize sabInterface if available
+    if (workerData.unifiedSAB && !sabInterface) {
+      try {
+        sabInterface = createWorkerInterface(
+          workerData.unifiedSAB,
+          WORKER_IDS.LUA_SCRIPT,
+        );
+        log(
+          'info',
+          `[Lua Script Worker ${scriptConfig.id}] SAB interface initialized`,
+        );
+      } catch (err) {
+        log(
+          'warn',
+          `[Lua Script Worker ${scriptConfig.id}] Failed to initialize SAB interface: ${err.message}`,
+        );
+      }
+    }
+
     const { api, asyncFunctionNames: newNames } = await createLuaApi({
       type: 'script',
       getState: () => currentState,
@@ -227,6 +248,7 @@ const initializeLuaApi = async () => {
       lua: lua,
       postInputAction: createPostInputAction(),
       pathfinderInstance: pathfinderInstance,
+      sabInterface: sabInterface,
     });
 
     asyncFunctionNames = newNames;

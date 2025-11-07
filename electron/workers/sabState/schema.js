@@ -78,6 +78,21 @@ export const SCHEMA = {
     description: 'Battle list entries (written by creatureMonitor)',
   },
 
+  healthBars: {
+    category: PROPERTY_CATEGORIES.REALTIME,
+    type: 'array',
+    maxCount: 200,
+    itemFields: {
+      x: FIELD_TYPES.INT32, // game tile coordinate
+      y: FIELD_TYPES.INT32, // game tile coordinate
+      z: FIELD_TYPES.INT32, // game tile coordinate
+    },
+    itemSize: 3, // 3 ints
+    headerSize: 3, // count + version + update_counter
+    size: 3 + 200 * 3,
+    description: 'All detected health bar tile positions (written by creatureMonitor, excludes player)',
+  },
+
   target: {
     category: PROPERTY_CATEGORIES.REALTIME,
     type: 'struct',
@@ -205,25 +220,51 @@ export const SCHEMA = {
     description: 'Looting state (written by creatureMonitor)',
   },
 
-  targetingList: {
+  preyBalance: {
     category: PROPERTY_CATEGORIES.REALTIME,
-    type: 'array',
-    maxCount: 50,
-    itemFields: {
-      name: { type: FIELD_TYPES.STRING, maxLength: 32 },
-      action: { type: FIELD_TYPES.STRING, maxLength: 4 },
-      priority: FIELD_TYPES.INT32,
-      stickiness: FIELD_TYPES.INT32,
-      stance: FIELD_TYPES.INT32, // 0=Follow, 1=Stand, 2=Reach
-      distance: FIELD_TYPES.INT32,
-      onlyIfTrapped: FIELD_TYPES.INT32, // bool as int
+    type: 'struct',
+    fields: {
+      value: FIELD_TYPES.INT32, // prey balance amount
+      lastUpdateTimestamp: FIELD_TYPES.INT32, // Date.now() when last updated
+      version: FIELD_TYPES.INT32,
     },
-    itemSize: 41, // 32 + 4 + 5 ints = 41
-    headerSize: 3, // count + version + update_counter
-    size: 3 + 50 * 41,
-    description:
-      'Targeting rules list (written by targetingWorker/creatureMonitor)',
+    size: 3,
+    description: 'Prey balance from preyModal (written by ocrWorker)',
   },
+
+  targetingList: {
+      category: PROPERTY_CATEGORIES.REALTIME,
+      type: 'array',
+      maxCount: 50,
+      itemFields: {
+        name: { type: FIELD_TYPES.STRING, maxLength: 32 },
+        action: { type: FIELD_TYPES.STRING, maxLength: 4 },
+        priority: FIELD_TYPES.INT32,
+        stickiness: FIELD_TYPES.INT32,
+        stance: FIELD_TYPES.INT32, // 0=Follow, 1=Stand, 2=Reach
+        distance: FIELD_TYPES.INT32,
+        onlyIfTrapped: FIELD_TYPES.INT32, // bool as int
+      },
+      itemSize: 41, // 32 + 4 + 5 ints = 41
+      headerSize: 3, // count + version + update_counter
+      size: 3 + 50 * 41,
+      description:
+        'Targeting rules list (written by targetingWorker/creatureMonitor)',
+    },
+ 
+    actionItems: {
+      category: PROPERTY_CATEGORIES.REALTIME,
+      type: 'array',
+      maxCount: 20,
+      itemFields: {
+        name: { type: FIELD_TYPES.STRING, maxLength: 32 },
+        count: FIELD_TYPES.INT32,
+      },
+      itemSize: 9, // 32 chars (8 ints) + 1 int
+      headerSize: 3, // count + version + update_counter
+      size: 3 + 20 * 9,
+      description: 'Active action items with counts (written by screenMonitor)',
+    },
 
   // ==================== UI CONFIG DATA ====================
   // Written by workerManager from Redux, read by workers

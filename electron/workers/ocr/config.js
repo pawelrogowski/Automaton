@@ -56,4 +56,24 @@ export const OCR_REGION_CONFIGS = {
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
     throttleMs: 2000, // NEW
   },
+  'preyModal.children.balance': {
+    colors: [[192, 192, 192]], // only this color for balance text
+    parser: regionParsers.preyBalance,
+    storeAction: 'uiValues/setPreyBalance',
+    allowedChars: CHAR_PRESETS.NUMERIC,
+    throttleMs: 500,
+  },
+  'marketModal.children.sellToList': {
+    colors: [
+      [192, 192, 192],
+      [200, 125, 125],
+      [244, 244, 244],
+      [176, 17, 17]
+
+    ], // character name text color
+    parser: regionParsers.marketSellToList,
+    storeAction: 'uiValues/setMarketSellToList',
+    allowedChars: CHAR_PRESETS.ALPHA + ' ',
+    throttleMs: 200,
+  },
 };

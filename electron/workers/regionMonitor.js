@@ -558,6 +558,14 @@ async function mainLoop() {
         // Sanitize the regions object to remove unnecessary data before posting
         const sanitizedRegions = sanitizeRegionsForStore(updatedRegions);
 
+        // Debug: Log when preyModal is detected
+        if (sanitizedRegions.preyModal) {
+          console.log('[RegionMonitor] preyModal detected:', sanitizedRegions.preyModal);
+          if (sanitizedRegions.preyModal.children) {
+            console.log('[RegionMonitor] preyModal.children:', sanitizedRegions.preyModal.children);
+          }
+        }
+
         parentPort.postMessage({
           storeUpdate: true,
           type: setAllRegions.type,

@@ -11,6 +11,7 @@ const initialState = {
   creatureUpdateMs: 0,
   isPausedByScript: false,
   pauseTimerId: null,
+  healthBars: [], // [{ x, y, z }] - All detected health bar tile positions (excludes player)
   version: 0,
 };
 
@@ -128,6 +129,10 @@ const targetingSlice = createSlice({
       state.useBattleList = action.payload;
       state.version = (state.version || 0) + 1;
     },
+    setHealthBars: (state, action) => {
+      state.healthBars = action.payload || [];
+      state.version = (state.version || 0) + 1;
+    },
   },
 });
 
@@ -141,6 +146,7 @@ export const {
   updateCreatureInTargetingList,
   setScriptPause,
   setUseBattleList,
+  setHealthBars,
 } = targetingSlice.actions;
 
 export const setTargetingPause = (ms) => (dispatch, getState) => {

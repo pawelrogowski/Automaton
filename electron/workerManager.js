@@ -1208,12 +1208,25 @@ class WorkerManager {
 
       if (windowId && display) {
         if (!this.sharedData) this.createSharedBuffers();
+        const windowIdChanged = this.previousState && 
+          currentState.global.windowId !== this.previousState.global.windowId;
+        
         if (
           !this.previousState ||
-          currentState.global.windowId !== this.previousState.global.windowId
+          windowIdChanged
         ) {
           const syncArray = new Int32Array(this.sharedData.syncSAB);
           Atomics.store(syncArray, 4, parseInt(windowId, 10) || 0);
+          
+          // Notify workers that window has changed - they should reset initial scan flags
+          if (windowIdChanged) {
+            log('info', '[Worker Manager] Window changed, notifying workers to reset initial scan state');
+            for (const [workerName, workerEntry] of this.workers.entries()) {
+              if (['screenMonitor', 'ocrWorker', 'minimapMonitor', 'regionMonitor'].includes(workerName)) {
+                workerEntry.worker.postMessage({ type: 'window_changed' });
+              }
+            }
+          }
         }
 
         if (

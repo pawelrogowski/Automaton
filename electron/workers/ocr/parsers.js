@@ -252,6 +252,42 @@ function parseGameWorldOcr(ocrData) {
   });
 }
 
+function parsePreyBalance(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) {
+    return null;
+  }
+  // Concatenate all text, remove spaces and non-digits, then parse
+  const fullText = ocrData
+    .map((item) => item?.text?.trim() || '')
+    .join(' ') // Join all text items
+    .replace(/[^0-9]/g, ''); // Remove everything except digits (including spaces, commas, etc.)
+  if (!fullText) {
+    return null;
+  }
+  const balance = parseInt(fullText, 10);
+
+  return isNaN(balance) ? null : balance;
+}
+
+function parseMarketSellToList(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) {
+    return { offers: [] };
+  }
+  const offers = [];
+  ocrData.forEach((item) => {
+    if (!item?.text) return;
+    const characterName = item.text.trim();
+    if (characterName) {
+      offers.push({
+        characterName,
+        position: { x: item.click.x, y: item.click.y },
+        originalPosition: { x: item.x, y: item.y },
+      });
+    }
+  });
+  return { offers };
+}
+
 export const regionParsers = {
   skillsWidget: parseSkillsWidget,
   chatboxMain: parseChatData,
@@ -260,4 +296,6 @@ export const regionParsers = {
   selectCharacterModal: parseSelectCharacterModal,
   vipWidget: parseVipWidget,
   gameWorld: parseGameWorldOcr,
+  preyBalance: parsePreyBalance,
+  marketSellToList: parseMarketSellToList,
 };
