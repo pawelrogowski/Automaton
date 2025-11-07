@@ -76,7 +76,7 @@ let itemHistory = new Map();
 
 const MAX_COOLDOWN_MS = 6000;
 
-// Per-region last scan timestamps for fallback scanning to detect disappearances
+// Per-region last scan timestamps (kept for checksum validation timing)
 const lastScanTs = {
   healthBar: 0,
   manaBar: 0,
@@ -506,26 +506,13 @@ async function processGameState() {
       return dirtyRects.some((dr) => rectsIntersect(expanded, dr));
     };
 
-    // Fallback thresholds (ms)
-    const FALLBACK = {
-      healthBar: 300,
-      manaBar: 300,
-      cooldownBar: 120,
-      statusBar: 150, // Reduced from 300ms for faster status effect detection
-      equip: 500,
-      hotkeyBar: 100, // Reduced to 50ms for faster detection of item changes/disappearances
-    };
-    const MIN_HOTKEY_INTERVAL_MS = 100; // Reduced for faster response to changes
+    // No fallback thresholds needed - dirty rect accumulation ensures we never miss changes
     const HOTKEY_BAR_PADDING = 4; // Pixels to expand intersection check for edge cases
 
     const scanIfNeeded = async () => {
-      // Health percentage with robust checksum gating
+      // Health percentage with robust checksum gating - only on dirty or initial
       const hbDirty = isDirty(regions.healthBar);
-      if (
-        hbDirty ||
-        now - lastScanTs.healthBar > FALLBACK.healthBar ||
-        !hasScannedInitially
-      ) {
+      if (hbDirty || !hasScannedInitially) {
         const ck = computeBarChecksum(
           bufferToUse,
           width,
@@ -536,10 +523,8 @@ async function processGameState() {
           lastBarChecksums.healthBar,
           ck,
         );
-        const withinFallback = now - lastScanTs.healthBar < FALLBACK.healthBar;
-        // Skip calculation only if checksum is unchanged AND we're within fallback period AND we've scanned before
-        const shouldSkip =
-          checksumUnchanged && withinFallback && hasScannedInitially;
+        // Skip calculation only if checksum is unchanged AND we've scanned before
+        const shouldSkip = checksumUnchanged && hasScannedInitially;
         if (!shouldSkip) {
           const hpValue = calculateHealthBar(
             bufferToUse,
@@ -559,19 +544,13 @@ async function processGameState() {
         }
       }
 
-      // Mana percentage with robust checksum gating
+      // Mana percentage with robust checksum gating - only on dirty or initial
       const mbDirty = isDirty(regions.manaBar);
-      if (
-        mbDirty ||
-        now - lastScanTs.manaBar > FALLBACK.manaBar ||
-        !hasScannedInitially
-      ) {
+      if (mbDirty || !hasScannedInitially) {
         const ck = computeBarChecksum(bufferToUse, width, regions.manaBar, 94);
         const checksumUnchanged = checksumsMatch(lastBarChecksums.manaBar, ck);
-        const withinFallback = now - lastScanTs.manaBar < FALLBACK.manaBar;
-        // Skip calculation only if checksum is unchanged AND we're within fallback period AND we've scanned before
-        const shouldSkip =
-          checksumUnchanged && withinFallback && hasScannedInitially;
+        // Skip calculation only if checksum is unchanged AND we've scanned before
+        const shouldSkip = checksumUnchanged && hasScannedInitially;
         if (!shouldSkip) {
           const mpValue = calculateManaBar(
             bufferToUse,
@@ -591,13 +570,9 @@ async function processGameState() {
         }
       }
 
-      // Cooldowns
+      // Cooldowns - only on dirty or initial
       const cdDirty = isDirty(regions.cooldownBar);
-      if (
-        cdDirty ||
-        now - lastScanTs.cooldownBar > FALLBACK.cooldownBar ||
-        !hasScannedInitially
-      ) {
+      if (cdDirty || !hasScannedInitially) {
         Object.assign(
           lastCalculatedState,
           calculateCooldowns(regions.cooldownBar),
@@ -605,29 +580,21 @@ async function processGameState() {
         lastScanTs.cooldownBar = now;
       }
 
-      // Character status
+      // Character status - only on dirty or initial
       const sbDirty = isDirty(regions.statusBar);
-      if (
-        sbDirty ||
-        now - lastScanTs.statusBar > FALLBACK.statusBar ||
-        !hasScannedInitially
-      ) {
+      if (sbDirty || !hasScannedInitially) {
         lastCalculatedState.characterStatus = calculateCharacterStatus(
           regions.statusBar,
         );
         lastScanTs.statusBar = now;
       }
 
-      // Equipped items (amulet/ring/boots)
+      // Equipped items (amulet/ring/boots) - only on dirty or initial
       const equipDirty =
         isDirty(regions.amuletSlot) ||
         isDirty(regions.ringSlot) ||
         isDirty(regions.bootsSlot);
-      if (
-        equipDirty ||
-        now - lastScanTs.equip > FALLBACK.equip ||
-        !hasScannedInitially
-      ) {
+      if (equipDirty || !hasScannedInitially) {
         lastCalculatedState.equippedItems = calculateEquippedItems(
           regions.amuletSlot,
           regions.ringSlot,
@@ -636,15 +603,12 @@ async function processGameState() {
         lastScanTs.equip = now;
       }
 
-      // Hotkey bar action items (heaviest) - Enhanced with better accumulation and forced scans
+      // Hotkey bar action items (heaviest) - Only process on dirty rects or initial scan
       const hkDirty = isDirty(regions.hotkeyBar, HOTKEY_BAR_PADDING);
-      const hkSince = now - lastScanTs.hotkeyBar;
-   
-      // Force scan more frequently for hotkey bar to catch disappearances reliably
-      // Scan if: dirty intersection, fallback interval, initial scan
+
+      // Only scan if: dirty intersection OR initial scan (no fallback timing)
       if (
         hkDirty ||
-        hkSince > FALLBACK.hotkeyBar ||
         !hasScannedInitially
       ) {
         let searchArea = regions.hotkeyBar;

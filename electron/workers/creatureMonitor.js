@@ -598,15 +598,14 @@ async function performOperation() {
       }
     }
 
-    // ===== PHASE 2: OCR battle list =====n
+    // ===== PHASE 2: OCR battle list =====
     let battleListEntries = lastBattleListEntries;
-    let forceBattleListOcr = false;
 
-    if (dirtyRects.length > 0 || forceBattleListOcr) {
+    // Only OCR battle list if it actually changed (dirty rect intersection)
+    if (dirtyRects.length > 0) {
       if (
         regions.battleList &&
-        (dirtyRects.some((r) => rectsIntersect(r, regions.battleList)) ||
-          forceBattleListOcr)
+        dirtyRects.some((r) => rectsIntersect(r, regions.battleList))
       ) {
         battleListEntries = await processBattleListOcr(
           sharedBufferView,

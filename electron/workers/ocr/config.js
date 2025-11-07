@@ -4,7 +4,7 @@
 import { regionParsers } from './parsers.js';
 import regionDefinitions from '../../constants/regionDefinitions.js';
 
-export const MAIN_LOOP_INTERVAL = 5;
+export const MAIN_LOOP_INTERVAL = 100;
 
 export const FRAME_COUNTER_INDEX = 0;
 export const WIDTH_INDEX = 1;
