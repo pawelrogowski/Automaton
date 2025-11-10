@@ -10,6 +10,78 @@ const getNested = (obj, path) => {
 };
 
 /**
+ * Sanitizes item names by converting to lowercase and removing spaces.
+ * @param {string} name - The item name to sanitize.
+ * @returns {string} The sanitized name.
+ */
+const sanitizeItemName = (name) => {
+  return name.toLowerCase().replace(/\s+/g, '');
+};
+
+/**
+ * Finds the longest common substring between two strings.
+ * @param {string} str1 - First string.
+ * @param {string} str2 - Second string.
+ * @returns {string} The longest common substring.
+ */
+const longestCommonSubstring = (str1, str2) => {
+  const m = str1.length;
+  const n = str2.length;
+  let maxLength = 0;
+  let endIndex = 0;
+
+  const dp = Array(m + 1).fill().map(() => Array(n + 1).fill(0));
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+        if (dp[i][j] > maxLength) {
+          maxLength = dp[i][j];
+          endIndex = i;
+        }
+      }
+    }
+  }
+
+  return str1.substring(endIndex - maxLength, endIndex);
+};
+
+/**
+ * Finds the best matching item from the OCR list based on the search name.
+ * Prioritizes exact matches, then longest common substring if at least half the search name length.
+ * @param {string} searchName - The item name to search for.
+ * @param {Array} items - Array of items with 'name' property.
+ * @returns {object|null} The best matching item or null.
+ */
+const findBestItemMatch = (searchName, items) => {
+  const sanitizedSearch = sanitizeItemName(searchName);
+
+  // First, try exact match
+  let exactMatch = items.find(item =>
+    sanitizeItemName(item.name) === sanitizedSearch
+  );
+  if (exactMatch) return exactMatch;
+
+  // If no exact match, find the one with longest common substring
+  let bestMatch = null;
+  let maxCommonLength = 0;
+
+  for (const item of items) {
+    const sanitizedItem = sanitizeItemName(item.name);
+    const common = longestCommonSubstring(sanitizedSearch, sanitizedItem);
+    const commonLength = common.length;
+
+    if (commonLength > maxCommonLength && commonLength >= Math.ceil(sanitizedSearch.length / 2)) {
+      maxCommonLength = commonLength;
+      bestMatch = item;
+    }
+  }
+
+  return bestMatch;
+};
+
+/**
  * Creates an object with getters for convenient, direct access to state in Lua.
  * This object will be exposed globally in Lua as `__BOT_STATE__`.
  * @param {function} getState - A function that returns the latest full Redux state.
@@ -254,6 +326,36 @@ export const createStateShortcutObject = (getState, type) => {
     get: () => getState().uiValues?.preyBalance || 0,
     enumerable: true,
   });
+  Object.defineProperty(shortcuts, 'npcTalkModalSearchInput', {
+    get: () => getState().uiValues?.npcTalkModalSearchInput?.text || '',
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'npcTalkModalAmountInput', {
+    get: () => getState().uiValues?.npcTalkModalAmountInput?.amount || '',
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'npcTalkWindowOpen', {
+    get: () => !!getState().regionCoordinates?.regions?.npcTalkModal,
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'tradeOpen', {
+    get: () => {
+      const buyActive = getState().uiValues?.npcTalkModalBuySectionActive?.active;
+      const sellActive = getState().uiValues?.npcTalkModalSellSectionActive?.active;
+      return !!(buyActive || sellActive);
+    },
+    enumerable: true,
+  });
+  Object.defineProperty(shortcuts, 'tradeMode', {
+    get: () => {
+      const buyActive = getState().uiValues?.npcTalkModalBuySectionActive?.active;
+      const sellActive = getState().uiValues?.npcTalkModalSellSectionActive?.active;
+      if (buyActive && !sellActive) return 'buy';
+      if (sellActive && !buyActive) return 'sell';
+      return 'unknown';
+    },
+    enumerable: true,
+  });
   Object.defineProperty(shortcuts, 'standTime', {
     get: () => {
       const lastMoveTime = getState().gameState?.lastMoveTime;
@@ -351,7 +453,8 @@ export const createLuaApi = async (context) => {
     'acceptSellToOffer',
     'typeMarketItem',
     'marketSellTo',
-    'setSetting',
+    'sellItem',
+    'buyItem',
     'itemCount',
   ];
   const getWindowId = () => getState()?.global?.windowId;
@@ -401,9 +504,44 @@ export const createLuaApi = async (context) => {
       if (conditionMet) {
         return true;
       }
-      await new Promise((resolve) => setTimeout(resolve, interval));
+      await wait(interval);
     }
     logger('info', `[Lua/${scriptName}] waitFor timed out for path: '${path}'`);
+    return false;
+  };
+
+  /**
+   * Smart polling function that waits for a condition with adaptive timing
+   * @param {function} conditionFn - Function that returns true when condition is met
+   * @param {number} timeout - Maximum time to wait in ms
+   * @param {number} initialWait - Initial wait before starting to poll
+   * @param {number} pollInterval - Interval between polls
+   * @returns {boolean} - True if condition was met, false if timed out
+   */
+  const smartPoll = async (conditionFn, timeout = 5000, initialWait = 500, pollInterval = 200) => {
+    // Initial wait to allow UI to update
+    if (initialWait > 0) {
+      await wait(initialWait);
+    }
+
+    const startTime = Date.now();
+    let iterations = 0;
+
+    while (Date.now() - startTime < timeout) {
+      // Refresh state before checking condition
+      if (typeof context.refreshLuaGlobalState === 'function') {
+        await context.refreshLuaGlobalState(true);
+      }
+
+      if (conditionFn()) {
+        return true;
+      }
+
+      iterations++;
+      await wait(pollInterval);
+    }
+
+    logger('info', `[Lua/${scriptName}] smartPoll timed out after ${iterations} iterations`);
     return false;
   };
 
@@ -908,15 +1046,15 @@ export const createLuaApi = async (context) => {
           // Say greeting to trigger NPC dialog
           await typeTextOnce(greeting);
           
-          // Poll for 2 seconds (10 checks, 200ms apart)
-          for (let i = 0; i < 10; i++) {
+          // Poll for 3 seconds (15 checks, 200ms apart)
+          for (let i = 0; i < 15; i++) {
             await wait(200);
-            
+
             // Refresh state to get latest region data
             if (typeof context.refreshLuaGlobalState === 'function') {
               await context.refreshLuaGlobalState(true);
             }
-            
+
             if (isNpcModalOpen()) {
               logger(
                 'info',
@@ -1016,14 +1154,23 @@ export const createLuaApi = async (context) => {
       }
       return true;
     },
-    clickAbsolute: async (button, x, y) => {
+    clickAbsolute: async (button, x, y, width = 1, height = 1) => {
+      let clickX = x;
+      let clickY = y;
+
+      // If width and height are bigger than 1x1, click randomly within the region
+      if (width > 1 && height > 1) {
+        clickX = x + Math.floor(Math.random() * width);
+        clickY = y + Math.floor(Math.random() * height);
+      }
+
       if (button === 'right') {
         await postInputAction({
           type: 'script',
           action: {
             module: 'mouseController',
             method: 'rightClick',
-            args: [x, y],
+            args: [clickX, clickY],
           },
         });
       } else {
@@ -1032,7 +1179,7 @@ export const createLuaApi = async (context) => {
           action: {
             module: 'mouseController',
             method: 'leftClick',
-            args: [x, y],
+            args: [clickX, clickY],
           },
         });
       }
@@ -2036,14 +2183,7 @@ export const createLuaApi = async (context) => {
       // Try up to 3 times
       for (let attempt = 1; attempt <= 3; attempt++) {
         // Click the market icon
-        await postInputAction({
-          type: 'script',
-          action: {
-            module: 'mouseController',
-            method: 'leftClick',
-            args: [marketIcon.x, marketIcon.y],
-          },
-        });
+        await baseApi.clickAbsolute('left', marketIcon.x, marketIcon.y);
         
         // Poll for market modal (10 checks, 200ms apart = 2000ms total)
         for (let i = 0; i < 10; i++) {
@@ -2300,7 +2440,7 @@ export const createLuaApi = async (context) => {
       );
       return true;
     },
-    setSetting: (...args) => {
+    setSetting: async (...args) => {
       if (args.length < 2) {
         logger(
           'warn',
@@ -2439,6 +2579,7 @@ export const createLuaApi = async (context) => {
           }
 
           context.postStoreUpdate('rules/setenabled', processedValue);
+          await wait(10);
           logger(
             'info',
             `[Lua/${scriptName}] Updated rules property '${property}' to '${processedValue}'`,
@@ -2470,6 +2611,7 @@ export const createLuaApi = async (context) => {
           }
 
           context.postStoreUpdate('cavebot/setenabled', processedValue);
+          await wait(10);
           logger(
             'info',
             `[Lua/${scriptName}] Updated cavebot property '${property}' to '${processedValue}'`,
@@ -2501,6 +2643,7 @@ export const createLuaApi = async (context) => {
           }
 
           context.postStoreUpdate('lua/setenabled', processedValue);
+          await wait(10);
           logger(
             'info',
             `[Lua/${scriptName}] Updated lua property '${property}' to '${processedValue}'`,
@@ -2676,6 +2819,767 @@ export const createLuaApi = async (context) => {
         'info',
         `[Lua/${scriptName}] Successfully completed marketSellTo`,
       );
+      return true;
+    },
+    sellItem: async (itemName, amount = null) => {
+      // Handle "all" amount for selling
+      if (amount === "all") {
+        amount = null; // Don't specify amount for selling all
+      }
+      if (!itemName || typeof itemName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] sellItem: invalid item name`,
+        );
+        return false;
+      }
+
+      // If amount is negative or 0, skip operation and return success
+      if (amount !== null && amount !== undefined && amount <= 0) {
+        return true;
+      }
+
+      logger(
+        'info',
+        `[Lua/${scriptName}] Starting sellItem: item='${itemName}', amount=${amount}`,
+      );
+
+      // Check if NPC modal is open
+      let state = getState();
+      let npcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+
+      if (!npcTalkModal || !npcTalkModal.x || !npcTalkModal.y) {
+        logger('info', `[Lua/${scriptName}] sellItem: NPC modal not found, attempting to open with npcTalk`);
+        const opened = await baseApi.npcTalk("hi");
+        if (!opened) {
+          logger('warn', `[Lua/${scriptName}] sellItem: Failed to open NPC modal`);
+          return false;
+        }
+        // Refresh state
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        npcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+      }
+
+      // Wait for NPC modal children to be populated (buttons to appear)
+      let modalReady = false;
+      for (let i = 0; i < 15; i++) { // 3 seconds
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        npcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+        const hasTradeButton = !!(npcTalkModal?.children?.tradeButton?.x && npcTalkModal?.children?.tradeButton?.y);
+        if (hasTradeButton) {
+          modalReady = true;
+          break;
+        }
+        await wait(200);
+      }
+
+      if (!modalReady) {
+        return false;
+      }
+
+      // Check if trade sidebar is already open
+      // Check for the presence of section buttons which appear when sidebar is open
+      const tradeOpen = !!(npcTalkModal?.children?.buySectionButton || npcTalkModal?.children?.sellSectionButton);
+
+      if (!tradeOpen) {
+        // Open trade sidebar
+        const tradeButton = npcTalkModal.children?.tradeButton;
+        if (!tradeButton?.x || !tradeButton?.y) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] sellItem: trade button not found`,
+          );
+          return false;
+        }
+
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [tradeButton.x, tradeButton.y],
+          },
+        });
+
+        // Poll for trade sidebar to open (15 iterations, 200ms each = 3 seconds)
+        let tradeSidebarOpened = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+          const nowTradeOpen = !!(currentNpcTalkModal?.children?.buySectionButton || currentNpcTalkModal?.children?.sellSectionButton);
+          if (nowTradeOpen) {
+            tradeSidebarOpened = true;
+            break;
+          }
+        }
+        if (!tradeSidebarOpened) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] sellItem: Trade sidebar did not open`,
+          );
+          return false;
+        }
+
+        // Poll for all UI elements to be fully detected (15 iterations, 200ms each = 3 seconds)
+        let uiReady = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+          const hasBuySectionButton = !!currentNpcTalkModal?.children?.buySectionButton;
+          const hasSellSectionButton = !!currentNpcTalkModal?.children?.sellSectionButton;
+          if (hasBuySectionButton && hasSellSectionButton) {
+            uiReady = true;
+            npcTalkModal = currentNpcTalkModal; // Update reference
+            break;
+          }
+        }
+        if (!uiReady) {
+          logger('warn', `[Lua/${scriptName}] sellItem: UI never became ready`);
+          return false;
+        }
+      }
+
+      // Check if we're in sell mode, if not switch to it
+      const sellActive = !!npcTalkModal?.children?.sellSectionActive;
+      if (!sellActive) {
+        const sellSectionButton = npcTalkModal.children?.sellSectionButton;
+        if (!sellSectionButton?.x || !sellSectionButton?.y) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] sellItem: sell section button not found`,
+          );
+          return false;
+        }
+
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [sellSectionButton.x, sellSectionButton.y],
+          },
+        });
+
+        // Poll for sell mode to be active (15 iterations, 200ms each = 3 seconds)
+        let sellModeActive = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+          const nowSellActive = !!currentNpcTalkModal?.children?.sellSectionActive;
+          if (nowSellActive) {
+            sellModeActive = true;
+            break;
+          }
+        }
+        if (!sellModeActive) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] sellItem: Failed to activate sell mode`,
+          );
+          return false;
+        }
+
+        // Wait 2000ms for UI to settle after mode switch
+        await wait(2000);
+      }
+
+      // Clear search input
+      const clearButton = npcTalkModal.children?.clearSearchButton;
+      if (clearButton?.x && clearButton?.y) {
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [clearButton.x, clearButton.y],
+          },
+        });
+
+        // Poll for search to be cleared (15 iterations, 200ms each = 3 seconds)
+        let searchCleared = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const searchText = state.uiValues?.npcTalkModalSearchInput?.text || '';
+          if (searchText === '') {
+            searchCleared = true;
+            break;
+          }
+        }
+        if (!searchCleared) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] sellItem: Search not cleared`,
+          );
+          return false;
+        }
+      }
+
+      // Click on search input and type item name
+      const searchInput = npcTalkModal.children?.searchInput;
+      if (!searchInput?.x || !searchInput?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] sellItem: search input not found`,
+        );
+        return false;
+      }
+
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [searchInput.x, searchInput.y],
+        },
+      });
+      await wait(200);
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'keypress',
+          method: 'typeArray',
+          args: [[itemName], false],
+        },
+      });
+
+      // Wait for search results to populate after typing
+      await wait(500);
+
+      // Poll for trade items to be populated AND contain the target item (15 iterations, 200ms each = 3 seconds)
+      let targetItem = null;
+      let tradeItems = [];
+      for (let i = 0; i < 15; i++) {
+        await wait(200);
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        tradeItems = state.uiValues?.npcTalkModalTradeItems?.items || [];
+
+        if (tradeItems.length > 0) {
+          // Filter out non-item entries like "Price"
+          const validItems = tradeItems.filter(item =>
+            item.name &&
+            item.name.toLowerCase() !== 'price' &&
+            !item.name.toLowerCase().includes('price') &&
+            item.name.length > 2 // Filter out very short entries
+          );
+
+          // Check if target item is now available
+          targetItem = findBestItemMatch(itemName, validItems);
+
+          if (targetItem) {
+            break;
+          }
+        }
+      }
+
+      if (!targetItem) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] sellItem: Item '${itemName}' not found in trade list`,
+        );
+        return false;
+      }
+
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [targetItem.position.x, targetItem.position.y],
+        },
+      });
+
+      // If amount is specified, enter it in the amount input
+      if (amount !== null && amount !== undefined) {
+        const amountInput = npcTalkModal.children?.amountInput;
+        if (amountInput?.x && amountInput?.y) {
+          await postInputAction({
+            type: 'script',
+            action: {
+              module: 'mouseController',
+              method: 'leftClick',
+              args: [amountInput.x, amountInput.y],
+            },
+          });
+          await wait(2000);
+          await postInputAction({
+            type: 'script',
+            action: {
+              module: 'keypress',
+              method: 'typeArray',
+              args: [[amount.toString()], false],
+            },
+          });
+          await wait(2000);
+        }
+      }
+
+      // If amount is 0 or negative, skip clicking accept
+      if (amount !== null && amount !== undefined && amount <= 0) {
+        return true;
+      }
+
+      // Click accept button
+      const acceptButton = npcTalkModal.children?.acceptButton;
+      if (!acceptButton?.x || !acceptButton?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] sellItem: accept button not found`,
+        );
+        return false;
+      }
+
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [acceptButton.x, acceptButton.y],
+        },
+      });
+      await wait(300);
+
+
+      logger('info', `[Lua/${scriptName}] sellItem: Successfully sold item '${itemName}'`);
+      return true;
+    },
+    buyItem: async (itemName, amount = null) => {
+      if (!itemName || typeof itemName !== 'string') {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] buyItem: invalid item name`,
+        );
+        return false;
+      }
+
+      // If amount is negative or 0, skip operation and return success
+      if (amount !== null && amount !== undefined && amount <= 0) {
+        return true;
+      }
+
+      logger(
+        'info',
+        `[Lua/${scriptName}] Starting buyItem: item='${itemName}', amount=${amount}`,
+      );
+
+      // Check if NPC modal is open
+      let state = getState();
+      let npcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+console.log(npcTalkModal)
+      if (!npcTalkModal || !npcTalkModal.x || !npcTalkModal.y) {
+        logger('info', `[Lua/${scriptName}] buyItem: NPC modal not found, attempting to open with npcTalk`);
+        const opened = await baseApi.npcTalk("hi");
+        if (!opened) {
+          logger('warn', `[Lua/${scriptName}] buyItem: Failed to open NPC modal`);
+          return false;
+        }
+        // Refresh state
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        npcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+      }
+
+      // Wait for NPC modal children to be populated (buttons to appear)
+      let modalReady = false;
+      for (let i = 0; i < 15; i++) { // 3 seconds
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        npcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+        const hasTradeButton = !!(npcTalkModal?.children?.tradeButton?.x && npcTalkModal?.children?.tradeButton?.y);
+        console.log(hasTradeButton)
+        if (hasTradeButton) {
+          modalReady = true;
+          break;
+        }
+        await wait(200);
+      }
+
+      if (!modalReady) {
+        return false;
+      }
+
+      // Check if trade sidebar is already open
+      // Check for the presence of section buttons which appear when sidebar is open
+      const tradeOpen = !!(npcTalkModal?.children?.buySectionButton || npcTalkModal?.children?.sellSectionButton);
+      console.log(`[Lua/${scriptName}] buyItem: Initial check - tradeOpen: ${tradeOpen}, children keys: ${Object.keys(npcTalkModal?.children || {})}`);
+
+      if (!tradeOpen) {
+        // Open trade sidebar
+        const tradeButton = npcTalkModal.children?.tradeButton;
+        if (!tradeButton?.x || !tradeButton?.y) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] buyItem: trade button not found`,
+          );
+          return false;
+        }
+
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [tradeButton.x, tradeButton.y],
+          },
+        });
+
+        // Poll for trade sidebar to open (15 iterations, 200ms each = 3 seconds)
+        let tradeSidebarOpened = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+          const nowTradeOpen = !!(currentNpcTalkModal?.children?.buySectionButton || currentNpcTalkModal?.children?.sellSectionButton);
+          if (nowTradeOpen) {
+            tradeSidebarOpened = true;
+            break;
+          }
+        }
+        if (!tradeSidebarOpened) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] buyItem: Trade sidebar did not open`,
+          );
+          return false;
+        }
+
+        // Poll for all UI elements to be fully detected (15 iterations, 200ms each = 3 seconds)
+        let uiReady = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+          const hasBuySectionButton = !!currentNpcTalkModal?.children?.buySectionButton;
+          const hasSellSectionButton = !!currentNpcTalkModal?.children?.sellSectionButton;
+          const hasBuySectionActive = !!currentNpcTalkModal?.children?.buySectionActive;
+          const hasSellSectionActive = !!currentNpcTalkModal?.children?.sellSectionActive;
+          console.log(`[Lua/${scriptName}] buyItem: UI poll ${i + 1}/15 - buySectionButton: ${hasBuySectionButton}, sellSectionButton: ${hasSellSectionButton}, buySectionActive: ${hasBuySectionActive}, sellSectionActive: ${hasSellSectionActive}`);
+          if (hasBuySectionButton && hasSellSectionButton) {
+            uiReady = true;
+            npcTalkModal = currentNpcTalkModal; // Update reference
+            console.log(`[Lua/${scriptName}] buyItem: UI fully ready, children keys: ${Object.keys(npcTalkModal?.children || {})}`);
+            break;
+          }
+        }
+        if (!uiReady) {
+          console.log(`[Lua/${scriptName}] buyItem: UI never became ready`);
+          logger('warn', `[Lua/${scriptName}] buyItem: UI never became ready`);
+          return false;
+        }
+      } else {
+        console.log(`[Lua/${scriptName}] buyItem: Sidebar already open, skipping trade button click`);
+      }
+
+      // Check if we're in buy mode, if not switch to it
+      const buyActive = !!npcTalkModal?.children?.buySectionActive;
+      console.log(`[Lua/${scriptName}] buyItem: buyActive: ${buyActive}`);
+      if (!buyActive) {
+        const buySectionButton = npcTalkModal.children?.buySectionButton;
+        if (!buySectionButton?.x || !buySectionButton?.y) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] buyItem: buy section button not found`,
+          );
+          return false;
+        }
+
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [buySectionButton.x, buySectionButton.y],
+          },
+        });
+
+        // Poll for buy mode to be active (15 iterations, 200ms each = 3 seconds)
+        let buyModeActive = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+          const nowBuyActive = !!currentNpcTalkModal?.children?.buySectionActive;
+          if (nowBuyActive) {
+            buyModeActive = true;
+            break;
+          }
+        }
+        if (!buyModeActive) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] buyItem: Failed to activate buy mode`,
+          );
+          return false;
+        }
+
+        // Wait 2000ms for UI to settle after mode switch
+        await wait(2000);
+        console.log(`[Lua/${scriptName}] buyItem: After switching to buy mode - children keys: ${Object.keys(npcTalkModal?.children || {})}`);
+      } else {
+        console.log(`[Lua/${scriptName}] buyItem: Already in buy mode, proceeding`);
+      }
+
+      // Wait for buy section button to appear and switch to buy mode
+      const buySectionButton = npcTalkModal.children?.buySectionButton;
+      if (!buySectionButton?.x || !buySectionButton?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] buyItem: buy section button not found`,
+        );
+        return false;
+      }
+
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [buySectionButton.x, buySectionButton.y],
+        },
+      });
+
+      // Poll for buy mode to be active (15 iterations, 200ms each = 3 seconds)
+      let buyModeActive = false;
+      for (let i = 0; i < 15; i++) {
+        await wait(200);
+        if (typeof context.refreshLuaGlobalState === 'function') {
+          await context.refreshLuaGlobalState(true);
+        }
+        state = getState();
+        const currentNpcTalkModal = state.regionCoordinates?.regions?.npcTalkModal;
+        const buyActive = !!currentNpcTalkModal?.children?.buySectionActive;
+        if (buyActive) {
+          buyModeActive = true;
+          break;
+        }
+      }
+      if (!buyModeActive) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] buyItem: Failed to activate buy mode`,
+        );
+        return false;
+      }
+
+      // Clear search input
+      const clearButton = npcTalkModal.children?.clearSearchButton;
+      if (clearButton?.x && clearButton?.y) {
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [clearButton.x, clearButton.y],
+          },
+        });
+
+        // Poll for search to be cleared (15 iterations, 200ms each = 3 seconds)
+        let searchCleared = false;
+        for (let i = 0; i < 15; i++) {
+          await wait(200);
+          if (typeof context.refreshLuaGlobalState === 'function') {
+            await context.refreshLuaGlobalState(true);
+          }
+          state = getState();
+          const searchText = state.uiValues?.npcTalkModalSearchInput?.text || '';
+          if (searchText === '') {
+            searchCleared = true;
+            break;
+          }
+        }
+        if (!searchCleared) {
+          logger(
+            'warn',
+            `[Lua/${scriptName}] buyItem: Search not cleared`,
+          );
+          return false;
+        }
+      }
+
+      // Click on search input and type item name
+      const searchInput = npcTalkModal.children?.searchInput;
+      if (!searchInput?.x || !searchInput?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] buyItem: search input not found`,
+        );
+        return false;
+      }
+
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [searchInput.x, searchInput.y],
+        },
+      });
+      await wait(200);
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'keypress',
+          method: 'typeArray',
+          args: [[itemName], false],
+        },
+      });
+
+      // Poll for trade items to be populated AND contain the target item using smart polling
+      let targetItem = null;
+      const itemFound = await smartPoll(() => {
+        const state = getState();
+        const tradeItems = state.uiValues?.npcTalkModalTradeItems?.items || [];
+
+        if (tradeItems.length > 0) {
+          // Filter out non-item entries like "Price"
+          const validItems = tradeItems.filter(item =>
+            item.name &&
+            item.name.toLowerCase() !== 'price' &&
+            !item.name.toLowerCase().includes('price') &&
+            item.name.length > 2 // Filter out very short entries
+          );
+
+          // Check if target item is now available
+          targetItem = findBestItemMatch(itemName, validItems);
+          return !!targetItem;
+        }
+        return false;
+      }, 3000, 500, 200); // 3 second timeout, 500ms initial wait, 200ms poll interval
+
+      if (!itemFound) {
+        targetItem = null;
+      }
+
+      if (!targetItem) {
+        console.log(`[Lua/${scriptName}] buyItem: Item '${itemName}' not found in trade list after all polls`);
+        logger(
+          'warn',
+          `[Lua/${scriptName}] buyItem: Item '${itemName}' not found in trade list`,
+        );
+        return false;
+      }
+
+      console.log(`[Lua/${scriptName}] buyItem: Selecting item '${targetItem.name}'`);
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [targetItem.position.x, targetItem.position.y],
+        },
+      });
+
+      // If amount is specified, enter it in the amount input
+      if (amount !== null && amount !== undefined) {
+        console.log(`[Lua/${scriptName}] buyItem: About to enter amount: ${amount}`);
+        const amountInput = npcTalkModal.children?.amountInput;
+        if (amountInput?.x && amountInput?.y) {
+          await postInputAction({
+            type: 'script',
+            action: {
+              module: 'mouseController',
+              method: 'leftClick',
+              args: [amountInput.x, amountInput.y],
+            },
+          });
+          await wait(2000);
+          await postInputAction({
+            type: 'script',
+            action: {
+              module: 'keypress',
+              method: 'typeArray',
+              args: [[amount.toString()], false],
+            },
+          });
+          await wait(2000);
+          console.log(`[Lua/${scriptName}] buyItem: Finished entering amount`);
+        } else {
+          console.log(`[Lua/${scriptName}] buyItem: Amount input not found`);
+        }
+      } else {
+        console.log(`[Lua/${scriptName}] buyItem: No amount specified, skipping amount input`);
+      }
+
+      // If amount is 0 or negative, skip clicking accept
+      if (amount !== null && amount !== undefined && amount <= 0) {
+        return true;
+      }
+
+      // Click accept button
+      const acceptButton = npcTalkModal.children?.acceptButton;
+      if (!acceptButton?.x || !acceptButton?.y) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] buyItem: accept button not found`,
+        );
+        return false;
+      }
+
+      console.log(`[Lua/${scriptName}] buyItem: Clicking accept button`);
+      await postInputAction({
+        type: 'script',
+        action: {
+          module: 'mouseController',
+          method: 'leftClick',
+          args: [acceptButton.x, acceptButton.y],
+        },
+      });
+      await wait(300);
+
+      // Click buy button to close modal
+      const buyButton = npcTalkModal.children?.yesButton;
+      if (buyButton?.x && buyButton?.y) {
+        console.log(`[Lua/${scriptName}] buyItem: Clicking buy button to close modal`);
+        await postInputAction({
+          type: 'script',
+          action: {
+            module: 'mouseController',
+            method: 'leftClick',
+            args: [buyButton.x, buyButton.y],
+          },
+        });
+        await wait(300);
+      }
+
+      console.log(`[Lua/${scriptName}] buyItem: Successfully bought item '${itemName}'`);
+      logger('info', `[Lua/${scriptName}] buyItem: Successfully bought item '${itemName}'`);
       return true;
     },
   };

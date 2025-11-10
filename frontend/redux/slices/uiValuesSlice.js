@@ -69,6 +69,26 @@ const initialState = {
     offers: [],
     lastUpdate: null,
   },
+  npcTalkModalTradeItems: {
+    items: [],
+    lastUpdate: null,
+  },
+  npcTalkModalSearchInput: {
+    text: '',
+    lastUpdate: null,
+  },
+  npcTalkModalAmountInput: {
+    amount: '',
+    lastUpdate: null,
+  },
+  npcTalkModalBuySectionActive: {
+    active: false,
+    lastUpdate: null,
+  },
+  npcTalkModalSellSectionActive: {
+    active: false,
+    lastUpdate: null,
+  },
   // REMOVED: battleListEntries is no longer part of this slice.
   // Its data now lives exclusively in the battleListSlice.
 };
@@ -119,6 +139,26 @@ const uiValuesSlice = createSlice({
       state.marketSellToList = { ...action.payload, lastUpdate: Date.now() };
       state.version = (state.version || 0) + 1;
     },
+    setNpcTalkModalTradeItems: (state, action) => {
+      state.npcTalkModalTradeItems = { ...action.payload, lastUpdate: Date.now() };
+      state.version = (state.version || 0) + 1;
+    },
+    setNpcTalkModalSearchInput: (state, action) => {
+      state.npcTalkModalSearchInput = { ...action.payload, lastUpdate: Date.now() };
+      state.version = (state.version || 0) + 1;
+    },
+    setNpcTalkModalAmountInput: (state, action) => {
+      state.npcTalkModalAmountInput = { ...action.payload, lastUpdate: Date.now() };
+      state.version = (state.version || 0) + 1;
+    },
+    setNpcTalkModalBuySectionActive: (state, action) => {
+      state.npcTalkModalBuySectionActive = { ...action.payload, lastUpdate: Date.now() };
+      state.version = (state.version || 0) + 1;
+    },
+    setNpcTalkModalSellSectionActive: (state, action) => {
+      state.npcTalkModalSellSectionActive = { ...action.payload, lastUpdate: Date.now() };
+      state.version = (state.version || 0) + 1;
+    },
     setChatboxMain: (state, action) => {
       state.chatboxMain.messages = action.payload;
       state.chatboxMain.lastUpdate = Date.now();
@@ -165,6 +205,11 @@ export const {
   updateLastSeenNpcMs,
   setPreyBalance,
   setMarketSellToList,
+  setNpcTalkModalTradeItems,
+  setNpcTalkModalSearchInput,
+  setNpcTalkModalAmountInput,
+  setNpcTalkModalBuySectionActive,
+  setNpcTalkModalSellSectionActive,
   resetUiValues,
   resetRegion,
   setState,

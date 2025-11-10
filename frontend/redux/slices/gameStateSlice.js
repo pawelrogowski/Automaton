@@ -18,6 +18,7 @@ const initialState = {
     ring: null,
     boots: null,
   },
+  itemCache: {},
   characterStatus: {
     bleeding: false,
     burning: false,
@@ -76,6 +77,7 @@ const gameStateSlice = createSlice({
         partyMembers,
         activeActionItems,
         equippedItems,
+        itemCache,
         playerMinimapPosition,
       } = action.payload;
 
@@ -126,6 +128,10 @@ const gameStateSlice = createSlice({
             state.equippedItems[key] = equippedItems[key];
           }
         }
+      }
+
+      if (itemCache !== undefined) {
+        state.itemCache = itemCache;
       }
 
       if (playerMinimapPosition !== undefined) {

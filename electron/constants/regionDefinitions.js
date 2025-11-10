@@ -1803,6 +1803,10 @@ const regionDefinitions = {
     height: 1,
   },
   npcTalkModal: {
+    ocrColors: [
+      [192, 192, 192],
+      [247, 247, 247],
+    ],
     type: 'boundingBox',
     maxRight: 600,
     maxDown: 400,
@@ -1824,18 +1828,17 @@ const regionDefinitions = {
       ],
     },
     end: {
-      direction: 'horizontal',
-      offset: { x: 9, y: 7 },
+      direction: 'vertical',
+      offset: { x: 0, y: 0 },
       sequence: [
         [24, 24, 24],
-        [57, 57, 57],
-        [75, 76, 76],
-        [61, 61, 61],
-        [75, 76, 76],
-        [55, 55, 55],
-        [61, 61, 61],
-        [53, 53, 54],
-        [37, 37, 37],
+[49, 49, 49],
+[75, 76, 76],
+[55, 55, 55],
+
+
+
+
       ],
     },
     children: {
@@ -1906,6 +1909,20 @@ const regionDefinitions = {
         width: 39,
         height: 14,
       },
+      buySectionActive: {
+        type: 'single',
+        direction: 'vertical',
+        offset: { x: 0, y: 0 },
+        sequence: [
+[191, 191, 191],
+[126, 126, 126],
+[68, 68, 68],
+[110, 110, 110],
+
+        ],
+        width: 1,
+        height: 1,
+      },
       sellSectionButton: {
         type: 'single',
         direction: 'horizontal',
@@ -1918,6 +1935,24 @@ const regionDefinitions = {
         ],
         width: 39,
         height: 14,
+      },
+      sellSectionActive: {
+        type: 'single',
+        direction: 'horizontal',
+        offset: { x: 0, y: 0 },
+        sequence: [
+
+[110, 110, 110],
+[192, 192, 192],
+[110, 110, 110],
+[135, 135, 135],
+[181, 181, 181],
+[84, 84, 84],
+
+
+        ],
+        width: 1,
+        height: 1,
       },
       tradeSectionItemList: {
         type: 'single',

@@ -11,7 +11,7 @@
 
 inline bool IsKnownBarColor(uint32_t c) {
     switch(c) {
-        case 0:          // 0x00000000 (Black - for empty bars)
+        case 0:          // 0x00000000 (Black - treat as valid interior for empty/critical bars)
         case 49152:      // 0x0000C000
         case 12582912:   // 0x00C00000
         case 6340704:    // 0x0060C060
@@ -35,68 +35,23 @@ struct WorkerData {
     const uint8_t* bgraData;
     uint32_t width, height, stride;
     uint32_t searchX, searchY, searchW, searchH;
+
+    // Exclusion mask is restricted to the search area for better cache locality.
+    // maskWidth = searchW, maskHeight = searchH, origin at (searchX, searchY).
+    uint32_t maskWidth;
+    uint32_t maskHeight;
+    uint32_t maskOffsetX;
+    uint32_t maskOffsetY;
+
     std::vector<FoundHealthBar>* globalResults;
     std::mutex* resultsMutex;
+    uint8_t* exclusionMask; // 0 = not excluded, 1 = excluded
 };
 
 inline bool IsBlack(const uint8_t* p) {
     return p[0] == 0 && p[1] == 0 && p[2] == 0;
 }
 
-inline bool ValidateRightBorderFlexible(const WorkerData& data, uint32_t x, uint32_t y) {
-    const uint32_t right_x = x + 30;
-    if (right_x >= data.width) return false;
-
-    const uint8_t* p0 = data.bgraData + (y * data.stride) + (right_x * 4);
-    const uint8_t* p1 = data.bgraData + ((y + 1) * data.stride) + (right_x * 4);
-    const uint8_t* p2 = data.bgraData + ((y + 2) * data.stride) + (right_x * 4);
-    const uint8_t* p3 = data.bgraData + ((y + 3) * data.stride) + (right_x * 4);
-
-    // Allow some tolerance - at least 3 out of 4 pixels should be black
-    int blackCount = 0;
-    if (IsBlack(p0)) blackCount++;
-    if (IsBlack(p1)) blackCount++;
-    if (IsBlack(p2)) blackCount++;
-    if (IsBlack(p3)) blackCount++;
-
-    return blackCount >= 3;  // 75% tolerance for right border
-}
-
-// Helper for flexible horizontal border validation - top/bottom borders should be mostly black
-inline bool ValidateHorizontalBorderFlexible(const uint8_t* p) {
-    int blackCount = 0;
-    int healthColorCount = 0;
-    const int totalPixels = 29;
-    const int minBlackRequired = 20;  // At least 20 black pixels (69% of border should be black)
-    const int maxHealthAllowed = 5;   // Allow up to 5 health color pixels (17% tolerance for contamination)
-
-    for (int i = 0; i < totalPixels; ++i) {
-        const uint8_t* pixel = p + i * 4;
-        uint32_t color = (static_cast<uint32_t>(pixel[2]) << 16) |
-                        (static_cast<uint32_t>(pixel[1]) << 8) |
-                        pixel[0];
-
-        if (IsBlack(pixel)) {
-            blackCount++;
-        } else if (IsKnownBarColor(color)) {
-            healthColorCount++;
-        }
-        // Non-black, non-health colors are ignored (background contamination OK)
-    }
-
-    // Top/bottom borders should be mostly black, with minimal health color contamination
-    return blackCount >= minBlackRequired && healthColorCount <= maxHealthAllowed;
-}
-
-inline bool ValidateTopBorder(const WorkerData& data, uint32_t x, uint32_t y) {
-    const uint8_t* p = data.bgraData + (y * data.stride) + ((x + 1) * 4);
-    return ValidateHorizontalBorderFlexible(p);
-}
-
-inline bool ValidateBottomBorder(const WorkerData& data, uint32_t x, uint32_t y) {
-    const uint8_t* p = data.bgraData + ((y + 3) * data.stride) + ((x + 1) * 4);
-    return ValidateHorizontalBorderFlexible(p);
-}
 
 inline std::string GetHealthTagFromColor(uint32_t color) {
     if (color == 0x600000 || color == 0) return "Critical";
@@ -111,51 +66,49 @@ inline std::string GetHealthTagFromColor(uint32_t color) {
 
 thread_local static std::vector<FoundHealthBar> tls_results;
 
+// Forward declaration
+inline void ValidateHealthBarAtPosition(const WorkerData& data, const uint8_t* row, uint32_t x, uint32_t y);
+
 void HealthBarWorker(WorkerData data) {
     tls_results.clear();
 
     const __m256i zero = _mm256_setzero_si256();
     const __m256i bgr_mask = _mm256_set1_epi32(0x00FFFFFF);
 
+    // Clamp endY so we always have room for 4 rows below (for exclusion),
+    // matching the existing runtime check but hoisted.
     uint32_t startY = data.searchY;
     uint32_t endY = data.searchY + data.searchH;
+    if (endY > data.height) {
+        endY = data.height;
+    }
+    if (endY > data.height - 4) {
+        if (data.height < 4) {
+            endY = startY; // nothing to do
+        } else {
+            endY = data.height - 4;
+        }
+    }
 
     for (uint32_t y = startY; y < endY; ++y) {
-        if ((y & 7) == 0) {
-            size_t prefetchY = std::min(y + 32, data.height - 1);
-            _mm_prefetch((const char*)(data.bgraData + (prefetchY * data.stride)), _MM_HINT_T0);
-        }
-
-        // Check if we have enough rows remaining for a 4-pixel-tall health bar
-        // Need y, y+1, y+2, y+3 all to be valid
-        if (y + 3 >= data.height) break;
-
-        const uint8_t* row0 = data.bgraData + (y * data.stride);
-        const uint8_t* row1 = data.bgraData + ((y + 1) * data.stride);
-        const uint8_t* row2 = data.bgraData + ((y + 2) * data.stride);
-        const uint8_t* row3 = data.bgraData + ((y + 3) * data.stride);
-
+        const uint8_t* row = data.bgraData + (y * data.stride);
         uint32_t x = data.searchX;
         const uint32_t endX = data.searchX + data.searchW - 31;
 
+        // SIMD scan for potential left borders (black pixels)
         for (; x + 8 <= endX; x += 8) {
-            __m256i chunk0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row0 + x * 4));
-            __m256i chunk1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row1 + x * 4));
-            __m256i chunk2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row2 + x * 4));
-            __m256i chunk3 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row3 + x * 4));
+            // Exclusion mask lookup mapped to search-area-local coordinates
+            const uint32_t my = y - data.maskOffsetY;
+            const uint32_t mxBase = x - data.maskOffsetX;
+            if (my < data.maskHeight) {
+                // Fast path: if any of the 8 positions are excluded, we still need
+                // per-lane checks, so we defer to per-lane mask checks.
+            }
 
-            chunk0 = _mm256_and_si256(chunk0, bgr_mask);
-            chunk1 = _mm256_and_si256(chunk1, bgr_mask);
-            chunk2 = _mm256_and_si256(chunk2, bgr_mask);
-            chunk3 = _mm256_and_si256(chunk3, bgr_mask);
-
-            __m256i cmp0 = _mm256_cmpeq_epi32(chunk0, zero);
-            __m256i cmp1 = _mm256_cmpeq_epi32(chunk1, zero);
-            __m256i cmp2 = _mm256_cmpeq_epi32(chunk2, zero);
-            __m256i cmp3 = _mm256_cmpeq_epi32(chunk3, zero);
-
-            __m256i vertical_match = _mm256_and_si256(_mm256_and_si256(cmp0, cmp1), _mm256_and_si256(cmp2, cmp3));
-            int mask = _mm256_movemask_ps(_mm256_castsi256_ps(vertical_match));
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row + x * 4));
+            chunk = _mm256_and_si256(chunk, bgr_mask);
+            __m256i cmp = _mm256_cmpeq_epi32(chunk, zero);
+            int mask = _mm256_movemask_ps(_mm256_castsi256_ps(cmp));
 
             if (mask == 0) continue;
 
@@ -163,60 +116,175 @@ void HealthBarWorker(WorkerData data) {
                 if (mask & (1 << j)) {
                     uint32_t current_x = x + j;
 
-                    // Check interior color FIRST to quickly reject false positives on black backgrounds
-                    const uint8_t* innerPixelPtr = row1 + (current_x + 1) * 4;
-                    uint32_t innerColor = (static_cast<uint32_t>(innerPixelPtr[2]) << 16) |
-                                          (static_cast<uint32_t>(innerPixelPtr[1]) << 8) |
-                                          innerPixelPtr[0];
+                    // Check exclusion mask per candidate
+                    if (my < data.maskHeight) {
+                        uint32_t mx = current_x - data.maskOffsetX;
+                        if (mx < data.maskWidth &&
+                            data.exclusionMask[my * data.maskWidth + mx]) {
+                            continue;
+                        }
+                    }
 
-                    if (!IsKnownBarColor(innerColor)) continue;
-
-                    // Now validate full borders (more expensive checks)
-                    if (!ValidateRightBorderFlexible(data, current_x, y)) continue;
-                    if (!ValidateTopBorder(data, current_x, y)) continue;
-                    if (!ValidateBottomBorder(data, current_x, y)) continue;
-
-                    int centerX = static_cast<int>(current_x + 15);
-                    int centerY = static_cast<int>(y + 2);
-                    std::string healthTag = GetHealthTagFromColor(innerColor);
-
-                    tls_results.push_back({ centerX, centerY, healthTag });
+                    ValidateHealthBarAtPosition(data, row, current_x, y);
                 }
             }
         }
 
+        // Scalar scan for remaining positions
         for (; x < endX; ++x) {
-            if (!IsBlack(row0 + x * 4)) continue;
-            if (!IsBlack(row1 + x * 4)) continue;
-            if (!IsBlack(row2 + x * 4)) continue;
-            if (!IsBlack(row3 + x * 4)) continue;
-
-            // Check interior color FIRST to quickly reject false positives on black backgrounds
-            const uint8_t* innerPixelPtr = row1 + (x + 1) * 4;
-            uint32_t innerColor = (static_cast<uint32_t>(innerPixelPtr[2]) << 16) |
-                                  (static_cast<uint32_t>(innerPixelPtr[1]) << 8) |
-                                  innerPixelPtr[0];
-
-            if (!IsKnownBarColor(innerColor)) continue;
-
-            // Now validate full borders (more expensive checks)
-            if (!ValidateRightBorderFlexible(data, x, y)) continue;
-            if (!ValidateTopBorder(data, x, y)) continue;
-            if (!ValidateBottomBorder(data, x, y)) continue;
-
-            int centerX = static_cast<int>(x + 15);
-            int centerY = static_cast<int>(y + 2);
-            std::string healthTag = GetHealthTagFromColor(innerColor);
-
-            tls_results.push_back({ centerX, centerY, healthTag });
+            const uint32_t my = y - data.maskOffsetY;
+            if (my < data.maskHeight) {
+                uint32_t mx = x - data.maskOffsetX;
+                if (mx < data.maskWidth &&
+                    data.exclusionMask[my * data.maskWidth + mx]) {
+                    continue;
+                }
+            }
+            ValidateHealthBarAtPosition(data, row, x, y);
         }
     }
 
     if (!tls_results.empty()) {
         std::lock_guard<std::mutex> lock(*data.resultsMutex);
-        data.globalResults->insert(data.globalResults->end(), tls_results.begin(), tls_results.end());
+        data.globalResults->insert(
+            data.globalResults->end(),
+            tls_results.begin(),
+            tls_results.end()
+        );
     }
 }
+inline void ValidateHealthBarAtPosition(const WorkerData& data, const uint8_t* row, uint32_t x, uint32_t y) {
+    // Check if right border (30 pixels away) is black
+    uint32_t right_x = x + 30;
+    if (right_x >= data.width || !IsBlack(row + right_x * 4)) return;
+
+    // SIMD-accelerated interior validation
+    // Load 8 pixels at a time (32 bytes = 8 pixels * 4 bytes)
+    uint32_t healthColor = 0;
+    bool hasHealthColor = false;
+
+    // Process interior in chunks of 8 pixels
+    for (uint32_t ix = x + 1; ix < x + 30; ix += 8) {
+        uint32_t chunk_end = std::min(ix + 8, x + 30);
+        uint32_t chunk_size = chunk_end - ix;
+
+        // Load chunk
+        __m256i chunk;
+        if (chunk_size == 8) {
+            chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(row + ix * 4));
+        } else {
+            // Handle partial chunk at end
+            uint8_t temp[32] = {0};
+            memcpy(temp, row + ix * 4, chunk_size * 4);
+            chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(temp));
+        }
+
+        chunk = _mm256_and_si256(chunk, _mm256_set1_epi32(0x00FFFFFF));
+
+        // Extract colors and validate
+        uint32_t colors[8];
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(colors), chunk);
+
+        for (uint32_t k = 0; k < chunk_size; ++k) {
+            uint32_t color = colors[k];
+            if (color == 0) {
+                // Black is allowed
+            } else if (IsKnownBarColor(color)) {
+                if (!hasHealthColor) {
+                    healthColor = color;
+                    hasHealthColor = true;
+                } else if (color != healthColor) {
+                    // Multiple different health colors not allowed
+                    return;
+                }
+            } else {
+                // Unknown color
+                return;
+            }
+        }
+    }
+
+    // If we didn't see any colored health pixels in the interior, we may have a full-black bar.
+    // Accept it as a valid health bar only if EVERY interior pixel is black.
+    if (!hasHealthColor) {
+        for (uint32_t ix = x + 1; ix < x + 30; ++ix) {
+            const uint8_t* pixel = row + ix * 4;
+            if (!IsBlack(pixel)) {
+                // Mixed or unknown colors: not a pure black bar -> reject
+                return;
+            }
+        }
+
+        // Valid full-black bar: report as "Critical"
+        int centerX = static_cast<int>(x + 15);
+        int centerY = static_cast<int>(y);
+        std::string healthTag = "Critical";
+
+        tls_results.push_back({ centerX, centerY, healthTag });
+
+        // Exclude pixels directly below for next 4 rows within the search-area-local mask.
+        for (int dy = 1; dy <= 4; ++dy) {
+            int excludeY = y + dy;
+            if (excludeY >= static_cast<int>(data.height)) break;
+
+            uint32_t my = static_cast<uint32_t>(excludeY) - data.maskOffsetY;
+            if (my >= data.maskHeight) continue;
+
+            for (int ex = static_cast<int>(x); ex <= static_cast<int>(right_x); ++ex) {
+                if (ex >= static_cast<int>(data.width)) break;
+                uint32_t mx = static_cast<uint32_t>(ex) - data.maskOffsetX;
+                if (mx >= data.maskWidth) continue;
+                data.exclusionMask[my * data.maskWidth + mx] = 1;
+            }
+        }
+
+        return;
+    }
+
+    // Validate health color distribution: all health colors must be contiguous from left
+    int firstHealthIndex = -1;
+    bool afterHealth = false;
+
+    for (uint32_t ix = x + 1; ix < x + 30; ++ix) {
+        const uint8_t* pixel = row + ix * 4;
+        uint32_t color = (static_cast<uint32_t>(pixel[2]) << 16) |
+                        (static_cast<uint32_t>(pixel[1]) << 8) |
+                        pixel[0];
+
+        if (color == healthColor) {
+            if (afterHealth) return; // Gap in health colors
+            if (firstHealthIndex == -1) firstHealthIndex = ix - x;
+        } else if (firstHealthIndex != -1) {
+            afterHealth = true;
+            if (!IsBlack(pixel)) return; // Must be black after health colors
+        }
+    }
+
+    // Valid health bar found
+    int centerX = static_cast<int>(x + 15);
+    int centerY = static_cast<int>(y);
+    std::string healthTag = GetHealthTagFromColor(healthColor);
+
+    tls_results.push_back({ centerX, centerY, healthTag });
+
+    // Exclude pixels directly below for next 4 rows within the search-area-local mask.
+    for (int dy = 1; dy <= 4; ++dy) {
+        int excludeY = y + dy;
+        if (excludeY >= static_cast<int>(data.height)) break;
+
+        uint32_t my = static_cast<uint32_t>(excludeY) - data.maskOffsetY;
+        if (my >= data.maskHeight) continue;
+
+        for (int ex = static_cast<int>(x); ex <= static_cast<int>(right_x); ++ex) {
+            if (ex >= static_cast<int>(data.width)) break;
+            uint32_t mx = static_cast<uint32_t>(ex) - data.maskOffsetX;
+            if (mx >= data.maskWidth) continue;
+            data.exclusionMask[my * data.maskWidth + mx] = 1;
+        }
+    }
+}
+
+
 
 std::vector<FoundHealthBar> ClusterBars(std::vector<FoundHealthBar>& results) {
     if (results.empty()) return {};
@@ -347,25 +415,74 @@ Napi::Value FindHealthBars(const Napi::CallbackInfo& info) {
     std::vector<FoundHealthBar> globalResults;
     std::mutex globalResultsMutex;
 
+    // Exclusion mask restricted to search area for better cache locality.
+    const uint32_t maskWidth = w;
+    const uint32_t maskHeight = h;
+    std::vector<uint8_t> exclusionMask(maskWidth * maskHeight, 0);
+
+    // Thread count heuristic:
+    // - Base on hardware concurrency.
+    // - Ensure a minimum number of rows per thread to avoid oversubscription.
     unsigned numThreads = std::thread::hardware_concurrency();
     if (numThreads == 0) numThreads = 4;
-    numThreads = std::min(numThreads, h / 4);
+
+    constexpr uint32_t MIN_ROWS_PER_THREAD = 32;
+    unsigned maxByHeight = (h / MIN_ROWS_PER_THREAD) ? (h / MIN_ROWS_PER_THREAD) : 1;
+    if (numThreads > maxByHeight) numThreads = maxByHeight;
     if (numThreads == 0) numThreads = 1;
 
     std::vector<std::thread> threads;
+    threads.reserve(numThreads);
+
     for (unsigned i = 0; i < numThreads; ++i) {
         uint32_t startRow = y + (i * h) / numThreads;
         uint32_t endRow = y + ((i + 1) * h) / numThreads;
+        if (endRow <= startRow) continue;
+
         uint32_t chunkHeight = endRow - startRow;
+        if (chunkHeight < 4) continue; // bar is 4px high; keep this guard
 
-        if (chunkHeight < 4) continue;
-
-        threads.emplace_back(HealthBarWorker, WorkerData{
-            bgraData, width, height, stride,
-            x, startRow, w, chunkHeight,
+        WorkerData wd{
+            bgraData,
+            width,
+            height,
+            stride,
+            x,
+            startRow,
+            w,
+            chunkHeight,
+            maskWidth,
+            maskHeight,
+            x, // maskOffsetX
+            y, // maskOffsetY
             &globalResults,
-            &globalResultsMutex
-        });
+            &globalResultsMutex,
+            exclusionMask.data()
+        };
+
+        threads.emplace_back(HealthBarWorker, wd);
+    }
+
+    if (threads.empty()) {
+        // Fallback to single-threaded if splitting produced no valid chunks.
+        WorkerData wd{
+            bgraData,
+            width,
+            height,
+            stride,
+            x,
+            y,
+            w,
+            h,
+            maskWidth,
+            maskHeight,
+            x, // maskOffsetX
+            y, // maskOffsetY
+            &globalResults,
+            &globalResultsMutex,
+            exclusionMask.data()
+        };
+        HealthBarWorker(wd);
     }
 
     for (auto& t : threads) {

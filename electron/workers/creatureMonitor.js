@@ -115,6 +115,11 @@ let lastFrameHealthBars = [];
 let lastReachableSig = null;
 let lastReachableTiles = null;
 let regionsStale = false;
+
+// Cached health bar state to avoid redundant native calls
+let lastHealthBarsRaw = [];
+let lastHealthBarsForReporting = [];
+let lastHealthBarsUpdateTime = 0;
 // Track last confirmed reachability status per creature to prevent flickering
 // Map: instanceId -> { isReachable: boolean, confirmedAt: timestamp }
 const reachabilityStableState = new Map();
@@ -739,56 +744,95 @@ async function performOperation() {
     if (lootingRequired) return;
 
     // ===== PHASE 4: Detect health bars and OCR nameplates =====
-    // DETECT AND REPORT ALL HEALTH BARS REGARDLESS OF ENTITY PRESENCE
+    // Single-call, dirty-rect and entity-gated health bar detection.
     const constrainedGameWorld = {
       ...gameWorld,
       y: gameWorld.y + 14,
       height: Math.max(0, gameWorld.height - 28),
     };
 
-    // Detect health bars in full game world for reporting all tiles (including player health bar)
-    let healthBarsFull = await findHealthBars.findHealthBars(
-      sharedBufferView,
-      gameWorld,
-    );
+    const hasDirtyRects = dirtyRects.length > 0;
+    const healthBarsGameWorldChanged =
+      hasDirtyRects && dirtyRects.some((r) => rectsIntersect(r, gameWorld));
 
-    // ===== FIX: CAPTURE ALL HEALTH BAR TILE COORDINATES BEFORE FILTERING =====
-    const allHealthBarTiles = [];
-    for (const hb of healthBarsFull) {
-      const creatureScreenX = hb.x;
-      const creatureScreenY = hb.y + 14 + tileSize.height / 2;
-      const gameCoords = getGameCoordinatesFromScreen(
-        creatureScreenX,
-        creatureScreenY,
-        currentPlayerMinimapPosition,
+    // Determine if there are any relevant entities that justify scanning:
+    // - battleListEntries (monsters)
+    // - playerNames (players that could have bars / interactions)
+    // NOTE: npcNames is intentionally not used as a hard gate to avoid coupling
+    // health bar presence strictly to NPC OCR.
+    const hasRelevantEntities =
+      battleListEntries.length > 0 || playerNames.length > 0;
+
+    let healthBarsRaw = lastHealthBarsRaw || [];
+
+    // Only rescan health bars when:
+    // - We have relevant entities (BL or players), AND
+    // - The game world actually changed (dirty rects), OR
+    // - We have no cached result yet.
+    if (
+      hasRelevantEntities &&
+      (healthBarsGameWorldChanged ||
+        !healthBarsRaw ||
+        healthBarsRaw.length === 0)
+    ) {
+      healthBarsRaw = await findHealthBars.findHealthBars(
+        sharedBufferView,
         gameWorld,
-        tileSize,
       );
-      if (gameCoords) {
-        const roundedX = Math.round(gameCoords.x);
-        const roundedY = Math.round(gameCoords.y);
-        const roundedZ = gameCoords.z;
-        if (
-          roundedX !== currentPlayerMinimapPosition.x ||
-          roundedY !== currentPlayerMinimapPosition.y ||
-          roundedZ !== currentPlayerMinimapPosition.z
-        ) {
-          allHealthBarTiles.push({
-            x: roundedX,
-            y: roundedY,
-            z: roundedZ,
-          });
+      lastHealthBarsRaw = healthBarsRaw;
+      lastHealthBarsUpdateTime = now;
+      lastHealthScanTime = now;
+    }
+
+    // Build reporting view (all tiles with health bars except player tile)
+    let healthBarsForReporting;
+    if (healthBarsRaw && healthBarsRaw.length > 0) {
+      const allHealthBarTiles = [];
+      for (const hb of healthBarsRaw) {
+        const creatureScreenX = hb.x;
+        const creatureScreenY = hb.y + 14 + tileSize.height / 2;
+        const gameCoords = getGameCoordinatesFromScreen(
+          creatureScreenX,
+          creatureScreenY,
+          currentPlayerMinimapPosition,
+          gameWorld,
+          tileSize,
+        );
+        if (gameCoords) {
+          const roundedX = Math.round(gameCoords.x);
+          const roundedY = Math.round(gameCoords.y);
+          const roundedZ = gameCoords.z;
+          // Exclude player tile from reporting (matches existing behavior)
+          if (
+            roundedX !== currentPlayerMinimapPosition.x ||
+            roundedY !== currentPlayerMinimapPosition.y ||
+            roundedZ !== currentPlayerMinimapPosition.z
+          ) {
+            allHealthBarTiles.push({
+              x: roundedX,
+              y: roundedY,
+              z: roundedZ,
+            });
+          }
         }
       }
+      healthBarsForReporting = allHealthBarTiles.slice(0, 200);
+    } else {
+      healthBarsForReporting = lastHealthBarsForReporting || [];
     }
-    const healthBarsForReporting = allHealthBarTiles.slice(0, 200);
+    lastHealthBarsForReporting = healthBarsForReporting;
 
-    // Detect health bars in constrained game world for creature detection logic
-    let healthBars = await findHealthBars.findHealthBars(
-      sharedBufferView,
-      constrainedGameWorld,
-    );
-    lastHealthScanTime = now;
+    // Derive constrained healthBars for creature detection logic from the single scan:
+    // - Only bars within constrainedGameWorld
+    // - Player bar will be removed in the existing filtering step below
+    let healthBars = (healthBarsRaw || []).filter((hb) => {
+      return (
+        hb.x >= constrainedGameWorld.x &&
+        hb.x < constrainedGameWorld.x + constrainedGameWorld.width &&
+        hb.y >= constrainedGameWorld.y &&
+        hb.y < constrainedGameWorld.y + constrainedGameWorld.height
+      );
+    });
 
     const hasEntities =
       battleListEntries.length > 0 ||

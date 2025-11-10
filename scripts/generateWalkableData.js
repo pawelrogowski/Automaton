@@ -14,7 +14,7 @@ const TIBIA_MINIMAP_BASE_PATH = path.join(
   '.local',
   'share',
   'CipSoft GmbH',
-  'Tibia',
+  'Tibia5',
   'packages',
   'Tibia',
   'minimap',

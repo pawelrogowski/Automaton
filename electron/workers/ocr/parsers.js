@@ -288,6 +288,49 @@ function parseMarketSellToList(ocrData) {
   return { offers };
 }
 
+function parseNpcTalkModalTradeSectionItemList(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) {
+    return { items: [] };
+  }
+  const items = [];
+  ocrData.forEach((item) => {
+    if (!item?.text) return;
+    const itemName = item.text.trim();
+    if (itemName) {
+      items.push({
+        name: itemName,
+        position: { x: item.click.x, y: item.click.y },
+        originalPosition: { x: item.x, y: item.y },
+      });
+    }
+  });
+  return { items };
+}
+
+function parseNpcTalkModalSearchInput(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) {
+    return { text: '' };
+  }
+  const fullText = ocrData
+    .map((item) => item?.text?.trim() || '')
+    .join(' ')
+    .trim();
+  return { text: fullText };
+}
+
+function parseNpcTalkModalAmountInput(ocrData) {
+  if (!Array.isArray(ocrData) || ocrData.length === 0) {
+    return { amount: '' };
+  }
+  const fullText = ocrData
+    .map((item) => item?.text?.trim() || '')
+    .join('')
+    .replace(/[^0-9]/g, '');
+  const amount = parseInt(fullText, 10);
+  return { amount: isNaN(amount) ? '' : amount.toString() };
+}
+
+
 export const regionParsers = {
   skillsWidget: parseSkillsWidget,
   chatboxMain: parseChatData,
@@ -298,4 +341,7 @@ export const regionParsers = {
   gameWorld: parseGameWorldOcr,
   preyBalance: parsePreyBalance,
   marketSellToList: parseMarketSellToList,
+  npcTalkModalTradeSectionItemList: parseNpcTalkModalTradeSectionItemList,
+  npcTalkModalSearchInput: parseNpcTalkModalSearchInput,
+  npcTalkModalAmountInput: parseNpcTalkModalAmountInput,
 };

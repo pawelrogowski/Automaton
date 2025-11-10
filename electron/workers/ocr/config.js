@@ -76,4 +76,26 @@ export const OCR_REGION_CONFIGS = {
     allowedChars: CHAR_PRESETS.ALPHA + ' ',
     throttleMs: 200,
   },
+  'npcTalkModal.children.tradeSectionItemList': {
+    colors: [[192, 192, 192]], // font color for trade section items
+    parser: regionParsers.npcTalkModalTradeSectionItemList,
+    storeAction: 'uiValues/setNpcTalkModalTradeItems',
+    allowedChars: CHAR_PRESETS.ALPHA + ' ',
+    throttleMs: 500,
+  },
+  'npcTalkModal.children.searchInput': {
+    colors: [[255, 255, 255], [192, 192, 192]], // input text colors
+    parser: regionParsers.npcTalkModalSearchInput,
+    storeAction: 'uiValues/setNpcTalkModalSearchInput',
+    allowedChars: CHAR_PRESETS.ALPHA + CHAR_PRESETS.NUMERIC + ' ',
+    throttleMs: 200,
+  },
+  'npcTalkModal.children.amountInput': {
+    colors: [[255, 255, 255], [192, 192, 192]], // input text colors
+    parser: regionParsers.npcTalkModalAmountInput,
+    storeAction: 'uiValues/setNpcTalkModalAmountInput',
+    allowedChars: CHAR_PRESETS.NUMERIC,
+    throttleMs: 200,
+  },
 };
+

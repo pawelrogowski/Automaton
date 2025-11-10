@@ -1396,6 +1396,7 @@ class WorkerManager {
         const ACCUMULATIVE_TYPES = new Set([
           'lua/addLogEntry',
           'cavebot/addVisitedTile',
+          'targeting/updateCreatureInTargetingList',
         ]);
 
         const latestByType = new Map();

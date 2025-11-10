@@ -534,7 +534,7 @@ async function handlePerformAcquisitionState() {
     return;
   }
 
-  // If SAB already has the desired target AND it's reachable, accept without clicking
+  // If SAB already has the desired target AND it's reachable, accept without clicking.
   const sabTargetNow = getCurrentTargetFromSAB();
   if (
     sabTargetNow &&
@@ -544,6 +544,33 @@ async function handlePerformAcquisitionState() {
       isBattleListMatch(pathfindingTarget.name, sabTargetNow.name))
   ) {
     acceptAcquiredTarget(sabTargetNow);
+    return;
+  }
+
+  // SECONDARY GUARD:
+  // If the battle list already has a selected row that:
+  // - matches the requested target's name, AND
+  // - is the SAME index we intend to click (bestIdx),
+  // then do NOT click it again.
+  //
+  // This covers the case where SAB `target` momentarily desyncs or is delayed
+  // but the BL red bar remains stable on the correct creature; re-clicking would
+  // just toggle the target off/on and cause the untarget/retarget behavior.
+  if (
+    hasActualSelection &&
+    currentIndex === bestIdx &&
+    entry &&
+    entry.name &&
+    (isBattleListMatch(entry.name, pathfindingTarget.name) ||
+      isBattleListMatch(pathfindingTarget.name, entry.name))
+  ) {
+    // Treat as already acquired; move directly to verification/engaging pipeline.
+    targetingState.pendingClick = null;
+    targetingState.lastAcquireAttempt.targetInstanceId =
+      pathfindingTarget.instanceId;
+    targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
+    // Let VERIFY_ACQUISITION / ENGAGING reconcile using SAB + creatures; no click needed.
+    transitionTo(FSM_STATE.VERIFY_ACQUISITION);
     return;
   }
 
@@ -559,6 +586,18 @@ async function handlePerformAcquisitionState() {
     lastClickedIndex: undefined,
     lastClickedY: undefined,
     blVersion: blVersion,
+    // Debounce redundant acquisition when SAB "target" briefly clears while
+    // the battle list row remains visually selected:
+    // - capture the currently selected BL index and entry (if any)
+    // - used in handleVerifyAcquisitionState to avoid re-clicking same row
+    initialSelectedIndex: hasActualSelection ? currentIndex : -1,
+    initialSelectedEntry:
+      hasActualSelection && battleList[currentIndex]
+        ? {
+            name: battleList[currentIndex].name,
+            y: battleList[currentIndex].y,
+          }
+        : null,
   };
 
   // If current selection already matches requested name but SAB target is absent or unreachable,
@@ -1152,6 +1191,31 @@ async function handleEngagingState() {
   }
 
   if (!targetingState.currentTarget || !actualInGameTarget || hasMismatch) {
+    try {
+      const prev = targetingState.currentTarget
+        ? {
+            instanceId: targetingState.currentTarget.instanceId,
+            name: targetingState.currentTarget.name,
+          }
+        : null;
+      const sab = actualInGameTarget
+        ? {
+            instanceId: actualInGameTarget.instanceId,
+            name: actualInGameTarget.name,
+          }
+        : null;
+      logTargetingDebug('target_lost_or_mismatch_engaging', {
+        reason: !targetingState.currentTarget
+          ? 'no_currentTarget'
+          : !actualInGameTarget
+          ? 'no_sab_target'
+          : 'key_mismatch',
+        currentInstanceId: prev ? prev.instanceId : null,
+        currentName: prev ? prev.name : null,
+        sabInstanceId: sab ? sab.instanceId : null,
+        sabName: sab ? sab.name : null,
+      });
+    } catch (_) {}
     transitionTo(FSM_STATE.SELECTING);
     return;
   }
