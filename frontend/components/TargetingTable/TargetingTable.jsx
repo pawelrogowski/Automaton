@@ -86,6 +86,18 @@ const EditableStringCell = React.memo(
     useEffect(() => {
       setValue(initialValue);
     }, [initialValue]);
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      const creatureName = original.name;
+      const property = id;
+      const newValue = value; // Use current value
+      const luaFunction = `setSetting("targeting", "${creatureName}", "${property}", "${newValue}")`;
+      navigator.clipboard.writeText(luaFunction).then(() => {
+        console.log('Copied to clipboard:', luaFunction);
+      });
+    };
+
     if (isEditing)
       return (
         <input
@@ -102,6 +114,7 @@ const EditableStringCell = React.memo(
     return (
       <div
         onDoubleClick={() => setIsEditing(true)}
+        onContextMenu={handleContextMenu}
         style={{ width: '100%', height: '100%' }}
       >
         {value || <span>&nbsp;</span>}
@@ -122,6 +135,18 @@ const EditableSelectCell = React.memo(
       updateMyData(original.id, { [id]: e.target.value });
       setIsEditing(false);
     };
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      const creatureName = original.name;
+      const property = id;
+      const newValue = initialValue; // Use current value
+      const luaFunction = `setSetting("targeting", "${creatureName}", "${property}", "${newValue}")`;
+      navigator.clipboard.writeText(luaFunction).then(() => {
+        console.log('Copied to clipboard:', luaFunction);
+      });
+    };
+
     if (isEditing)
       return (
         <select
@@ -141,6 +166,7 @@ const EditableSelectCell = React.memo(
     return (
       <div
         onDoubleClick={() => setIsEditing(true)}
+        onContextMenu={handleContextMenu}
         style={{ width: '100%', height: '100%' }}
       >
         {initialValue}
@@ -171,6 +197,18 @@ const EditableNumberCell = React.memo(
     useEffect(() => {
       setValue(initialValue);
     }, [initialValue]);
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      const creatureName = original.name;
+      const property = id;
+      const newValue = initialValue; // Use current value
+      const luaFunction = `setSetting("targeting", "${creatureName}", "${property}", ${newValue})`;
+      navigator.clipboard.writeText(luaFunction).then(() => {
+        console.log('Copied to clipboard:', luaFunction);
+      });
+    };
+
     if (isEditing)
       return (
         <input
@@ -190,6 +228,7 @@ const EditableNumberCell = React.memo(
     return (
       <div
         onDoubleClick={() => setIsEditing(true)}
+        onContextMenu={handleContextMenu}
         style={{ width: '100%', height: '100%' }}
       >
         {initialValue}
@@ -229,6 +268,17 @@ const EditableCheckboxCell = React.memo(
       updateMyData(original.id, { [id]: e.target.checked });
     };
 
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      const creatureName = original.name;
+      const property = id;
+      const value = !initialValue; // Toggle the current value
+      const luaFunction = `setSetting("targeting", "${creatureName}", "${property}", ${value})`;
+      navigator.clipboard.writeText(luaFunction).then(() => {
+        console.log('Copied to clipboard:', luaFunction);
+      });
+    };
+
     return (
       <div style={{ textAlign: 'center' }}>
         <input
@@ -236,6 +286,7 @@ const EditableCheckboxCell = React.memo(
           checked={initialValue || false}
           onChange={handleChange}
           onClick={(e) => e.stopPropagation()}
+          onContextMenu={handleContextMenu}
         />
       </div>
     );

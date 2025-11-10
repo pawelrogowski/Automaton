@@ -950,7 +950,7 @@ async function performOperation() {
       : currentPlayerMinimapPosition;
 
     // Expire any stale blacklisted tile entries
-    for (const [k, until] of Array.from(blacklistedUntil.entries())) {
+    for (const [k, until] of blacklistedUntil.entries()) {
       if (until <= now) {
         blacklistedUntil.delete(k);
         blacklistedTiles.delete(k);

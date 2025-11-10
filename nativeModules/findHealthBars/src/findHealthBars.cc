@@ -43,7 +43,7 @@ inline bool IsBlack(const uint8_t* p) {
     return p[0] == 0 && p[1] == 0 && p[2] == 0;
 }
 
-inline bool ValidateRightBorder(const WorkerData& data, uint32_t x, uint32_t y) {
+inline bool ValidateRightBorderFlexible(const WorkerData& data, uint32_t x, uint32_t y) {
     const uint32_t right_x = x + 30;
     if (right_x >= data.width) return false;
 
@@ -52,54 +52,50 @@ inline bool ValidateRightBorder(const WorkerData& data, uint32_t x, uint32_t y) 
     const uint8_t* p2 = data.bgraData + ((y + 2) * data.stride) + (right_x * 4);
     const uint8_t* p3 = data.bgraData + ((y + 3) * data.stride) + (right_x * 4);
 
-    return IsBlack(p0) && IsBlack(p1) && IsBlack(p2) && IsBlack(p3);
+    // Allow some tolerance - at least 3 out of 4 pixels should be black
+    int blackCount = 0;
+    if (IsBlack(p0)) blackCount++;
+    if (IsBlack(p1)) blackCount++;
+    if (IsBlack(p2)) blackCount++;
+    if (IsBlack(p3)) blackCount++;
+
+    return blackCount >= 3;  // 75% tolerance for right border
 }
 
-// Helper for horizontal border validation to avoid code duplication
-inline bool ValidateHorizontalBorder(const uint8_t* p) {
-    const __m256i zero = _mm256_setzero_si256();
-    const __m256i bgr_mask = _mm256_set1_epi32(0x00FFFFFF);
+// Helper for flexible horizontal border validation - top/bottom borders should be mostly black
+inline bool ValidateHorizontalBorderFlexible(const uint8_t* p) {
+    int blackCount = 0;
+    int healthColorCount = 0;
+    const int totalPixels = 29;
+    const int minBlackRequired = 20;  // At least 20 black pixels (69% of border should be black)
+    const int maxHealthAllowed = 5;   // Allow up to 5 health color pixels (17% tolerance for contamination)
 
-    // Check 29 pixels = 3*8 + 5
-    // Chunk 1 (pixels 1-8 of the inner border)
-    __m256i chunk0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
-    chunk0 = _mm256_and_si256(chunk0, bgr_mask);
-    if (_mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(chunk0, zero))) != 0xFF) {
-        return false;
-    }
+    for (int i = 0; i < totalPixels; ++i) {
+        const uint8_t* pixel = p + i * 4;
+        uint32_t color = (static_cast<uint32_t>(pixel[2]) << 16) |
+                        (static_cast<uint32_t>(pixel[1]) << 8) |
+                        pixel[0];
 
-    // Chunk 2 (pixels 9-16)
-    __m256i chunk1 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p + 32));
-    chunk1 = _mm256_and_si256(chunk1, bgr_mask);
-    if (_mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(chunk1, zero))) != 0xFF) {
-        return false;
-    }
-
-    // Chunk 3 (pixels 17-24)
-    __m256i chunk2 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p + 64));
-    chunk2 = _mm256_and_si256(chunk2, bgr_mask);
-    if (_mm256_movemask_ps(_mm256_castsi256_ps(_mm256_cmpeq_epi32(chunk2, zero))) != 0xFF) {
-        return false;
-    }
-
-    // Handle the remaining 5 pixels (25-29) with a scalar loop
-    const uint8_t* remainder_p = p + 96;
-    for (int i = 0; i < 5; ++i) {
-        if (!IsBlack(remainder_p + i * 4)) {
-            return false;
+        if (IsBlack(pixel)) {
+            blackCount++;
+        } else if (IsKnownBarColor(color)) {
+            healthColorCount++;
         }
+        // Non-black, non-health colors are ignored (background contamination OK)
     }
-    return true;
+
+    // Top/bottom borders should be mostly black, with minimal health color contamination
+    return blackCount >= minBlackRequired && healthColorCount <= maxHealthAllowed;
 }
 
 inline bool ValidateTopBorder(const WorkerData& data, uint32_t x, uint32_t y) {
     const uint8_t* p = data.bgraData + (y * data.stride) + ((x + 1) * 4);
-    return ValidateHorizontalBorder(p);
+    return ValidateHorizontalBorderFlexible(p);
 }
 
 inline bool ValidateBottomBorder(const WorkerData& data, uint32_t x, uint32_t y) {
     const uint8_t* p = data.bgraData + ((y + 3) * data.stride) + ((x + 1) * 4);
-    return ValidateHorizontalBorder(p);
+    return ValidateHorizontalBorderFlexible(p);
 }
 
 inline std::string GetHealthTagFromColor(uint32_t color) {
@@ -176,7 +172,7 @@ void HealthBarWorker(WorkerData data) {
                     if (!IsKnownBarColor(innerColor)) continue;
 
                     // Now validate full borders (more expensive checks)
-                    if (!ValidateRightBorder(data, current_x, y)) continue;
+                    if (!ValidateRightBorderFlexible(data, current_x, y)) continue;
                     if (!ValidateTopBorder(data, current_x, y)) continue;
                     if (!ValidateBottomBorder(data, current_x, y)) continue;
 
@@ -204,7 +200,7 @@ void HealthBarWorker(WorkerData data) {
             if (!IsKnownBarColor(innerColor)) continue;
 
             // Now validate full borders (more expensive checks)
-            if (!ValidateRightBorder(data, x, y)) continue;
+            if (!ValidateRightBorderFlexible(data, x, y)) continue;
             if (!ValidateTopBorder(data, x, y)) continue;
             if (!ValidateBottomBorder(data, x, y)) continue;
 

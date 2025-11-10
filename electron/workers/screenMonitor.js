@@ -426,7 +426,7 @@ async function processGameState() {
     lastBarChecksums.manaBar = null;
     lastBarChecksums.hotkeyBar = null;
     lastSentPayload = null;
-    Object.keys(lastScanTs).forEach(key => lastScanTs[key] = 0);
+    for (const key in lastScanTs) lastScanTs[key] = 0;
     itemHistory.clear();
   }
   wasOnline = isOnline;
@@ -791,7 +791,7 @@ parentPort.on('message', (message) => {
       lastBarChecksums.hotkeyBar = null;
       lastSentPayload = null;
       // Reset scan timestamps to force immediate scan
-      Object.keys(lastScanTs).forEach(key => lastScanTs[key] = 0);
+      for (const key in lastScanTs) lastScanTs[key] = 0;
       return;
     }
 

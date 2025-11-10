@@ -198,7 +198,7 @@ async function performOperation() {
     // --- MODIFIED LOGIC ---
 
     // 2. Handle all other generic OCR regions.
-    for (const regionKey in config.OCR_REGION_CONFIGS) {
+    for (const regionKey of Object.keys(config.OCR_REGION_CONFIGS)) {
       if (regionKey === 'gameWorld') continue;
       const region = getNestedRegion(regions, regionKey);
       if (!region) {

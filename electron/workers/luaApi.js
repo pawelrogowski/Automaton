@@ -351,6 +351,7 @@ export const createLuaApi = async (context) => {
     'acceptSellToOffer',
     'typeMarketItem',
     'marketSellTo',
+    'setSetting',
     'itemCount',
   ];
   const getWindowId = () => getState()?.global?.windowId;
@@ -2299,6 +2300,222 @@ export const createLuaApi = async (context) => {
       );
       return true;
     },
+    setSetting: (...args) => {
+      if (args.length < 2) {
+        logger(
+          'warn',
+          `[Lua/${scriptName}] setSetting: insufficient arguments`,
+        );
+        return false;
+      }
+
+      const [category, ...rest] = args;
+
+      switch (category) {
+        case 'targeting': {
+          const [creatureName, property, value] = rest;
+          if (!creatureName || typeof creatureName !== 'string') {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] setSetting targeting: invalid creature name`,
+            );
+            return false;
+          }
+
+          if (!property || typeof property !== 'string') {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] setSetting targeting: invalid property name`,
+            );
+            return false;
+          }
+
+          const state = getState();
+          const targetingList = state.targeting?.targetingList || [];
+
+          // Find the creature by name (case-insensitive)
+          const creature = targetingList.find(
+            (c) => c.name && c.name.toLowerCase() === creatureName.toLowerCase(),
+          );
+
+          if (!creature) {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] setSetting targeting: creature '${creatureName}' not found in targeting list`,
+            );
+            return false;
+          }
+
+          // Validate property and value based on expected types
+          let processedValue = value;
+          switch (property) {
+            case 'priority':
+            case 'distance':
+            case 'stickiness':
+              processedValue = parseInt(value, 10);
+              if (isNaN(processedValue)) {
+                logger(
+                  'warn',
+                  `[Lua/${scriptName}] setSetting targeting: invalid numeric value for '${property}'`,
+                );
+                return false;
+              }
+              break;
+            case 'onlyIfTrapped':
+              processedValue = Boolean(value);
+              break;
+            case 'healthRange':
+              const validHealthRanges = ['Any', 'Full', 'High', 'Medium', 'Low', 'Critical'];
+              if (!validHealthRanges.includes(value)) {
+                logger(
+                  'warn',
+                  `[Lua/${scriptName}] setSetting targeting: invalid healthRange value '${value}'`,
+                );
+                return false;
+              }
+              break;
+            case 'action':
+              const validActions = ['Attack', 'None'];
+              if (!validActions.includes(value)) {
+                logger(
+                  'warn',
+                  `[Lua/${scriptName}] setSetting targeting: invalid action value '${value}'`,
+                );
+                return false;
+              }
+              break;
+            case 'stance':
+              const validStances = ['Reach', 'Stand', 'Keep Away', 'Ignore'];
+              if (!validStances.includes(value)) {
+                logger(
+                  'warn',
+                  `[Lua/${scriptName}] setSetting targeting: invalid stance value '${value}'`,
+                );
+                return false;
+              }
+              break;
+            default:
+              logger(
+                'warn',
+                `[Lua/${scriptName}] setSetting targeting: unknown property '${property}'`,
+              );
+              return false;
+          }
+
+          // Update the creature property
+          context.postStoreUpdate('targeting/updateCreatureInTargetingList', {
+            id: creature.id,
+            updates: { [property]: processedValue },
+          });
+
+          logger(
+            'info',
+            `[Lua/${scriptName}] Updated targeting creature '${creatureName}' property '${property}' to '${processedValue}'`,
+          );
+          return true;
+        }
+
+        case 'rules': {
+          const [property, value] = rest;
+          if (!property || typeof property !== 'string') {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] setSetting rules: invalid property name`,
+            );
+            return false;
+          }
+
+          let processedValue = value;
+          switch (property) {
+            case 'enabled':
+              processedValue = Boolean(value);
+              break;
+            default:
+              logger(
+                'warn',
+                `[Lua/${scriptName}] setSetting rules: unknown property '${property}'`,
+              );
+              return false;
+          }
+
+          context.postStoreUpdate('rules/setenabled', processedValue);
+          logger(
+            'info',
+            `[Lua/${scriptName}] Updated rules property '${property}' to '${processedValue}'`,
+          );
+          return true;
+        }
+
+        case 'cavebot': {
+          const [property, value] = rest;
+          if (!property || typeof property !== 'string') {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] setSetting cavebot: invalid property name`,
+            );
+            return false;
+          }
+
+          let processedValue = value;
+          switch (property) {
+            case 'enabled':
+              processedValue = Boolean(value);
+              break;
+            default:
+              logger(
+                'warn',
+                `[Lua/${scriptName}] setSetting cavebot: unknown property '${property}'`,
+              );
+              return false;
+          }
+
+          context.postStoreUpdate('cavebot/setenabled', processedValue);
+          logger(
+            'info',
+            `[Lua/${scriptName}] Updated cavebot property '${property}' to '${processedValue}'`,
+          );
+          return true;
+        }
+
+        case 'lua': {
+          const [property, value] = rest;
+          if (!property || typeof property !== 'string') {
+            logger(
+              'warn',
+              `[Lua/${scriptName}] setSetting lua: invalid property name`,
+            );
+            return false;
+          }
+
+          let processedValue = value;
+          switch (property) {
+            case 'enabled':
+              processedValue = Boolean(value);
+              break;
+            default:
+              logger(
+                'warn',
+                `[Lua/${scriptName}] setSetting lua: unknown property '${property}'`,
+              );
+              return false;
+          }
+
+          context.postStoreUpdate('lua/setenabled', processedValue);
+          logger(
+            'info',
+            `[Lua/${scriptName}] Updated lua property '${property}' to '${processedValue}'`,
+          );
+          return true;
+        }
+
+        default:
+          logger(
+            'warn',
+            `[Lua/${scriptName}] setSetting: unknown category '${category}'`,
+          );
+          return false;
+      }
+    },
     marketSellTo: async (characterName, itemName) => {
       if (!characterName || typeof characterName !== 'string') {
         logger(
@@ -2307,7 +2524,7 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       if (!itemName || typeof itemName !== 'string') {
         logger(
           'warn',
@@ -2315,22 +2532,22 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       logger(
         'info',
         `[Lua/${scriptName}] Starting marketSellTo: item='${itemName}', character='${characterName}'`,
       );
-      
+
       // Check if market is already open
       let state = getState();
       let marketModal = state.regionCoordinates?.regions?.marketModal;
-      
+
       if (!marketModal || !marketModal.x || !marketModal.y) {
         logger(
           'info',
           `[Lua/${scriptName}] Market not open, attempting to open...`,
         );
-        
+
         const opened = await baseApi.openMarket();
         if (!opened) {
           logger(
@@ -2339,7 +2556,7 @@ export const createLuaApi = async (context) => {
           );
           return false;
         }
-        
+
         // Refresh state after opening
         if (typeof context.refreshLuaGlobalState === 'function') {
           await context.refreshLuaGlobalState(true);
@@ -2352,10 +2569,10 @@ export const createLuaApi = async (context) => {
           `[Lua/${scriptName}] Market already open`,
         );
       }
-      
+
       // Wait for market to be ready
       await wait(300);
-      
+
       // Type item name in search
       logger(
         'info',
@@ -2369,15 +2586,15 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       // Wait for search results to populate
       await wait(500);
-      
+
       // Click on items list to load offers
       state = getState();
       marketModal = state.regionCoordinates?.regions?.marketModal;
       const itemsList = marketModal?.children?.itemsList;
-      
+
       if (!itemsList?.x || !itemsList?.y) {
         logger(
           'warn',
@@ -2385,7 +2602,7 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       logger(
         'info',
         `[Lua/${scriptName}] Clicking on items list`,
@@ -2398,15 +2615,15 @@ export const createLuaApi = async (context) => {
           args: [itemsList.x, itemsList.y],
         },
       });
-      
+
       // Wait for sell-to list to populate
       await wait(800);
-      
+
       // Refresh state to get OCR data
       if (typeof context.refreshLuaGlobalState === 'function') {
         await context.refreshLuaGlobalState(true);
       }
-      
+
       // Select the offer from the character
       logger(
         'info',
@@ -2420,10 +2637,10 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       // Wait after selecting offer
       await wait(300);
-      
+
       // Select max amount
       logger(
         'info',
@@ -2437,10 +2654,10 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       // Wait before accepting
       await wait(300);
-      
+
       // Accept the offer
       logger(
         'info',
@@ -2454,7 +2671,7 @@ export const createLuaApi = async (context) => {
         );
         return false;
       }
-      
+
       logger(
         'info',
         `[Lua/${scriptName}] Successfully completed marketSellTo`,
