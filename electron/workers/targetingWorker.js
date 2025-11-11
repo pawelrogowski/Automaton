@@ -112,7 +112,10 @@ if (workerData.unifiedSAB) {
   throw new Error('[TargetingWorker] Unified SAB interface is required');
 }
 
-// --- Unified SAB Wrappers ---
+ // --- Unified SAB Wrappers ---
+ // NOTE: For core targeting decisions we will prefer snapshot-based reads via
+ // sabInterface.getTargetingSnapshot(), but we keep these helpers for
+ // auxiliary logic and backwards compatibility.
 const getCreaturesFromSAB = () => {
   try {
     const result = sabInterface.get('creatures');
@@ -250,7 +253,8 @@ function advancePointer(name, blIndex) {
   if (typeof blIndex === 'number') st.pointer = blIndex;
 }
 
-// Synchronous acquisition status check from SAB `target` struct
+// Synchronous acquisition status check from SAB `target` struct.
+// For new code paths prefer using the snapshot passed into handlers.
 function checkAcquisitionStatus(expectedInstanceId, expectedName) {
   const currentTarget = getCurrentTargetFromSAB();
 
@@ -292,11 +296,18 @@ function handleIdleState() {
   }
 }
 
-function handleSelectingState() {
+function handleSelectingState(snapshot) {
   // Clear any stale pendingClick from prior acquisition attempts
   targetingState.pendingClick = null;
-  
-  const allCreatures = getCreaturesFromSAB();
+
+  const allCreaturesRaw = Array.isArray(snapshot?.creatures)
+    ? snapshot.creatures
+    : [];
+  const allCreatures = allCreaturesRaw.map((creature) => ({
+    ...creature,
+    distance: creature.distance / 100,
+    gameCoords: { x: creature.x, y: creature.y, z: creature.z },
+  }));
   const reachableCreatures = allCreatures.filter((c) => c.isReachable);
   const provider = () =>
     reachableCreatures.length > 0 ? reachableCreatures : allCreatures;
@@ -304,13 +315,14 @@ function handleSelectingState() {
   let bestTarget = selectBestTarget(
     provider,
     workerState.globalState.targeting.targetingList,
-    null,
+    targetingState.currentTarget,
     750,
     sabInterface,
   );
 
-  const sabTarget = getCurrentTargetFromSAB();
+  const sabTarget = snapshot?.target || null;
   if (bestTarget && sabTarget) {
+    // Prefer SAB target if it matches by name and isReachable.
     const sabEntity = allCreatures.find(
       (c) =>
         c.isReachable &&
@@ -322,7 +334,7 @@ function handleSelectingState() {
     }
   }
 
-  const currentSABTarget = getCurrentTargetFromSAB();
+  const currentSABTarget = sabTarget;
   if (currentSABTarget && bestTarget) {
     const currentEntity = allCreatures.find(
       (c) => c.instanceId === currentSABTarget.instanceId,
@@ -356,14 +368,16 @@ function handleSelectingState() {
   if (bestTarget) {
     targetingState.pathfindingTarget = bestTarget;
     if (
-      targetingState.lastDispatchedDynamicTargetId !== bestTarget.instanceId
+      targetingState.lastDispatchedDynamicTargetId !==
+      (bestTarget.instanceId || null)
     ) {
       updateDynamicTarget(
         parentPort,
         bestTarget,
         workerState.globalState.targeting.targetingList,
       );
-      targetingState.lastDispatchedDynamicTargetId = bestTarget.instanceId;
+      targetingState.lastDispatchedDynamicTargetId =
+        bestTarget.instanceId || null;
     }
     transitionTo(FSM_STATE.PREPARE_ACQUISITION);
   } else {
@@ -380,7 +394,7 @@ function handleSelectingState() {
   }
 }
 
-function handlePrepareAcquisitionState() {
+function handlePrepareAcquisitionState(snapshot) {
   const { pathfindingTarget } = targetingState;
 
   if (!pathfindingTarget) {
@@ -388,7 +402,15 @@ function handlePrepareAcquisitionState() {
     return;
   }
 
-  const updatedTarget = getCreaturesFromSAB().find(
+  const creaturesRaw = Array.isArray(snapshot?.creatures)
+    ? snapshot.creatures
+    : [];
+  const creatures = creaturesRaw.map((creature) => ({
+    ...creature,
+    distance: creature.distance / 100,
+    gameCoords: { x: creature.x, y: creature.y, z: creature.z },
+  }));
+  const updatedTarget = creatures.find(
     (c) => c.instanceId === pathfindingTarget.instanceId,
   );
   if (!updatedTarget) {
@@ -423,7 +445,7 @@ function chooseNearestMatchingIndex(currentIndex, matches, listLen) {
   return bestIdx;
 }
 
-async function handlePerformAcquisitionState() {
+async function handlePerformAcquisitionState(snapshot) {
   const now = performance.now();
 
   // Enforce click throttle
@@ -532,6 +554,36 @@ async function handlePerformAcquisitionState() {
   if (!entry || typeof entry.x !== 'number' || typeof entry.y !== 'number') {
     transitionTo(FSM_STATE.SELECTING);
     return;
+  }
+
+  // STRICT BL-SELECTION SAFEGUARD (MOSTLY):
+  // If BL already has a selected row for this same name, do not click it again.
+  // Only allow a click if:
+  // - selection is for a different name, or
+  // - there is no selection.
+  let selectedIdx = -1;
+  for (let i = 0; i < battleList.length; i++) {
+    const be = battleList[i];
+    if (be && (be.isTarget === 1 || be.isTarget === true)) {
+      selectedIdx = i;
+      break;
+    }
+  }
+  if (selectedIdx !== -1) {
+    const selected = battleList[selectedIdx];
+    if (
+      selected &&
+      selected.name &&
+      isBattleListMatch(selected.name, pathfindingTarget.name)
+    ) {
+      // Already selected this name in BL — treat as acquired candidate; do not re-click.
+      targetingState.pendingClick = null;
+      targetingState.lastAcquireAttempt.targetInstanceId =
+        pathfindingTarget.instanceId || null;
+      targetingState.lastAcquireAttempt.targetName = pathfindingTarget.name;
+      transitionTo(FSM_STATE.VERIFY_ACQUISITION);
+      return;
+    }
   }
 
   // If SAB already has the desired target AND it's reachable, accept without clicking.
@@ -793,10 +845,43 @@ function clickNextAvailableCandidate(pending, battleList, requestedName) {
   return false;
 }
 
-function acceptAcquiredTarget(targetObj) {
-  const creatures = getCreaturesFromSAB();
-  const matchedCreature =
-    creatures.find((c) => c.instanceId === targetObj.instanceId) || null;
+function acceptAcquiredTarget(targetObj, snapshot) {
+  const creaturesRaw =
+    snapshot && Array.isArray(snapshot.creatures)
+      ? snapshot.creatures
+      : getCreaturesFromSAB();
+  const creatures = creaturesRaw.map((creature) => ({
+    ...creature,
+    distance: creature.distance / 100,
+    gameCoords: { x: creature.x, y: creature.y, z: creature.z },
+  }));
+
+  // ID-agnostic resolution:
+  // 1) Prefer direct instanceId match when available.
+  // 2) Otherwise, match by name + closest coords.
+  let matchedCreature =
+    creatures.find(
+      (c) =>
+        targetObj.instanceId &&
+        c.instanceId === targetObj.instanceId,
+    ) || null;
+
+  if (!matchedCreature && targetObj.name) {
+    const candidates = creatures
+      .filter((c) => isBattleListMatch(c.name, targetObj.name))
+      .map((c) => ({
+        c,
+        dist:
+          typeof c.gameCoords === 'object'
+            ? Math.abs(c.gameCoords.x - (targetObj.x || c.gameCoords.x)) +
+              Math.abs(c.gameCoords.y - (targetObj.y || c.gameCoords.y))
+            : Number.MAX_SAFE_INTEGER,
+      }))
+      .sort((a, b) => a.dist - b.dist);
+    if (candidates.length > 0 && candidates[0].dist <= 3) {
+      matchedCreature = candidates[0].c;
+    }
+  }
 
   targetingState.currentTarget = matchedCreature || {
     instanceId: targetObj.instanceId,
@@ -829,12 +914,15 @@ function acceptAcquiredTarget(targetObj) {
   transitionTo(FSM_STATE.ENGAGING);
 }
 
-function handleVerifyAcquisitionState() {
+function handleVerifyAcquisitionState(snapshot) {
   const now = performance.now();
   const pending = targetingState.pendingClick;
 
   if (!pending) {
-    const nowTarget = getCurrentTargetFromSAB();
+    const nowTarget =
+      snapshot && snapshot.target && snapshot.target.instanceId !== 0
+        ? snapshot.target
+        : getCurrentTargetFromSAB();
     if (
       nowTarget &&
       nowTarget.instanceId ===
@@ -853,38 +941,64 @@ function handleVerifyAcquisitionState() {
     const bl = blSnap.list;
 
     // If battle list changed since we started, recompute candidate indices safely
-    if (pending && typeof pending.blVersion === 'number' && blSnap.version !== pending.blVersion) {
+    // and drop any stale state that could point at wrong entries after rows shift.
+    if (
+      pending &&
+      typeof pending.blVersion === 'number' &&
+      blSnap.version !== pending.blVersion
+    ) {
       const nameState = getCandidateState(pending.requestedName);
-      // Rebuild candidates for current BL
       const rebuilt = [];
+
       for (let i = 0; i < bl.length; i++) {
         const be = bl[i];
         if (!be || !be.name) continue;
+
         if (
           isBattleListMatch(pending.requestedName, be.name) ||
           isBattleListMatch(be.name, pending.requestedName)
         ) {
-          // Exclude blacklisted indices and rows with blacklisted Y
           let skip = false;
-          if (nameState.blacklist && nameState.blacklist.has(i)) skip = true;
+
+          // Skip indices that were explicitly blacklisted for this name
+          if (nameState.blacklist && nameState.blacklist.has(i)) {
+            skip = true;
+          }
+
+          // Skip rows whose Y matches any blacklisted Y (same visual row)
           if (!skip && nameState.blacklistY && nameState.blacklistY.size) {
             for (const vy of nameState.blacklistY) {
-              if (typeof be.y === 'number' && Math.abs(vy - be.y) <= 2) { skip = true; break; }
+              if (
+                typeof be.y === 'number' &&
+                Math.abs(vy - be.y) <= 2
+              ) {
+                skip = true;
+                break;
+              }
             }
           }
+
           if (!skip) rebuilt.push(i);
         }
       }
+
       if (rebuilt.length === 0) {
-        // Nothing to try anymore for this name; fall back to SELECTING
+        // All candidates for this name are exhausted or invalid in the new BL.
+        // To avoid ever clicking a shifted wrong row, fully reset and re-select.
         targetingState.pendingClick = null;
+        resetCandidateState(pending.requestedName);
         transitionTo(FSM_STATE.SELECTING);
         return;
       }
+
+      // Replace candidates with the recomputed, in-bounds indices.
       pending.candidates = rebuilt;
       pending.currentCandidateIdx = 0;
+      // Drop any index-based memory that could now be stale after BL mutation.
+      pending.lastTriedCandidateIndex = undefined;
+      pending.lastClickedIndex = undefined;
+      // Keep lastClickedY as a visual guard only (used with blElemYEquals).
       pending.blVersion = blSnap.version;
-      // Do not reset lastClickedY; we still want to avoid re-clicking the same row visually
     }
 
     if (Array.isArray(bl) && bl.length > 0) {
@@ -955,7 +1069,7 @@ function handleVerifyAcquisitionState() {
   if (verification.status === 'SUCCESS') {
     // Do not accept unreachable acquisitions; cycle to next candidate instead
     if (verification.target && verification.target.isReachable) {
-      acceptAcquiredTarget(verification.target);
+      acceptAcquiredTarget(verification.target, snapshot);
       // Clear rotation/blacklist for this name on success
       resetCandidateState(pending.requestedName);
       return;
@@ -1033,7 +1147,7 @@ function handleVerifyAcquisitionState() {
             (isBattleListMatch(bl[selectedIdx].name, desiredName) ||
               isBattleListMatch(desiredName, bl[selectedIdx].name))
           ) {
-            acceptAcquiredTarget(verification.target);
+            acceptAcquiredTarget(verification.target, snapshot);
             resetCandidateState(pending.requestedName);
             return;
           }
@@ -1043,7 +1157,7 @@ function handleVerifyAcquisitionState() {
       }
 
       if (newScore > desiredScore || !desiredReachable) {
-        acceptAcquiredTarget(verification.target);
+        acceptAcquiredTarget(verification.target, snapshot);
         resetCandidateState(pending.requestedName);
         return;
       } else {
@@ -1156,7 +1270,7 @@ function handleVerifyAcquisitionState() {
   return;
 }
 
-async function handleEngagingState() {
+async function handleEngagingState(snapshot) {
   const now = Date.now();
 
   if (workerState.isWaitingForMovement) {
@@ -1174,11 +1288,21 @@ async function handleEngagingState() {
     }
   }
 
-  const creatures = getCreaturesFromSAB();
+  const creaturesRaw = Array.isArray(snapshot?.creatures)
+    ? snapshot.creatures
+    : [];
+  const creatures = creaturesRaw.map((creature) => ({
+    ...creature,
+    distance: creature.distance / 100,
+    gameCoords: { x: creature.x, y: creature.y, z: creature.z },
+  }));
   const { globalState } = workerState;
   const targetingList = globalState.targeting.targetingList;
 
-  const actualInGameTarget = getCurrentTargetFromSAB();
+  const actualInGameTarget =
+    snapshot && snapshot.target && snapshot.target.instanceId !== 0
+      ? snapshot.target
+      : getCurrentTargetFromSAB();
 
   let hasMismatch = false;
   if (actualInGameTarget && targetingState.currentTarget) {
@@ -1525,6 +1649,12 @@ function updateSABData() {
 async function performTargeting() {
   updateSABData();
 
+  // Coherent snapshot for this iteration. If versionsMatch is false,
+  // we treat this tick as advisory-only and avoid irreversible changes.
+  const snapshot = sabInterface.getTargetingSnapshot
+    ? sabInterface.getTargetingSnapshot()
+    : null;
+
   const { globalState, isInitialized } = workerState;
   if (!isInitialized || !globalState?.targeting) return;
 
@@ -1597,19 +1727,29 @@ async function performTargeting() {
       handleIdleState();
       break;
     case FSM_STATE.SELECTING:
-      handleSelectingState();
+      if (!snapshot || snapshot.versionsMatch) {
+        handleSelectingState(snapshot);
+      }
       break;
     case FSM_STATE.PREPARE_ACQUISITION:
-      if (controlState === 'TARGETING') handlePrepareAcquisitionState();
+      if (controlState === 'TARGETING' && (!snapshot || snapshot.versionsMatch)) {
+        handlePrepareAcquisitionState(snapshot);
+      }
       break;
     case FSM_STATE.PERFORM_ACQUISITION:
-      if (controlState === 'TARGETING') handlePerformAcquisitionState();
+      if (controlState === 'TARGETING' && (!snapshot || snapshot.versionsMatch)) {
+        handlePerformAcquisitionState(snapshot);
+      }
       break;
     case FSM_STATE.VERIFY_ACQUISITION:
-      if (controlState === 'TARGETING') handleVerifyAcquisitionState();
+      if (controlState === 'TARGETING' && (!snapshot || snapshot.versionsMatch)) {
+        handleVerifyAcquisitionState(snapshot);
+      }
       break;
     case FSM_STATE.ENGAGING:
-      if (controlState === 'TARGETING') await handleEngagingState();
+      if (controlState === 'TARGETING' && (!snapshot || snapshot.versionsMatch)) {
+        await handleEngagingState(snapshot);
+      }
       break;
   }
 

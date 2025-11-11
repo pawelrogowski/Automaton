@@ -36,11 +36,63 @@ export {
 export const createWorkerInterface = (sab, workerId) => {
   const state = new SABState(sab);
 
+  const get = (prop) => state.get(prop);
+  const set = (prop, val) => state.set(prop, val);
+  const getVersion = (prop) => state.getVersion(prop);
+  const getMany = (props) => state.getMany(props);
+  const setMany = (updates, options) => state.setMany(updates, options || {});
+
+  /**
+   * Read a coherent snapshot for targeting-related decisions.
+   * This is a thin helper over getMany to avoid cross-property tearing.
+   *
+   * Returned shape:
+   * {
+   *   creatures: Array,
+   *   battleList: Array,
+   *   target: Object|null,
+   *   looting: Object|null,
+   *   cavebotPathData: Object|null,
+   *   versionsMatch: boolean
+   * }
+   *
+   * Callers must treat versionsMatch === false as "do not make irreversible decisions".
+   */
+  const getTargetingSnapshot = () => {
+    const snapshot = getMany([
+      'creatures',
+      'battleList',
+      'target',
+      'looting',
+      'cavebotPathData',
+    ]);
+
+    // getMany already returns { prop: {data,version}, versionsMatch }
+    const {
+      creatures,
+      battleList,
+      target,
+      looting,
+      cavebotPathData,
+      versionsMatch,
+    } = snapshot;
+
+    return {
+      creatures: (creatures && creatures.data) || [],
+      battleList: (battleList && battleList.data) || [],
+      target: (target && target.data) || null,
+      looting: (looting && looting.data) || null,
+      cavebotPathData: (cavebotPathData && cavebotPathData.data) || null,
+      versionsMatch: !!versionsMatch,
+    };
+  };
+
   return {
-    get: (prop) => state.get(prop),
-    set: (prop, val) => state.set(prop, val),
-    getVersion: (prop) => state.getVersion(prop),
-    getMany: (props) => state.getMany(props),
-    setMany: (updates) => state.setMany(updates),
+    get,
+    set,
+    getVersion,
+    getMany,
+    setMany,
+    getTargetingSnapshot,
   };
 };

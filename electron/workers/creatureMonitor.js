@@ -116,7 +116,7 @@ let lastReachableSig = null;
 let lastReachableTiles = null;
 let regionsStale = false;
 
-// Cached health bar state to avoid redundant native calls
+ // Cached health bar state to avoid redundant native calls
 let lastHealthBarsRaw = [];
 let lastHealthBarsForReporting = [];
 let lastHealthBarsUpdateTime = 0;
@@ -126,6 +126,7 @@ const reachabilityStableState = new Map();
 const REACHABILITY_DEBOUNCE_MS = 150; // Require 150ms of consistent state before changing
 let lastRequestedRegionsVersion = -1;
 let lastHealthScanTime = 0;
+
 
 // Track creatures that lost health bar detection for redetection timing
 // Map: instanceId -> { name, lostAt, battleListName, lastSeenAt }
@@ -763,14 +764,44 @@ async function performOperation() {
     const hasRelevantEntities =
       battleListEntries.length > 0 || playerNames.length > 0;
 
+    // CRITICAL INVARIANT:
+    // If battleList is empty, there can be no valid enemy health bars in gameWorld.
+    // We must skip native scanning and force an empty health bar set.
+    if (battleListEntries.length === 0) {
+      const emptyHealthBars = [];
+      lastHealthBarsRaw = emptyHealthBars;
+      lastHealthBarsForReporting = emptyHealthBars;
+      lastSentHealthBars = emptyHealthBars;
+
+      // Sync to SAB
+      if (sabInterface) {
+        try {
+          sabInterface.set('healthBars', emptyHealthBars);
+        } catch (err) {}
+      }
+
+      // Sync to frontend (targeting slice)
+      const hbString = JSON.stringify(emptyHealthBars);
+      if (hbString !== lastPostedResults.get('targeting/setHealthBars')) {
+        lastPostedResults.set('targeting/setHealthBars', hbString);
+        parentPort.postMessage({
+          storeUpdate: true,
+          type: 'targeting/setHealthBars',
+          payload: emptyHealthBars,
+        });
+      }
+    }
+
     let healthBarsRaw = lastHealthBarsRaw || [];
 
     // Only rescan health bars when:
     // - We have relevant entities (BL or players), AND
     // - The game world actually changed (dirty rects), OR
     // - We have no cached result yet.
+    // Additionally: NEVER scan when battleList is empty.
     if (
       hasRelevantEntities &&
+      battleListEntries.length > 0 &&
       (healthBarsGameWorldChanged ||
         !healthBarsRaw ||
         healthBarsRaw.length === 0)
@@ -1087,69 +1118,71 @@ async function performOperation() {
       });
     }
 
-    // Scoring function — corrected argument order for similarity
+    // Scoring function — motion + name based (no tile reservation heuristics).
+    // We treat each existing creature as a tracked health bar:
+    // - Prefer minimal screen movement from previous absoluteCoords.
+    // - Validate with OCR/name similarity when available.
+    // - Hard constraints on max movement to avoid cross-swaps.
     const calculateMatchScore = (creature, detection) => {
-      if (!detection.gameCoords || !creature.gameCoords) {
+      if (!creature || !detection || !creature.absoluteCoords) {
         return -Infinity;
       }
 
-      // Factor 0: Instance Continuity (HIGHEST PRIORITY)
-      // Strongly prefer matching creatures to their previous tile positions
-      // This prevents ID swaps for stationary adjacent creatures with identical names
-      let continuityBonus = 0;
-      if (creature.gameCoords) {
-        const prevTileKey = `${creature.gameCoords.x},${creature.gameCoords.y},${creature.gameCoords.z}`;
-        const detectionTileKey = `${Math.round(detection.gameCoords.x)},${Math.round(detection.gameCoords.y)},${detection.gameCoords.z}`;
-        if (prevTileKey === detectionTileKey) {
-          // Same tile as last frame - massive bonus to maintain ID continuity
-          continuityBonus = 1000000;
-        }
+      const prev = creature.absoluteCoords;
+      const curr = { x: detection.hb.x, y: detection.hb.y };
+      const dx = curr.x - prev.x;
+      const dy = curr.y - prev.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Hard reject implausible jumps (health bar animation between tiles is smooth).
+      // This should be tuned, but start conservatively.
+      if (dist > 300) {
+        return -Infinity;
       }
 
-      // Factor 1: Name Similarity (Highest Weight)
-      // Allow OCR to be missing for the current target or its tile; otherwise require OCR.
+      // Target pinning: if this is the previously selected target, strongly favor.
       const isCurrentTargetCreature =
         !!lastSentTarget && creature.instanceId === lastSentTarget.instanceId;
       const isTargetTile = !!detection.isTargetTile;
 
+      let score = 0;
+
+      if (isCurrentTargetCreature || isTargetTile) {
+        score += 5000000;
+      }
+
+      // Smaller movement is better.
+      score += Math.max(0, 1000 - dist * 10);
+
+      // Name similarity as validation, not primary driver.
       let nameScore = 0;
-      if (detection.ocrName && detection.ocrName.length > 0) {
+      if (detection.ocrName && detection.ocrName.length > 0 && creature.name) {
         nameScore = getSimilarityScore(detection.ocrName, creature.name);
-      } else if (isCurrentTargetCreature || isTargetTile) {
-        // Treat as minimally acceptable if this is the current target or on the target tile
-        nameScore = config.NAME_MATCH_THRESHOLD;
+      } else if (detection.canonicalName && creature.name) {
+        nameScore = getSimilarityScore(detection.canonicalName, creature.name);
+      }
+
+      // If we have both motion and reasonable name similarity, reward strongly.
+      if (nameScore >= config.NAME_MATCH_THRESHOLD) {
+        score += Math.floor(nameScore * 1000);
       } else {
-        return -Infinity; // Isolate other bars without OCR
-      }
-      if (
-        nameScore < config.NAME_MATCH_THRESHOLD &&
-        !(isCurrentTargetCreature || isTargetTile)
-      ) {
-        return -Infinity;
+        // Allow weaker name evidence only when:
+        // - motion is extremely small, or
+        // - this is the pinned target.
+        if (!isCurrentTargetCreature && !isTargetTile && dist > 8) {
+          return -Infinity;
+        }
       }
 
-      // Factor 2: Game Tile Distance
-      const tileDist = chebyshevDistance(
-        creature.gameCoords,
-        detection.gameCoords,
-      );
-      if (tileDist > 2) {
-        return -Infinity;
+      // Optional: consider hp tag continuity (small bonus).
+      if (creature.hp && detection.hb.healthTag === creature.hp) {
+        score += 50;
       }
-      const gameCoordScore = (2 - tileDist) * 100;
 
-      // Factor 3: Screen Pixel Distance
-      const screenDistValue = screenDist(detection.hb, creature.absoluteCoords);
-      if (screenDistValue > config.CORRELATION_DISTANCE_THRESHOLD_PIXELS) {
-        return -Infinity;
-      }
-      const screenScore =
-        config.CORRELATION_DISTANCE_THRESHOLD_PIXELS - screenDistValue;
-
-      return continuityBonus + nameScore * 1000 + gameCoordScore + screenScore;
+      return score;
     };
 
-    // Find potential matches between existing creatures and detections
+    // Build potential matches: for each creature, evaluate all detections.
     const potentialMatches = [];
     const creaturesToProcess = new Map(activeCreatures);
 
@@ -1157,109 +1190,128 @@ async function performOperation() {
       for (const detection of detections) {
         const score = calculateMatchScore(creature, detection);
         if (score > -Infinity) {
-          potentialMatches.push({ creatureId: id, creature, detection, score });
+          potentialMatches.push({
+            creatureId: id,
+            creature,
+            detection,
+            score,
+          });
         }
       }
     }
 
-    potentialMatches.sort((a, b) => b.score - a.score);
+    // Deterministic ordering:
+    // - Primary: creatureId ASC (stable across frames)
+    // - Secondary: score DESC (best candidate wins)
+    // - Tertiary: detection index implied by stable array order
+    potentialMatches.sort((a, b) => {
+      if (a.creatureId !== b.creatureId) {
+        return a.creatureId - b.creatureId;
+      }
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return 0;
+    });
 
     const assignedCreatureIds = new Set();
     const assignedDetections = new Set();
 
     for (const match of potentialMatches) {
       if (
-        !assignedCreatureIds.has(match.creatureId) &&
-        !assignedDetections.has(match.detection)
+        assignedCreatureIds.has(match.creatureId) ||
+        assignedDetections.has(match.detection)
       ) {
-        const { creature, detection } = match;
+        continue;
+      }
 
-        // Use the pre-computed canonical name from detection
-        // This was already matched: nameplate -> battle list -> targeting
-        const updatedDetection = {
-          absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
-          healthBarY: detection.hb.y,
-          // Use canonical name from pipeline, fallback to existing creature name
-          name: detection.canonicalName || creature.name,
-          hp: detection.hb.healthTag,
-        };
+      const { creature, detection } = match;
 
-        const updated = updateCreatureState(
-          creature,
-          updatedDetection,
-          currentPlayerMinimapPosition,
-          lastStablePlayerMinimapPosition,
-          regions,
-          tileSize,
-          now,
-          isPlayerInAnimationFreeze,
-        );
-        if (updated) {
-          newActiveCreatures.set(match.creatureId, updated);
-          assignedCreatureIds.add(match.creatureId);
-          assignedDetections.add(detection);
-        }
+      const updatedDetection = {
+        absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
+        healthBarY: detection.hb.y,
+        name: detection.canonicalName || detection.ocrName || creature.name,
+        hp: detection.hb.healthTag,
+      };
+
+      const updated = updateCreatureState(
+        creature,
+        updatedDetection,
+        currentPlayerMinimapPosition,
+        lastStablePlayerMinimapPosition,
+        regions,
+        tileSize,
+        now,
+        isPlayerInAnimationFreeze,
+      );
+
+      if (updated) {
+        newActiveCreatures.set(match.creatureId, updated);
+        assignedCreatureIds.add(match.creatureId);
+        assignedDetections.add(detection);
       }
     }
 
-    // Unmatched detections: attempt to create new creatures
+    // Unmatched detections: create new creatures.
+    // Here we are motion-first, so we do not use tile reservations; we rely on:
+    // - no match to existing tracked bars
+    // - not being a known player/NPC
     const unmatchedDetections = detections.filter(
       (d) => !assignedDetections.has(d),
     );
     const allKnownSafeNames = new Set([...playerNames, ...npcNames]);
 
     for (const detection of unmatchedDetections) {
-      // Only consider detections that aren't known safe names (players/npcs)
-      if (!allKnownSafeNames.has(detection.ocrName || '')) {
-        // Construct a tile key for occupancy checks
-        if (!detection.gameCoords) continue;
-        const tileKey = `${Math.round(detection.gameCoords.x)},${Math.round(detection.gameCoords.y)},${detection.gameCoords.z}`;
+      if (!detection.gameCoords) continue;
 
-        // Skip if this tile is currently blacklisted
-        if (blacklistedTiles.has(tileKey)) continue;
+      if (allKnownSafeNames.has(detection.ocrName || '')) continue;
 
-        // If tile already used by a newly-created creature, skip
-        let tileIsOccupied = false;
-        for (const c of newActiveCreatures.values()) {
-          if (
-            c.gameCoords &&
-            detection.gameCoords &&
-            arePositionsEqual(c.gameCoords, detection.gameCoords)
-          ) {
-            tileIsOccupied = true;
-            break;
-          }
+      const tileKey = `${Math.round(detection.gameCoords.x)},${Math.round(
+        detection.gameCoords.y,
+      )},${detection.gameCoords.z}`;
+
+      // Skip blacklisted tiles
+      if (blacklistedTiles.has(tileKey)) continue;
+
+      // Avoid immediate duplicates on the same bar position in this frame
+      let occupied = false;
+      for (const c of newActiveCreatures.values()) {
+        if (
+          c.absoluteCoords &&
+          Math.abs(c.absoluteCoords.x - detection.hb.x) < 2 &&
+          Math.abs(c.absoluteCoords.y - detection.hb.y) < 2
+        ) {
+          occupied = true;
+          break;
         }
-        if (tileIsOccupied) continue;
+      }
+      if (occupied) continue;
 
-        // Detection already has canonical name from pipeline
-        // (nameplate -> battle list -> targeting)
-        const finalName = detection.canonicalName || 'Unknown';
+      const finalName = detection.canonicalName || detection.ocrName || 'Unknown';
 
-        const newCreatureDetection = {
-          absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
-          healthBarY: detection.hb.y,
-          name: finalName,
-          hp: detection.hb.healthTag,
-        };
+      const newCreatureDetection = {
+        absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
+        healthBarY: detection.hb.y,
+        name: finalName,
+        hp: detection.hb.healthTag,
+      };
 
-        const newId = nextInstanceId++;
-        let newCreature = { instanceId: newId };
+      const newId = nextInstanceId++;
+      let newCreature = { instanceId: newId };
 
-        newCreature = updateCreatureState(
-          newCreature,
-          newCreatureDetection,
-          currentPlayerMinimapPosition,
-          lastStablePlayerMinimapPosition,
-          regions,
-          tileSize,
-          now,
-          isPlayerInAnimationFreeze,
-        );
+      newCreature = updateCreatureState(
+        newCreature,
+        newCreatureDetection,
+        currentPlayerMinimapPosition,
+        lastStablePlayerMinimapPosition,
+        regions,
+        tileSize,
+        now,
+        isPlayerInAnimationFreeze,
+      );
 
-        if (newCreature) {
-          newActiveCreatures.set(newId, newCreature);
-        }
+      if (newCreature) {
+        newActiveCreatures.set(newId, newCreature);
       }
     }
 
@@ -1538,13 +1590,26 @@ async function performOperation() {
       if (reachableSig === lastReachableSig && lastReachableTiles) {
         reachableTiles = lastReachableTiles;
       } else {
-        reachableTiles = pathfinderInstance.getReachableTiles(
+        // Call native reachability and guard against transient invalid outputs
+        const tiles = pathfinderInstance.getReachableTiles(
           currentPlayerMinimapPosition,
           allCreaturePositions,
           screenBoundsCheck,
-        );
-        lastReachableSig = reachableSig;
-        lastReachableTiles = reachableTiles;
+        ) || {};
+        // If native suddenly returns a non-object / empty while we previously had data,
+        // treat it as a transient failure and keep last known tiles instead of flickering.
+        if (
+          (!tiles || typeof tiles !== 'object' || Object.keys(tiles).length === 0) &&
+          lastReachableTiles &&
+          typeof lastReachableTiles === 'object' &&
+          Object.keys(lastReachableTiles).length > 0
+        ) {
+          reachableTiles = lastReachableTiles;
+        } else {
+          reachableTiles = tiles;
+          lastReachableSig = reachableSig;
+          lastReachableTiles = reachableTiles;
+        }
       }
       // Pixel-based adjacency using a single tile size and absoluteCoords.
       // Player’s screen center is at fixed tile offset inside gameWorld.
@@ -1562,7 +1627,11 @@ async function performOperation() {
 
       detectedEntities = detectedEntities.map((entity) => {
         const coordsKey = getCoordsKey(entity.gameCoords);
-        const newReachable = typeof reachableTiles[coordsKey] !== 'undefined';
+        const hasReachableEntry =
+          reachableTiles &&
+          typeof reachableTiles === 'object' &&
+          Object.prototype.hasOwnProperty.call(reachableTiles, coordsKey);
+        const newReachable = hasReachableEntry;
 
         // Apply temporal stability to prevent flickering
         let isReachable = newReachable;
