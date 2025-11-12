@@ -927,13 +927,17 @@ class WorkerManager {
         'ocrWorker',
         'creatureMonitor',
       ].includes(name);
+
+      // Targeting worker does not need shared screen buffer, but should receive unified SAB
       const workerData = {
         paths: paths || this.paths,
         sharedData: needsSharedScreen ? this.sharedData : null,
         sharedLuaGlobals: this.sharedLuaGlobals,
         enableMemoryLogging: true,
         // Pass unified SAB state to all workers that need it
-        unifiedSAB: this.sabState ? this.sabState.getSharedArrayBuffer() : null,
+        unifiedSAB: this.sabState
+          ? this.sabState.getSharedArrayBuffer()
+          : null,
       };
       if (needsSharedScreen) {
         workerData.display = store.getState().global.display;
@@ -1269,8 +1273,12 @@ class WorkerManager {
         if (
           this.workerConfig.targetingWorker &&
           !this.workers.has('targetingWorker')
-        )
+        ) {
+          // TargetingWorker consumes state snapshots coming primarily from creatureMonitor
+          // and targeting slice (enabled flag, creatures, target, etc).
+          // It is started automatically once window and display are valid.
           this.startWorker('targetingWorker');
+        }
         if (
           this.workerConfig.windowTitleMonitor &&
           !this.workers.has('windowTitleMonitor')

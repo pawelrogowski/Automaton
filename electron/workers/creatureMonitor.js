@@ -1775,66 +1775,48 @@ async function performOperation() {
         gameWorld,
       );
       if (targetRect) {
+        // Red-box based targeting:
+        // - Native returns an inset rect for the targeted creature (inside the red border).
+        // - We compute the visual center of that rect in screen space.
+        // - We then match this center directly against creatures' absoluteCoords
+        //   (also in screen space, derived from health bar centers).
         const screenX = targetRect.x + targetRect.width / 2;
         const screenY = targetRect.y + targetRect.height / 2;
-        const targetGameCoordsRaw = getGameCoordinatesFromScreen(
-          screenX,
-          screenY,
-          isPlayerInAnimationFreeze
-            ? lastStablePlayerMinimapPosition
-            : currentPlayerMinimapPosition,
-          gameWorld,
-          tileSize,
-        );
-        if (targetGameCoordsRaw) {
-          const targetTile = {
-            x: Math.round(targetGameCoordsRaw.x),
-            y: Math.round(targetGameCoordsRaw.y),
-            z:
-              targetGameCoordsRaw.z ??
-              (isPlayerInAnimationFreeze
-                ? lastStablePlayerMinimapPosition
-                : currentPlayerMinimapPosition
-              ).z,
-          };
 
-          let matched = detectedEntities.find(
-            (e) =>
-              e.gameCoords &&
-              e.gameCoords.x === targetTile.x &&
-              e.gameCoords.y === targetTile.y &&
-              e.gameCoords.z === targetTile.z,
-          );
+        let bestMatch = null;
+        let bestDist = Infinity;
 
-          if (!matched) {
-            let closestCreature = null;
-            let minDistance = Infinity;
-            for (const entity of detectedEntities) {
-              if (entity.gameCoords) {
-                const distance = calculateDistance(
-                  targetTile,
-                  entity.gameCoords,
-                );
-                if (distance < minDistance) {
-                  minDistance = distance;
-                  closestCreature = entity;
-                }
-              }
-            }
-            if (minDistance <= 1.0) matched = closestCreature;
-          }
+        // Use tileSize as a natural scale reference; accept matches within ~1 tile radius.
+        const maxTargetPixelDist =
+          tileSize && tileSize.width
+            ? tileSize.width * 1.0
+            : 32; // fallback
 
-          if (matched) {
-            gameWorldTarget = {
-              instanceId: matched.instanceId,
-              name: matched.name,
-              hp: matched.hp,
-              distance: parseFloat(matched.distance.toFixed(1)),
-              gameCoordinates: matched.gameCoords,
-              isReachable: matched.isReachable,
-            };
+        for (const entity of detectedEntities) {
+          if (!entity.absoluteCoords) continue;
+          const dx = entity.absoluteCoords.x - screenX;
+          const dy = entity.absoluteCoords.y - screenY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestMatch = entity;
           }
         }
+
+        // Only accept a match if the red-box center is reasonably close to a creature center.
+        if (bestMatch && bestDist <= maxTargetPixelDist) {
+          gameWorldTarget = {
+            instanceId: bestMatch.instanceId,
+            name: bestMatch.name,
+            hp: bestMatch.hp,
+            distance: parseFloat(bestMatch.distance.toFixed(1)),
+            gameCoordinates: bestMatch.gameCoords,
+            isReachable: bestMatch.isReachable,
+          };
+        }
+        // If no suitable bestMatch, we intentionally leave gameWorldTarget as null.
+        // This causes unifiedTarget to be nulled for this frame (clear invalid sticky targets),
+        // which matches the intended semantics: red box without a valid creature → no logical target.
       }
     }
 

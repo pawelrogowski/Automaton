@@ -39,16 +39,19 @@ export function runPathfindingLogic(context) {
       return;
     }
 
-    // Read cavebot config from SAB
+    // Read configs from SAB
     const cavebotConfigResult = sabInterface.get('cavebotConfig');
-    if (!cavebotConfigResult || !cavebotConfigResult.data) {
-      logger('debug', `[Pathfinder] No cavebot config in SAB`);
-      return;
-    }
+    const targetingConfigResult = sabInterface.get('targetingConfig');
 
-    const cavebotConfig = cavebotConfigResult.data;
-    if (!cavebotConfig.enabled) {
-      logger('debug', `[Pathfinder] Cavebot disabled`);
+    const cavebotConfig = cavebotConfigResult?.data || null;
+    const targetingConfig = targetingConfigResult?.data || null;
+
+    const cavebotEnabled = cavebotConfig?.enabled === 1;
+    const targetingEnabled = targetingConfig?.enabled === 1;
+
+    // Early exit if neither system needs pathfinding
+    if (!cavebotEnabled && !targetingEnabled) {
+      logger('debug', `[Pathfinder] Both cavebot and targeting disabled`);
       return;
     }
 
@@ -104,21 +107,18 @@ export function runPathfindingLogic(context) {
       };
     }
 
-    const currentWptId = cavebotConfig.wptId || '';
-    const currentDynamicTargetJson = isTargetingMode
-      ? JSON.stringify(dynamicTarget)
-      : null;
+    const currentWptId = cavebotConfig?.wptId || '';
 
-    let result = null;
-    let targetIdentifier = isTargetingMode
-      ? currentDynamicTargetJson
-      : currentWptId;
+    // Determine effective mode based solely on SAB:
+    // - Targeting mode: targeting enabled AND dynamicTarget.valid === 1
+    // - Cavebot mode: cavebot enabled AND NOT in targeting mode
+    const targetingModeActive = targetingEnabled && isTargetingMode;
+    const cavebotModeActive = cavebotEnabled && !targetingModeActive;
 
-    // Early exit if no target
-    if (!targetIdentifier) {
+    if (!targetingModeActive && !cavebotModeActive) {
       logger(
         'debug',
-        `[Pathfinder] No target identifier (wptId or dynamicTarget)`,
+        `[Pathfinder] No active mode (no valid dynamicTarget and/or wptId)`,
       );
       return;
     }
@@ -162,12 +162,21 @@ export function runPathfindingLogic(context) {
     ];
     const activeSpecialAreas = allSpecialAreas.filter((area) => area.enabled);
 
-    const pathfindingInput = {
-      start: playerPos,
-      target: isTargetingMode ? dynamicTarget : currentWptId,
-      obstacles: creaturePositions,
-      specialAreas: activeSpecialAreas,
-    };
+    const pathfindingInput = targetingModeActive
+      ? {
+          // Targeting path input
+          start: playerPos,
+          target: dynamicTarget,
+          obstacles: creaturePositions,
+          specialAreas: activeSpecialAreas,
+        }
+      : {
+          // Cavebot path input
+          start: playerPos,
+          target: currentWptId,
+          obstacles: creaturePositions,
+          specialAreas: activeSpecialAreas,
+        };
 
     const currentSignature = deepHash(pathfindingInput);
 
@@ -175,6 +184,7 @@ export function runPathfindingLogic(context) {
       result = logicContext.lastResult;
     } else {
       logicContext.lastSignature = currentSignature;
+      logicContext.lastResult = null;
     }
 
     const newAreasByZ = {};
@@ -224,12 +234,14 @@ export function runPathfindingLogic(context) {
     }
 
     if (!result) {
-      if (isTargetingMode) {
-        // Validate dynamicTarget exists before accessing properties
+      if (targetingModeActive) {
+        // Targeting mode: compute creature-focused path
         if (!dynamicTarget || !dynamicTarget.targetCreaturePos) {
           logger(
             'warn',
-            `[Pathfinder] Invalid dynamicTarget (flickering?): ${JSON.stringify(dynamicTarget)}`,
+            `[Pathfinder] Invalid dynamicTarget (flickering?): ${JSON.stringify(
+              dynamicTarget,
+            )}`,
           );
           result = { path: [], reason: 'NO_VALID_END' };
         } else {
@@ -285,8 +297,8 @@ export function runPathfindingLogic(context) {
             }
           }
         }
-      } else if (targetIdentifier) {
-        // Use the cached targetWaypointSAB read from function start
+      } else if (cavebotModeActive) {
+        // Cavebot mode: compute waypoint-focused path using targetWaypoint
         if (targetWaypointSAB && targetWaypointSAB.valid === 1) {
           result = pathfinderInstance.findPathSync(
             playerPos,
@@ -297,23 +309,27 @@ export function runPathfindingLogic(context) {
             },
             creaturePositions,
           );
+        } else {
+          result = { path: [], reason: 'NO_VALID_END' };
         }
       }
+
+      if (!result) {
+        // Fallback classification when no result computed
+        result = {
+          path: [],
+          reason: 'NO_PATH_FOUND',
+        };
+      }
+
       logicContext.lastResult = result;
     }
 
-    if (targetIdentifier && !result) {
-      result = {
-        path: [],
-        reason: 'NO_PATH_FOUND',
-      };
-    }
-
     if (!result) {
-      // CRITICAL: Even with no result, write IDLE status to SAB to unblock cavebot
-      if (sabInterface && isTargetingMode === false) {
+      // If still no result (defensive), emit IDLE for the active mode only
+      if (sabInterface) {
         try {
-          sabInterface.set('cavebotPathData', {
+          const baseIdlePayload = {
             waypoints: [],
             length: 0,
             status: PATH_STATUS_IDLE,
@@ -329,9 +345,33 @@ export function runPathfindingLogic(context) {
             blockingCreatureZ: 0,
             wptId: 0,
             instanceId: 0,
-          });
+            lastUpdateTimestamp: Date.now(),
+          };
+
+          if (targetingModeActive) {
+            sabInterface.set('targetingPathData', baseIdlePayload);
+            // Optional debug legacy mirror (no consumers allowed)
+            sabInterface.set('pathData', baseIdlePayload);
+          } else if (cavebotModeActive) {
+            const wptIdHash =
+              cavebotConfig?.wptId
+                ?.split('')
+                .reduce((a, b) => {
+                  a = (a << 5) - a + b.charCodeAt(0);
+                  return a & a;
+                }, 0) || 0;
+
+            const cavebotIdle = {
+              ...baseIdlePayload,
+              wptId: wptIdHash,
+            };
+
+            sabInterface.set('cavebotPathData', cavebotIdle);
+            // Optional debug legacy mirror (no consumers allowed)
+            sabInterface.set('pathData', cavebotIdle);
+          }
         } catch (err) {
-          logger('error', `Failed to write idle status to SAB: ${err.message}`);
+          logger('error', `[Pathfinder] Failed to write idle status: ${err.message}`);
         }
       }
       return;
@@ -343,15 +383,20 @@ export function runPathfindingLogic(context) {
     const blockingCreatureCoords = result.blockingCreatureCoords || null;
 
     const normalizedPath = Array.isArray(rawPath) ? rawPath.slice() : [];
-    const wptId = isTargetingMode
-      ? 0
-      : cavebotConfig.wptId
-        ? cavebotConfig.wptId.split('').reduce((a, b) => {
-            a = (a << 5) - a + b.charCodeAt(0);
-            return a & a;
-          }, 0)
+
+    // Compute identifiers:
+    // - Cavebot: wptId = hash(cavebotConfig.wptId), instanceId = 0
+    // - Targeting: instanceId = dynamicTarget.targetInstanceId, wptId = 0
+    const wptId =
+      cavebotModeActive && cavebotConfig?.wptId
+        ? cavebotConfig.wptId
+            .split('')
+            .reduce((a, b) => {
+              a = (a << 5) - a + b.charCodeAt(0);
+              return a & a;
+            }, 0)
         : 0;
-    const instanceId = isTargetingMode
+    const instanceId = targetingModeActive
       ? dynamicTarget?.targetInstanceId || 0
       : 0;
 
@@ -381,15 +426,17 @@ export function runPathfindingLogic(context) {
         break;
     }
 
-    const pathSignature = `${statusCode}:${normalizedPath.map((p) => `${p.x},${p.y}`).join(';')}`;
+    const pathSignature = `${statusCode}:${normalizedPath
+      .map((p) => `${p.x},${p.y},${p.z}`)
+      .join(';')}:${wptId}:${instanceId}`;
 
-    const currentTargetWptIdHash = isTargetingMode ? instanceId : wptId;
+    const currentTargetWptIdHash = targetingModeActive ? instanceId : wptId;
     const targetWptIdChanged =
       currentTargetWptIdHash !== logicContext.lastProcessedWptId;
 
     // Calculate pathTargetCoords outside pathDataArray block (needed by SAB write)
     let pathTargetCoords = { x: 0, y: 0, z: 0 };
-    if (isTargetingMode && dynamicTarget && dynamicTarget.targetCreaturePos) {
+    if (targetingModeActive && dynamicTarget && dynamicTarget.targetCreaturePos) {
       pathTargetCoords = dynamicTarget.targetCreaturePos;
     } else {
       // Use the cached targetWaypointSAB read above (avoid duplicate SAB reads)
@@ -419,7 +466,7 @@ export function runPathfindingLogic(context) {
             Math.abs(y - targetY),
           );
 
-          const pathPayload = {
+          const basePayload = {
             waypoints: normalizedPath,
             length: normalizedPath.length,
             status: statusCode,
@@ -427,9 +474,9 @@ export function runPathfindingLogic(context) {
             startX: x,
             startY: y,
             startZ: z,
-            targetX: pathTargetCoords.x,
-            targetY: pathTargetCoords.y,
-            targetZ: pathTargetCoords.z,
+            targetX: pathTargetCoords.x || targetX,
+            targetY: pathTargetCoords.y || targetY,
+            targetZ: pathTargetCoords.z || z,
             blockingCreatureX: blockingCreatureCoords?.x || 0,
             blockingCreatureY: blockingCreatureCoords?.y || 0,
             blockingCreatureZ: blockingCreatureCoords?.z || 0,
@@ -438,14 +485,27 @@ export function runPathfindingLogic(context) {
             lastUpdateTimestamp: Date.now(),
           };
 
-          // Write to legacy pathData (will be removed in future)
-          sabInterface.set('pathData', pathPayload);
+          if (targetingModeActive) {
+            // Targeting: authoritative write to targetingPathData only
+            const targetingPayload = {
+              ...basePayload,
+              wptId: 0,
+              instanceId,
+            };
+            sabInterface.set('targetingPathData', targetingPayload);
 
-          // Write to appropriate separate path array
-          if (isTargetingMode) {
-            sabInterface.set('targetingPathData', pathPayload);
-          } else {
-            sabInterface.set('cavebotPathData', pathPayload);
+            // Optional legacy debug mirror (no consumers allowed)
+            sabInterface.set('pathData', targetingPayload);
+          } else if (cavebotModeActive) {
+            // Cavebot: authoritative write to cavebotPathData only
+            const cavebotPayload = {
+              ...basePayload,
+              instanceId: 0,
+            };
+            sabInterface.set('cavebotPathData', cavebotPayload);
+
+            // Optional legacy debug mirror (no consumers allowed)
+            sabInterface.set('pathData', cavebotPayload);
           }
         } catch (err) {
           logger('error', `Failed to write path to SAB: ${err.message}`);

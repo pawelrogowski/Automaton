@@ -38,6 +38,8 @@ const workerState = {
   path: [],
   pathChebyshevDistance: null,
   pathfindingStatus: 0,
+  pathWptId: 0,
+  pathInstanceId: 0,
 
   luaExecutor: null,
   lastProcessedWptId: null,

@@ -369,15 +369,20 @@ export async function manageMovement(
   targetingContext,
   currentTarget,
 ) {
-  const { path, playerMinimapPosition, parentPort, sabInterface } =
-    workerContext;
+  const {
+    path,
+    pathInstanceId,
+    playerMinimapPosition,
+    parentPort,
+    sabInterface,
+  } = workerContext;
   const { targetingList } = targetingContext;
 
   if (!currentTarget) {
     return;
   }
 
-  // Check if looting is required from unified SAB
+  // Looting lock: never move while looting is active
   if (sabInterface) {
     try {
       const lootingResult = sabInterface.get('looting');
@@ -386,21 +391,21 @@ export async function manageMovement(
         lootingResult.data &&
         lootingResult.data.required === 1
       ) {
-        return; // Skip movement while looting
+        return;
       }
-    } catch (err) {
-      // Continue with movement if looting check fails
+    } catch {
+      // Best-effort; on failure we proceed
     }
   }
 
   const rule = findRuleForCreatureName(currentTarget.name, targetingList);
-
   if (!rule || rule.stance === 'Stand') {
     return;
   }
 
   const desiredDistance = rule.distance === 0 ? 1 : rule.distance;
 
+  // Distance / stance gating
   if (rule.stance === 'Reach') {
     if (currentTarget.isAdjacent) {
       return;
@@ -414,34 +419,35 @@ export async function manageMovement(
     }
   }
 
-  if (!playerMinimapPosition || !sabInterface) {
+  if (!playerMinimapPosition) {
     return;
   }
 
-  if (!path || path.length < 2) {
+  // Path must come from targetingPathData: non-empty and at least [start, next]
+  if (!Array.isArray(path) || path.length < 2) {
     return;
   }
 
-  // Validate path is for current target (prevent using path for different creature)
-  if (workerContext.pathInstanceId !== currentTarget.instanceId) {
-    return; // Path is for different creature, wait for new path
+  // Ownership invariant:
+  // targetingPathData.header.instanceId MUST equal currentTarget.instanceId
+  if (!pathInstanceId || pathInstanceId !== currentTarget.instanceId) {
+    return;
   }
 
-  // FIX: Validate that path is for current position (prevent stale path usage)
+  // Start-position invariant:
+  // path[0] MUST match current player minimap position
   const pathStart = path[0];
-  const isPathStale =
+  if (
+    !pathStart ||
     pathStart.x !== playerMinimapPosition.x ||
     pathStart.y !== playerMinimapPosition.y ||
-    pathStart.z !== playerMinimapPosition.z;
-
-  if (isPathStale) {
-    // Path is stale - silently skip movement and wait for new path
+    pathStart.z !== playerMinimapPosition.z
+  ) {
     return;
   }
 
   const nextStep = path[1];
   const dirKey = getDirectionKey(playerMinimapPosition, nextStep);
-
   if (!dirKey) {
     return;
   }
@@ -452,7 +458,7 @@ export async function manageMovement(
   movementTracking.lastMoveTimestamp = now;
   movementTracking.moveCount++;
 
-  // Set movement lock BEFORE sending keypress (prevent double-stepping)
+  // Movement lock: prevent double-steps within this worker
   workerContext.isWaitingForMovement = true;
   workerContext.movementWaitUntil = now + timeout;
 
@@ -460,7 +466,11 @@ export async function manageMovement(
     type: 'inputAction',
     payload: {
       type: 'movement',
-      action: { module: 'keypress', method: 'sendKey', args: [dirKey, null] },
+      action: {
+        module: 'keypress',
+        method: 'sendKey',
+        args: [dirKey, null],
+      },
     },
   });
 
@@ -470,10 +480,9 @@ export async function manageMovement(
       { stateChangePollIntervalMs: 5 },
       timeout,
     );
-  } catch (error) {
-    // Movement failed - silently retry on next iteration
+  } catch {
+    // Ignore; targeting loop will request a fresh path or re-evaluate
   } finally {
-    // CRITICAL: Always clear lock, even on unexpected errors
     workerContext.isWaitingForMovement = false;
   }
 }
