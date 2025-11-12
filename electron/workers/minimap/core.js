@@ -20,6 +20,11 @@ let needsReProcessing = false;
 let dirtyRectsQueue = [];
 let lastProcessedTime = Date.now();
 
+// Track whether we've already successfully processed at least one frame.
+// Before the first successful processing, we treat frames as full-frame snapshots
+// even if no dirty rects are provided, so minimapMatcher can bootstrap.
+let hasProcessedFirstFrame = false;
+
 // Region snapshot management
 let regionsStale = false;
 let lastRequestedRegionsVersion = -1;
@@ -87,6 +92,9 @@ async function performOperation(dirtyRects) {
       workerData,
     );
     lastProcessedTime = Date.now();
+    if (!hasProcessedFirstFrame) {
+      hasProcessedFirstFrame = true;
+    }
   }
 }
 
@@ -96,7 +104,10 @@ async function processFrames(force = false) {
     return;
   }
 
-  if (dirtyRectsQueue.length === 0 && !force) {
+  // Before we have successfully processed a frame, allow a forced run even
+  // when there are no dirty rects; this treats the first usable frame as
+  // a full-frame snapshot instead of requiring dirty rects.
+  if (dirtyRectsQueue.length === 0 && (!force || hasProcessedFirstFrame)) {
     return;
   }
 
@@ -110,6 +121,9 @@ async function processFrames(force = false) {
 
       await performOperation(queueItem.rects || queueItem);
     } else if (force) {
+      // When forcing without queued rects:
+      // - Before first frame processed: treat as full-frame processing (null)
+      // - After first frame: keep using fallback behavior as before
       await performOperation(null);
     }
   } catch (error) {
@@ -125,10 +139,21 @@ async function processFrames(force = false) {
 
 function handleMessage(message) {
   if (message.type === 'frame-update') {
-    if (message.payload.dirtyRects && message.payload.dirtyRects.length > 0) {
+    const hasDirtyRects =
+      Array.isArray(message.payload?.dirtyRects) &&
+      message.payload.dirtyRects.length > 0;
+
+    if (hasDirtyRects) {
+      // Normal path: after the first successful frame, rely on dirty rects.
       dirtyRectsQueue.push(message.payload.dirtyRects);
+      processFrames(false);
+    } else if (!hasProcessedFirstFrame) {
+      // Special-case: before we have processed any frame successfully,
+      // treat the first frame we see as a candidate full-frame snapshot.
+      // We don't need actual rects; performOperation() will read from the SAB.
+      processFrames(true);
     }
-    processFrames();
+
     return;
   }
 
