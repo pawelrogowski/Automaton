@@ -1758,6 +1758,18 @@ async function performOperation() {
       lastSentCreatures = detectedEntities;
     }
 
+    // === TARGET RESOLUTION ===
+    // Keep all existing creature detection / reporting semantics.
+    // Only adjust how we pick WHICH creature corresponds to the red target box:
+    // 1) Detect red box in gameWorld.
+    // 2) Convert its center to tile coords (as before).
+    // 3) Among detectedEntities, pick the creature whose gameCoords is closest to that tile.
+    //    If there is a tie or ambiguity at tile level, use raw screen-space proximity
+    //    (entity.absoluteCoords vs red-box center) as a tiebreaker.
+    // This ensures:
+    // - targetingWorker still consumes game-coordinate based target data.
+    // - Binding of red box to creature is stabilized by pre-stabilized raw proximity,
+    //   without changing the rest of the targeting logic.
     let gameWorldTarget = null;
     const allObstructed =
       detectedEntities.length > 0 &&
@@ -1773,18 +1785,23 @@ async function performOperation() {
         sharedBufferView,
         gameWorld,
       );
+
       if (targetRect) {
-        const screenX = targetRect.x + targetRect.width / 2;
-        const screenY = targetRect.y + targetRect.height / 2;
+        const targetCenter = {
+          x: targetRect.x + targetRect.width / 2,
+          y: targetRect.y + targetRect.height / 2,
+        };
+
         const targetGameCoordsRaw = getGameCoordinatesFromScreen(
-          screenX,
-          screenY,
+          targetCenter.x,
+          targetCenter.y,
           isPlayerInAnimationFreeze
             ? lastStablePlayerMinimapPosition
             : currentPlayerMinimapPosition,
           gameWorld,
           tileSize,
         );
+
         if (targetGameCoordsRaw) {
           const targetTile = {
             x: Math.round(targetGameCoordsRaw.x),
@@ -1797,7 +1814,8 @@ async function performOperation() {
               ).z,
           };
 
-          let matched = detectedEntities.find(
+          // Step 1: find creatures whose gameCoords tile matches targetTile exactly.
+          const tileMatches = detectedEntities.filter(
             (e) =>
               e.gameCoords &&
               e.gameCoords.x === targetTile.x &&
@@ -1805,22 +1823,53 @@ async function performOperation() {
               e.gameCoords.z === targetTile.z,
           );
 
-          if (!matched) {
-            let closestCreature = null;
-            let minDistance = Infinity;
-            for (const entity of detectedEntities) {
-              if (entity.gameCoords) {
-                const distance = calculateDistance(
-                  targetTile,
-                  entity.gameCoords,
-                );
-                if (distance < minDistance) {
-                  minDistance = distance;
-                  closestCreature = entity;
-                }
+          let matched = null;
+
+          if (tileMatches.length === 1) {
+            matched = tileMatches[0];
+          } else if (tileMatches.length > 1) {
+            // Ambiguous on tile: pick by raw screen-space proximity.
+            let best = null;
+            let bestDist = Infinity;
+            for (const e of tileMatches) {
+              if (!e.absoluteCoords) continue;
+              const dx = e.absoluteCoords.x - targetCenter.x;
+              const dy = e.absoluteCoords.y - targetCenter.y;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist < bestDist) {
+                bestDist = dist;
+                best = e;
               }
             }
-            if (minDistance <= 1.0) matched = closestCreature;
+            matched = best;
+          } else {
+            // No exact tile match; fall back to nearest-by-tile within small radius,
+            // using screen-space distance as secondary stability heuristic.
+            let best = null;
+            let bestTileDist = Infinity;
+            let bestScreenDist = Infinity;
+            for (const e of detectedEntities) {
+              if (!e.gameCoords) continue;
+              const tileDist = calculateDistance(targetTile, e.gameCoords);
+              if (tileDist > 1.5) continue; // keep tight, like original <= 1.0 with a bit of slack
+
+              let sDist = Infinity;
+              if (e.absoluteCoords) {
+                const dx = e.absoluteCoords.x - targetCenter.x;
+                const dy = e.absoluteCoords.y - targetCenter.y;
+                sDist = Math.sqrt(dx * dx + dy * dy);
+              }
+
+              if (
+                tileDist < bestTileDist ||
+                (tileDist === bestTileDist && sDist < bestScreenDist)
+              ) {
+                best = e;
+                bestTileDist = tileDist;
+                bestScreenDist = sDist;
+              }
+            }
+            matched = best;
           }
 
           if (matched) {
@@ -1828,9 +1877,9 @@ async function performOperation() {
               instanceId: matched.instanceId,
               name: matched.name,
               hp: matched.hp,
-              distance: parseFloat(matched.distance.toFixed(1)),
+              distance: parseFloat((matched.distance || 0).toFixed(1)),
               gameCoordinates: matched.gameCoords,
-              isReachable: matched.isReachable,
+              isReachable: !!matched.isReachable,
             };
           }
         }

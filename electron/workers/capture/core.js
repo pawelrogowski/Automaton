@@ -23,9 +23,7 @@ let isCapturing = false;
 const perfTracker = new PerformanceTracker();
 let lastPerfReportTime = Date.now();
 
-// Small sleep helper to avoid tight CPU spin when no new frames are available.
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const IDLE_WAIT_MS = 1;
 
 function logPerformanceReport() {
   // This function is disabled in the provided code, but left for completeness.
@@ -79,7 +77,7 @@ async function captureLoop() {
     try {
       const frameResult = captureInstance.getLatestFrame(imageBuffer);
 
-      if (frameResult && frameResult.success) {
+      if (frameResult) {
         // --- START OF SYNCHRONIZED UPDATE ---
         // All data related to the new frame is written to the syncSAB first.
         // The frame counter is only updated at the very end.
@@ -138,9 +136,6 @@ async function captureLoop() {
 
         const loopDuration = performance.now() - loopStartTime;
         perfTracker.addFrameMeasurement(loopDuration, regionsToWrite);
-      } else {
-        // No new frame available from native side; yield briefly to avoid tight spin.
-        await delay(IDLE_WAIT_MS);
       }
     } catch (err) {
       console.error('[CaptureCore] Error in capture loop, stopping:', err);
@@ -148,6 +143,10 @@ async function captureLoop() {
       Atomics.notify(syncArray, config.IS_RUNNING_INDEX);
       break;
     }
+
+    const loopDuration = performance.now() - loopStartTime;
+    const delayTime = Math.max(0, 1000 / config.TARGET_FPS - loopDuration);
+    await delay(delayTime);
   }
 
   if (isCapturing) {
