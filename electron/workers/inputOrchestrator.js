@@ -2,6 +2,7 @@ import { parentPort } from 'worker_threads';
 import keypress from 'keypress-native';
 import mouseController from 'mouse-controller';
 import { createLogger } from '../utils/logger.js';
+import { getRandomNumber } from '../utils/getRandomNumber.js';
 
 const log = createLogger({ info: false, error: true, debug: false });
 const PRIORITY_MAP = {
@@ -32,6 +33,42 @@ function applyStarvationPrevention(items) {
       item.priority = -1;
     }
   });
+}
+
+function getRandomGameWorldPosition(state) {
+  try {
+    const regions = state?.regions;
+    const gameWorld = regions?.gameWorld;
+    if (
+      !gameWorld ||
+      !Number.isFinite(gameWorld.x) ||
+      !Number.isFinite(gameWorld.y) ||
+      !Number.isFinite(gameWorld.width) ||
+      !Number.isFinite(gameWorld.height) ||
+      gameWorld.width <= 0 ||
+      gameWorld.height <= 0
+    ) {
+      return null;
+    }
+
+    const x = Math.floor(
+      getRandomNumber(gameWorld.x, gameWorld.x + gameWorld.width - 1),
+    );
+    const y = Math.floor(
+      getRandomNumber(gameWorld.y, gameWorld.y + gameWorld.height - 1),
+    );
+
+    return { x, y };
+  } catch (err) {
+    log('error', '[INPUT] getRandomGameWorldPosition error:', err);
+    return null;
+  }
+}
+
+function getPostActionMouseTarget(state) {
+  const pos = getRandomGameWorldPosition(state);
+  if (pos) return pos;
+  return { x: 0, y: 0 };
 }
 
 async function processQueue() {
@@ -74,16 +111,32 @@ async function processQueue() {
 
     if (inputType === 'mouse') {
       const windowId = parseInt(globalState.global.windowId, 10);
+      const [x, y, ...restArgs] = action.args;
+
       log(
         'info',
-        `[INPUT] Mouse ${action.method} at (${action.args[0]}, ${action.args[1]}) | Source: ${inputSource} | Priority: ${item.priority}`,
+        `[INPUT] Mouse ${action.method} at (${x}, ${y}) | Source: ${inputSource} | Priority: ${item.priority}`,
       );
-      await mouseController[action.method](
-        windowId,
-        action.args[0],
-        action.args[1],
-        display,
-      );
+
+      // Perform requested mouse action at target
+      await mouseController[action.method](windowId, x, y, display, ...restArgs);
+
+      // After completing the action, move cursor either:
+      // - to a random point inside gameWorld when available, or
+      // - to (0,0) as a fallback.
+      try {
+        const postTarget = getPostActionMouseTarget(globalState);
+        if (postTarget && Number.isFinite(postTarget.x) && Number.isFinite(postTarget.y)) {
+          await mouseController.mouseMove(
+            windowId,
+            postTarget.x,
+            postTarget.y,
+            display,
+          );
+        }
+      } catch (err) {
+        log('error', '[INPUT] post-action mouseMove failed:', err);
+      }
     } else {
       const method = action.method;
       if (['sendKey', 'keyDown', 'keyUp'].includes(method)) {

@@ -201,21 +201,55 @@ export function findBestNameMatch(
 
 /**
  * Checks whether a battle list entry (which can be truncated or noisy) matches a full canonical name.
+ * This function implements hierarchical matching to prevent cross-creature targeting errors.
  * Signature: isBattleListMatch(fullName, battleListEntryName)
  */
 export function isBattleListMatch(fullName, battleListEntryName) {
   if (!fullName || !battleListEntryName) return false;
 
-  // Direct equality
-  if (fullName === battleListEntryName) return true;
+  // STEP 1: Exact match (case-insensitive)
+  if (fullName.toLowerCase() === battleListEntryName.toLowerCase()) return true;
 
-  // Truncated battlelist entries ending with "..."
+  // STEP 2: Handle truncated battle list entries (e.g., "Orc Berser...")
   if (battleListEntryName.endsWith('...')) {
     const truncated = battleListEntryName.slice(0, -3).trim();
     if (truncated.length === 0) return false;
     return cleanName(fullName).startsWith(cleanName(truncated));
   }
 
-  // Fallback to fuzzy matching (battleListEntryName considered OCR-like)
-  return getSimilarityScore(battleListEntryName, fullName) > 0.8;
+  // STEP 3: Handle OCR spacing errors (e.g., "OrcBerserker" vs "Orc Berserker")
+  const cleanFull = cleanName(fullName);
+  const cleanBL = cleanName(battleListEntryName);
+  
+  // Check for spacing issues - common OCR error
+  if (cleanFull.replace(/\s+/g, '') === cleanBL.replace(/\s+/g, '')) {
+    return true; // Same words, just spacing differs
+  }
+
+  // STEP 4: OCR correction only - very strict threshold for same creature
+  // This should only catch OCR errors like "Orc Berserker" -> "Orc Berzerker"
+  const ocrScore = getSimilarityScore(battleListEntryName, fullName);
+  if (ocrScore >= 0.95) return true; // Very high threshold for OCR errors only
+
+  // STEP 5: Prevent matching between different specific creatures
+  // "Orc Berserker" should NEVER match "Orc Shaman"
+  if (cleanFull !== cleanBL) {
+    // Check if this might be OCR error vs different creature
+    const isPotentialOcrError = (
+      cleanFull.startsWith(cleanBL) ||
+      cleanBL.startsWith(cleanFull) ||
+      Math.abs(cleanFull.length - cleanBL.length) <= 2 ||
+      // Allow for minor character differences that could be OCR
+      (cleanFull.replace(/\s+/g, '').length > 0 &&
+       cleanBL.replace(/\s+/g, '').length > 0 &&
+       Math.abs(cleanFull.replace(/\s+/g, '').length - cleanBL.replace(/\s+/g, '').length) <= 3)
+    );
+    
+    if (!isPotentialOcrError) {
+      return false; // Different specific creatures
+    }
+  }
+
+  // STEP 6: Final fallback - OCR correction with strict threshold
+  return ocrScore >= 0.9;
 }

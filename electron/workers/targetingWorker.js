@@ -11,6 +11,83 @@ import {
   findRuleForCreatureName,
 } from './targeting/targetingLogic.js';
 import { isBattleListMatch } from '../utils/nameMatcher.js';
+
+/**
+ * Determines if two creature names represent different creature types that should not be cross-matched.
+ * This prevents "Orc Berserker" from being accepted when targeting "Orc Shaman".
+ */
+function isCrossCreatureTypeMatch(name1, name2) {
+  if (!name1 || !name2 || name1 === name2) return false;
+  
+  // Clean and normalize names
+  const clean1 = name1.toLowerCase().trim();
+  const clean2 = name2.toLowerCase().trim();
+  
+  // Extract base creature types
+  const base1 = extractBaseCreatureType(clean1);
+  const base2 = extractBaseCreatureType(clean2);
+  
+  // If base types are different, it's a cross-creature match
+  if (base1 !== base2) return true;
+  
+  // If base types are the same but specific names are different, still cross-creature
+  if (clean1 !== clean2 && base1 === base2) {
+    // Allow for OCR errors (very similar names)
+    const similarity = getSimilarityScore(clean1, clean2);
+    return similarity < 0.9; // Only reject if not very similar (likely OCR error)
+  }
+  
+  return false;
+}
+
+/**
+ * Extracts the base creature type from a full creature name.
+ * Examples: "Orc Berserker" -> "orc", "Dragon Lord" -> "dragon", "Wolf" -> "wolf"
+ */
+function extractBaseCreatureType(fullName) {
+  const name = fullName.toLowerCase().trim();
+  
+  // Handle compound names and get the primary creature type
+  const parts = name.split(' ');
+  
+  // If single word, return as-is
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  
+  // For multi-word names, try to identify the base creature
+  // Common patterns: [Modifier] [Creature], [Creature] [Title], etc.
+  const creatureKeywords = [
+    'orc', 'dragon', 'troll', 'goblin', 'troll', 'wolf', 'bear', 'cyclops',
+    'ghost', 'skeleton', 'zombie', 'vampire', 'demon', 'devil', 'bat',
+    ' spider', 'scorpion', 'snake', 'rat', 'cat', 'dog', 'horse'
+  ];
+  
+  // Look for creature keywords in the name
+  for (const keyword of creatureKeywords) {
+    if (name.includes(keyword)) {
+      return keyword;
+    }
+  }
+  
+  // Fallback: return first word as base type
+  return parts[0];
+}
+
+/**
+ * Simple similarity check for cross-creature validation
+ */
+function getSimilarityScore(str1, str2) {
+  if (str1 === str2) return 1.0;
+  
+  // Basic character overlap check
+  const set1 = new Set(str1);
+  const set2 = new Set(str2);
+  const intersection = new Set([...set1].filter(x => set2.has(x)));
+  const union = new Set([...set1, ...set2]);
+  
+  return intersection.size / union.size;
+}
 import { PATH_STATUS_IDLE } from './sabState/schema.js';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1113,6 +1190,27 @@ function handleVerifyAcquisitionState(snapshot) {
     );
     const desiredName = pending.requestedName;
     const targetingList = workerState.globalState.targeting.targetingList;
+
+    // Enhanced verification: check if we accidentally targeted wrong creature type
+    const isCrossCreatureType = isCrossCreatureTypeMatch(newTargetCreature?.name, desiredName);
+    
+    if (isCrossCreatureType) {
+      // We targeted the wrong creature type entirely - continue cycling
+      console.log(`[TARGETING_DEBUG] Wrong creature type targeted: wanted "${desiredName}", got "${newTargetCreature?.name}"`);
+      
+      if (typeof pending.lastTriedCandidateIndex === 'number') {
+        recordFailedCandidate(pending.requestedName, pending.lastTriedCandidateIndex);
+      }
+      pending.currentCandidateIdx = (pending.currentCandidateIdx + 1) % pending.candidates.length;
+      pending.startedAt = now;
+      pending.deadline = now + config.verifyWindowMs;
+
+      if (now - targetingState.lastTargetingClickTime >= config.clickThrottleMs) {
+        const battleList = getBattleListFromSAB();
+        clickNextAvailableCandidate(pending, battleList, pending.requestedName);
+      }
+      return;
+    }
 
     if (newTargetCreature && newTargetCreature.isReachable) {
       const desiredInstanceObj = creatures.find(

@@ -88,10 +88,11 @@ void DoSyntheticClick(const Napi::CallbackInfo& info, unsigned int button, const
     XSendEvent(display.get(), target_window, True, ButtonReleaseMask, &event);
     XFlush(display.get());
 
-    // --- Move mouse to fixed coordinates after click ---
-    usleep(1000); // 1ms delay
-    XWarpPointer(display.get(), None, root, 0, 0, 0, 0, 1400, 25);
-    XFlush(display.get());
+    // NOTE:
+    // We intentionally do NOT warp the pointer back to a fixed position anymore.
+    // The caller (e.g. inputOrchestrator / higher-level workers) is responsible
+    // for deciding any post-click mouse positioning behavior based on regions
+    // such as gameWorld.
 }
 
 /**
