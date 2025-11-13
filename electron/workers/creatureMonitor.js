@@ -374,9 +374,31 @@ function screenDist(p1, p2) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function updateCreatureState(
+function updateCreatureStateRaw(creature, detection, now) {
+  // Raw-space update only. No tile mapping or stabilization here.
+  const newAbsoluteCoords = {
+    x: Math.round(detection.rawCenter.x),
+    y: Math.round(detection.rawCenter.y),
+    lastUpdate: now,
+  };
+
+  creature.absoluteCoords = newAbsoluteCoords;
+
+  if (detection.name) {
+    creature.name = detection.name;
+  }
+  if (detection.hp) {
+    creature.hp = detection.hp;
+  }
+
+  // instanceKey will be finalized once gameCoords are derived
+  creature.disappearedAt = null;
+
+  return creature;
+}
+
+function deriveGameCoordsForCreature(
   creature,
-  detection,
   currentPlayerMinimapPosition,
   lastStablePlayerMinimapPosition,
   regions,
@@ -384,12 +406,16 @@ function updateCreatureState(
   now,
   isPlayerInAnimationFreeze,
 ) {
+  if (!creature.absoluteCoords) return null;
+
   const { gameWorld } = regions;
-  const creatureScreenX = detection.absoluteCoords.x;
-  const creatureScreenY = detection.healthBarY + 14 + tileSize.height / 2;
+  const creatureScreenX = creature.absoluteCoords.x;
+  const creatureScreenY = creature.absoluteCoords.y;
+
   const playerPosForCreatureCalc = isPlayerInAnimationFreeze
     ? lastStablePlayerMinimapPosition
     : currentPlayerMinimapPosition;
+
   const rawGameCoordsFloat = getGameCoordinatesFromScreen(
     creatureScreenX,
     creatureScreenY,
@@ -399,6 +425,7 @@ function updateCreatureState(
   );
   if (!rawGameCoordsFloat) return null;
 
+  // Distance in game space from current player position (used for reporting)
   creature.rawDistance = calculateDistance(
     currentPlayerMinimapPosition,
     rawGameCoordsFloat,
@@ -406,10 +433,12 @@ function updateCreatureState(
 
   let finalGameCoords;
   if (isPlayerInAnimationFreeze && creature.gameCoords) {
+    // During short animation freeze, keep previous stabilized coords
     finalGameCoords = creature.gameCoords;
   } else {
     let intermediateX = Math.floor(rawGameCoordsFloat.x);
     let intermediateY = Math.floor(rawGameCoordsFloat.y);
+
     if (creature.gameCoords) {
       const distX = Math.abs(rawGameCoordsFloat.x - creature.gameCoords.x);
       const distY = Math.abs(rawGameCoordsFloat.y - creature.gameCoords.y);
@@ -421,13 +450,19 @@ function updateCreatureState(
         intermediateY = creature.gameCoords.y;
       }
     }
+
     const newCoords = {
       x: intermediateX,
       y: intermediateY,
       z: currentPlayerMinimapPosition.z,
     };
-    if (!creature.stableCoords) creature.stableCoords = newCoords;
+
+    if (!creature.stableCoords) {
+      creature.stableCoords = newCoords;
+    }
+
     const hasChanged = !arePositionsEqual(newCoords, creature.stableCoords);
+
     if (creature.unconfirmedChange) {
       if (arePositionsEqual(newCoords, creature.unconfirmedChange.newCoords)) {
         if (
@@ -438,46 +473,41 @@ function updateCreatureState(
           creature.unconfirmedChange = null;
         }
       } else {
-        creature.unconfirmedChange = { newCoords: newCoords, timestamp: now };
+        creature.unconfirmedChange = {
+          newCoords,
+          timestamp: now,
+        };
       }
     } else if (hasChanged) {
-      creature.unconfirmedChange = { newCoords: newCoords, timestamp: now };
+      creature.unconfirmedChange = {
+        newCoords,
+        timestamp: now,
+      };
     }
+
     finalGameCoords = creature.stableCoords;
   }
 
-  const newAbsoluteCoords = {
-    x: Math.round(creatureScreenX),
-    y: Math.round(creatureScreenY),
-    lastUpdate: now,
-  };
-
-  creature.absoluteCoords = newAbsoluteCoords;
   creature.gameCoords = {
     x: finalGameCoords.x,
     y: finalGameCoords.y,
     z: finalGameCoords.z,
   };
-  // Generate stable instanceKey for sync
-  const normalizedName = (detection.name || creature.name || '')
+
+  // Generate stable instanceKey for sync based on stabilized coords + normalized name
+  const normalizedName = (creature.name || '')
     .toLowerCase()
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '');
   creature.instanceKey = normalizedName
     ? `${creature.gameCoords.x}-${creature.gameCoords.y}-${creature.gameCoords.z}-${normalizedName}`
     : creature.instanceId.toString();
-  logger(
-    'debug',
-    `[CREATURE] Assigned key ${creature.instanceKey} for ${creature.name || 'unknown'}`,
-  );
+
   creature.distance = chebyshevDistance(
     currentPlayerMinimapPosition,
     creature.gameCoords,
   );
   creature.lastSeen = now;
-  creature.disappearedAt = null; // Reset grace period timer on successful update
-  if (detection.name) creature.name = detection.name;
-  if (detection.hp) creature.hp = detection.hp;
 
   return creature;
 }
@@ -1040,45 +1070,22 @@ async function performOperation() {
     for (const hb of healthBars) {
       const creatureScreenX = hb.x;
       const creatureScreenY = hb.y + 14 + tileSize.height / 2;
-      const gameCoords = getGameCoordinatesFromScreen(
-        creatureScreenX,
-        creatureScreenY,
-        playerPosForCalc,
-        gameWorld,
-        tileSize,
-      );
 
-      if (!gameCoords) continue;
+      const rawCenter = {
+        x: creatureScreenX,
+        y: creatureScreenY,
+      };
 
-      // Tile key used for blacklisting
-      const tileKey = `${Math.round(gameCoords.x)},${Math.round(gameCoords.y)},${gameCoords.z}`;
-
-      // Special handling for current target tile
-      const isTargetTile =
-        lastSentTarget &&
-        lastSentTarget.gameCoordinates &&
-        tileKey ===
-          `${lastSentTarget.gameCoordinates.x},${lastSentTarget.gameCoordinates.y},${lastSentTarget.gameCoordinates.z}`;
-
-      // Skip blacklisted tiles (except target tile)
-      if (!isTargetTile && blacklistedTiles.has(tileKey)) continue;
-
-      // Read nameplate OCR
+      // Read nameplate OCR in raw space
       let ocrName = getRawOcrForHealthBar(hb);
 
-      // For target tile, use last known name if OCR fails
-      if (isTargetTile && (!ocrName || ocrName.length === 0)) {
-        ocrName = lastSentTarget?.name || '';
-      }
-
       // CRITICAL: Match nameplate OCR against battle list names ONLY
-      // This prevents false matches like "Rabbit" -> "Bat" (from targeting list)
       let matchedBattleListName = null;
 
       if (ocrName && ocrName.length > 0) {
         const ocrLower = ocrName.toLowerCase();
 
-        // Try exact match first (case-insensitive)
+        // Exact match (case-insensitive)
         matchedBattleListName = allValidBattleListNames.find(
           (blName) => blName && blName.toLowerCase() === ocrLower,
         );
@@ -1093,28 +1100,37 @@ async function performOperation() {
         }
       }
 
-      // If nameplate doesn't match any battle list entry, blacklist and skip
-      // Exception: always keep target tile even if match fails
-      if (!matchedBattleListName && !isTargetTile) {
-        blacklistedTiles.add(tileKey);
-        blacklistedUntil.set(tileKey, now + config.UNMATCHED_BLACKLIST_MS);
+      // If nameplate doesn't match any battle list entry, temporarily blacklist this bar
+      // to avoid generating unstable creatures from noise.
+      if (!matchedBattleListName) {
+        const ocrTileCoords = getGameCoordinatesFromScreen(
+          rawCenter.x,
+          rawCenter.y,
+          playerPosForCalc,
+          gameWorld,
+          tileSize,
+        );
+        if (ocrTileCoords) {
+          const tileKey = `${Math.round(ocrTileCoords.x)},${Math.round(
+            ocrTileCoords.y,
+          )},${ocrTileCoords.z}`;
+          blacklistedTiles.add(tileKey);
+          blacklistedUntil.set(tileKey, now + config.UNMATCHED_BLACKLIST_MS);
+        }
         continue;
       }
 
       // Get canonical name from battle list -> targeting mapping
-      // If not matched to targeting, use the battle list name itself
-      const canonicalName = matchedBattleListName
-        ? battleListToTargeting.get(matchedBattleListName) ||
-          matchedBattleListName
-        : lastSentTarget?.name || ocrName;
+      const canonicalName =
+        battleListToTargeting.get(matchedBattleListName) ||
+        matchedBattleListName;
 
       detections.push({
         hb,
+        rawCenter,
         ocrName,
         matchedBattleListName,
         canonicalName,
-        gameCoords,
-        isTargetTile: !!isTargetTile,
       });
     }
 
@@ -1124,59 +1140,42 @@ async function performOperation() {
     // - Validate with OCR/name similarity when available.
     // - Hard constraints on max movement to avoid cross-swaps.
     const calculateMatchScore = (creature, detection) => {
-      if (!creature || !detection || !creature.absoluteCoords) {
+      if (!creature || !detection || !detection.rawCenter) {
         return -Infinity;
       }
 
-      const prev = creature.absoluteCoords;
-      const curr = { x: detection.hb.x, y: detection.hb.y };
+      const prev = creature.absoluteCoords || detection.rawCenter;
+      const curr = detection.rawCenter;
+
       const dx = curr.x - prev.x;
       const dy = curr.y - prev.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // Hard reject implausible jumps (health bar animation between tiles is smooth).
-      // This should be tuned, but start conservatively.
+      // Reject implausible jumps in raw screen space.
       if (dist > 300) {
         return -Infinity;
       }
 
-      // Target pinning: if this is the previously selected target, strongly favor.
-      const isCurrentTargetCreature =
-        !!lastSentTarget && creature.instanceId === lastSentTarget.instanceId;
-      const isTargetTile = !!detection.isTargetTile;
-
       let score = 0;
 
-      if (isCurrentTargetCreature || isTargetTile) {
-        score += 5000000;
-      }
-
-      // Smaller movement is better.
+      // Strongly favor continuity of motion (small movement).
       score += Math.max(0, 1000 - dist * 10);
 
-      // Name similarity as validation, not primary driver.
+      // Name similarity as secondary stabilizer.
       let nameScore = 0;
-      if (detection.ocrName && detection.ocrName.length > 0 && creature.name) {
+      if (detection.ocrName && creature.name) {
         nameScore = getSimilarityScore(detection.ocrName, creature.name);
       } else if (detection.canonicalName && creature.name) {
         nameScore = getSimilarityScore(detection.canonicalName, creature.name);
       }
 
-      // If we have both motion and reasonable name similarity, reward strongly.
       if (nameScore >= config.NAME_MATCH_THRESHOLD) {
-        score += Math.floor(nameScore * 1000);
-      } else {
-        // Allow weaker name evidence only when:
-        // - motion is extremely small, or
-        // - this is the pinned target.
-        if (!isCurrentTargetCreature && !isTargetTile && dist > 8) {
-          return -Infinity;
-        }
+        score += Math.floor(nameScore * 500);
       }
 
-      // Optional: consider hp tag continuity (small bonus).
+      // Optional hp continuity bonus.
       if (creature.hp && detection.hb.healthTag === creature.hp) {
-        score += 50;
+        score += 25;
       }
 
       return score;
@@ -1228,22 +1227,12 @@ async function performOperation() {
       const { creature, detection } = match;
 
       const updatedDetection = {
-        absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
-        healthBarY: detection.hb.y,
+        rawCenter: detection.rawCenter,
         name: detection.canonicalName || detection.ocrName || creature.name,
         hp: detection.hb.healthTag,
       };
 
-      const updated = updateCreatureState(
-        creature,
-        updatedDetection,
-        currentPlayerMinimapPosition,
-        lastStablePlayerMinimapPosition,
-        regions,
-        tileSize,
-        now,
-        isPlayerInAnimationFreeze,
-      );
+      const updated = updateCreatureStateRaw(creature, updatedDetection, now);
 
       if (updated) {
         newActiveCreatures.set(match.creatureId, updated);
@@ -1262,24 +1251,17 @@ async function performOperation() {
     const allKnownSafeNames = new Set([...playerNames, ...npcNames]);
 
     for (const detection of unmatchedDetections) {
-      if (!detection.gameCoords) continue;
+      if (!detection.rawCenter) continue;
 
       if (allKnownSafeNames.has(detection.ocrName || '')) continue;
-
-      const tileKey = `${Math.round(detection.gameCoords.x)},${Math.round(
-        detection.gameCoords.y,
-      )},${detection.gameCoords.z}`;
-
-      // Skip blacklisted tiles
-      if (blacklistedTiles.has(tileKey)) continue;
 
       // Avoid immediate duplicates on the same bar position in this frame
       let occupied = false;
       for (const c of newActiveCreatures.values()) {
         if (
           c.absoluteCoords &&
-          Math.abs(c.absoluteCoords.x - detection.hb.x) < 2 &&
-          Math.abs(c.absoluteCoords.y - detection.hb.y) < 2
+          Math.abs(c.absoluteCoords.x - detection.rawCenter.x) < 2 &&
+          Math.abs(c.absoluteCoords.y - detection.rawCenter.y) < 2
         ) {
           occupied = true;
           break;
@@ -1290,8 +1272,7 @@ async function performOperation() {
       const finalName = detection.canonicalName || detection.ocrName || 'Unknown';
 
       const newCreatureDetection = {
-        absoluteCoords: { x: detection.hb.x, y: detection.hb.y },
-        healthBarY: detection.hb.y,
+        rawCenter: detection.rawCenter,
         name: finalName,
         hp: detection.hb.healthTag,
       };
@@ -1299,15 +1280,10 @@ async function performOperation() {
       const newId = nextInstanceId++;
       let newCreature = { instanceId: newId };
 
-      newCreature = updateCreatureState(
+      newCreature = updateCreatureStateRaw(
         newCreature,
         newCreatureDetection,
-        currentPlayerMinimapPosition,
-        lastStablePlayerMinimapPosition,
-        regions,
-        tileSize,
         now,
-        isPlayerInAnimationFreeze,
       );
 
       if (newCreature) {
@@ -1356,6 +1332,20 @@ async function performOperation() {
     }
 
     activeCreatures = newActiveCreatures;
+
+    // After raw-space tracking is finalized for this frame,
+    // derive stabilized game-space coordinates for all active creatures.
+    for (const creature of activeCreatures.values()) {
+      deriveGameCoordsForCreature(
+        creature,
+        currentPlayerMinimapPosition,
+        lastStablePlayerMinimapPosition,
+        regions,
+        tileSize,
+        now,
+        isPlayerInAnimationFreeze,
+      );
+    }
 
     // ISSUE #1: Remove stale reachability state for creatures that no longer exist
     // ISSUE #5: Cleanup when creatures disappear (not just on full clear)
@@ -1792,96 +1782,31 @@ async function performOperation() {
           y: targetRect.y + targetRect.height / 2,
         };
 
-        const targetGameCoordsRaw = getGameCoordinatesFromScreen(
-          targetCenter.x,
-          targetCenter.y,
-          isPlayerInAnimationFreeze
-            ? lastStablePlayerMinimapPosition
-            : currentPlayerMinimapPosition,
-          gameWorld,
-          tileSize,
-        );
+        // Bind target purely in raw screen space: choose closest creature center.
+        const MAX_TARGET_RADIUS_PX = 40;
+        let best = null;
+        let bestDist = Infinity;
 
-        if (targetGameCoordsRaw) {
-          const targetTile = {
-            x: Math.round(targetGameCoordsRaw.x),
-            y: Math.round(targetGameCoordsRaw.y),
-            z:
-              targetGameCoordsRaw.z ??
-              (isPlayerInAnimationFreeze
-                ? lastStablePlayerMinimapPosition
-                : currentPlayerMinimapPosition
-              ).z,
+        for (const creature of detectedEntities) {
+          if (!creature.absoluteCoords) continue;
+          const dx = creature.absoluteCoords.x - targetCenter.x;
+          const dy = creature.absoluteCoords.y - targetCenter.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bestDist && dist <= MAX_TARGET_RADIUS_PX) {
+            bestDist = dist;
+            best = creature;
+          }
+        }
+
+        if (best && best.gameCoords) {
+          gameWorldTarget = {
+            instanceId: best.instanceId,
+            name: best.name,
+            hp: best.hp,
+            distance: parseFloat((best.distance || 0).toFixed(1)),
+            gameCoordinates: best.gameCoords,
+            isReachable: !!best.isReachable,
           };
-
-          // Step 1: find creatures whose gameCoords tile matches targetTile exactly.
-          const tileMatches = detectedEntities.filter(
-            (e) =>
-              e.gameCoords &&
-              e.gameCoords.x === targetTile.x &&
-              e.gameCoords.y === targetTile.y &&
-              e.gameCoords.z === targetTile.z,
-          );
-
-          let matched = null;
-
-          if (tileMatches.length === 1) {
-            matched = tileMatches[0];
-          } else if (tileMatches.length > 1) {
-            // Ambiguous on tile: pick by raw screen-space proximity.
-            let best = null;
-            let bestDist = Infinity;
-            for (const e of tileMatches) {
-              if (!e.absoluteCoords) continue;
-              const dx = e.absoluteCoords.x - targetCenter.x;
-              const dy = e.absoluteCoords.y - targetCenter.y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              if (dist < bestDist) {
-                bestDist = dist;
-                best = e;
-              }
-            }
-            matched = best;
-          } else {
-            // No exact tile match; fall back to nearest-by-tile within small radius,
-            // using screen-space distance as secondary stability heuristic.
-            let best = null;
-            let bestTileDist = Infinity;
-            let bestScreenDist = Infinity;
-            for (const e of detectedEntities) {
-              if (!e.gameCoords) continue;
-              const tileDist = calculateDistance(targetTile, e.gameCoords);
-              if (tileDist > 1.5) continue; // keep tight, like original <= 1.0 with a bit of slack
-
-              let sDist = Infinity;
-              if (e.absoluteCoords) {
-                const dx = e.absoluteCoords.x - targetCenter.x;
-                const dy = e.absoluteCoords.y - targetCenter.y;
-                sDist = Math.sqrt(dx * dx + dy * dy);
-              }
-
-              if (
-                tileDist < bestTileDist ||
-                (tileDist === bestTileDist && sDist < bestScreenDist)
-              ) {
-                best = e;
-                bestTileDist = tileDist;
-                bestScreenDist = sDist;
-              }
-            }
-            matched = best;
-          }
-
-          if (matched) {
-            gameWorldTarget = {
-              instanceId: matched.instanceId,
-              name: matched.name,
-              hp: matched.hp,
-              distance: parseFloat((matched.distance || 0).toFixed(1)),
-              gameCoordinates: matched.gameCoords,
-              isReachable: !!matched.isReachable,
-            };
-          }
         }
       }
     }
@@ -1959,7 +1884,7 @@ async function performOperation() {
           absoluteY: c.absoluteCoords.y,
           isReachable: c.isReachable ? 1 : 0,
           isAdjacent: c.isAdjacent ? 1 : 0,
-          isBlockingPath: 0,
+          isBlockingPath: c.isBlockingPath ? 1 : 0,
           distance: Math.round(c.distance * 100),
           hp: healthTagToNumber(c.hp),
           name: c.name,

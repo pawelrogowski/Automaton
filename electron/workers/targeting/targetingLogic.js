@@ -162,21 +162,31 @@ export function selectBestTarget(
       currentLookupKey && cLookupKey === currentLookupKey
         ? effectiveReachableForCurrent
         : c.isReachable;
-    
-    // Check if rule requires creature to be trapping (onlyIfTrapped)
-    if (rule && rule.onlyIfTrapped && c.gameCoords) {
-      // Creature is trapping if coordinates match blocking creature from pathfinder
-      const isTrapping = blockingCreatureCoords &&
+
+    if (!rule || rule.action !== 'Attack') {
+      return false;
+    }
+
+    // Strict onlyIfTrapped: must be actually blocking the path, not just nearby.
+    // Accept either:
+    // - creatureMonitor marking (isBlockingPath flag), or
+    // - precise coord match against blockingCreatureCoords.
+    if (rule.onlyIfTrapped) {
+      const flaggedBlocking =
+        c.isBlockingPath === 1 || c.isBlockingPath === true;
+      const coordBlocking =
+        !!blockingCreatureCoords &&
+        c.gameCoords &&
         c.gameCoords.x === blockingCreatureCoords.x &&
         c.gameCoords.y === blockingCreatureCoords.y &&
         c.gameCoords.z === blockingCreatureCoords.z;
-      
-      if (!isTrapping) {
-        return false; // Skip this creature - not trapping and rule requires it
+
+      if (!flaggedBlocking && !coordBlocking) {
+        return false;
       }
     }
-    
-    return isReachableForThis && rule && rule.action === 'Attack';
+
+    return !!isReachableForThis;
   });
   logger(
     'info',

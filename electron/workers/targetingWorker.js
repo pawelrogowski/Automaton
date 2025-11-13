@@ -856,6 +856,11 @@ function acceptAcquiredTarget(targetObj, snapshot) {
     gameCoords: { x: creature.x, y: creature.y, z: creature.z },
   }));
 
+  // If SAB/battlelist says we have a selected target, but game-world red box
+  // could be missing (e.g. obstructed), we still trust this acquisition.
+  // Obstructed means "no visible box", not "no target". We do NOT try to
+  // re-click/retarget solely because the box is invisible.
+
   // ID-agnostic resolution:
   // 1) Prefer direct instanceId match when available.
   // 2) Otherwise, match by name + closest coords.
@@ -1787,12 +1792,16 @@ async function performTargeting() {
   const bl = getBattleListFromSAB();
   const targetingList = workerState.globalState?.targeting?.targetingList || [];
   const allCreaturesForCheck = getCreaturesFromSAB();
-  
+
   // Check if 'others' rule exists
   const hasOthersRule = targetingList.some(
-    (rule) => rule && rule.action === 'Attack' && rule.name && rule.name.toLowerCase() === 'others'
+    (rule) =>
+      rule &&
+      rule.action === 'Attack' &&
+      rule.name &&
+      rule.name.toLowerCase() === 'others',
   );
-  
+
   // Check if any creature is blocking the path (priority for onlyIfTrapped rules)
   // Read blocking coords directly from SAB to avoid timing issues with creatureMonitor
   let blockingCreatureCoords = null;
@@ -1801,7 +1810,10 @@ async function performTargeting() {
       const cavebotPathResult = sabInterface.get('cavebotPathData');
       if (cavebotPathResult && cavebotPathResult.data) {
         const pathData = cavebotPathResult.data;
-        if (pathData.blockingCreatureX !== 0 || pathData.blockingCreatureY !== 0) {
+        if (
+          pathData.blockingCreatureX !== 0 ||
+          pathData.blockingCreatureY !== 0
+        ) {
           blockingCreatureCoords = {
             x: pathData.blockingCreatureX,
             y: pathData.blockingCreatureY,
@@ -1813,14 +1825,23 @@ async function performTargeting() {
       // Silent
     }
   }
-  
+
   // Check if any creature matches the blocking coordinates
-  const hasBlockingCreature = blockingCreatureCoords && allCreaturesForCheck.some((c) => 
-    c.gameCoords &&
-    c.gameCoords.x === blockingCreatureCoords.x &&
-    c.gameCoords.y === blockingCreatureCoords.y &&
-    c.gameCoords.z === blockingCreatureCoords.z
-  );
+  // Prefer the isBlockingPath flag coming from creatureMonitor (SAB), fall back to coord match.
+  const hasBlockingCreature =
+    !!blockingCreatureCoords &&
+    allCreaturesForCheck.some((c) => {
+      if (!c) return false;
+      // Primary: trust isBlockingPath propagated via creatureMonitor
+      if (c.isBlockingPath === 1 || c.isBlockingPath === true) return true;
+      // Fallback: coordinate equality if flag missing
+      return (
+        c.gameCoords &&
+        c.gameCoords.x === blockingCreatureCoords.x &&
+        c.gameCoords.y === blockingCreatureCoords.y &&
+        c.gameCoords.z === blockingCreatureCoords.z
+      );
+    });
   
   // Get explicit creature names (not 'others')
   const explicitRuleNames = new Set(
