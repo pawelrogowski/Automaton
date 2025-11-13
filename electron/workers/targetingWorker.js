@@ -435,22 +435,156 @@ async function applyAction(action, context) {
 
     case 'updateDynamicTarget': {
       const { target, targetingList } = action;
+
+      // New semantics:
+      // - This is the single source of truth for BOTH:
+      //   - Redux cavebot.dynamicTarget (for UI/debug)
+      //   - SAB.dynamicTarget       (for pathfinder)
+      // - It is driven purely by the "best" target chosen by targetingWorker,
+      //   not by red-box sabTarget confirmation.
+      // - When target is null: immediately clear dynamicTarget everywhere.
+
       if (!target) {
+        // Clear Redux dynamic target
         parentPort.postMessage({
           storeUpdate: true,
           type: 'cavebot/setDynamicTarget',
           payload: null,
         });
+
+        // Clear SAB dynamic target
+        try {
+          sabInterface.set('dynamicTarget', {
+            targetCreaturePosX: 0,
+            targetCreaturePosY: 0,
+            targetCreaturePosZ: 0,
+            targetInstanceId: 0,
+            stance: 0,
+            distance: 0,
+            valid: 0,
+          });
+        } catch (_) {
+          // best-effort; pathfinder will treat missing/invalid as no target
+        }
+
         runtime.lastDispatchedDynamicTargetId = null;
-      } else {
-        legacyUpdateDynamicTarget(
-          parentPort,
-          target,
-          targetingList || [],
-        );
-        runtime.lastDispatchedDynamicTargetId =
-          target.instanceId || null;
+        break;
       }
+
+      // target != null: use this best candidate as the authoritative goal.
+
+      // Derive stance/distance from targeting rules
+      let stance = 'Follow';
+      let distance = 1;
+      try {
+        if (Array.isArray(targetingList)) {
+          const rule = findRuleForCreatureName(target.name, targetingList);
+          if (rule) {
+            if (typeof rule.stance === 'string') {
+              stance = rule.stance;
+            } else if (typeof rule.stance === 'number') {
+              // numeric stance (legacy) 0=Follow,1=Stand,2=Reach
+              stance =
+                rule.stance === 1
+                  ? 'Stand'
+                  : rule.stance === 2
+                  ? 'Reach'
+                  : 'Follow';
+            }
+            if (typeof rule.distance === 'number') {
+              distance = rule.distance;
+            }
+          }
+        }
+      } catch (_) {
+        // keep safe defaults
+      }
+
+      // Map stance string to SAB enum
+      const stanceMap = { Follow: 0, Stand: 1, Reach: 2 };
+      const sabStance = stanceMap[stance] ?? 0;
+
+      // Resolve coordinates for this target:
+      // 1) Prefer target.gameCoords (from selectBestTarget / normalized creatures)
+      // 2) Fallback to target.x/y/z
+      // 3) Fallback: resolve from SAB.creatures by instanceId
+      let gx = target.gameCoords?.x ?? target.x;
+      let gy = target.gameCoords?.y ?? target.y;
+      let gz = target.gameCoords?.z ?? target.z;
+
+      if (
+        (gx == null || gy == null || gz == null) &&
+        typeof target.instanceId === 'number' &&
+        target.instanceId > 0 &&
+        typeof sabInterface?.get === 'function'
+      ) {
+        try {
+          const creaturesRes = sabInterface.get('creatures');
+          const creatures = Array.isArray(creaturesRes?.data)
+            ? creaturesRes.data
+            : [];
+          const fromCreatures = creatures.find(
+            (c) => c && c.instanceId === target.instanceId,
+          );
+          if (
+            fromCreatures &&
+            typeof fromCreatures.x === 'number' &&
+            typeof fromCreatures.y === 'number' &&
+            typeof fromCreatures.z === 'number'
+          ) {
+            gx = gx ?? fromCreatures.x;
+            gy = gy ?? fromCreatures.y;
+            gz = gz ?? fromCreatures.z;
+          }
+        } catch (_) {
+          // best-effort
+        }
+      }
+
+      const hasValidCoords =
+        typeof gx === 'number' &&
+        typeof gy === 'number' &&
+        typeof gz === 'number' &&
+        !(gx === 0 && gy === 0 && gz === 0);
+
+      const instanceId = target.instanceId ?? 0;
+      const valid =
+        (instanceId && instanceId > 0) || hasValidCoords ? 1 : 0;
+
+      // 1) Update Redux dynamicTarget for UI/debug
+      // This mirrors old legacyUpdateDynamicTarget behavior but is now driven
+      // by the same target we use for SAB, avoiding divergence.
+      parentPort.postMessage({
+        storeUpdate: true,
+        type: 'cavebot/setDynamicTarget',
+        payload: valid
+          ? {
+              stance,
+              distance,
+              targetCreaturePos: hasValidCoords
+                ? { x: gx, y: gy, z: gz }
+                : null,
+              targetInstanceId: instanceId || null,
+            }
+          : null,
+      });
+
+      // 2) Update SAB.dynamicTarget for pathfinder (authoritative goal)
+      try {
+        sabInterface.set('dynamicTarget', {
+          targetCreaturePosX: hasValidCoords ? gx : 0,
+          targetCreaturePosY: hasValidCoords ? gy : 0,
+          targetCreaturePosZ: hasValidCoords ? gz : 0,
+          targetInstanceId: instanceId,
+          stance: sabStance,
+          distance: typeof distance === 'number' ? distance : 1,
+          valid,
+        });
+      } catch (_) {
+        // If SAB write fails, pathfinder falls back to previous state
+      }
+
+      runtime.lastDispatchedDynamicTargetId = instanceId || null;
       break;
     }
 
@@ -798,6 +932,13 @@ async function tick() {
   }
 
   const shouldRequestControl =
+    // Targeting may only claim control if:
+    // - targeting is enabled
+    // - currently in CAVEBOT control
+    // - no looting lock
+    // - cooldown ok
+    // - and there is actual targeting work to do (best candidate or blocking creature)
+    isTargetingEnabled &&
     controlState === 'CAVEBOT' &&
     !hasLootingLock &&
     cooldownOk &&
@@ -805,9 +946,13 @@ async function tick() {
       (hasBlockingCreature && blHasCandidates));
 
   const shouldReleaseControl =
+    // Release control when:
+    // - targeting is disabled (immediate yield back)
+    // - or no valid target candidates / BL candidates
     controlState === 'TARGETING' &&
     cooldownOk &&
-    (!hasAnyValidTargetCandidate ||
+    (!isTargetingEnabled ||
+      !hasAnyValidTargetCandidate ||
       !blHasCandidates);
 
   if (shouldRequestControl) {
@@ -835,13 +980,12 @@ async function tick() {
     !isTargetingEnabled ||
     controlState !== 'TARGETING'
   ) {
-    if (
-      runtime.currentTarget ||
-      runtime.pendingAcquisition ||
-      runtime.lastDispatchedDynamicTargetId !== null
-    ) {
+    // When targeting is not active or does not own control:
+    // - Ensure dynamicTarget is cleared once (this drops targetingPathData via pathfinder).
+    // - Reset local targeting state.
+    if (runtime.lastDispatchedDynamicTargetId !== null) {
       await applyAction(
-        { type: 'clearDynamicTarget' },
+        { type: 'updateDynamicTarget', target: null, targetingList },
         {
           onAfterAction: () => {
             runtime.currentTarget = null;
@@ -906,33 +1050,26 @@ async function tick() {
   const desiredTarget = best || null;
 
   if (!desiredTarget) {
-    // No desired; if we had a currentTarget that is incoherent, clear via one action.
-    if (runtime.currentTarget) {
-      const stillExists = creatures.some((c) => {
-        const key =
-          runtime.currentTarget.instanceKey ||
-          runtime.currentTarget.instanceId;
-        return (
-          (c.instanceKey || c.instanceId) === key
-        );
-      });
-      if (!stillExists || !sabTarget) {
-        await applyAction(
-          { type: 'clearDynamicTarget' },
-          {
-            onAfterAction: () => {
-              runtime.currentTarget = null;
-              runtime.pendingAcquisition = null;
-              runtime.perNameRotation =
-                Object.create(null);
-              runtime.unreachableSince = 0;
-            },
+    // No desired target while TARGETING has control:
+    // immediately clear dynamic target so pathfinder drops targetingPathData.
+    if (runtime.lastDispatchedDynamicTargetId !== null) {
+      await applyAction(
+        { type: 'updateDynamicTarget', target: null, targetingList },
+        {
+          onAfterAction: () => {
+            runtime.currentTarget = null;
+            runtime.pendingAcquisition = null;
+            runtime.perNameRotation = Object.create(null);
+            runtime.unreachableSince = 0;
+            runtime.lastTargetClickTime = 0;
+            runtime.lastDispatchedDynamicTargetId = null;
           },
-        );
-        return;
-      }
+        },
+      );
+      return;
     }
-    // No-op if already clean.
+
+    // No dynamic target active; just keep SAB targetingList in sync if needed.
     if (targetingListChanged) {
       await applyAction(
         {
@@ -991,27 +1128,42 @@ async function tick() {
     }
   }
 
-  // Seed pendingAcquisition if needed
-  if (
-    !runtime.pendingAcquisition ||
-    runtime.pendingAcquisition.requestedName !==
-      desiredTarget.name
-  ) {
-    const nameState = getNameState(
-      desiredTarget.name,
-    );
-    const pending = startPendingAcquisition(
-      desiredTarget,
-      battleList,
-      snapshot?.battleListVersion || 0,
-      nameState,
-    );
-    runtime.pendingAcquisition = pending;
-  }
+  // Immediately publish dynamic target based on desiredTarget.
+  // This drives pathfinder + movement independently of red-box.
+  await applyAction(
+    {
+      type: 'updateDynamicTarget',
+      target: {
+        ...desiredTarget,
+        gameCoords:
+          desiredTarget.gameCoords ||
+          desiredTarget.gameCoordinates,
+      },
+      targetingList,
+    },
+    {
+      onAfterAction: () => {
+        // Track as current logical target for stickiness/anti-stuck.
+        runtime.currentTarget = {
+          ...desiredTarget,
+          gameCoords:
+            desiredTarget.gameCoords ||
+            desiredTarget.gameCoordinates,
+          acquiredAt: now,
+          instanceKey:
+            desiredTarget.instanceKey ||
+            desiredTarget.instanceId,
+        };
+        // No pending acquisition dance: movement is allowed to follow dynamicTarget
+        // immediately; red-box targeting is decoupled from pathfinding.
+        runtime.pendingAcquisition = null;
+      },
+    },
+  );
 
-  // -----------------------------------------------------------------------
-  // Priority 6: ACQUIRE_ATTEMPT / VERIFY (one action)
-  // -----------------------------------------------------------------------
+  // Skip legacy ACQUIRE_ATTEMPT/VERIFY; one-action-per-tick loop continues.
+  // Remaining priorities (7-9) will operate on runtime.currentTarget
+  // and SAB.targetingPathData produced by pathfinder.
 
   if (runtime.pendingAcquisition) {
     const pending = runtime.pendingAcquisition;

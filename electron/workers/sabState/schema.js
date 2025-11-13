@@ -111,37 +111,6 @@ export const SCHEMA = {
     description: 'Current target (written by creatureMonitor)',
   },
 
-  pathData: {
-    category: PROPERTY_CATEGORIES.REALTIME,
-    type: 'path',
-    maxWaypoints: 1000,
-    waypointFields: {
-      x: FIELD_TYPES.INT32,
-      y: FIELD_TYPES.INT32,
-      z: FIELD_TYPES.INT32,
-    },
-    waypointSize: 3,
-    headerFields: {
-      length: FIELD_TYPES.INT32,
-      status: FIELD_TYPES.INT32,
-      chebyshevDistance: FIELD_TYPES.INT32,
-      startX: FIELD_TYPES.INT32,
-      startY: FIELD_TYPES.INT32,
-      startZ: FIELD_TYPES.INT32,
-      targetX: FIELD_TYPES.INT32,
-      targetY: FIELD_TYPES.INT32,
-      targetZ: FIELD_TYPES.INT32,
-      blockingCreatureX: FIELD_TYPES.INT32,
-      blockingCreatureY: FIELD_TYPES.INT32,
-      blockingCreatureZ: FIELD_TYPES.INT32,
-      wptId: FIELD_TYPES.INT32, // waypoint ID hash
-      instanceId: FIELD_TYPES.INT32, // creature instance ID
-      version: FIELD_TYPES.INT32,
-    },
-    headerSize: 15,
-    size: 15 + 1000 * 3, // header + waypoints
-    description: 'LEGACY: Combined pathfinding result - being phased out',
-  },
 
   cavebotPathData: {
     category: PROPERTY_CATEGORIES.REALTIME,

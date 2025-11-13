@@ -272,10 +272,11 @@ const Minimap = () => {
     playerPosition,
     currentSection,
     allWaypoints,
-    waypointCount, // Ensure waypointCount is destructured here
+    waypointCount,
     wptSelection,
     wptId,
-    allPathWaypoints,
+    cavebotPathWaypoints,
+    targetingPathWaypoints,
     specialAreas,
     creatures,
   } = useSelector((state) => {
@@ -286,10 +287,12 @@ const Minimap = () => {
       playerPosition: state.gameState.playerMinimapPosition,
       currentSection,
       allWaypoints: currentWaypoints,
-      waypointCount: currentWaypoints.length, // Add waypointCount to state
+      waypointCount: currentWaypoints.length,
       wptSelection: state.cavebot.wptSelection,
       wptId: state.cavebot.wptId,
-      allPathWaypoints: state.pathfinder.pathWaypoints, // Corrected slice
+      // Use explicit dual channels from pathfinder slice
+      cavebotPathWaypoints: state.pathfinder.cavebotPathWaypoints || [],
+      targetingPathWaypoints: state.pathfinder.targetingPathWaypoints || [],
       specialAreas: state.cavebot.specialAreas,
       creatures: state.targeting.creatures,
     };
@@ -413,12 +416,22 @@ const Minimap = () => {
     () => allWaypoints.filter((wp) => wp.z === zLevel),
     [allWaypoints, zLevel],
   );
-  const visiblePathPoints = useMemo(
+  // Cavebot path (primary movement / cavebot visualization)
+  const visibleCavebotPathPoints = useMemo(
     () =>
-      allPathWaypoints
+      (cavebotPathWaypoints || [])
         .filter((p) => p.z === zLevel)
         .flatMap((p) => [p.x + 0.5, p.y + 0.5]),
-    [allPathWaypoints, zLevel],
+    [cavebotPathWaypoints, zLevel],
+  );
+
+  // Targeting path (separate overlay for targeting/debugging)
+  const visibleTargetingPathPoints = useMemo(
+    () =>
+      (targetingPathWaypoints || [])
+        .filter((p) => p.z === zLevel)
+        .flatMap((p) => [p.x + 0.5, p.y + 0.5]),
+    [targetingPathWaypoints, zLevel],
   );
   const playerTile = useMemo(
     () => ({
@@ -1115,9 +1128,9 @@ const Minimap = () => {
                   }
                 })}
 
-              {drawSettings.path.draw && (
+              {drawSettings.path.draw && visibleCavebotPathPoints.length > 0 && (
                 <Line
-                  points={visiblePathPoints}
+                  points={visibleCavebotPathPoints}
                   stroke={drawSettings.path.color}
                   strokeWidth={2 / stageScale}
                   lineCap="square"
@@ -1130,6 +1143,25 @@ const Minimap = () => {
                   shadowOpacity={0.9}
                 />
               )}
+
+              {/* Optional: targeting path overlay if provided */}
+              {drawSettings.path.draw &&
+                visibleTargetingPathPoints.length > 0 && (
+                  <Line
+                    points={visibleTargetingPathPoints}
+                    stroke={MINIMAP_COLORS.TARGETING_PATH || '#ff00ff'}
+                    strokeWidth={1.5 / stageScale}
+                    lineCap="square"
+                    lineJoin="miter"
+                    listening={false}
+                    dash={[4 / stageScale, 4 / stageScale]}
+                    shadowColor={MINIMAP_COLORS.SHADOW}
+                    shadowBlur={6 / stageScale}
+                    shadowOffsetX={0}
+                    shadowOffsetY={0}
+                    shadowOpacity={0.8}
+                  />
+                )}
 
               {drawSettings.waypoints.draw &&
                 visibleWaypoints.map((waypoint) => {

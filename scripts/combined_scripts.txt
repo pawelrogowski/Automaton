@@ -7613,9 +7613,8 @@ class WorkerManager {
     const playerPosSAB = new SharedArrayBuffer(
       PLAYER_POS_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
-    const pathDataSAB = new SharedArrayBuffer(
-      PATH_DATA_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
-    );
+    // LEGACY: pathDataSAB and PATH_DATA_SAB_SIZE were used by the old shared pathData SAB.
+    // This harness is archival only and does not reflect the current unified SAB design.
     const battleListSAB = new SharedArrayBuffer(
       BATTLE_LIST_SAB_SIZE * Int32Array.BYTES_PER_ELEMENT,
     );
@@ -9900,7 +9899,9 @@ export const updateSABData = (workerState, config) => {
     }
   }
 
-  if (workerState.pathDataArray) {
+  // LEGACY: pathDataArray-based path reading is obsolete and replaced by unified SAB path channels.
+  // The following block is retained only as documentation of the old behavior and MUST NOT be used.
+  if (false && workerState.pathDataArray) {
     if (workerState.shouldRequestNewPath) {
       workerState.path = [];
       workerState.pathfindingStatus = PATH_STATUS_IDLE;
@@ -10277,9 +10278,10 @@ const fsm = createFsm(workerState, config);
 if (workerData.playerPosSAB) {
   workerState.playerPosArray = new Int32Array(workerData.playerPosSAB);
 }
-if (workerData.pathDataSAB) {
-  workerState.pathDataArray = new Int32Array(workerData.pathDataSAB);
-}
+ // LEGACY: workerData.pathDataSAB wiring removed in favor of unified SAB (cavebotPathData/targetingPathData).
+ // if (workerData.pathDataSAB) {
+ //   workerState.pathDataArray = new Int32Array(workerData.pathDataSAB);
+ // }
 
 // Initialize SAB state manager
 workerState.sabStateManager = new SABStateManager({
@@ -15969,9 +15971,9 @@ const logicContext = {
   lastCreatureDataHash: null, // NEW: Cache based on creature data hash
 };
 
-const { playerPosSAB, pathDataSAB } = workerData; // creaturePosSAB is removed
+const { playerPosSAB } = workerData; // creaturePosSAB is removed
 const playerPosArray = playerPosSAB ? new Int32Array(playerPosSAB) : null;
-const pathDataArray = pathDataSAB ? new Int32Array(pathDataSAB) : null;
+// LEGACY: pathDataSAB/pathDataArray removed; use unified SAB path channels instead.
 
 const REDUX_UPDATE_INTERVAL_MS = 25;
 let lastReduxUpdateTime = 0;
@@ -17129,7 +17131,7 @@ export class SABStateManager {
       looting: -1,
       targetingList: -1,
       target: -1,
-      pathData: -1,
+      // pathData: -1, // LEGACY counter removed; unified SAB handles path versions.
     };
   }
 
@@ -17633,7 +17635,7 @@ export class SABStateManager {
       isLootingRequired: this.isLootingRequired(),
       targetingList: this.getTargetingList(),
       currentTarget: this.getCurrentTarget(),
-      pathData: this.getPath(),
+      // pathData: this.getPath(), // LEGACY export removed; use cavebotPathData/targetingPathData from unified SAB.
     };
   }
 
@@ -19246,8 +19248,9 @@ const TARGET_ACQUISITION_COOLDOWN_MS = 250;
 
 
 export function createTargetingActions(workerContext) {
-  const { playerPosArray, pathDataArray, parentPort, sabStateManager } =
+  const { playerPosArray, parentPort, sabStateManager } =
     workerContext;
+  // LEGACY: pathDataArray removed; targeting now reads from targetingPathData via unified SAB.
   const logger = createLogger({ info: true, error: true, debug: true });
 
   let previousSelectedTargetId = null;

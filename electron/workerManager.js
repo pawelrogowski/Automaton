@@ -154,6 +154,7 @@ class WorkerManager {
     this.reduxSyncInterval = null; // Interval for SAB → Redux sync
     this.lastReduxSyncTime = 0;
     this.previousConfigState = {}; // Track config changes
+    this.lastSyncedVersions = null; // Initialized when SAB → Redux sync starts
   }
 
   setupPaths(app, cwd) {
@@ -273,32 +274,11 @@ class WorkerManager {
             wptId: state.cavebot?.wptId ?? '',
           });
 
-          // Sync pathfinding data (high-performance structures)
-          // Sync dynamicTarget
-          const dynamicTarget = state.cavebot?.dynamicTarget;
-          if (dynamicTarget && dynamicTarget.targetCreaturePos) {
-            const stanceMap = { Follow: 0, Stand: 1, Reach: 2 };
-            this.sabState.set('dynamicTarget', {
-              targetCreaturePosX: dynamicTarget.targetCreaturePos.x ?? 0,
-              targetCreaturePosY: dynamicTarget.targetCreaturePos.y ?? 0,
-              targetCreaturePosZ: dynamicTarget.targetCreaturePos.z ?? 0,
-              targetInstanceId: dynamicTarget.targetInstanceId ?? 0,
-              stance: stanceMap[dynamicTarget.stance] ?? 0,
-              distance: dynamicTarget.distance ?? 0,
-              valid: 1,
-            });
-          } else {
-            // Clear dynamicTarget if null
-            this.sabState.set('dynamicTarget', {
-              targetCreaturePosX: 0,
-              targetCreaturePosY: 0,
-              targetCreaturePosZ: 0,
-              targetInstanceId: 0,
-              stance: 0,
-              distance: 0,
-              valid: 0,
-            });
-          }
+          // NOTE:
+          // dynamicTarget in SAB is now authored exclusively by targetingWorker
+          // via sabInterface.set('dynamicTarget', ...).
+          // We intentionally do NOT mirror cavebot.dynamicTarget into SAB here
+          // to avoid races and duplicated writers.
 
           // Sync targetWaypoint (resolve current waypoint coordinates)
           const wptId = state.cavebot?.wptId;
@@ -515,7 +495,8 @@ class WorkerManager {
       creatures: -1,
       battleList: -1,
       target: -1,
-      pathData: -1,
+      cavebotPathData: -1,
+      targetingPathData: -1,
     };
 
     this.reduxSyncInterval = setInterval(() => {
@@ -533,7 +514,8 @@ class WorkerManager {
         const creaturesResult = this.sabState.get('creatures');
         const battleListResult = this.sabState.get('battleList');
         const targetResult = this.sabState.get('target');
-        const pathDataResult = this.sabState.get('pathData');
+        const cavebotPathResult = this.sabState.get('cavebotPathData');
+        const targetingPathResult = this.sabState.get('targetingPathData');
 
         // Build batch update payload
         const updates = {};
@@ -593,33 +575,60 @@ class WorkerManager {
           hasUpdates = true;
         }
 
+        // Sync cavebot path data → dedicated pathfinder slice channel
         if (
-          pathDataResult?.data &&
-          pathDataResult.version !== this.lastSyncedVersions.pathData
+          cavebotPathResult?.data &&
+          cavebotPathResult.version !== this.lastSyncedVersions.cavebotPathData
         ) {
-          this.lastSyncedVersions.pathData = pathDataResult.version;
-          updates.pathfinder = {
-            pathWaypoints: pathDataResult.data.waypoints || [],
-            wptDistance: pathDataResult.data.waypoints?.length || null,
-            pathfindingStatus: this.getPathStatusString(
-              pathDataResult.data.status,
-            ),
-            routeSearchMs: 0, // SAB doesn't store this, so default to 0
-          };
+          this.lastSyncedVersions.cavebotPathData = cavebotPathResult.version;
+          const waypoints = cavebotPathResult.data.waypoints || [];
+          const status = this.getPathStatusString(
+            cavebotPathResult.data.status,
+          );
+          const chebyshevDistance =
+            typeof cavebotPathResult.data.chebyshevDistance === 'number'
+              ? cavebotPathResult.data.chebyshevDistance
+              : null;
+
+          setGlobalState('pathfinder/setCavebotPath', {
+            waypoints,
+            status,
+            chebyshevDistance,
+          });
+          hasUpdates = true;
+        }
+
+        // Sync targeting path data → dedicated pathfinder slice channel
+        if (
+          targetingPathResult?.data &&
+          targetingPathResult.version !==
+            this.lastSyncedVersions.targetingPathData
+        ) {
+          this.lastSyncedVersions.targetingPathData =
+            targetingPathResult.version;
+          const waypoints = targetingPathResult.data.waypoints || [];
+          const status = this.getPathStatusString(
+            targetingPathResult.data.status,
+          );
+          const chebyshevDistance =
+            typeof targetingPathResult.data.chebyshevDistance === 'number'
+              ? targetingPathResult.data.chebyshevDistance
+              : null;
+
+          setGlobalState('pathfinder/setTargetingPath', {
+            waypoints,
+            status,
+            chebyshevDistance,
+          });
           hasUpdates = true;
         }
 
         // Dispatch batch update to Redux using setGlobalState
         if (hasUpdates) {
           for (const [sliceName, sliceUpdates] of Object.entries(updates)) {
-            // Special handling for pathfinder slice - use setPathfindingFeedback action
-            if (sliceName === 'pathfinder') {
-              setGlobalState('pathfinder/setPathfindingFeedback', sliceUpdates);
-            } else {
-              // For other slices, set individual keys
-              for (const [key, value] of Object.entries(sliceUpdates)) {
-                setGlobalState(`${sliceName}/${key}`, value);
-              }
+            // For slices managed via granular actions, use individual keys
+            for (const [key, value] of Object.entries(sliceUpdates)) {
+              setGlobalState(`${sliceName}/${key}`, value);
             }
           }
         }
@@ -632,7 +641,7 @@ class WorkerManager {
   }
 
   /**
-   * Convert path status enum to string
+   * Convert path status enum to string (shared by cavebot/targeting path channels)
    */
   getPathStatusString(status) {
     const statusMap = {

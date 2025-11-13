@@ -85,7 +85,28 @@ export function runPathfindingLogic(context) {
     // Read dynamicTarget from SAB (high-performance struct)
     const dynamicTargetResult = sabInterface.get('dynamicTarget');
     const dynamicTargetSAB = dynamicTargetResult?.data;
-    const isTargetingMode = dynamicTargetSAB?.valid === 1;
+
+    // Consider dynamicTarget "active" only if:
+    // - valid === 1
+    // - AND we are not in CAVEBOT control
+    // This ensures cavebot pathfinding still works when cavebot has control,
+    // even if targeting is enabled globally and dynamicTarget might be stale.
+    let isTargetingMode = dynamicTargetSAB?.valid === 1;
+
+    // Read cavebotConfig early so we can inspect controlState
+    const cavebotConfigResultEarly = sabInterface.get('cavebotConfig');
+    const cavebotConfigEarly = cavebotConfigResultEarly?.data || null;
+    const controlStateEarly = cavebotConfigEarly?.controlState;
+
+    // CONTROL_STATES: 0=CAVEBOT,1=HANDOVER_TO_TARGETING,2=TARGETING,3=HANDOVER_TO_CAVEBOT
+    const CONTROL_STATES_CAVEBOT = 0;
+    const CONTROL_STATES_TARGETING = 2;
+
+    // If cavebot currently owns control, force-disable targeting mode so that
+    // cavebot path requests are not suppressed.
+    if (controlStateEarly === CONTROL_STATES_CAVEBOT) {
+      isTargetingMode = false;
+    }
 
     // OPTIMIZATION: Read targetWaypoint ONCE at function start to avoid duplicate reads
     const targetWaypointResult = sabInterface.get('targetWaypoint');
@@ -180,8 +201,11 @@ export function runPathfindingLogic(context) {
 
     const currentSignature = deepHash(pathfindingInput);
 
+    // Use a local result variable; never rely on an implicit global.
+    let result = null;
+
     if (logicContext.lastSignature === currentSignature) {
-      result = logicContext.lastResult;
+      result = logicContext.lastResult || null;
     } else {
       logicContext.lastSignature = currentSignature;
       logicContext.lastResult = null;
@@ -350,8 +374,6 @@ export function runPathfindingLogic(context) {
 
           if (targetingModeActive) {
             sabInterface.set('targetingPathData', baseIdlePayload);
-            // Optional debug legacy mirror (no consumers allowed)
-            sabInterface.set('pathData', baseIdlePayload);
           } else if (cavebotModeActive) {
             const wptIdHash =
               cavebotConfig?.wptId
@@ -367,8 +389,6 @@ export function runPathfindingLogic(context) {
             };
 
             sabInterface.set('cavebotPathData', cavebotIdle);
-            // Optional debug legacy mirror (no consumers allowed)
-            sabInterface.set('pathData', cavebotIdle);
           }
         } catch (err) {
           logger('error', `[Pathfinder] Failed to write idle status: ${err.message}`);
@@ -434,7 +454,7 @@ export function runPathfindingLogic(context) {
     const targetWptIdChanged =
       currentTargetWptIdHash !== logicContext.lastProcessedWptId;
 
-    // Calculate pathTargetCoords outside pathDataArray block (needed by SAB write)
+    // Calculate pathTargetCoords once (used when writing to unified SAB path channels)
     let pathTargetCoords = { x: 0, y: 0, z: 0 };
     if (targetingModeActive && dynamicTarget && dynamicTarget.targetCreaturePos) {
       pathTargetCoords = dynamicTarget.targetCreaturePos;
@@ -493,9 +513,6 @@ export function runPathfindingLogic(context) {
               instanceId,
             };
             sabInterface.set('targetingPathData', targetingPayload);
-
-            // Optional legacy debug mirror (no consumers allowed)
-            sabInterface.set('pathData', targetingPayload);
           } else if (cavebotModeActive) {
             // Cavebot: authoritative write to cavebotPathData only
             const cavebotPayload = {
@@ -503,9 +520,6 @@ export function runPathfindingLogic(context) {
               instanceId: 0,
             };
             sabInterface.set('cavebotPathData', cavebotPayload);
-
-            // Optional legacy debug mirror (no consumers allowed)
-            sabInterface.set('pathData', cavebotPayload);
           }
         } catch (err) {
           logger('error', `Failed to write path to SAB: ${err.message}`);
@@ -519,7 +533,12 @@ export function runPathfindingLogic(context) {
     // NOTE: We no longer call throttleReduxUpdate here because workerManager
     // now handles SAB→Redux sync. Pathfinder only writes to SAB above.
   } catch (error) {
-    logger('error', `Pathfinding error: ${error.message}`);
+    logger(
+      'error',
+      `[Pathfinder] Pathfinding error in runPathfindingLogic: ${
+        error && error.message ? error.message : String(error)
+      }`,
+    );
   }
 }
 //endFile

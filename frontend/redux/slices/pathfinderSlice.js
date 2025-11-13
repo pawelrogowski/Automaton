@@ -5,10 +5,22 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
   version: 0,
+
+  // Legacy/general fields (kept for compatibility if still used anywhere)
   pathWaypoints: [],
   wptDistance: null,
   routeSearchMs: 0,
   pathfindingStatus: 'IDLE', // e.g., 'IDLE', 'PATH_FOUND', 'NO_PATH_FOUND'
+
+  // Dedicated cavebot path exposure (from cavebotPathData SAB channel)
+  cavebotPathWaypoints: [],
+  cavebotPathStatus: 'IDLE',
+  cavebotPathDistance: null,
+
+  // Dedicated targeting path exposure (from targetingPathData SAB channel)
+  targetingPathWaypoints: [],
+  targetingPathStatus: 'IDLE',
+  targetingPathDistance: null,
 };
 
 const pathfinderSlice = createSlice({
@@ -16,20 +28,22 @@ const pathfinderSlice = createSlice({
   initialState,
   reducers: {
     /**
-     * Sets the feedback from the pathfinder worker. This is the primary way
-     * the pathfinder communicates its results to the rest of the application.
-     * @param {object} state - The current state.
-     * @param {object} action - The action object containing the pathfinding results.
+     * Sets the feedback from the pathfinder worker.
+     * Kept primarily for backwards compatibility / generic usage.
      */
     setPathfindingFeedback: (state, action) => {
-      const { pathWaypoints, wptDistance, routeSearchMs, pathfindingStatus } =
-        action.payload;
-      state.pathWaypoints = pathWaypoints;
-      state.wptDistance = wptDistance;
-      state.routeSearchMs = routeSearchMs;
-      if (pathfindingStatus) {
-        state.pathfindingStatus = pathfindingStatus;
-      }
+      const {
+        pathWaypoints,
+        wptDistance,
+        routeSearchMs,
+        pathfindingStatus,
+      } = action.payload || {};
+
+      if (pathWaypoints !== undefined) state.pathWaypoints = pathWaypoints;
+      if (wptDistance !== undefined) state.wptDistance = wptDistance;
+      if (routeSearchMs !== undefined) state.routeSearchMs = routeSearchMs;
+      if (pathfindingStatus) state.pathfindingStatus = pathfindingStatus;
+
       state.version = (state.version || 0) + 1;
     },
     /**
@@ -49,6 +63,32 @@ const pathfinderSlice = createSlice({
     },
     routeSearchMs: (state, action) => {
       state.routeSearchMs = action.payload;
+      state.version = (state.version || 0) + 1;
+    },
+
+    /**
+     * Explicit cavebot path channel setter.
+     * payload: { waypoints, status, chebyshevDistance }
+     */
+    setCavebotPath: (state, action) => {
+      const { waypoints, status, chebyshevDistance } = action.payload || {};
+      state.cavebotPathWaypoints = Array.isArray(waypoints) ? waypoints : [];
+      state.cavebotPathStatus = status || 'IDLE';
+      state.cavebotPathDistance =
+        typeof chebyshevDistance === 'number' ? chebyshevDistance : null;
+      state.version = (state.version || 0) + 1;
+    },
+
+    /**
+     * Explicit targeting path channel setter.
+     * payload: { waypoints, status, chebyshevDistance }
+     */
+    setTargetingPath: (state, action) => {
+      const { waypoints, status, chebyshevDistance } = action.payload || {};
+      state.targetingPathWaypoints = Array.isArray(waypoints) ? waypoints : [];
+      state.targetingPathStatus = status || 'IDLE';
+      state.targetingPathDistance =
+        typeof chebyshevDistance === 'number' ? chebyshevDistance : null;
       state.version = (state.version || 0) + 1;
     },
     /**
@@ -75,6 +115,8 @@ export const {
   routeSearchMs,
   resetPathfinder,
   setState,
+  setCavebotPath,
+  setTargetingPath,
 } = pathfinderSlice.actions;
 
 export default pathfinderSlice;
